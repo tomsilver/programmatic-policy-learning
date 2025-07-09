@@ -2,6 +2,7 @@
 
 import logging
 
+import gymnasium
 import hydra
 import numpy as np
 import pandas as pd
@@ -15,11 +16,12 @@ from programmatic_policy_learning.approaches.base_approach import BaseApproach
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
 
-    logging.info(f"Running seed={cfg.seed}, env={cfg.env}, approach={cfg.approach}")
+    logging.info(
+        f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
+    )
 
     # Create the environment.
-    env = hydra.utils.instantiate(cfg.env)
-    assert isinstance(env, Env)
+    env = gymnasium.make(**cfg.env.make_kwargs)
 
     # Create the approach.
     approach = hydra.utils.instantiate(
