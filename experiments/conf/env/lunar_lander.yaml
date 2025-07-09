@@ -1,0 +1,4 @@
+make_kwargs:
+  id: "LunarLander-v3"
+# Will want to update later.
+description: "The well-known LunarLander in gymnasium, i.e., env = gymnasium.make('LunarLander-v3')"
