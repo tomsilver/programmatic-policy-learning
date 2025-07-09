@@ -15,6 +15,10 @@ dependencies = [
    "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-utils.git",
    "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-llm-utils.git",
    "moviepy",
+   "pandas",
+   "pandas-stubs",
+   "hydra-core",
+   "omegaconf",
 ]
 
 [project.optional-dependencies]

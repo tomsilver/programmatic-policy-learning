@@ -9,7 +9,9 @@ def test_random_actions_approach():
     """Tests for RandomActionsApproach()."""
     # Just test that this runs without crashing.
     env = gymnasium.make("LunarLander-v3")
-    approach = RandomActionsApproach(env.action_space, seed=123)
+    approach = RandomActionsApproach(
+        "N/A", env.observation_space, env.action_space, seed=123
+    )
     obs, info = env.reset()
     approach.reset(obs, info)
     for _ in range(5):
