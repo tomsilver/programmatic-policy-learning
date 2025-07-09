@@ -1,5 +1,6 @@
 """An approach that synthesizes a programmatic policy using an LLM."""
 
+import logging
 from typing import Callable, TypeVar
 
 from gymnasium.spaces import Space
@@ -87,5 +88,8 @@ Return only the function; do not give example usages.
         query,
         reprompt_checks=reprompt_checks,
     )
+
+    logging.info("Synthesized new policy:")
+    logging.info(str(policy))
 
     return policy
