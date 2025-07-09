@@ -77,7 +77,7 @@ Return only the function; do not give example usages.
     reprompt_checks = [
         SyntaxRepromptCheck(),
         FunctionOutputRepromptCheck(
-            function_name, [example_observation], [action_space.contains]
+            function_name, [(example_observation,)], [action_space.contains]
         ),
     ]
 
