@@ -11,7 +11,10 @@ requires-python = ">=3.11"
 dependencies = [
    "matplotlib",
    "numpy",
-   "gymnasium>=1.0.0",
+   "gymnasium[all]>=1.0.0",
+   "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-utils.git",
+   "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-llm-utils.git",
+   "moviepy",
 ]
 
 [project.optional-dependencies]
