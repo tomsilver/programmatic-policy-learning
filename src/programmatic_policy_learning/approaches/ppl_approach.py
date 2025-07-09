@@ -11,26 +11,18 @@ from prpl_llm_utils.code import (
 )
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.structs import Query
-from prpl_utils.gym_agent import Agent
+
+from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
-class ProgrammaticPolicyLearningApproach(Agent[_ObsType, _ActType]):
+class ProgrammaticPolicyLearningApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that synthesizes a programmatic policy using an LLM."""
 
-    def __init__(
-        self,
-        environment_description: str,
-        action_space: Space,
-        llm: PretrainedLargeModel,
-        seed: int,
-    ) -> None:
-        super().__init__(seed)
-        self._action_space = action_space
-        self._environment_description = environment_description
-        self._action_space.seed(seed)
+    def __init__(self, llm: PretrainedLargeModel, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self._llm = llm
         # Wait to reset so that we have one example of an observation.
         self._policy: Callable[[_ObsType], _ActType] | None = None

@@ -39,7 +39,7 @@ def _policy(obs):
     llm = OrderedResponseModel([response], cache)
 
     approach = ProgrammaticPolicyLearningApproach(
-        environment_description, env.action_space, llm, seed=123
+        llm, environment_description, env.observation_space, env.action_space, seed=123
     )
 
     obs, info = env.reset()
@@ -66,7 +66,7 @@ def test_ppl_approach_with_real_llm():
     llm = OpenAIModel("gpt-4o-mini", cache)
 
     approach = ProgrammaticPolicyLearningApproach(
-        environment_description, env.action_space, llm, seed=123
+        llm, environment_description, env.observation_space, env.action_space, seed=123
     )
 
     obs, info = env.reset()
