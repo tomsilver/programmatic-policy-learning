@@ -11,26 +11,25 @@ from prpl_llm_utils.code import (
 )
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.structs import Query
-from prpl_utils.gym_agent import Agent
+
+from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
-class ProgrammaticPolicyLearningApproach(Agent[_ObsType, _ActType]):
+class ProgrammaticPolicyLearningApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that synthesizes a programmatic policy using an LLM."""
 
     def __init__(
         self,
         environment_description: str,
-        action_space: Space,
-        llm: PretrainedLargeModel,
+        observation_space: Space[_ObsType],
+        action_space: Space[_ActType],
         seed: int,
+        llm: PretrainedLargeModel,
     ) -> None:
-        super().__init__(seed)
-        self._action_space = action_space
-        self._environment_description = environment_description
-        self._action_space.seed(seed)
+        super().__init__(environment_description, observation_space, action_space, seed)
         self._llm = llm
         # Wait to reset so that we have one example of an observation.
         self._policy: Callable[[_ObsType], _ActType] | None = None
@@ -38,12 +37,13 @@ class ProgrammaticPolicyLearningApproach(Agent[_ObsType, _ActType]):
     def reset(self, *args, **kwargs) -> None:
         super().reset(*args, **kwargs)
         assert self._last_observation is not None
-        self._policy = synthesize_policy_from_environment_description(
-            self._environment_description,
-            self._llm,
-            self._last_observation,
-            self._action_space,
-        )
+        if self._policy is None:
+            self._policy = synthesize_policy_from_environment_description(
+                self._environment_description,
+                self._llm,
+                self._last_observation,
+                self._action_space,
+            )
 
     def _get_action(self) -> _ActType:
         assert self._policy is not None, "Call reset() first."
@@ -71,6 +71,14 @@ def _policy(obs):
 The policy should do well in the environment described below.
 
 {environment_description}
+
+Here is the action space:
+
+{action_space}
+
+Here is an example observation:
+
+{example_observation}
 
 Return only the function; do not give example usages.
 """
