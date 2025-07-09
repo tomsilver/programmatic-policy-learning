@@ -1,6 +1,7 @@
 .DS_Store
 .python-version
 logs
+llm_cache.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

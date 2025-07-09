@@ -16,3 +16,4 @@ defaults:
   - _self_
   - approach: random_actions
   - env: lunar_lander
+  - llm: openai
