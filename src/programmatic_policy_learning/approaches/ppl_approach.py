@@ -72,6 +72,14 @@ The policy should do well in the environment described below.
 
 {environment_description}
 
+Here is the action space:
+
+{action_space}
+
+Here is an example observation:
+
+{example_observation}
+
 Return only the function; do not give example usages.
 """
     )
