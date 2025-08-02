@@ -21,6 +21,16 @@ This is a codebase that the PRPL lab is using for multiple projects related to p
 ## Usage Example
 
 ```python
+from pathlib import Path
+
+import gymnasium
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel
+
+from programmatic_policy_learning.approaches.ppl_approach import (
+    ProgrammaticPolicyLearningApproach,
+)
+
 env = gymnasium.make("LunarLander-v3")
 env.action_space.seed(123)
 environment_description = (
@@ -28,8 +38,7 @@ environment_description = (
     'env = gymnasium.make("LunarLander-v3")'
 )
 
-cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
-cache = SQLite3PretrainedLargeModelCache(cache_path)
+cache = SQLite3PretrainedLargeModelCache(Path("llm_cache.db"))
 llm = OpenAIModel("gpt-4o-mini", cache)
 
 approach = ProgrammaticPolicyLearningApproach(
