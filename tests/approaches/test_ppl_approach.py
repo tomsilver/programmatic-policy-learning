@@ -18,12 +18,12 @@ runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 def test_ppl_approach():
     """Tests for ProgrammaticPolicyLearningApproach()."""
-    env = gymnasium.make("LunarLander-v3")
+    env = gymnasium.make("MountainCarContinuous-v0")
     env.action_space.seed(123)
     constant_action = env.action_space.sample()
     environment_description = (
-        "The well-known LunarLander in gymnasium, i.e., "
-        'env = gymnasium.make("LunarLander-v3")'
+        "The well-known MountainCarContinuous in gymnasium, i.e., "
+        'env = gymnasium.make("MountainCarContinuous-v0")'
     )
 
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
@@ -58,11 +58,11 @@ def _policy(obs):
 @runllms
 def test_ppl_approach_with_real_llm():
     """Tests for ProgrammaticPolicyLearningApproach() with real LLM."""
-    env = gymnasium.make("LunarLander-v3")
+    env = gymnasium.make("MountainCarContinuous-v0")
     env.action_space.seed(123)
     environment_description = (
-        "The well-known LunarLander in gymnasium, i.e., "
-        'env = gymnasium.make("LunarLander-v3")'
+        "The well-known MountainCarContinuous in gymnasium, i.e., "
+        'env = gymnasium.make("MountainCarContinuous-v0")'
     )
 
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)

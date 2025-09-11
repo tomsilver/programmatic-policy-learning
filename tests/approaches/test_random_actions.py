@@ -8,7 +8,7 @@ from programmatic_policy_learning.approaches.random_actions import RandomActions
 def test_random_actions_approach():
     """Tests for RandomActionsApproach()."""
     # Just test that this runs without crashing.
-    env = gymnasium.make("LunarLander-v3")
+    env = gymnasium.make("MountainCarContinuous-v0")
     approach = RandomActionsApproach(
         "N/A", env.observation_space, env.action_space, seed=123
     )
