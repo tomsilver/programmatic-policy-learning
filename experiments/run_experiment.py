@@ -19,10 +19,17 @@ def _main(cfg: DictConfig) -> None:
     logging.info(
         f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
     )
-
-    # Create the environment.
-    env = gymnasium.make(**cfg.env.make_kwargs)
-
+    env_id = cfg.env.make_kwargs.id
+    if env_id.startswith("prbench/"):
+        import prbench
+        prbench.register_all_environments()
+        # Pass all kwargs except 'id'
+        pr_kwargs = {k: v for k, v in cfg.env.make_kwargs.items() if k != "id"}
+        env = prbench.make(env_id, **pr_kwargs)
+    else:
+        # Create the environment.
+        env = gymnasium.make(**cfg.env.make_kwargs)
+    
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -63,6 +70,7 @@ def _run_single_episode_evaluation(
     approach.reset(obs, info)
     for _ in range(max_eval_steps):
         action = approach.step()
+        print(f"Taking action: {action}")
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
         assert not truncated
