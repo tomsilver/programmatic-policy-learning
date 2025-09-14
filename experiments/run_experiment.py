@@ -22,6 +22,7 @@ def _main(cfg: DictConfig) -> None:
     env_id = cfg.env.make_kwargs.id
     if env_id.startswith("prbench/"):
         import prbench
+
         prbench.register_all_environments()
         # Pass all kwargs except 'id'
         pr_kwargs = {k: v for k, v in cfg.env.make_kwargs.items() if k != "id"}
@@ -29,7 +30,7 @@ def _main(cfg: DictConfig) -> None:
     else:
         # Create the environment.
         env = gymnasium.make(**cfg.env.make_kwargs)
-    
+
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
