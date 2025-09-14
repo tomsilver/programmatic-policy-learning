@@ -6,6 +6,7 @@ import gymnasium
 import hydra
 import numpy as np
 import pandas as pd
+import prbench
 from gymnasium.core import Env
 from omegaconf import DictConfig
 from prpl_utils.utils import sample_seed_from_rng
@@ -21,7 +22,6 @@ def _main(cfg: DictConfig) -> None:
     )
     env_id = cfg.env.make_kwargs.id
     if env_id.startswith("prbench/"):
-        import prbench
 
         prbench.register_all_environments()
         # Pass all kwargs except 'id'
