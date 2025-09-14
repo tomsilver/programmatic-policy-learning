@@ -77,7 +77,7 @@ python experiments/run_experiment.py -m env=lunar_lander llm=openai seed='range(
 
 ## Notes
 
-### Installing Box2D on macOS
+### Box2D Installation on macOS
 
 If you encounter an error when installing dependencies (e.g., `box2d-py`) that looks like this:
 
