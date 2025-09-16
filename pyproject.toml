@@ -32,6 +32,9 @@ develop = [
     "pytest-pylint>=0.18.0",
     "pytest>=7.2.2",
 ]
+ggg = [
+  "generalization_grid_games @ git+https://github.com/zahraabashir/generalization_grid_games.git"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -59,5 +62,6 @@ exclude = ["venv/*", ".venv/*"]
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
+    "generalization_grid_games.*",
 ]
 ignore_missing_imports = true

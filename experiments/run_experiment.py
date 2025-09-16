@@ -2,16 +2,15 @@
 
 import logging
 
-import gymnasium
 import hydra
 import numpy as np
 import pandas as pd
-import prbench
 from gymnasium.core import Env
 from omegaconf import DictConfig
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
@@ -20,16 +19,9 @@ def _main(cfg: DictConfig) -> None:
     logging.info(
         f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
     )
-    env_id = cfg.env.make_kwargs.id
-    if env_id.startswith("prbench/"):
 
-        prbench.register_all_environments()
-        # Pass all kwargs except 'id'
-        pr_kwargs = {k: v for k, v in cfg.env.make_kwargs.items() if k != "id"}
-        env = prbench.make(env_id, **pr_kwargs)
-    else:
-        # Create the environment.
-        env = gymnasium.make(**cfg.env.make_kwargs)
+    registry = EnvRegistry()
+    env = registry.load(cfg.env)
 
     # Create the approach.
     approach = hydra.utils.instantiate(
@@ -71,7 +63,10 @@ def _run_single_episode_evaluation(
     approach.reset(obs, info)
     for _ in range(max_eval_steps):
         action = approach.step()
-        print(f"Taking action: {action}")
+        # print(f"Taking action: {action}")
+        # base = env.unwrapped
+        # print("initial piles:", getattr(base, "current_layout", None))
+        # input()
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
         assert not truncated
