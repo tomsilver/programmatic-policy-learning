@@ -1,6 +1,6 @@
 """GGG environment provider."""
 
-from programmatic_policy_learning.envs.gym_to_gymnasium import GymToGymnasium
+from programmatic_policy_learning.envs.utils.gym_to_gymnasium import GymToGymnasium
 
 
 def ggg(env_config):

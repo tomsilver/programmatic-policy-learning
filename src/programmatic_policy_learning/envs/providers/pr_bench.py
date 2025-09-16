@@ -3,7 +3,7 @@
 import prbench
 from gymnasium import spaces
 
-from programmatic_policy_learning.envs.wrappers import patch_box_float32
+from programmatic_policy_learning.envs.utils.wrappers import patch_box_float32
 
 
 def pr_bench(env_config):
