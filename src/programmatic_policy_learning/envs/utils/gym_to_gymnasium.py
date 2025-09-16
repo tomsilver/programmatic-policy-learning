@@ -56,7 +56,12 @@ class GymToGymnasium:
 
     def render(self) -> Any:
         """Render the environment."""
-        return getattr(self._env, "render", lambda: None)()
+        if hasattr(self._env, "render"):
+            try:
+                return self._env.render()
+            except TypeError:
+                return self._env.render(mode="human")
+        return None
 
     def close(self) -> None:
         """Close the environment."""

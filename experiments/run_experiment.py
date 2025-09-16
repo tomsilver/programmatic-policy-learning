@@ -3,14 +3,20 @@
 import logging
 
 import hydra
+
+# import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from gymnasium.core import Env
+
+# from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.envs.registry import EnvRegistry
+
+# import os
 
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
@@ -61,13 +67,19 @@ def _run_single_episode_evaluation(
     total_steps = 0
     obs, info = env.reset(seed=sample_seed_from_rng(rng))
     approach.reset(obs, info)
-    for _ in range(max_eval_steps):
+
+    for step_num in range(max_eval_steps):
         action = approach.step()
-        # print(f"Taking action: {action}")
+        print(f"Taking action: {action} at {step_num}")
         # base = env.unwrapped
         # print("initial piles:", getattr(base, "current_layout", None))
         # input()
         obs, rew, done, truncated, info = env.step(action)
+        # img = env.render()
+        # if img is not None:
+        #     output_dir = HydraConfig.get().runtime.output_dir
+        #     img_path = os.path.join(output_dir, f"step_{step_num}.png")
+        #     plt.imsave(img_path, img)
         reward = float(rew)
         assert not truncated
         approach.update(obs, reward, done, info)

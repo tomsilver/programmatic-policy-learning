@@ -1,5 +1,6 @@
 make_kwargs:
   id: prbench/Motion2D-p1-v0
+  render_mode: null
 
 provider: prbench
 
