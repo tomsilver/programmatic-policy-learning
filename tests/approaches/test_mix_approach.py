@@ -1,17 +1,24 @@
+"""Tests for mix_approach.py."""
+
 import tempfile
 from pathlib import Path
 
 import gymnasium
 import pytest
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-from prpl_llm_utils.models import OpenAIModel, OrderedResponseModel
+from prpl_llm_utils.models import OrderedResponseModel
 from prpl_llm_utils.structs import Response
 
 from programmatic_policy_learning.approaches.mix_approach import (
     MixApproach,
 )
 
+runllms = pytest.mark.skipif("not config.getoption('runllms')")
+
+
 def test_mix_approach():
+    """Tests for mix_approach.py."""
+
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
     constant_action = env.action_space.sample()
