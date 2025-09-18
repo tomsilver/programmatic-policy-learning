@@ -15,6 +15,7 @@ class MyApproachTest(BaseApproach[_ObsType, _ActType]):
         super().__init__(name, observation_space, action_space, seed=seed)
         self._action1 = action_space.sample()
         self._action2 = action_space.sample()
+        self._i: int = 0
 
     def _get_action(self) -> _ActType:
         act = self._action1 if self._i == 0 else self._action2
