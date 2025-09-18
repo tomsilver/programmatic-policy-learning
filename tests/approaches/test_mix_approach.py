@@ -53,7 +53,7 @@ def _policy(obs):
     llm_actions = 0
     random_actions = 0
 
-    for _ in range(20):  # Run more steps to observe randomness
+    for _ in range(15):  # Run more steps to observe randomness
         action = approach.step()
         # Most likely the constant_action fed into the LLM
         if action == constant_action:
