@@ -64,7 +64,6 @@ def _run_single_episode_evaluation(
 
     for _ in range(max_eval_steps):
         action = approach.step()
-        print(f"Taking action: {action}")
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
         assert not truncated
