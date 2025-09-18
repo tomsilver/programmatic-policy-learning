@@ -1,6 +1,9 @@
 """Tests for wrappers."""
+
 from gymnasium import spaces
+
 from programmatic_policy_learning.envs.utils.wrappers import patch_box_float32
+
 
 def test_patch_box_float32() -> None:
     """Test patch_box_float32 changes Box dtype."""

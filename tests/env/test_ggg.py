@@ -1,20 +1,18 @@
-"""Tests for PRBench environment provider."""
+"""Tests for GGG environment provider."""
+
+from omegaconf import DictConfig, OmegaConf
 
 from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_env
 
 
-class DummyEnvConfig:
-    """Minimal config for testing GGG provider."""
-
-    class make_kwargs:
-        """Minimal kwargs for GGG env creation."""
-
-        id = "TwoPileNim0-v0"
-
-
 def test_ggg_env_creation() -> None:
-    """Test PRBench environment creation and basic API."""
-    env = create_ggg_env(DummyEnvConfig())
+    """Test GGG environment creation and basic API."""
+    cfg: DictConfig = OmegaConf.create(
+        {
+            "make_kwargs": {"id": "TwoPileNim0-v0"},
+        }
+    )
+    env = create_ggg_env(cfg)
     assert env is not None
     obs, _ = env.reset()
     assert obs is not None

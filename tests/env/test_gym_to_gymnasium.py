@@ -1,11 +1,13 @@
 """Tests for GymToGymnasium adapter."""
 
 import gym
+
 from programmatic_policy_learning.envs.utils.gym_to_gymnasium import GymToGymnasium
+
 
 def test_adapter_step_and_reset() -> None:
     """Test GymToGymnasium step and reset outputs."""
-    env = gym.make('CartPole-v1')
+    env = gym.make("CartPole-v1")
     wrapped = GymToGymnasium(env)
     obs, info = wrapped.reset()
     assert obs is not None

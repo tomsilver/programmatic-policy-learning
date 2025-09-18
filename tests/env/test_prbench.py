@@ -1,27 +1,20 @@
 """Tests for PRBench environment provider."""
 
+from omegaconf import DictConfig, OmegaConf
+
 from programmatic_policy_learning.envs.providers.prbench_provider import (
     create_prbench_env,
 )
 
 
-class DummyEnvConfig:
-    """Minimal config for testing PRBench provider."""
-
-    class make_kwargs:
-        """Minimal kwargs for PRBench env creation."""
-
-        id = "prbench/Motion2D-p1-v0"  # Use a valid PRBench env id
-
-
 def test_prbench_env_creation() -> None:
     """Test PRBench environment creation and basic API."""
-    DummyEnvConfig.make_kwargs = {
-        k: v
-        for k, v in vars(DummyEnvConfig.make_kwargs).items()
-        if not k.startswith("__")
-    }
-    env = create_prbench_env(DummyEnvConfig())
+    cfg: DictConfig = OmegaConf.create(
+        {
+            "make_kwargs": {"id": "prbench/Motion2D-p1-v0"},
+        }
+    )
+    env = create_prbench_env(cfg)
     assert env is not None
     obs, _ = env.reset()
     assert obs is not None
