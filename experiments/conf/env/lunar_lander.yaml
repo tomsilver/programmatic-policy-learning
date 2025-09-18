@@ -1,5 +1,7 @@
 # Passed into gymnasium.make() to create the environment.
 make_kwargs:
   id: "LunarLander-v3"
+  render_mode: null # "human", "rgb_array", null, etc.
+
 # Will probably want to update this later.
 description: "The well-known LunarLander in gymnasium, i.e., env = gymnasium.make('LunarLander-v3')"

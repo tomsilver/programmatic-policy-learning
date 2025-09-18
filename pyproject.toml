@@ -14,7 +14,7 @@ dependencies = [
    "gymnasium[all]>=1.0.0",
    "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-utils.git",
    "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-llm-utils.git",
-   "moviepy",
+   "prbench[all] @ git+https://github.com/Princeton-Robot-Planning-and-Learning/prbench.git@main",   "moviepy",
    "pandas",
    "pandas-stubs",
    "hydra-core",
@@ -30,6 +30,9 @@ develop = [
     "pylint>=2.14.5",
     "pytest-pylint>=0.18.0",
     "pytest>=7.2.2",
+]
+ggg = [
+  "generalization_grid_games @ git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559"
 ]
 
 [tool.setuptools.packages.find]
@@ -58,5 +61,6 @@ exclude = ["venv/*", ".venv/*"]
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
+    "generalization_grid_games.*",
 ]
 ignore_missing_imports = true
