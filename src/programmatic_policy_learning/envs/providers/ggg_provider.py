@@ -3,7 +3,7 @@
 from programmatic_policy_learning.envs.utils.gym_to_gymnasium import GymToGymnasium
 
 
-def ggg(env_config: object) -> GymToGymnasium:
+def create_ggg_env(env_config: object) -> GymToGymnasium:
     """Create GGG environment with legacy gym compatibility."""
     # Lazy import, to avoid deprecation warnings at module import time
     import generalization_grid_games  # pylint: disable=unused-import,import-outside-toplevel

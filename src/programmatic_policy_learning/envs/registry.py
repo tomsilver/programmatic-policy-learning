@@ -4,8 +4,10 @@ from typing import Any, Callable, Dict
 
 import gymnasium
 
-from programmatic_policy_learning.envs.providers.ggg import ggg
-from programmatic_policy_learning.envs.providers.pr_bench import pr_bench
+from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_env
+from programmatic_policy_learning.envs.providers.prbench_provider import (
+    create_prbench_env,
+)
 
 
 class EnvRegistry:
@@ -13,8 +15,8 @@ class EnvRegistry:
 
     def __init__(self) -> None:
         self._providers: Dict[str, Callable[[Any], Any]] = {
-            "ggg": ggg,
-            "prbench": pr_bench,
+            "ggg": create_ggg_env,
+            "prbench": create_prbench_env,
         }
 
     def load(self, env_config: Any) -> Any:

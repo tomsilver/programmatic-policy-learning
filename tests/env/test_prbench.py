@@ -1,6 +1,8 @@
 """Tests for PRBench environment provider."""
 
-from programmatic_policy_learning.envs.providers.pr_bench import pr_bench
+from programmatic_policy_learning.envs.providers.prbench_provider import (
+    create_prbench_env,
+)
 
 
 class DummyEnvConfig:
@@ -19,7 +21,7 @@ def test_prbench_env_creation():
         for k, v in vars(DummyEnvConfig.make_kwargs).items()
         if not k.startswith("__")
     }
-    env = pr_bench(DummyEnvConfig())
+    env = create_prbench_env(DummyEnvConfig())
     assert env is not None
     obs, _ = env.reset()
     assert obs is not None

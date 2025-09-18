@@ -1,6 +1,6 @@
 """Tests for PRBench environment provider."""
 
-from programmatic_policy_learning.envs.providers.ggg import ggg
+from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_env
 
 
 class DummyEnvConfig:
@@ -14,7 +14,7 @@ class DummyEnvConfig:
 
 def test_ggg_env_creation():
     """Test PRBench environment creation and basic API."""
-    env = ggg(DummyEnvConfig())
+    env = create_ggg_env(DummyEnvConfig())
     assert env is not None
     obs, _ = env.reset()
     assert obs is not None

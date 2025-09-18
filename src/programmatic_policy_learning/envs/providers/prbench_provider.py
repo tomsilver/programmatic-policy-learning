@@ -6,7 +6,7 @@ from gymnasium import spaces
 from programmatic_policy_learning.envs.utils.wrappers import patch_box_float32
 
 
-def pr_bench(env_config:object) -> object:
+def create_prbench_env(env_config: object) -> object:
     """Create PRBench environment with float32 Box spaces."""
     # Register environments with prbench
     prbench.register_all_environments()
