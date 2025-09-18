@@ -1,6 +1,7 @@
 """A very naive baseline approach that samples random actions."""
 
 from typing import TypeVar
+
 from gymnasium.spaces import Space
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -10,6 +11,7 @@ _ActType = TypeVar("_ActType")
 
 
 class ConstantApproach(BaseApproach[_ObsType, _ActType]):
+    """An approach that always takes the same, fixed action."""
 
     def __init__(
         self,

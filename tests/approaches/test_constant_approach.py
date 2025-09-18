@@ -1,4 +1,5 @@
 # test_constant_approach.py
+"""Tests for constant_approach.py"""
 
 import gymnasium
 
@@ -19,7 +20,7 @@ def test_constant_approach():
     first_action = approach.step()
 
     # Loop and and check each action is identical to the first one.
-    for i in range(10):
+    for _ in range(10):
         action = approach.step()
         assert action == first_action
         obs, reward, terminated, _, info = env.step(action)
