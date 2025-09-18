@@ -14,7 +14,7 @@ class DummyEnvConfig:
         id = "prbench/Motion2D-p1-v0"  # Use a valid PRBench env id
 
 
-def test_prbench_env_creation():
+def test_prbench_env_creation() -> None:
     """Test PRBench environment creation and basic API."""
     DummyEnvConfig.make_kwargs = {
         k: v

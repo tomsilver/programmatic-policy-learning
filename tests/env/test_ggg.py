@@ -12,7 +12,7 @@ class DummyEnvConfig:
         id = "TwoPileNim0-v0"
 
 
-def test_ggg_env_creation():
+def test_ggg_env_creation() -> None:
     """Test PRBench environment creation and basic API."""
     env = create_ggg_env(DummyEnvConfig())
     assert env is not None

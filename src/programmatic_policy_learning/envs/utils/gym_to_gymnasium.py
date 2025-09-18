@@ -44,13 +44,21 @@ class GymToGymnasium:
             return res  # already (obs, info)
         return res, {}
 
+
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
-        """Step environment and return (obs, reward, terminated, truncated,
-        info)."""
-        obs, reward, done, info = self._env.step(action)
-        terminated = bool(done)
-        truncated = bool(info.get("TimeLimit.truncated", False))
-        return obs, float(reward), terminated, truncated, info
+        """Step environment and return (obs, reward, terminated, truncated, info)."""
+        result = self._env.step(action)
+        if isinstance(result, tuple):
+            if len(result) == 4:
+                obs, reward, done, info = result
+                terminated = bool(done)
+                truncated = bool(info.get("TimeLimit.truncated", False))
+                return obs, float(reward), terminated, truncated, info
+            elif len(result) == 5:
+                obs, reward, terminated, truncated, info = result
+                return obs, float(reward), bool(terminated), bool(truncated), info
+        raise ValueError("Unexpected number of values returned from env.step")
+
 
     def render(self) -> Any:
         """Render the environment."""
