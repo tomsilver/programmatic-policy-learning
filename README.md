@@ -74,3 +74,44 @@ python experiments/run_experiment.py -m env=lunar_lander llm=openai seed='range(
 * Ask an owner of the repository to add your GitHub username to the collaborators list
 * All checks must pass before code is merged (see `./run_ci_checks.sh`)
 * All code goes through the pull request review process on GitHub
+
+## Notes
+
+### Box2D Installation on macOS
+
+If you encounter an error when installing dependencies (e.g., `box2d-py`) that looks like this:
+
+```
+Box2D/Box2D_wrap.cpp:3378:10: fatal error: 'string' file not found
+3378 | #include <string>
+      |          ^~~~~~~~
+1 error generated.
+error: command '/usr/bin/clang++' failed with exit code 1
+```
+
+This might mean that your macOS Command Line Tools (CLT) or SDK isn’t installed or selected correctly, and the compiler (`clang++`) cannot find the C++ standard library headers.
+
+To fix this issue, try these steps:
+
+1. **Reinstall or point to the correct Command Line Tools (CLT):**
+
+   - Remove any broken or partial CLT installations:
+     ```bash
+     sudo rm -rf /Library/Developer/CommandLineTools
+     ```
+
+   - Reinstall the CLT (a GUI prompt will appear):
+     ```bash
+     xcode-select --install
+     ```
+
+2. After completing the installation, try installing the dependencies again:
+   ```bash
+   uv pip install -e ".[develop]"
+   ```
+
+If you are using `uv` to manage your virtual environment, you can also try installing `box2d-py` directly to verify the fix:
+
+```bash
+uv pip install box2d-py
+```
