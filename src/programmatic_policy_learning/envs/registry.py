@@ -1,6 +1,6 @@
 """Environment provider registry."""
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 import gymnasium
 
@@ -14,7 +14,7 @@ class EnvRegistry:
     """Registry for environment providers."""
 
     def __init__(self) -> None:
-        self._providers: Dict[str, Callable[[Any], Any]] = {
+        self._providers: dict[str, Callable[[Any], Any]] = {
             "ggg": create_ggg_env,
             "prbench": create_prbench_env,
         }

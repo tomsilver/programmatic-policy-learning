@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from gymnasium import spaces
 
@@ -19,12 +19,10 @@ class GymToGymnasium:
     def __init__(self, base_env: Any) -> None:
         """Wrap a legacy gym environment."""
         self._env = base_env
-        self.observation_space: Optional[spaces.Space] = getattr(
+        self.observation_space: spaces.Space | None = getattr(
             base_env, "observation_space", None
         )
-        self.action_space: Optional[spaces.Space] = getattr(
-            base_env, "action_space", None
-        )
+        self.action_space: spaces.Space | None = getattr(base_env, "action_space", None)
         self.spec = getattr(base_env, "spec", None)
 
     @property
@@ -32,7 +30,7 @@ class GymToGymnasium:
         """Get the underlying unwrapped environment."""
         return getattr(self._env, "unwrapped", self._env)
 
-    def reset(self, *, seed: Optional[int] = None) -> Tuple[Any, Dict[str, Any]]:
+    def reset(self, *, seed: int | None = None) -> tuple[Any, dict[str, Any]]:
         """Reset environment and return (obs, info)."""
         if seed is not None:
             if hasattr(self._env, "seed") and callable(self._env.seed):
@@ -46,7 +44,7 @@ class GymToGymnasium:
             return res  # already (obs, info)
         return res, {}
 
-    def step(self, action: Any) -> Tuple[Any, float, bool, bool, Dict[str, Any]]:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step environment and return (obs, reward, terminated, truncated,
         info)."""
         obs, reward, done, info = self._env.step(action)
