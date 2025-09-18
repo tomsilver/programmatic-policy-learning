@@ -1,0 +1,7 @@
+make_kwargs:
+  id: prbench/Motion2D-p1-v0
+  render_mode: null
+
+provider: prbench
+
+description: "PRBench Motion2D-p1. Gymnasium-style env registered by PRBench"

@@ -6,7 +6,7 @@ hydra:
     subdir: ${hydra.job.num}
 
 seed: 0
-num_eval_episodes: 10
+num_eval_episodes: 1
 max_eval_steps: 1000
 
 approach_name: ${hydra:runtime.choices.approach}

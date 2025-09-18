@@ -2,7 +2,6 @@
 
 import logging
 
-import gymnasium
 import hydra
 import numpy as np
 import pandas as pd
@@ -11,6 +10,7 @@ from omegaconf import DictConfig
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
@@ -20,8 +20,8 @@ def _main(cfg: DictConfig) -> None:
         f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
     )
 
-    # Create the environment.
-    env = gymnasium.make(**cfg.env.make_kwargs)
+    registry = EnvRegistry()
+    env = registry.load(cfg.env)
 
     # Create the approach.
     approach = hydra.utils.instantiate(
@@ -61,6 +61,7 @@ def _run_single_episode_evaluation(
     total_steps = 0
     obs, info = env.reset(seed=sample_seed_from_rng(rng))
     approach.reset(obs, info)
+
     for _ in range(max_eval_steps):
         action = approach.step()
         obs, rew, done, truncated, info = env.step(action)
