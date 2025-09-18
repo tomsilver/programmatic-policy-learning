@@ -20,6 +20,6 @@ class ConstantApproach(BaseApproach[_ObsType, _ActType]):
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
         self.constant_action = self._action_space.sample()
-    
+
     def _get_action(self) -> _ActType:
         return self.constant_action
