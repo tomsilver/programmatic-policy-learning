@@ -54,7 +54,7 @@ class GymToGymnasium:
                 terminated = bool(done)
                 truncated = bool(info.get("TimeLimit.truncated", False))
                 return obs, float(reward), terminated, truncated, info
-            elif len(result) == 5:
+            if len(result) == 5:
                 obs, reward, terminated, truncated, info = result
                 return obs, float(reward), bool(terminated), bool(truncated), info
         raise ValueError("Unexpected number of values returned from env.step")

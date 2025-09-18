@@ -18,6 +18,7 @@ def test_prbench_env_creation() -> None:
     assert env is not None
     obs, _ = env.reset()
     assert obs is not None
+    assert env.action_space is not None
     action = env.action_space.sample()
     step_result = env.step(action)
     assert isinstance(step_result, tuple)

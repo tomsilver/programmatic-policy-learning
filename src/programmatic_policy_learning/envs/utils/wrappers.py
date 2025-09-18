@@ -1,10 +1,12 @@
 """Environment wrappers and utilities for common issues."""
 
+from typing import Callable
+
 import numpy as np
 from gymnasium import spaces
 
 
-def patch_box_float32():
+def patch_box_float32() -> Callable[..., None]:
     """Resolves Gymnasium Box precision warnings by patching space creation to
     use float32 dtypes from the start, eliminating the need for runtime casting
     that triggers "precision lowered" warnings from environment libraries like
@@ -29,5 +31,5 @@ def patch_box_float32():
 
         return original_box_init(self, low, high, shape, dtype, seed)
 
-    spaces.Box.__init__ = patched_box_init
+    spaces.Box.__init__ = patched_box_init  # type: ignore
     return original_box_init
