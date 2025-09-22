@@ -10,7 +10,7 @@ class StateActionProgram:
     evals.
     """
 
-    def __init__(self, program):
+    def __init__(self, program) -> None:
         """Initialize with a program string."""
         self.program = program
         self.wrapped = None
