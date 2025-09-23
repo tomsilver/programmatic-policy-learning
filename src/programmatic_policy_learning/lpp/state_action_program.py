@@ -1,6 +1,6 @@
 """Core LPP program representation that wraps logical program strings."""
 
-from typing import Any, Callable, Dict, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 from programmatic_policy_learning.lpp.dsl import primitives
 
@@ -19,7 +19,7 @@ class StateActionProgram(Generic[ObsType, ActType]):
     """
 
     def __init__(
-        self, program_string: str, eval_context: Dict[str, Any] | None = None
+        self, program_string: str, eval_context: dict[str, Any] | None = None
     ) -> None:
         """Initialize with a program string and optional evaluation context.
 
@@ -33,7 +33,7 @@ class StateActionProgram(Generic[ObsType, ActType]):
         )
         self.compiled_func: Callable[[ObsType, ActType], bool] | None = None
 
-    def _get_default_eval_context(self) -> Dict[str, Any]:
+    def _get_default_eval_context(self) -> dict[str, Any]:
         """Get default evaluation context with grid-based primitives."""
 
         # Automatically import all public functions from primitives module
