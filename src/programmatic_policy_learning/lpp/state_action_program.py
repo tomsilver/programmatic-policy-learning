@@ -1,5 +1,9 @@
 """Core LPP program representation that wraps logical program strings."""
 
+from typing import Callable
+
+import numpy as np
+
 from programmatic_policy_learning.lpp.dsl.primitives import cell_is_value, out_of_bounds
 
 
@@ -17,14 +21,14 @@ class StateActionProgram:
             program_string: String representation of the logical program
         """
         self.program = program_string
-        self.compiled_func = None
+        self.compiled_func: Callable[[np.ndarray, tuple[int, int]], bool] | None = None
 
-    def __call__(self, s, a):
+    def __call__(self, s: np.ndarray, a: tuple[int, int]) -> bool:
         """Execute the program on a state-action pair.
 
         Args:
-            state: Game state (numpy array)
-            action: Action tuple (e.g., (row, col))
+            s: Game state (numpy array)
+            a: Action tuple (e.g., (row, col))
 
         Returns:
             Boolean result of program evaluation
