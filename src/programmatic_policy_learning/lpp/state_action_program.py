@@ -1,46 +1,59 @@
 """Core LPP program representation that wraps logical program strings."""
 
-from typing import Callable
+from typing import Any, Callable, Dict, Generic, TypeVar
 
-import numpy as np
+from programmatic_policy_learning.lpp.dsl import primitives
 
-from programmatic_policy_learning.lpp.dsl.primitives import cell_is_value, out_of_bounds
+ObsType = TypeVar("ObsType")
+ActType = TypeVar("ActType")
 
 
-class StateActionProgram:
+class StateActionProgram(Generic[ObsType, ActType]):
     """A logical program that operates on state-action pairs.
 
     Takes a program string (like "cell_is_value(1, a, s)") and makes it
     executable by converting it to a Python function when called.
+
+    This class is generic and can work with any observation and action
+    types.
     """
 
-    def __init__(self, program_string: str) -> None:
-        """Initialize with a program string.
+    def __init__(
+        self, program_string: str, eval_context: Dict[str, Any] | None = None
+    ) -> None:
+        """Initialize with a program string and optional evaluation context.
 
-        Args:
-            program_string: String representation of the logical program
+        If evaluation context isNone, uses default grid-based primitives
+        for backwards compatibility.
         """
-        self.program = program_string
-        self.compiled_func: Callable[[np.ndarray, tuple[int, int]], bool] | None = None
 
-    def __call__(self, s: np.ndarray, a: tuple[int, int]) -> bool:
+        self.program = program_string
+        self.eval_context = eval_context or self._get_default_eval_context()
+        self.compiled_func: Callable[[ObsType, ActType], bool] | None = None
+
+    def _get_default_eval_context(self) -> Dict[str, Any]:
+        """Get default evaluation context with grid-based primitives."""
+
+        # Automatically import all public functions from primitives module
+        return {
+            name: getattr(primitives, name)
+            for name in dir(primitives)
+            if not name.startswith("_") and callable(getattr(primitives, name))
+        }
+
+    def __call__(self, s: ObsType, a: ActType) -> bool:
         """Execute the program on a state-action pair.
 
         Args:
-            s: Game state (numpy array)
-            a: Action tuple (e.g., (row, col))
+            s: Observation/state of any type
+            a: Action of any type
 
         Returns:
             Boolean result of program evaluation
         """
         if self.compiled_func is None:
-
-            eval_context = {
-                "cell_is_value": cell_is_value,
-                "out_of_bounds": out_of_bounds,
-            }
-            # Convert string to executable function
-            self.compiled_func = eval(f"lambda s, a: {self.program}", eval_context)
+            # Convert string to executable function using provided evaluation context
+            self.compiled_func = eval(f"lambda s, a: {self.program}", self.eval_context)
 
         return self.compiled_func(s, a)
 
