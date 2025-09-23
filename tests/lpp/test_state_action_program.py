@@ -87,3 +87,51 @@ def test_state_action_program_invalid_program():
 
     with pytest.raises(SyntaxError):
         program(state, action)
+
+
+def test_state_action_program_custom_eval_context():
+    """Test program with custom evaluation context."""
+
+    # Define custom functions for a different environment
+    def is_even(x):
+        return x % 2 == 0
+
+    def sum_coordinates(coord):
+        return coord[0] + coord[1]
+
+    # Custom evaluation context
+    custom_context = {
+        "is_even": is_even,
+        "sum_coordinates": sum_coordinates,
+    }
+
+    # Create program with custom context
+    program = StateActionProgram(
+        "is_even(sum_coordinates(a))", eval_context=custom_context
+    )
+
+    # Test with different action types (using int instead of np arrays for this example)
+    state = 42  # Simple state for this test
+
+    # Action (1, 1) -> sum = 2 -> is_even(2) = True
+    assert program(state, (1, 1))
+
+    # Action (1, 2) -> sum = 3 -> is_even(3) = False
+    assert not program(state, (1, 2))
+
+
+def test_state_action_program_default_vs_custom_context():
+    """Test that default context works when eval_context is None."""
+
+    # Program using default context (should have grid primitives)
+    default_program = StateActionProgram("cell_is_value(1, a, s)")
+    assert default_program.eval_context is not None
+    assert "cell_is_value" in default_program.eval_context
+    assert "out_of_bounds" in default_program.eval_context
+
+    # Program with empty custom context
+    custom_program = StateActionProgram("True", eval_context={})
+    assert custom_program.eval_context == {}
+
+    # Verify they have different contexts
+    assert default_program.eval_context != custom_program.eval_context

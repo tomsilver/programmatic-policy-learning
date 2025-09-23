@@ -28,7 +28,9 @@ class StateActionProgram(Generic[ObsType, ActType]):
         """
 
         self.program = program_string
-        self.eval_context = eval_context or self._get_default_eval_context()
+        self.eval_context = (
+            self._get_default_eval_context() if eval_context is None else eval_context
+        )
         self.compiled_func: Callable[[ObsType, ActType], bool] | None = None
 
     def _get_default_eval_context(self) -> Dict[str, Any]:
