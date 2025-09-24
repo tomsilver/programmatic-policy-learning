@@ -1,7 +1,7 @@
 """An approach that synthesizes a programmatic policy using an LLM."""
 
 import logging
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
 
 from gymnasium.spaces import Space
 from prpl_llm_utils.code import (
@@ -34,7 +34,7 @@ class ProgrammaticPolicyLearningApproach(BaseApproach[_ObsType, _ActType]):
         # Wait to reset so that we have one example of an observation.
         self._policy: Callable[[_ObsType], _ActType] | None = None
 
-    def reset(self, *args, **kwargs) -> None:
+    def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
         assert self._last_observation is not None
         if self._policy is None:

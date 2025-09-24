@@ -5,7 +5,7 @@ import gymnasium
 from programmatic_policy_learning.approaches.random_actions import RandomActionsApproach
 
 
-def test_random_actions_approach():
+def test_random_actions_approach() -> None:
     """Tests for RandomActionsApproach()."""
     # Just test that this runs without crashing.
     env = gymnasium.make("LunarLander-v3")
@@ -17,4 +17,4 @@ def test_random_actions_approach():
     for _ in range(5):
         action = approach.step()
         obs, reward, terminated, _, info = env.step(action)
-        approach.update(obs, reward, terminated, info)
+        approach.update(obs, float(reward), terminated, info)
