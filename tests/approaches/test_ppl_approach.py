@@ -16,7 +16,7 @@ from programmatic_policy_learning.approaches.ppl_approach import (
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
-def test_ppl_approach():
+def test_ppl_approach() -> None:
     """Tests for ProgrammaticPolicyLearningApproach()."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
@@ -52,11 +52,11 @@ def _policy(obs):
         action = approach.step()
         assert action == constant_action
         obs, reward, terminated, _, info = env.step(action)
-        approach.update(obs, reward, terminated, info)
+        approach.update(obs, float(reward), terminated, info)
 
 
 @runllms
-def test_ppl_approach_with_real_llm():
+def test_ppl_approach_with_real_llm() -> None:
     """Tests for ProgrammaticPolicyLearningApproach() with real LLM."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
@@ -87,4 +87,4 @@ def test_ppl_approach_with_real_llm():
         action = approach.step()
         assert env.action_space.contains(action)
         obs, reward, terminated, _, info = env.step(action)
-        approach.update(obs, reward, terminated, info)
+        approach.update(obs, float(reward), terminated, info)
