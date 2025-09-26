@@ -80,6 +80,3 @@ def scanning(
             return False
 
     return False
-
-
-

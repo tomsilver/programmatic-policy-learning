@@ -24,18 +24,18 @@ class StateActionProgram(Generic[ObsType, ActType]):
         Args:
             program_string: The program string to execute
             primitives: Dictionary of primitive functions (required)
-            
+
         Raises:
             ValueError: If primitives dictionary is empty or None
         """
         if not primitives:
             raise ValueError("Primitives dictionary cannot be empty or None")
-            
+
         self.program = program_string
         self.primitives = primitives
-        self.compiled_func: Callable[[ObsType, ActType], bool] | None = None
+        self.compiled_func: Callable[[ObsType, ActType], Any] | None = None
 
-    def __call__(self, s: ObsType, a: ActType) -> bool:
+    def __call__(self, s: ObsType, a: ActType) -> Any:
         """Execute the program on a state-action pair.
 
         Args:
@@ -43,10 +43,11 @@ class StateActionProgram(Generic[ObsType, ActType]):
             a: Action of any type
 
         Returns:
-            Boolean result of program evaluation
+            Result of program evaluation (any type)
         """
         if self.compiled_func is None:
-            # Convert string to executable function using primitives as evaluation context
+            # Convert string to executable function
+            # using primitives as evaluation context
             self.compiled_func = eval(f"lambda s, a: {self.program}", self.primitives)
 
         return self.compiled_func(s, a)

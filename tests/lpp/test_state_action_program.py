@@ -3,20 +3,20 @@
 import numpy as np
 import pytest
 
-from programmatic_policy_learning.lpp.state_action_program import StateActionProgram
-from programmatic_policy_learning.lpp.dsl.primitives import (
+from programmatic_policy_learning.lpp.dsl.providers.ggg_primitives import (
     at_cell_with_value,
     cell_is_value,
     scanning,
     shifted,
 )
+from programmatic_policy_learning.lpp.state_action_program import StateActionProgram
 
 # Create primitives dictionary for tests
 TEST_PRIMITIVES = {
-    'cell_is_value': cell_is_value,
-    'at_cell_with_value': at_cell_with_value,
-    'shifted': shifted,
-    'scanning': scanning,
+    "cell_is_value": cell_is_value,
+    "at_cell_with_value": at_cell_with_value,
+    "shifted": shifted,
+    "scanning": scanning,
 }
 
 
@@ -26,7 +26,9 @@ def test_state_action_program_primitive_function() -> None:
     action = (0, 0)
 
     # Program that uses cell_is_value primitive
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)", TEST_PRIMITIVES)
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     # Test basic execution
     result = program(state, action)
@@ -38,7 +40,9 @@ def test_state_action_program_primitive_function_false() -> None:
     state = np.array([[1, 0], [0, 1]])
     action = (0, 1)  # This position has value 0, not 1
 
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)", TEST_PRIMITIVES)
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     # Test complex program
     result = program(state, action)
@@ -88,7 +92,9 @@ def test_state_action_program_caching() -> None:
 
 def test_state_action_program_string_representation() -> None:
     """Test string representations of programs."""
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)", TEST_PRIMITIVES)
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     assert str(program) == "cell_is_value(1, a, s)"
     assert repr(program) == "StateActionProgram('cell_is_value(1, a, s)')"
@@ -106,17 +112,13 @@ def test_state_action_program_invalid_program() -> None:
 
 def test_state_action_program_custom_eval_context() -> None:
     """Test StateActionProgram with custom evaluation context."""
-    custom_primitives = {
-        **TEST_PRIMITIVES,
-        "custom_func": lambda s, a: "custom"
-    }
+    custom_primitives = {**TEST_PRIMITIVES, "custom_func": lambda s, a: "custom"}
     program: StateActionProgram = StateActionProgram(
-        "custom_func(s, a)", 
-        custom_primitives
+        "custom_func(s, a)", custom_primitives
     )
     state = np.array([[1]])
     action = (0, 0)
-    
+
     result = program(state, action)
     assert result == "custom"
 
@@ -125,24 +127,22 @@ def test_state_action_program_default_vs_custom_context() -> None:
     """Test that custom primitives override default primitives."""
     # First, test with default primitives
     default_program: StateActionProgram = StateActionProgram(
-        "cell_is_value(1, (0, 0), s)", 
-        TEST_PRIMITIVES
+        "cell_is_value(1, (0, 0), s)", TEST_PRIMITIVES
     )
-    
+
     # Then test with custom primitives that overrides cell_is_value
     custom_primitives = {
         "cell_is_value": lambda value, position, obs: False  # Always return False
     }
     custom_program: StateActionProgram = StateActionProgram(
-        "cell_is_value(1, (0, 0), s)",
-        custom_primitives
+        "cell_is_value(1, (0, 0), s)", custom_primitives
     )
-    
+
     state = np.array([[1]])
     action = (0, 0)
-    
+
     # Default should return True (1 == 1)
-    assert default_program(state, action) == True
-    
+    assert default_program(state, action)
+
     # Custom should return False (overridden function)
-    assert custom_program(state, action) == False
+    assert not custom_program(state, action)
