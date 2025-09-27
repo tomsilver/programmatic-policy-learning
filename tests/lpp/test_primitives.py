@@ -4,7 +4,7 @@ from typing import Any
 
 import numpy as np
 
-from programmatic_policy_learning.lpp.dsl import (
+from programmatic_policy_learning.lpp.dsl.providers.ggg_primitives import (
     at_action_cell,
     at_cell_with_value,
     cell_is_value,

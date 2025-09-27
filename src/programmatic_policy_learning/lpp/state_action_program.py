@@ -2,7 +2,7 @@
 
 from typing import Any, Callable, Generic, TypeVar
 
-from programmatic_policy_learning.lpp.dsl import primitives
+# from programmatic_policy_learning.lpp.dsl import primitives
 
 ObsType = TypeVar("ObsType")
 ActType = TypeVar("ActType")
@@ -18,32 +18,24 @@ class StateActionProgram(Generic[ObsType, ActType]):
     types.
     """
 
-    def __init__(
-        self, program_string: str, eval_context: dict[str, Any] | None = None
-    ) -> None:
-        """Initialize with a program string and optional evaluation context.
+    def __init__(self, program_string: str, primitives: dict[str, Any]) -> None:
+        """Initialize with a program string and primitives dictionary.
 
-        If evaluation context isNone, uses default grid-based primitives
-        for backwards compatibility.
+        Args:
+            program_string: The program string to execute
+            primitives: Dictionary of primitive functions (required)
+
+        Raises:
+            ValueError: If primitives dictionary is empty or None
         """
+        if not primitives:
+            raise ValueError("Primitives dictionary cannot be empty or None")
 
         self.program = program_string
-        self.eval_context = (
-            self._get_default_eval_context() if eval_context is None else eval_context
-        )
-        self.compiled_func: Callable[[ObsType, ActType], bool] | None = None
+        self.primitives = primitives
+        self.compiled_func: Callable[[ObsType, ActType], Any] | None = None
 
-    def _get_default_eval_context(self) -> dict[str, Any]:
-        """Get default evaluation context with grid-based primitives."""
-
-        # Automatically import all public functions from primitives module
-        return {
-            name: getattr(primitives, name)
-            for name in dir(primitives)
-            if not name.startswith("_") and callable(getattr(primitives, name))
-        }
-
-    def __call__(self, s: ObsType, a: ActType) -> bool:
+    def __call__(self, s: ObsType, a: ActType) -> Any:
         """Execute the program on a state-action pair.
 
         Args:
@@ -51,11 +43,12 @@ class StateActionProgram(Generic[ObsType, ActType]):
             a: Action of any type
 
         Returns:
-            Boolean result of program evaluation
+            Result of program evaluation (any type)
         """
         if self.compiled_func is None:
-            # Convert string to executable function using provided evaluation context
-            self.compiled_func = eval(f"lambda s, a: {self.program}", self.eval_context)
+            # Convert string to executable function
+            # using primitives as evaluation context
+            self.compiled_func = eval(f"lambda s, a: {self.program}", self.primitives)
 
         return self.compiled_func(s, a)
 

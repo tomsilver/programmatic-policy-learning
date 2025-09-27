@@ -3,7 +3,21 @@
 import numpy as np
 import pytest
 
+from programmatic_policy_learning.lpp.dsl.providers.ggg_primitives import (
+    at_cell_with_value,
+    cell_is_value,
+    scanning,
+    shifted,
+)
 from programmatic_policy_learning.lpp.state_action_program import StateActionProgram
+
+# Create primitives dictionary for tests
+TEST_PRIMITIVES = {
+    "cell_is_value": cell_is_value,
+    "at_cell_with_value": at_cell_with_value,
+    "shifted": shifted,
+    "scanning": scanning,
+}
 
 
 def test_state_action_program_primitive_function() -> None:
@@ -12,7 +26,9 @@ def test_state_action_program_primitive_function() -> None:
     action = (0, 0)
 
     # Program that uses cell_is_value primitive
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)")
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     # Test basic execution
     result = program(state, action)
@@ -24,7 +40,9 @@ def test_state_action_program_primitive_function_false() -> None:
     state = np.array([[1, 0], [0, 1]])
     action = (0, 1)  # This position has value 0, not 1
 
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)")
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     # Test complex program
     result = program(state, action)
@@ -37,7 +55,7 @@ def test_state_action_program_direct_state_access() -> None:
     action = (0, 0)
 
     # Program that directly accesses state
-    program: StateActionProgram = StateActionProgram("s[0, 0] == 1")
+    program: StateActionProgram = StateActionProgram("s[0, 0] == 1", TEST_PRIMITIVES)
 
     # Test with different parameters
     assert program(state, action)
@@ -48,7 +66,7 @@ def test_state_action_program_action_coordinate_access() -> None:
     state = np.array([[1, 2], [3, 4]])
 
     # Program that checks if action is in top row
-    program: StateActionProgram = StateActionProgram("a[0] == 0")
+    program: StateActionProgram = StateActionProgram("a[0] == 0", TEST_PRIMITIVES)
 
     # Test first call
     assert program(state, (0, 0))
@@ -57,7 +75,7 @@ def test_state_action_program_action_coordinate_access() -> None:
 
 def test_state_action_program_caching() -> None:
     """Test that programs are compiled and cached."""
-    program: StateActionProgram = StateActionProgram("True")
+    program: StateActionProgram = StateActionProgram("True", TEST_PRIMITIVES)
     state = np.array([[1]])
     action = (0, 0)
 
@@ -74,7 +92,9 @@ def test_state_action_program_caching() -> None:
 
 def test_state_action_program_string_representation() -> None:
     """Test string representations of programs."""
-    program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)")
+    program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, a, s)", TEST_PRIMITIVES
+    )
 
     assert str(program) == "cell_is_value(1, a, s)"
     assert repr(program) == "StateActionProgram('cell_is_value(1, a, s)')"
@@ -82,7 +102,7 @@ def test_state_action_program_string_representation() -> None:
 
 def test_state_action_program_invalid_program() -> None:
     """Test that invalid programs raise appropriate errors."""
-    program: StateActionProgram = StateActionProgram("invalid_syntax[")
+    program: StateActionProgram = StateActionProgram("invalid_syntax[", TEST_PRIMITIVES)
     state = np.array([[1]])
     action = (0, 0)
 
@@ -91,48 +111,38 @@ def test_state_action_program_invalid_program() -> None:
 
 
 def test_state_action_program_custom_eval_context() -> None:
-    """Test program with custom evaluation context."""
-
-    # Define custom functions for a different environment
-    def is_even(x: int) -> bool:
-        return x % 2 == 0
-
-    def sum_coordinates(coord: tuple[int, int]) -> int:
-        return coord[0] + coord[1]
-
-    # Custom evaluation context
-    custom_context = {
-        "is_even": is_even,
-        "sum_coordinates": sum_coordinates,
-    }
-
-    # Create program with custom context
+    """Test StateActionProgram with custom evaluation context."""
+    custom_primitives = {**TEST_PRIMITIVES, "custom_func": lambda s, a: "custom"}
     program: StateActionProgram = StateActionProgram(
-        "is_even(sum_coordinates(a))", eval_context=custom_context
+        "custom_func(s, a)", custom_primitives
     )
+    state = np.array([[1]])
+    action = (0, 0)
 
-    # Test with different action types (using int instead of np arrays for this example)
-    state = 42  # Simple state for this test
-
-    # Action (1, 1) -> sum = 2 -> is_even(2) = True
-    assert program(state, (1, 1))
-
-    # Action (1, 2) -> sum = 3 -> is_even(3) = False
-    assert not program(state, (1, 2))
+    result = program(state, action)
+    assert result == "custom"
 
 
 def test_state_action_program_default_vs_custom_context() -> None:
-    """Test that default context works when eval_context is None."""
+    """Test that custom primitives override default primitives."""
+    # First, test with default primitives
+    default_program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, (0, 0), s)", TEST_PRIMITIVES
+    )
 
-    # Program using default context (should have grid primitives)
-    default_program: StateActionProgram = StateActionProgram("cell_is_value(1, a, s)")
-    assert default_program.eval_context is not None
-    assert "cell_is_value" in default_program.eval_context
-    assert "out_of_bounds" in default_program.eval_context
+    # Then test with custom primitives that overrides cell_is_value
+    custom_primitives = {
+        "cell_is_value": lambda value, position, obs: False  # Always return False
+    }
+    custom_program: StateActionProgram = StateActionProgram(
+        "cell_is_value(1, (0, 0), s)", custom_primitives
+    )
 
-    # Program with empty custom context
-    custom_program: StateActionProgram = StateActionProgram("True", eval_context={})
-    assert custom_program.eval_context == {}
+    state = np.array([[1]])
+    action = (0, 0)
 
-    # Verify they have different contexts
-    assert default_program.eval_context != custom_program.eval_context
+    # Default should return True (1 == 1)
+    assert default_program(state, action)
+
+    # Custom should return False (overridden function)
+    assert not custom_program(state, action)
