@@ -10,15 +10,15 @@ OutT = TypeVar("OutT")  # the evaluator’s return type (e.g., bool, Action, dic
 
 @dataclass(frozen=True)
 class DSL(Generic[ProgT, InT, OutT]):
-    """Tiny, provider-agnostic DSL handle."""
+    """Tiny DSL handle."""
 
     id: str
     primitives: Mapping[str, Callable[..., Any]]
     evaluate_fn: Callable[[ProgT, InT], OutT]
 
     def evaluate(self, program: ProgT, inputs: InT) -> OutT:
-        """Run `program` on `inputs`.
+        """Run program on inputs.
 
-        Domain packs define both types.
+        Domain primitives define both types.
         """
         return self.evaluate_fn(program, inputs)

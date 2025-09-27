@@ -1,7 +1,7 @@
 """Grid DSL primitives and evaluation."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping
 
 import numpy as np
 
@@ -34,7 +34,7 @@ def out_of_bounds(r: int, c: int, shape: tuple[int, ...]) -> bool:
 def shifted(
     direction: tuple[int, int],
     local_program: Callable,
-    cell: Optional[tuple[int, int]],
+    cell: tuple[int, int] | None,
     obs: np.ndarray,
 ) -> bool:
     """Execute a local program at a shifted cell position."""
@@ -45,7 +45,7 @@ def shifted(
     return local_program(new_cell, obs)
 
 
-def cell_is_value(value: Any, cell: Optional[tuple[int, int]], obs: np.ndarray) -> bool:
+def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
     """Check if a cell contains a specific value."""
     if cell is None or out_of_bounds(cell[0], cell[1], obs.shape):
         focus = None
@@ -67,7 +67,7 @@ def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> 
 
 
 def at_action_cell(
-    local_program: Callable, cell: Optional[tuple[int, int]], obs: np.ndarray
+    local_program: Callable, cell: tuple[int, int] | None, obs: np.ndarray
 ) -> bool:
     """Execute a local program at the action cell position."""
     return local_program(cell, obs)
@@ -77,7 +77,7 @@ def scanning(
     direction: tuple[int, int],
     true_condition: Callable,
     false_condition: Callable,
-    cell: Optional[tuple[int, int]],
+    cell: tuple[int, int] | None,
     obs: np.ndarray,
     max_timeout: int = 50,
 ) -> bool:
