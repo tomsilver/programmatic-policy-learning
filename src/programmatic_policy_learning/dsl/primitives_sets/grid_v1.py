@@ -8,7 +8,7 @@ import numpy as np
 from programmatic_policy_learning.dsl.core import DSL  # generic core
 
 Cell = tuple[int, int] | None
-Local = Callable[[Cell, np.ndarray], Any]  # LocalProgram - (cell, obs) -> *
+LocalProgram = Callable[[Cell, np.ndarray], Any]  # LocalProgram - (cell, obs) -> *
 
 
 @dataclass(frozen=True)
@@ -99,13 +99,13 @@ def scanning(
     return False
 
 
-# Domain-specific evaluator: program is a Local; inputs are GridInput.
-def _eval(program: Local, inputs: GridInput) -> Any:
+# Domain-specific evaluator: program is a LocalProgram; inputs are GridInput.
+def _eval(program: LocalProgram, inputs: GridInput) -> Any:
     """Evaluate a grid program on given inputs."""
     return program(inputs.cell, inputs.obs)
 
 
-def make_dsl() -> DSL[Local, GridInput, Any]:
+def make_dsl() -> DSL[LocalProgram, GridInput, Any]:
     """Construct the grid DSL object."""
     prims: Mapping[str, Callable[..., Any]] = {
         "cell_is_value": cell_is_value,
