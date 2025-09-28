@@ -1,6 +1,6 @@
 """Oracle DSL learner: loads a hand-specified DSL by id."""
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.learners.base import DSLLearner
@@ -15,8 +15,8 @@ class OracleDSLLearner(DSLLearner):
         self._dsl = self._load_from_id(dsl_id)  # build once; immutable
 
     def _load_from_id(self, dsl_id: str) -> DSL[Any, Any, Any]:
-        table: Dict[str, Callable[[], DSL[Any, Any, Any]]] = {
-            "grid_v1": grid_v1.make_dsl,  # add more DSL here if you had more
+        table: dict[str, Callable[[], DSL[Any, Any, Any]]] = {
+            "grid_v1": grid_v1.make_dsl,  # add more DSLs here
         }
         if dsl_id not in table:
             choices = ", ".join(sorted(table))
