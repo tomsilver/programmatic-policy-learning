@@ -4,7 +4,7 @@ import heapq as hq
 import itertools
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Generic, Iterator, TypeAlias, TypeVar
+from typing import Any, Generic, Iterator, TypeAlias, TypeVar, Callable
 
 import numpy as np
 
@@ -15,6 +15,7 @@ ProgT = TypeVar("ProgT")
 InT = TypeVar("InT")
 OutT = TypeVar("OutT")
 
+EnvSpec: TypeAlias = dict[str, Any]
 GrammarSymbol: TypeAlias = int
 
 
@@ -32,12 +33,12 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
 
     def __init__(
         self,
-        grammar: Grammar[ProgT, InT, OutT],
+        create_grammar: Callable[[EnvSpec], Grammar[ProgT, InT, OutT]],
         dsl: DSL[ProgT, InT, OutT],
-        env_spec: dict[str, Any],
+        env_spec: EnvSpec,
         start_symbol: int = 0,
     ) -> None:
-        self._grammar = grammar
+        self._grammar = create_grammar(env_spec)
         self._start_symbol = start_symbol
         super().__init__(dsl, env_spec)
 
