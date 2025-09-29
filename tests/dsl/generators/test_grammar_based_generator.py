@@ -29,19 +29,20 @@ def test_grammar_based_program_generator():
     INT, INCREMENT = 0, 1
     grammar = Grammar(
         rules={
-            INT: ([[0], [1.0]]),
+            INT: ([["0"], [1.0]]),
             INCREMENT: ([["add_one(", INCREMENT, ")"], [INT]], [0.5, 0.5]),
         }
     )
 
     # Create the program generator.
-    program_generator = GrammarBasedProgramGenerator(grammar, dsl, env_spec={})
+    program_generator = GrammarBasedProgramGenerator(grammar, dsl, env_spec={},
+                                                     start_symbol=INCREMENT)
 
     # Generate programs from the generator in order from simplest to most complex.
     expected_programs = [
-        "add_one(0)",
-        "add_one(add_one(0))",
-        "add_one(add_one(add_one(0)))",
+        "0",
+        "add_one( 0 )",
+        "add_one( add_one( 0 ) )",
     ]
 
     generated_programs = []
