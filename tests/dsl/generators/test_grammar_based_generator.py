@@ -30,17 +30,18 @@ def test_grammar_based_program_generator():
 
     def _create_grammar(env_spec):
         del env_spec  # not used
-        grammar = Grammar(
+        grammar: Grammar[str, None, None] = Grammar(
             rules={
-                INT: ([["0"], [1.0]]),
+                INT: ([["0"]], [1.0]),
                 INCREMENT: ([["add_one(", INCREMENT, ")"], [INT]], [0.5, 0.5]),
             }
         )
         return grammar
 
     # Create the program generator.
-    program_generator = GrammarBasedProgramGenerator(_create_grammar, dsl, env_spec={},
-                                                     start_symbol=INCREMENT)
+    program_generator = GrammarBasedProgramGenerator(
+        _create_grammar, dsl, env_spec={}, start_symbol=INCREMENT
+    )
 
     # Generate programs from the generator in order from simplest to most complex.
     expected_programs = [

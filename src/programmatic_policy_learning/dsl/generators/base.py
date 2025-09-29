@@ -20,7 +20,9 @@ class ProgramGenerator(Generic[ProgT, InT, OutT], abc.ABC):
         self._env_spec = env_spec
 
     @abc.abstractmethod
-    def generate_programs(self) -> Iterator[ProgT]:
+    def generate_programs(
+        self,
+    ) -> Iterator[str]:  # changed to str to match stringify output
         """Generate a potentially infinite number of programs from the DSL.
 
         Typically, program generators should go from "simplest" to "most
