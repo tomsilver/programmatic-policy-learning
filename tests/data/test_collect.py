@@ -1,4 +1,4 @@
-"""Tests for data/collect.py."""
+"""Tests for collect.py."""
 
 from typing import Any
 
