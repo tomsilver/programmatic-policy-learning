@@ -8,7 +8,10 @@ from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_
 from programmatic_policy_learning.envs.providers.prbench_provider import (
     create_prbench_env,
 )
-
+from programmatic_policy_learning.envs.providers.maze_provider import create_maze_env
+from programmatic_policy_learning.envs.providers.outer_maze_provider import (
+    create_outer_maze_env,
+)
 
 class EnvRegistry:
     """Registry for environment providers."""
@@ -17,6 +20,8 @@ class EnvRegistry:
         self._providers: dict[str, Callable[[Any], Any]] = {
             "ggg": create_ggg_env,
             "prbench": create_prbench_env,
+            "gym_maze": create_maze_env,
+            "outer_maze": create_outer_maze_env,
         }
 
     def load(self, env_config: Any) -> Any:
