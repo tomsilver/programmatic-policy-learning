@@ -5,7 +5,8 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from programmatic_policy_learning.dsl.core import DSL  # generic core
+from programmatic_policy_learning.dsl.core import DSL
+from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 
 Cell = tuple[int, int] | None
 LocalProgram = Callable[[Cell, np.ndarray], Any]  # LocalProgram - (cell, obs) -> *
@@ -115,3 +116,77 @@ def make_dsl() -> DSL[LocalProgram, GridInput, Any]:
         "scanning": scanning,
     }
     return DSL(id="grid_v1", primitives=prims, evaluate_fn=_eval)
+
+
+# Grammar symbol constants
+START, CONDITION, LOCAL_PROGRAM, DIRECTION, POSITIVE_NUM, NEGATIVE_NUM, VALUE = range(7)
+
+
+def create_grammar(env_spec: dict[str, Any]):
+    """Create a grammar for grid programs, using env_spec for VALUE types."""
+    object_types = env_spec["object_types"]
+    grammar: Grammar[str, int, int] = Grammar(
+        rules={
+            START: (
+                [
+                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", s)"],
+                    ["at_action_cell(", LOCAL_PROGRAM, ", a, s)"],
+                ],
+                [0.5, 0.5],
+            ),
+            LOCAL_PROGRAM: (
+                [
+                    [CONDITION],
+                    [
+                        "lambda cell,o : shifted(",
+                        DIRECTION,
+                        ",",
+                        CONDITION,
+                        ", cell, o)",
+                    ],
+                ],
+                [0.5, 0.5],
+            ),
+            CONDITION: (
+                [
+                    ["lambda cell,o : cell_is_value(", VALUE, ", cell, o)"],
+                    [
+                        "lambda cell,o : scanning(",
+                        DIRECTION,
+                        ",",
+                        LOCAL_PROGRAM,
+                        ",",
+                        LOCAL_PROGRAM,
+                        ", cell, o)",
+                    ],
+                ],
+                [0.5, 0.5],
+            ),
+            DIRECTION: (
+                [
+                    ["(", POSITIVE_NUM, ", 0)"],
+                    ["(0,", POSITIVE_NUM, ")"],
+                    ["(", NEGATIVE_NUM, ", 0)"],
+                    ["(0,", NEGATIVE_NUM, ")"],
+                    ["(", POSITIVE_NUM, ",", POSITIVE_NUM, ")"],
+                    ["(", NEGATIVE_NUM, ",", POSITIVE_NUM, ")"],
+                    ["(", POSITIVE_NUM, ",", NEGATIVE_NUM, ")"],
+                    ["(", NEGATIVE_NUM, ",", NEGATIVE_NUM, ")"],
+                ],
+                [1.0 / 8] * 8,
+            ),
+            POSITIVE_NUM: (
+                [["1"], [POSITIVE_NUM, "+1"]],
+                [0.99, 0.01],
+            ),
+            NEGATIVE_NUM: (
+                [["-1"], [NEGATIVE_NUM, "-1"]],
+                [0.99, 0.01],
+            ),
+            VALUE: (
+                [[str(v)] for v in object_types],
+                [1.0 / len(object_types) for _ in object_types],
+            ),
+        }
+    )
+    return grammar
