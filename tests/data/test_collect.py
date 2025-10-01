@@ -7,7 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from programmatic_policy_learning.approaches.random_actions import RandomActionsApproach
 from programmatic_policy_learning.data.collect import collect_demo
-from programmatic_policy_learning.data.demo_types import Demo, Trajectory
+from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
@@ -53,10 +53,12 @@ def test_collect_demo_returns_trajectory_DummyEnv():
     expert = RandomActionsApproach(
         "TEST", env.observation_space, env.action_space, seed=1
     )
-    traj = collect_demo(env_factory, expert, max_demo_length=5)
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
     assert isinstance(traj, Trajectory)
-    assert all(isinstance(step, Demo) for step in traj.steps)
-    assert len(traj.steps) > 0
+    assert isinstance(traj.obs, list)
+    assert isinstance(traj.act, list)
+    assert len(traj.obs) == len(traj.act)
+    assert len(traj.obs) > 0
 
 
 def test_collect_demo_with_real_env():
@@ -73,7 +75,9 @@ def test_collect_demo_with_real_env():
     expert = RandomActionsApproach(
         "TEST", env.observation_space, env.action_space, seed=1
     )
-    traj = collect_demo(env_factory, expert, max_demo_length=5)
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
     assert isinstance(traj, Trajectory)
-    assert all(isinstance(step, Demo) for step in traj.steps)
-    assert len(traj.steps) > 0
+    assert isinstance(traj.obs, list)
+    assert isinstance(traj.act, list)
+    assert len(traj.obs) == len(traj.act)
+    assert len(traj.obs) > 0

@@ -2,15 +2,17 @@
 
 import numpy as np
 
-from programmatic_policy_learning.data.demo_types import Demo, Trajectory
+from programmatic_policy_learning.data.demo_types import Trajectory
 
 
-def test_demo_and_trajectory():
-    """Test Demo and Trajectory dataclasses."""
-    demo = Demo(obs=np.ones((3, 3)), act=42)
-    traj = Trajectory(steps=[demo])
-    assert isinstance(demo, Demo)
+def test_trajectory_dataclass():
+    """Test Trajectory dataclass with obs and act lists."""
+    obs = [np.ones((3, 3)), np.zeros((3, 3))]
+    act = [42, 7]
+    traj = Trajectory(obs=obs, act=act)
     assert isinstance(traj, Trajectory)
-    assert traj.steps[0].obs.shape == (3, 3)
-    assert traj.steps[0].act == 42
-    assert len(traj.steps) == 1
+    assert isinstance(traj.obs, list)
+    assert isinstance(traj.act, list)
+    assert traj.obs[0].shape == (3, 3)
+    assert traj.act[0] == 42
+    assert len(traj.obs) == len(traj.act) == 2

@@ -1,18 +1,20 @@
 """Demo collection utilities."""
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 import numpy as np
 
-from programmatic_policy_learning.data.demo_types import Demo, Trajectory
+from programmatic_policy_learning.data.demo_types import Trajectory
 
 EnvFactory = Callable[[], Any]
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 
 
 def collect_demo(
     env_factory: EnvFactory, expert: Any, max_demo_length: int | float = np.inf
-) -> Trajectory:
+) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
 
@@ -25,12 +27,16 @@ def collect_demo(
         info = {}
         logging.warning("env.reset() returned a single value (old gym API)")
 
-    steps: list[Demo] = []
+    obs_list: list[ObsT] = []
+    act_list: list[ActT] = []
+
     t = 0
     expert.reset(obs, info)
     while True:
         action = expert.step()
-        steps.append(Demo(obs=obs, act=action))
+        obs_list.append(obs)
+        act_list.append(action)
+
         step_out = env.step(action)
         # handle gym vs. gymnasium
         if len(step_out) == 4:
@@ -44,4 +50,4 @@ def collect_demo(
                 # keep behavior parity with original: warn if didn’t succeed
                 print("WARNING: demo did not succeed!")
             break
-    return Trajectory(steps=steps)
+    return Trajectory(obs=obs_list, act=act_list)
