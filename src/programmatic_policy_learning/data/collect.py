@@ -1,6 +1,5 @@
 """Demo collection utilities."""
 
-import logging
 from typing import Any, Callable, TypeVar
 
 import numpy as np
@@ -20,12 +19,10 @@ def collect_demo(
 
     env = env_factory()
     reset_out = env.reset()
-    if isinstance(reset_out, tuple) and len(reset_out) == 2:
-        obs, info = reset_out
-    else:
-        obs = reset_out
-        info = {}
-        logging.warning("env.reset() returned a single value (old gym API)")
+    assert (
+        isinstance(reset_out, tuple) and len(reset_out) == 2
+    ), f"Expected env.reset() to return (obs, info), got {reset_out}"
+    obs, info = reset_out
 
     obs_list: list[ObsT] = []
     act_list: list[ActT] = []
