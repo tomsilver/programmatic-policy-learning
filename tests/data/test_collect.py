@@ -1,0 +1,83 @@
+"""Tests for collect.py."""
+
+from typing import Any
+
+import numpy as np
+from omegaconf import DictConfig, OmegaConf
+
+from programmatic_policy_learning.approaches.random_actions import RandomActionsApproach
+from programmatic_policy_learning.data.collect import collect_demo
+from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.envs.registry import EnvRegistry
+
+
+def test_collect_demo_returns_trajectory_DummyEnv():
+    """Test that collect_demo returns a Trajectory with Demo steps,
+    DummyEnv."""
+
+    class DummySpace:
+        """DummySpace."""
+
+        def sample(self):
+            """Sample."""
+            return 0
+
+        def seed(self, _):
+            """Seed."""
+            pass  # pylint: disable=unnecessary-pass
+
+    class DummyEnv:
+        """DummyEnv."""
+
+        def reset(self):
+            """Reset."""
+            return np.zeros((2, 2)), {}
+
+        def step(self, _):
+            """Step."""
+            return np.zeros((2, 2)), 1.0, True, False, {}
+
+        @property
+        def observation_space(self):
+            """Observation space."""
+            return DummySpace()
+
+        @property
+        def action_space(self):
+            """Action space."""
+            return DummySpace()
+
+    env = DummyEnv()
+    env_factory = lambda: env  # returns a new environment each time you call
+
+    expert = RandomActionsApproach(
+        "TEST", env.observation_space, env.action_space, seed=1
+    )
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
+    assert isinstance(traj, Trajectory)
+    assert isinstance(traj.obs, list)
+    assert isinstance(traj.act, list)
+    assert len(traj.obs) == len(traj.act)
+    assert len(traj.obs) > 0
+
+
+def test_collect_demo_with_real_env():
+    """Test collect_demo with a real environment using EnvRegistry."""
+    cfg: DictConfig = OmegaConf.create(
+        {
+            "provider": "ggg",
+            "make_kwargs": {"id": "TwoPileNim0-v0"},
+        }
+    )
+    registry = EnvRegistry()
+    env_factory = lambda: registry.load(cfg)
+    env: Any = env_factory()  # type: ignore
+    expert = RandomActionsApproach(
+        "TEST", env.observation_space, env.action_space, seed=1
+    )
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
+    assert isinstance(traj, Trajectory)
+    assert isinstance(traj.obs, list)
+    assert isinstance(traj.act, list)
+    assert len(traj.obs) == len(traj.act)
+    assert len(traj.obs) > 0
