@@ -6,22 +6,26 @@ from programmatic_policy_learning.approaches.expert_approach import ExpertApproa
 
 
 def test_expert_approach_step_and_reset():
+    """Test reset and step for ExpertApproach."""
 
     class DummySpace:
+        """DummySpace."""
+
         def seed(self, seed):
-            pass
+            """Seed function."""
+            pass  # pylint: disable=unnecessary-pass
 
-    obs_space = DummySpace()
-    act_space = DummySpace()
+    obs_space: DummySpace = DummySpace()
+    act_space: DummySpace = DummySpace()
 
-    def dummy_expert(obs):
+    def dummy_expert(obs: np.ndarray) -> float:
         return np.sum(obs)
 
-    approach = ExpertApproach(
+    approach: ExpertApproach = ExpertApproach(
         "DummyEnv", obs_space, act_space, seed=0, expert_fn=dummy_expert
-    )
-    obs = np.array([[1, 2], [3, 4]])
-    info = {}
-    approach.reset(obs, info)
+    )  # type: ignore[no-untyped-call]
+    obs: np.ndarray = np.array([[1, 2], [3, 4]])
+    info: dict = {}
+    approach.reset(obs, info)  # type: ignore[no-untyped-call]
     action = approach.step()
     assert action == np.sum(obs)

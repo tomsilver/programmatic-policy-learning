@@ -1,7 +1,7 @@
 """Base class for approaches."""
 
 import abc
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from gymnasium.spaces import Space
 from prpl_utils.gym_agent import Agent
@@ -26,9 +26,9 @@ class BaseApproach(Agent[_ObsType, _ActType], Generic[_ObsType, _ActType], abc.A
         self._action_space.seed(seed)
         self._observation_space = observation_space
         self._observation_space.seed(seed)
-        self._demonstrations = None  # Optional offline data
+        self._demonstrations: list[Any] | None = None  # Optional offline data
 
-    def set_demonstrations(self, demonstrations: list) -> None:
+    def set_demonstrations(self, demonstrations: list[Any]) -> None:
         """Set offline demonstration data for training or evaluation."""
         self._demonstrations = demonstrations
 
@@ -37,5 +37,5 @@ class BaseApproach(Agent[_ObsType, _ActType], Generic[_ObsType, _ActType], abc.A
         available."""
         if self._demonstrations is None:
             raise ValueError("No demonstrations set for offline training.")
-        # Subclasses should override this method if offline training is supported.
-        pass
+
+    # Subclasses should override this method if offline training is supported.
