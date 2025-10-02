@@ -1,10 +1,16 @@
-"""Tests for grid_experts.py."""
+"""Tests for experts/grid_experts.py."""
 
 import numpy as np
 import pytest
 from generalization_grid_games.envs import two_pile_nim as tpn
 
-from programmatic_policy_learning.policies.expert import grid_experts
+from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
+
+
+def test_get_grid_expert_returns_callable():
+    """Test that get_grid_expert returns a callable."""
+    expert_fn = get_grid_expert("TwoPileNim")
+    assert callable(expert_fn)
 
 
 def test_get_grid_expert_valid_names():
@@ -16,20 +22,21 @@ def test_get_grid_expert_valid_names():
         "Chase",
         "ReachForTheStar",
     ]:
-        expert = grid_experts.get_grid_expert(name)
+        expert = get_grid_expert(name)
         assert callable(expert)
 
 
 def test_get_grid_expert_invalid_name():
     """Test get_grid_expert raises ValueError for invalid name."""
     with pytest.raises(ValueError):
-        grid_experts.get_grid_expert("UnknownEnv")
+        get_grid_expert("UnknownEnv")
 
 
 def test_expert_nim_policy_returns_action():
-    """Test expert_nim_policy returns a tuple action."""
+    """Test expert function output type (action tuple)."""
     layout = np.zeros((2, 2), dtype=object)
     layout[0, 0] = tpn.EMPTY
     layout[0, 1] = tpn.TOKEN
-    action = grid_experts.expert_nim_policy(layout)
+    expert_fn = get_grid_expert("TwoPileNim")
+    action = expert_fn(layout)
     assert isinstance(action, tuple)
