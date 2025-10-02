@@ -10,6 +10,8 @@ from programmatic_policy_learning.data.collect import collect_demo
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
+# from programmatic_policy_learning.policies.expert.grid_experts import get_grid_expert
+
 
 def test_collect_demo_returns_trajectory_DummyEnv():
     """Test that collect_demo returns a Trajectory with Demo steps,
@@ -81,3 +83,28 @@ def test_collect_demo_with_real_env():
     assert isinstance(traj.act, list)
     assert len(traj.obs) == len(traj.act)
     assert len(traj.obs) > 0
+
+
+# def test_collect_demo_with_real_env_and_expert():
+#     """Test collect_demo with a real environment and real expert policy."""
+
+#     cfg: DictConfig = OmegaConf.create(
+#         {
+#             "provider": "ggg",
+#             "make_kwargs": {"id": "TwoPileNim0-v0"},
+#         }
+#     )
+#     registry = EnvRegistry()
+#     env_factory = lambda: registry.load(cfg)
+#     env: Any = env_factory()  # type: ignore
+#     expert_fn = get_grid_expert["TwoPileNim"]
+
+#     def expert(layout):
+#         return run_expert_policy("TwoPileNim", layout)
+
+#     traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
+#     assert isinstance(traj, Trajectory)
+#     assert isinstance(traj.obs, list)
+#     assert isinstance(traj.act, list)
+#     assert len(traj.obs) == len(traj.act)
+#     assert len(traj.obs) > 0
