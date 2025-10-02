@@ -33,7 +33,8 @@ class BaseApproach(Agent[_ObsType, _ActType], Generic[_ObsType, _ActType], abc.A
         self._demonstrations = demonstrations
 
     def train_offline(self) -> None:
-        """Train the approach using offline demonstration data, if available."""
+        """Train the approach using offline demonstration data, if
+        available."""
         if self._demonstrations is None:
             raise ValueError("No demonstrations set for offline training.")
         # Subclasses should override this method if offline training is supported.
