@@ -26,3 +26,15 @@ class BaseApproach(Agent[_ObsType, _ActType], Generic[_ObsType, _ActType], abc.A
         self._action_space.seed(seed)
         self._observation_space = observation_space
         self._observation_space.seed(seed)
+        self._demonstrations = None  # Optional offline data
+
+    def set_demonstrations(self, demonstrations: list) -> None:
+        """Set offline demonstration data for training or evaluation."""
+        self._demonstrations = demonstrations
+
+    def train_offline(self) -> None:
+        """Train the approach using offline demonstration data, if available."""
+        if self._demonstrations is None:
+            raise ValueError("No demonstrations set for offline training.")
+        # Subclasses should override this method if offline training is supported.
+        pass
