@@ -4,11 +4,10 @@ import numpy as np
 
 from programmatic_policy_learning.data.dataset import (
     extract_examples_from_demonstration,
-    extract_examples_from_demonstration_item,
-    run_all_programs_on_demonstrations,
     run_all_programs_on_single_demonstration,
 )
-from programmatic_policy_learning.data.demo_types import Trajectory
+
+# from programmatic_policy_learning.data.demo_types import Trajectory #to be fixed
 
 
 def dummy_program(state: np.ndarray, _: tuple[int, int]) -> bool:
