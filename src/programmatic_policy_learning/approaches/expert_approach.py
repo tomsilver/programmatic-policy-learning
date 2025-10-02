@@ -1,4 +1,5 @@
 """Oracle/expert policy wrapper for any environment."""
+
 from typing import Any
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -19,5 +20,5 @@ class ExpertApproach(BaseApproach[Any, Any]):
         self._current_obs = obs
         self._current_info = info
 
-    def step(self):
+    def _get_action(self):  # type: ignore
         return self._expert_fn(self._current_obs)
