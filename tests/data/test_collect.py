@@ -9,9 +9,7 @@ from programmatic_policy_learning.approaches.random_actions import RandomActions
 from programmatic_policy_learning.data.collect import collect_demo
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.envs.registry import EnvRegistry
-
 # from programmatic_policy_learning.policies.expert.grid_experts import get_grid_expert
-
 
 def test_collect_demo_returns_trajectory_DummyEnv():
     """Test that collect_demo returns a Trajectory with Demo steps,
@@ -83,7 +81,6 @@ def test_collect_demo_with_real_env():
     assert isinstance(traj.act, list)
     assert len(traj.obs) == len(traj.act)
     assert len(traj.obs) > 0
-
 
 # def test_collect_demo_with_real_env_and_expert():
 #     """Test collect_demo with a real environment and real expert policy."""
