@@ -56,14 +56,16 @@ split_on_trailing_comma = true
 [tool.mypy]
 strict_equality = true
 disallow_untyped_calls = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
 check_untyped_defs = true
 warn_unreachable = true
 exclude = ["venv/*", ".venv/*"]
+
 
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
     "generalization_grid_games.*",
+    "scipy.*",
 ]
 ignore_missing_imports = true

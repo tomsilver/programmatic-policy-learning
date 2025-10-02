@@ -14,5 +14,5 @@ class Trajectory(Generic[ObsT, ActT]):
     obs: list[ObsT]
     act: list[ActT]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         assert len(self.obs) == len(self.act)

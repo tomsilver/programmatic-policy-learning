@@ -28,7 +28,7 @@ def expert_nim_policy(layout: np.ndarray) -> tuple[int, int]:
     return (int(r1), int(c1))
 
 
-def expert_checkmate_tactic_policy(layout):
+def expert_checkmate_tactic_policy(layout: np.ndarray) -> tuple[int, int]:
     """Expert policy for CheckmateTactic."""
     if np.any(layout == ct.WHITE_QUEEN):
         return tuple(np.argwhere(layout == ct.WHITE_QUEEN)[0])
@@ -42,7 +42,7 @@ def expert_checkmate_tactic_policy(layout):
     )
 
 
-def expert_stf_policy(layout):
+def expert_stf_policy(layout: np.ndarray) -> tuple[int, int]:
     """Expert policy for StopTheFall."""
     r, c = np.argwhere(layout == stf.FALLING)[0]
 
@@ -58,7 +58,7 @@ def expert_stf_policy(layout):
     return (r, c)
 
 
-def expert_ec_policy(layout):
+def expert_ec_policy(layout: np.ndarray) -> tuple[int, int]:
     """Expert policy for Chase."""
     r, c = np.argwhere(layout == ec.TARGET)[0]
     ra, ca = np.argwhere(layout == ec.AGENT)[0]
@@ -128,7 +128,7 @@ def expert_ec_policy(layout):
     return (0, 0)
 
 
-def expert_rfts_policy(layout):
+def expert_rfts_policy(layout: np.ndarray) -> tuple[int, int]:
     """Expert policy for ReachForTheStar."""
     agent_r, agent_c = np.argwhere(layout == rfts.AGENT)[0]
     star_r, star_c = np.argwhere(layout == rfts.STAR)[0]
