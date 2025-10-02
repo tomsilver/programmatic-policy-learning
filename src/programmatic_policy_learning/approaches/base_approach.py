@@ -6,6 +6,8 @@ from typing import Any, Generic, TypeVar
 from gymnasium.spaces import Space
 from prpl_utils.gym_agent import Agent
 
+from programmatic_policy_learning.data.demo_types import Trajectory
+
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
@@ -26,9 +28,13 @@ class BaseApproach(Agent[_ObsType, _ActType], Generic[_ObsType, _ActType], abc.A
         self._action_space.seed(seed)
         self._observation_space = observation_space
         self._observation_space.seed(seed)
-        self._demonstrations: list[Any] | None = None  # Optional offline data
+        # Each Trajectory represents one demonstration, which is a sequence of steps
+        # we are keeping a lost of trajectories, called demonstrations
+        self._demonstrations: list[Trajectory[Any, Any]] | None = (
+            None  # Optional offline data
+        )
 
-    def set_demonstrations(self, demonstrations: list[Any]) -> None:
+    def set_demonstrations(self, demonstrations: list[Trajectory[Any, Any]]) -> None:
         """Set offline demonstration data for training or evaluation."""
         self._demonstrations = demonstrations
 
