@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 from scipy.sparse import lil_matrix, vstack
 
+from programmatic_policy_learning.data.demo_types import Trajectory
+
 
 def apply_programs(programs: list, fn_input: Any) -> list[bool]:
     """Worker function that applies a list of programs to a single given input.
@@ -66,7 +68,7 @@ def extract_examples_from_demonstration_item(
 
 
 def extract_examples_from_demonstration(
-    demonstration: list[tuple[np.ndarray, tuple[int, int]]],
+    demonstration: Trajectory[np.ndarray, tuple[int, int]],
 ) -> tuple[
     list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
 ]:
@@ -88,7 +90,7 @@ def extract_examples_from_demonstration(
     positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
     negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
 
-    for demonstration_item in demonstration:
+    for demonstration_item in demonstration.steps:
         demo_positive_examples, demo_negative_examples = (
             extract_examples_from_demonstration_item(demonstration_item)
         )
@@ -103,7 +105,7 @@ def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
     programs: list,
-    demonstrations: list[tuple[np.ndarray, tuple[int, int]]],
+    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
     program_interval: int = 1000,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
@@ -137,7 +139,7 @@ def run_all_programs_on_demonstrations(
     base_class_name: str,
     demo_numbers: list[int],
     programs: list,
-    demonstrations: list[tuple[np.ndarray, tuple[int, int]]],
+    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
 ) -> tuple[Any | None, np.ndarray | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None

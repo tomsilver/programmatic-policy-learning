@@ -50,4 +50,5 @@ def collect_demo(
                 print("WARNING: demo did not succeed!")
             break
 
-    return Trajectory(obs=obs_list, act=act_list)
+    steps = list(zip(obs_list, act_list))
+    return Trajectory(steps=steps)

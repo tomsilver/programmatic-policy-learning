@@ -9,10 +9,12 @@ ActT = TypeVar("ActT")
 
 @dataclass(frozen=True)
 class Trajectory(Generic[ObsT, ActT]):
-    """A sequence of steps, containing observation and action."""
+    """A sequence of (observation, action) steps."""
 
-    obs: list[ObsT]
-    act: list[ActT]
+    steps: list[tuple[ObsT, ActT]]
 
     def __post_init__(self) -> None:
-        assert len(self.obs) == len(self.act)
+        for step in self.steps:
+            assert (
+                isinstance(step, tuple) and len(step) == 2
+            ), "Each step must be a (obs, act) tuple"

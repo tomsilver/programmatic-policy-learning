@@ -6,13 +6,14 @@ from programmatic_policy_learning.data.demo_types import Trajectory
 
 
 def test_trajectory_dataclass() -> None:
-    """Test Trajectory dataclass with obs and act lists."""
+    """Test Trajectory dataclass with steps as (obs, act) tuples."""
     obs = [np.ones((3, 3)), np.zeros((3, 3))]
     act = [42, 7]
-    traj = Trajectory(obs=obs, act=act)
+    steps = list(zip(obs, act))
+    traj = Trajectory(steps=steps)
     assert isinstance(traj, Trajectory)
-    assert isinstance(traj.obs, list)
-    assert isinstance(traj.act, list)
-    assert traj.obs[0].shape == (3, 3)
-    assert traj.act[0] == 42
-    assert len(traj.obs) == len(traj.act) == 2
+    assert isinstance(traj.steps, list)
+    assert isinstance(traj.steps[0], tuple)
+    assert traj.steps[0][0].shape == (3, 3)
+    assert traj.steps[0][1] == 42
+    assert len(traj.steps) == 2

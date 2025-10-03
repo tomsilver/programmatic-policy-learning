@@ -7,7 +7,10 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
+from programmatic_policy_learning.data.dataset import (
+    Trajectory,
+    run_all_programs_on_demonstrations,
+)
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
     GrammarBasedProgramGenerator,
@@ -75,9 +78,12 @@ def test_dataset_pipeline_with_real_env() -> None:
     # Collect demonstrations (simulate a single demo)
     state = np.zeros((2, 2))
     action = (0, 1)
-    demonstrations = [(state, action)]
+    demonstration: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(
+        steps=[(state, action)]
+    )
+
     print("\nDemonstrations:")
-    for i, (s, a) in enumerate(demonstrations):
+    for i, (s, a) in enumerate(demonstration.steps):
         print(f"Demo {i}: state=\n{s}, action={a}")
 
     # Run dataset pipeline
@@ -85,7 +91,7 @@ def test_dataset_pipeline_with_real_env() -> None:
         base_class_name=base_class_name,
         demo_numbers=demo_numbers,
         programs=programs,
-        demonstrations=demonstrations,
+        demonstrations=demonstration,
     )
     if X is not None and y is not None:
         print("\nDataset X (features matrix):")

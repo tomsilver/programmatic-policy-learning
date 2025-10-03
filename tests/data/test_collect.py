@@ -60,10 +60,9 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
     )
     traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
     assert isinstance(traj, Trajectory)
-    assert isinstance(traj.obs, list)
-    assert isinstance(traj.act, list)
-    assert len(traj.obs) == len(traj.act)
-    assert len(traj.obs) > 0
+    assert isinstance(traj.steps, list)
+    assert isinstance(traj.steps[0], tuple)
+    assert len(traj.steps) > 0
 
 
 def test_collect_demo_with_real_env() -> None:
@@ -82,10 +81,9 @@ def test_collect_demo_with_real_env() -> None:
     )
     traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
     assert isinstance(traj, Trajectory)
-    assert isinstance(traj.obs, list)
-    assert isinstance(traj.act, list)
-    assert len(traj.obs) == len(traj.act)
-    assert len(traj.obs) > 0
+    assert isinstance(traj.steps, list)
+    assert isinstance(traj.steps[0], tuple)
+    assert len(traj.steps) > 0
 
 
 def test_collect_demo_with_real_env_and_expert() -> None:
@@ -108,5 +106,7 @@ def test_collect_demo_with_real_env_and_expert() -> None:
         expert_fn=expert_fn,
     )
     traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=10)
-    assert len(traj.obs) == len(traj.act)
-    assert len(traj.obs) > 0
+    assert isinstance(traj, Trajectory)
+    assert isinstance(traj.steps, list)
+    assert isinstance(traj.steps[0], tuple)
+    assert len(traj.steps) > 0
