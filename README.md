@@ -208,11 +208,7 @@ If your provider imports an external repo, put it in `pyproject.toml` under `dep
 **Example (GGG):**
 ```toml
 dependencies = [
-  .
-  .
   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
-  .
-  .
 ]
 ```
 
