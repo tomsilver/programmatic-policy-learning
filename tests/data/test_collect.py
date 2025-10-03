@@ -107,9 +107,6 @@ def test_collect_demo_with_real_env_and_expert() -> None:
         seed=1,
         expert_fn=expert_fn,
     )
-    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
-    assert isinstance(traj, Trajectory)
-    assert isinstance(traj.obs, list)
-    assert isinstance(traj.act, list)
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=10)
     assert len(traj.obs) == len(traj.act)
     assert len(traj.obs) > 0

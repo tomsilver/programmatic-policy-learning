@@ -35,16 +35,19 @@ def collect_demo(
         act_list.append(action)
 
         step_out = env.step(action)
+
         # handle gym vs. gymnasium
         if len(step_out) == 4:
-            obs, reward, done, _ = step_out
+            obs, reward, done, info = step_out
             terminated, truncated = done, False
         else:
-            obs, reward, terminated, truncated, _ = step_out
+            obs, reward, terminated, truncated, info = step_out
         t += 1
+        expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):
             if not reward > 0:
                 # keep behavior parity with original: warn if didn’t succeed
                 print("WARNING: demo did not succeed!")
             break
+
     return Trajectory(obs=obs_list, act=act_list)
