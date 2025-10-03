@@ -67,7 +67,7 @@ class GGGEnvWithTypes:
         return getattr(self.env, name)
 
 
-def get_true_env_class_name(env) -> str:
+def get_true_env_class_name(env: Any) -> str:
     """Recursively unwrap gym environment to get the true class name."""
     while hasattr(env, "env"):
         env = env.env

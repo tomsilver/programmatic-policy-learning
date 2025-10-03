@@ -5,13 +5,13 @@ import numpy as np
 from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
 
 
-def test_expert_approach_step_and_reset():
+def test_expert_approach_step_and_reset() -> None:
     """Test reset and step for ExpertApproach."""
 
     class DummySpace:
         """DummySpace."""
 
-        def seed(self, seed):
+        def seed(self, seed: int) -> None:
             """Seed function."""
             pass  # pylint: disable=unnecessary-pass
 
