@@ -258,6 +258,19 @@ env = registry.load(cfg.env)  # uses provider if present, else gymnasium.make
 That's it!
 ---
 
+## 3. Implementing Your Own Custom Env
+If you want to implement an environment yourself (instead of importing it from another repo), you can follow the same provider-based structure:
+
+- Create a new provider file under `programmatic_policy_learning/env/providers/x_provider.py`.
+- Inside this file, implement your custom environment class (e.g., MyCustomEnv).
+- At the end of the file, also implement a factory function (as before) like: def create_x_env(cfg: Any):
+- Add a YAML under conf/env/ (as in the examples above), and register your provider in EnvRegistry.
+  
+
+This way, whether your env comes from an external repo or is defined locally, the process looks the same, your provider file is the single place to keep both the environment definition and the factory function.
+
+---
+
 ## Contributing
 
 * Ask an owner of the repository to add your GitHub username to the collaborators list
