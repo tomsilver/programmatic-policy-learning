@@ -203,14 +203,16 @@ def create_prbench_env(cfg: Any):
 > Your provider can do anything needed (import the external package, wrap the env, set seeds, apply wrappers, etc.). Just return the final `env`.
 ### 2.4 Add the External Repo to the dependencies
 
-If your provider imports an external repo, put it in `pyproject.toml` under `dependencies = [...]`so CI and collaborators get the same version.
+If your provider imports an external repo, put it in `pyproject.toml` under `dependencies = [...]`, so CI and collaborators get the same version.
 
 **Example (GGG):**
 ```toml
 dependencies = [
-  ...
+  .
+  .
   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
-  ...
+  .
+  .
 ]
 ```
 
