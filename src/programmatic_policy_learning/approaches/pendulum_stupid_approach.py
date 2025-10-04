@@ -1,26 +1,28 @@
 """A simple hardcoded approach for pendulum balancing."""
 
-from typing import TypeVar, cast
-
 import gymnasium as gym
 import numpy as np
+from numpy.typing import NDArray
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
-_ObsType = TypeVar("_ObsType")
-_ActType = TypeVar("_ActType")
+Obs = NDArray[np.float32]
+Act = NDArray[np.float32]
 
 
-class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
+class PendulumStupidAlgorithm(BaseApproach[Obs, Act]):
     """A hardcoded approach that tries to balance the pendulum at the top."""
 
-    def _get_action(self) -> _ActType:
-        currobs = self._last_observation
+    def _get_action(self) -> Act:
 
-        # Safety check
-        if currobs is None:
-            action_space = cast(gym.spaces.Box, self._action_space)
-            return cast(_ActType, np.array([0.0], dtype=action_space.dtype))
+        assert (
+            self._last_observation is not None
+        ), "Expected a last observation before calling _get_action()."
+        assert isinstance(
+            self._action_space, gym.spaces.Box
+        ), "PendulumStupidAlgorithm requires a Box action space."
+
+        currobs = self._last_observation
 
         # Parse observation: [cos(θ), sin(θ), angular_velocity]
         obs = np.asarray(currobs, dtype=np.float32)
@@ -55,8 +57,7 @@ class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
                 torque += 1.0 * np.sign(angvel)
 
         # Clip to action space bounds
-        action_space = cast(gym.spaces.Box, self._action_space)
+        action_space = self._action_space
         low, high = float(action_space.low[0]), float(action_space.high[0])
         torque = float(np.clip(torque, low, high))
-        print(f"torque={torque:.3f}")
-        return cast(_ActType, np.array([torque], dtype=action_space.dtype))
+        return np.array([torque], dtype=action_space.dtype)

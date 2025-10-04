@@ -53,17 +53,18 @@ class ResidualActionWrapper(ActionWrapper):
 
     def __init__(self, env: gym.Env, base_policy: Callable[[np.ndarray], np.ndarray]):
         super().__init__(env)
-        if not isinstance(env.action_space, Box):
-            raise TypeError("ResidualActionWrapper requires a Box action space.")
+        assert isinstance(env.action_space, Box), (
+            "ResidualActionWrapper requires a Box action space."
+        )
         self._base: Callable[[np.ndarray], np.ndarray] = base_policy
 
         self.action_space = env.action_space
-        self._act_box: Box = cast(Box, self.action_space)
+        self._act_box: Box = env.action_space
 
         self._last_obs: np.ndarray | None = None
 
     def action(self, action: np.ndarray) -> np.ndarray:
-        """Actiom is determined in step()"""
+        """Action is determined in step()"""
         return action
 
     def reset(self, **kw: Any) -> tuple[np.ndarray, dict]:
@@ -169,13 +170,10 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
             base_approach_instance
         )
 
-        def make_env() -> gym.Env:
-            """Build a wrapped env with residual composition."""
-            env = env_builder()
-            cast(Any, env).reset(seed=seed)
-            return ResidualActionWrapper(env, self._base_fn)
-
-        self._env: gym.Env = make_env()
+        
+        env = env_builder()
+        env.reset(seed=seed)
+        self._env: gym.Env = ResidualActionWrapper(env, self._base_fn)
         self._backend = _SB3Backend(
             backend,
             env=self._env,

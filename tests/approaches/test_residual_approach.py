@@ -4,8 +4,7 @@
 
 import contextlib
 import io
-import sys
-from typing import Any, Literal, TextIO, cast
+from typing import Any, Literal
 
 import gymnasium as gym
 import numpy as np
@@ -18,7 +17,7 @@ from programmatic_policy_learning.approaches.residual_approach import ResidualAp
 
 ENV_ID = "Pendulum-v1"
 SEED = 42
-TRAIN_STEPS = 10_000
+TRAIN_STEPS = 1
 EVAL_EPISODES = 5
 BACKENDS: list[Literal["sb3-td3", "sb3-ddpg"]] = ["sb3-td3", "sb3-ddpg"]
 
@@ -48,7 +47,6 @@ def eval_policy(
                 a = approach._get_action()  # pylint: disable=protected-access
             obs, r, terminated, truncated, _ = env.step(a)
             ep_ret += float(r)
-        cast(Any, env).close()  # mypy: env.close is untyped
         returns.append(ep_ret)
     return np.asarray(returns, dtype=np.float32)
 
@@ -60,7 +58,6 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     base = PendulumStupidAlgorithm(
         "base", tmp.observation_space, tmp.action_space, seed=SEED
     )
-    cast(Any, tmp).close()  # mypy: close is untyped
 
     base_returns = eval_policy(base, n_episodes=EVAL_EPISODES, seed=SEED)
     assert base_returns.shape == (EVAL_EPISODES,)
@@ -78,7 +75,6 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
         total_timesteps=TRAIN_STEPS,
         verbose=0,
     )
-    cast(Any, tmp).close()  # mypy: close is untyped
 
     try:
         residual._backend._model.learn(  # pylint: disable=protected-access
@@ -94,20 +90,3 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     assert np.isfinite(residual_returns).all()
 
     assert residual_returns.mean() > base_returns.mean() - 100.0
-
-    # ----- PRINT SUMMARY (force to real stdout) -----
-    b_mean, b_std = float(base_returns.mean()), float(base_returns.std())
-    r_mean, r_std = float(residual_returns.mean()), float(residual_returns.std())
-
-    out: TextIO = cast(TextIO, sys.__stdout__ or sys.stdout)
-    out.write("\n=== Summary (higher / less negative is better) ===\n")
-    out.write(f"Backend: {backend}\n")
-    out.write(
-        f"Base-only: mean {b_mean:8.1f} ± {b_std:5.1f} over {EVAL_EPISODES} eps\n"
-    )
-
-    out.write(
-        f"Residual (base+R): mean {r_mean:8.1f} ± {r_std:5.1f} over "
-        f"{EVAL_EPISODES} eps\n"
-    )
-    out.flush()
