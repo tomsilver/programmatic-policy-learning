@@ -122,7 +122,7 @@ def make_dsl() -> DSL[LocalProgram, GridInput, Any]:
 START, CONDITION, LOCAL_PROGRAM, DIRECTION, POSITIVE_NUM, NEGATIVE_NUM, VALUE = range(7)
 
 
-def create_grammar(env_spec: dict[str, Any]):
+def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
     """Create a grammar for grid programs, using env_spec for VALUE types."""
     object_types = env_spec["object_types"]
     grammar: Grammar[str, int, int] = Grammar(

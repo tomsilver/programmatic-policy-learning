@@ -12,9 +12,12 @@ dependencies = [
    "matplotlib",
    "numpy",
    "gymnasium[all]>=1.0.0",
-   "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-utils.git",
-   "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-llm-utils.git",
-   "prbench[geom2d]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prbench.git@c897a36aedaf0721a808ed631fd615b55e1e0b69",
+   "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=prpl-utils",
+   "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=prpl-llm-utils",
+   "tomsgeoms2d@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=toms-geoms-2d",
+   "relational_structs@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=relational-structs",
+   "prbench[geom2d]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=prbench",
+   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
    "moviepy",
    "pandas",
    "pandas-stubs",
@@ -32,9 +35,6 @@ develop = [
     "pylint>=2.14.5",
     "pytest-pylint>=0.18.0",
     "pytest>=7.2.2",
-]
-ggg = [
-  "generalization_grid_games @ git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559"
 ]
 
 [tool.setuptools.packages.find]
@@ -57,14 +57,16 @@ split_on_trailing_comma = true
 [tool.mypy]
 strict_equality = true
 disallow_untyped_calls = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
 check_untyped_defs = true
 warn_unreachable = true
 exclude = ["venv/*", ".venv/*"]
+
 
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
     "generalization_grid_games.*",
+    "scipy.*",
 ]
 ignore_missing_imports = true
