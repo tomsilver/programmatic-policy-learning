@@ -1,13 +1,19 @@
-# python -m ensurepip --upgrade
-# python -m pip install "stable-baselines3[extra]>=2.0"
+"""Residual policy wrapper and SB3 backend for learning action residuals."""
+
+from __future__ import annotations
 
 import contextlib
 import io
-from typing import Callable, Generic, Literal, TypeVar
+from typing import Any, Callable, Generic, Literal, TypeVar, cast
 
 import gymnasium as gym
 import numpy as np
-from gymnasium.spaces import Space
+from gymnasium import ActionWrapper
+from gymnasium.spaces import Box, Space
+
+from stable_baselines3 import DDPG, TD3
+from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
@@ -16,6 +22,7 @@ _ActType = TypeVar("_ActType")
 
 
 def _adapt_approach(approach_instance) -> Callable[[np.ndarray], np.ndarray]:
+    """Wrap a BaseApproach instance as f(obs)->action (np.ndarray)."""
     act_shape = approach_instance._action_space.shape
 
     def f(obs: np.ndarray) -> np.ndarray:
@@ -28,51 +35,76 @@ def _adapt_approach(approach_instance) -> Callable[[np.ndarray], np.ndarray]:
     return f
 
 
-class ResidualActionWrapper(gym.ActionWrapper):
+class ResidualActionWrapper(ActionWrapper):
+    """Adds a residual to the base policy."""
+
     def __init__(self, env: gym.Env, base_policy: Callable[[np.ndarray], np.ndarray]):
         super().__init__(env)
-        assert isinstance(env.action_space, gym.spaces.Box)
-        self._base = base_policy
-        self.action_space = env.action_space
+        if not isinstance(env.action_space, Box):
+            raise TypeError("ResidualActionWrapper requires a Box action space.")
+        self._base: Callable[[np.ndarray], np.ndarray] = base_policy
 
-    def reset(self, **kw):
-        obs, info = self.env.reset(**kw)
-        self._last_obs = obs
+        self.action_space = env.action_space
+        self._act_box: Box = cast(Box, self.action_space)
+
+        self._last_obs: np.ndarray | None = None
+
+    def action(self, action: np.ndarray) -> np.ndarray:  
+        """Identity transform required by ActionWrapper; composition is in
+        step()."""
+        return action
+
+    def reset(self, **kw: Any) -> tuple[np.ndarray, dict]:
+        """Reset env and remember observation."""
+        obs, info = self.env.reset(**kw) 
+        self._last_obs = np.asarray(obs, dtype=np.float32)
         return obs, info
 
-    def step(self, residual: np.ndarray):
-        base = self._base(np.asarray(self._last_obs, dtype=np.float32))
-        total = (
-            base + residual
-        )  # np.clip(base + residual, self.action_space.low, self.action_space.high)
+    def step(self, action: np.ndarray):
+        """Compose base action with residual and step the env."""
+        if self._last_obs is None:
+            obs, _ = self.reset()
+            self._last_obs = np.asarray(obs, dtype=np.float32)
+
+        residual = np.asarray(action, dtype=np.float32)
+        base = self._base(self._last_obs)
+        total = base + residual
+
         obs, r, term, trunc, info = self.env.step(total)
-        self._last_obs = obs
-        info["base_action"], info["residual_action"], info["total_action"] = (
-            base,
-            residual,
-            total,
-        )
+        self._last_obs = np.asarray(obs, dtype=np.float32)
+        info["base_action"] = base
+        info["residual_action"] = residual
+        info["total_action"] = total
         return obs, r, term, trunc, info
 
 
-_BackendName = Literal["sb3-td3", "sb3-ddpg", "cleanrl-td3"]
+_BackendName = Literal["sb3-td3", "sb3-ddpg"]
 
 
 class _SB3Backend:
-    def __init__(
-        self, name: _BackendName, env, seed: int, lr=1e-3, noise_std=0.1, verbose=1
-    ):
-        from stable_baselines3 import DDPG, TD3
-        from stable_baselines3.common.noise import NormalActionNoise
-        from stable_baselines3.common.vec_env import DummyVecEnv
+    """Tiny SB3 wrapper that handles TD3/DDPG with Gaussian action noise."""
 
+    def __init__(
+        self,
+        name: _BackendName,
+        env: gym.Env,
+        seed: int,
+        lr: float = 1e-3,
+        noise_std: float = 0.1,
+        verbose: int = 1,
+    ):
         self._vec = env if hasattr(env, "get_attr") else DummyVecEnv([lambda: env])
+        if not isinstance(self._vec.action_space, Box):
+            raise TypeError("SB3 backend requires a Box action space.")
         act_dim = int(np.prod(self._vec.action_space.shape))
+
         noise = NormalActionNoise(
-            mean=np.zeros(act_dim), sigma=np.ones(act_dim) * noise_std
+            mean=np.zeros(act_dim, dtype=np.float32),
+            sigma=np.ones(act_dim, dtype=np.float32) * noise_std,
         )
-        Algo = TD3 if name == "sb3-td3" else DDPG
-        self._model = Algo(
+
+        algo_cls = TD3 if name == "sb3-td3" else DDPG
+        self._model = algo_cls(
             "MlpPolicy",
             self._vec,
             learning_rate=lr,
@@ -81,21 +113,27 @@ class _SB3Backend:
             seed=seed,
         )
 
-    def learn(self, total_timesteps: int):
+    def learn(self, total_timesteps: int) -> None:
+        """Train the SB3 model."""
         self._model.learn(total_timesteps=total_timesteps, progress_bar=True)
 
-    def predict(self, obs: np.ndarray):
+    def predict(self, obs: np.ndarray) -> np.ndarray:
+        """Deterministic policy action given observation."""
         a, _ = self._model.predict(obs, deterministic=True)
         return np.asarray(a, dtype=np.float32)
 
-    def save(self, path: str):
+    def save(self, path: str) -> None:
+        """Save SB3 model."""
         self._model.save(path)
 
-    def load(self, path: str):
-        self._model = self._model.load(path, env=self._model.get_env())  
+    def load(self, path: str) -> None:
+        """Load SB3 model."""
+        self._model = self._model.load(path, env=self._model.get_env())
 
 
 class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActType]):
+    """Approach that learns a residual on top of a provided base policy."""
+
     def __init__(
         self,
         environment_description: str,
@@ -111,16 +149,19 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
         verbose: int = 1,
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
+
+        # Bridge to base approach function.
         self._base_fn: Callable[[np.ndarray], np.ndarray] = _adapt_approach(
             base_approach_instance
         )
 
-        def make_env():
+        def make_env() -> gym.Env:
+            """Build a wrapped env with residual composition."""
             env = env_builder()
-            env.reset(seed=seed)
+            cast(Any, env).reset(seed=seed)
             return ResidualActionWrapper(env, self._base_fn)
 
-        self._env = make_env()
+        self._env: gym.Env = make_env()
         self._backend = _SB3Backend(
             backend,
             env=self._env,
@@ -131,20 +172,28 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
         )
         self._total = total_timesteps
 
+        # Keep a Box-typed handle to action space for mypy (low/high/dtype).
+        if not isinstance(self._action_space, Box):
+            raise TypeError("ResidualApproach requires a Box action space.")
+        self._act_box: Box = cast(Box, self._action_space)
+
     def train(self) -> None:
+        """Train the residual policy."""
         self._backend.learn(total_timesteps=self._total)
 
     def _get_action(self) -> _ActType:
+        """Return clipped action = base + residual, cast to env action
+        dtype."""
         obs = np.asarray(self._last_observation, dtype=np.float32)
-        base = self._base_fn(obs)  # fixed
-        residual = self._backend.predict(obs)  # learned
-        total = np.clip(
-            base + residual, self._action_space.low, self._action_space.high
-        )
-        return total.astype(self._action_space.dtype)
+        base = self._base_fn(obs)  # fixed/base policy
+        residual = self._backend.predict(obs)  # learned residual
+        total = np.clip(base + residual, self._act_box.low, self._act_box.high)
+        return total.astype(self._act_box.dtype)  
 
     def save(self, path: str) -> None:
+        """Save residual policy backend."""
         self._backend.save(path)
 
     def load(self, path: str) -> None:
+        """Load residual policy backend."""
         self._backend.load(path)

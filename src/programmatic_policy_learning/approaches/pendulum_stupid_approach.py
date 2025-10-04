@@ -7,14 +7,14 @@ import numpy as np
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
-_ObsType = TypeVar("_ObsType")  # Keeping your original naming
+_ObsType = TypeVar("_ObsType")  
 _ActType = TypeVar("_ActType")
 
 
 class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
     """A hardcoded approach that tries to balance the pendulum at the top."""
 
-    def _get_action(self) -> _ActType:  # Keeping your original method signature
+    def _get_action(self) -> _ActType:  
         currobs = self._last_observation
 
         # Safety check
@@ -24,39 +24,33 @@ class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
 
         # Parse observation: [cos(θ), sin(θ), angular_velocity]
         obs = np.asarray(currobs, dtype=np.float32)
-        x = float(currobs[0])  # cos(theta)
-        y = float(currobs[1])  # sin(theta)
-        angvel = float(currobs[2])  # angular velocity
+        x = float(obs[0])  
+        y = float(obs[1])  
+        angvel = float(obs[2])  
 
-        # Calculate approximate angle (-π to π)
         theta = np.arctan2(y, x)
 
-        print(f"angle={theta:.3f}, angvel={angvel:.3f}")
-
-        # Check if pendulum is hanging down (theta near ±π)
         is_hanging_down = abs(abs(theta) - np.pi) < 1.0  # Near bottom
         is_near_top = abs(theta) < 0.5  # Near top
 
         if is_hanging_down:
-            # SWING-UP PHASE: Add energy to the system
-            # Pump energy by applying torque in direction of velocity
+            # If already moving push it in the direction that it's going in 
             if abs(angvel) > 0.1:
-                torque = 2.0 * np.sign(angvel)  # Push in direction of motion
+                torque = 2.0 * np.sign(angvel)  
             else:
-                torque = 2.0 * np.sign(theta)  # Small kick to start motion
+                torque = 2.0 * np.sign(theta)  
 
         elif is_near_top:
-            # BALANCE PHASE: Gentle PD control when near upright
+            # small adjustments if near the target position 
             kp = 12.0
             kd = 3.0
             torque = -kp * theta - kd * angvel
 
         else:
-            # TRANSITION PHASE: Medium energy swing-up
             kp = 5.0
             kd = 1.0
             torque = -kp * theta - kd * angvel
-            # Add some energy pumping
+            # if too slow, add more torque 
             if abs(angvel) > 1.0:
                 torque += 1.0 * np.sign(angvel)
 
