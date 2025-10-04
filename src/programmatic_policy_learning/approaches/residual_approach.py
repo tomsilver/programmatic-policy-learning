@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import contextlib
 import io
-from typing import Any, Callable, Generic, Literal, TypeVar, cast
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Literal,
+    SupportsFloat,
+    TypeVar,
+    cast,
+)
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import ActionWrapper
 from gymnasium.spaces import Box, Space
-
 from stable_baselines3 import DDPG, TD3
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -21,11 +28,17 @@ _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
-def _adapt_approach(approach_instance) -> Callable[[np.ndarray], np.ndarray]:
+def _adapt_approach(
+    approach_instance: BaseApproach[Any, Any],
+) -> Callable[[np.ndarray], np.ndarray]:
     """Wrap a BaseApproach instance as f(obs)->action (np.ndarray)."""
-    act_shape = approach_instance._action_space.shape
+    # pylint: disable=protected-access
+    act_shape: tuple[int, ...] = cast(
+        tuple[int, ...], approach_instance._action_space.shape
+    )
 
     def f(obs: np.ndarray) -> np.ndarray:
+        # pylint: disable=protected-access
         approach_instance._last_observation = obs
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -49,18 +62,19 @@ class ResidualActionWrapper(ActionWrapper):
 
         self._last_obs: np.ndarray | None = None
 
-    def action(self, action: np.ndarray) -> np.ndarray:  
-        """Identity transform required by ActionWrapper; composition is in
-        step()."""
+    def action(self, action: np.ndarray) -> np.ndarray:
+        """Actiom is determined in step()"""
         return action
 
     def reset(self, **kw: Any) -> tuple[np.ndarray, dict]:
         """Reset env and remember observation."""
-        obs, info = self.env.reset(**kw) 
+        obs, info = self.env.reset(**kw)
         self._last_obs = np.asarray(obs, dtype=np.float32)
         return obs, info
 
-    def step(self, action: np.ndarray):
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
         """Compose base action with residual and step the env."""
         if self._last_obs is None:
             obs, _ = self.reset()
@@ -75,7 +89,7 @@ class ResidualActionWrapper(ActionWrapper):
         info["base_action"] = base
         info["residual_action"] = residual
         info["total_action"] = total
-        return obs, r, term, trunc, info
+        return obs, float(r), bool(term), bool(trunc), cast(dict[str, Any], info)
 
 
 _BackendName = Literal["sb3-td3", "sb3-ddpg"]
@@ -141,7 +155,7 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
         action_space: Space[_ActType],
         seed: int,
         env_builder: Callable[[], gym.Env],
-        base_approach_instance,
+        base_approach_instance: BaseApproach[Any, Any],
         backend: _BackendName = "sb3-td3",
         total_timesteps: int = 100_000,
         lr: float = 1e-3,
@@ -182,13 +196,13 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
         self._backend.learn(total_timesteps=self._total)
 
     def _get_action(self) -> _ActType:
-        """Return clipped action = base + residual, cast to env action
-        dtype."""
+        """Return clipped action = base + residual."""
+        # pylint: disable=protected-access
         obs = np.asarray(self._last_observation, dtype=np.float32)
         base = self._base_fn(obs)  # fixed/base policy
         residual = self._backend.predict(obs)  # learned residual
         total = np.clip(base + residual, self._act_box.low, self._act_box.high)
-        return total.astype(self._act_box.dtype)  
+        return total.astype(self._act_box.dtype)  # type: ignore[return-value]
 
     def save(self, path: str) -> None:
         """Save residual policy backend."""

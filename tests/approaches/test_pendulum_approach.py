@@ -23,12 +23,12 @@ def test_pendulum_stupid_algorithm() -> None:
     approach.reset(obs, info)
 
     total_reward: float = 0.0
-    # Run for 500 steps and add to the total reward 
+    # Run for 500 steps and add to the total reward
     for _ in range(500):
         action = approach.step()
         obs, reward, terminated, _, step_info = env.step(action)
 
-        r = float(reward)  
+        r = float(reward)
         total_reward += r
         approach.update(obs, r, terminated, step_info)
 
@@ -38,7 +38,7 @@ def test_pendulum_stupid_algorithm() -> None:
 
     print(f"Average reward: {total_reward / 500.0:.2f}")
 
-    env.close() 
+    cast(Any, env).close()
 
     imageio.mimsave(
         uri="pendulum.gif",

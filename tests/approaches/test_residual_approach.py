@@ -1,9 +1,11 @@
 """Tests for the ResidualApproach (SB3 TD3/DDPG backends) on Pendulum-v1."""
 
+# pylint: disable=protected-access
+
 import contextlib
 import io
 import sys
-from typing import Literal, TextIO, cast
+from typing import Any, Literal, TextIO, cast
 
 import gymnasium as gym
 import numpy as np
@@ -27,7 +29,7 @@ def build_env() -> gym.Env:
 
 
 def eval_policy(
-    approach, n_episodes: int = EVAL_EPISODES, seed: int = SEED
+    approach: Any, n_episodes: int = EVAL_EPISODES, seed: int = SEED
 ) -> np.ndarray:
     """Run n_episodes and return per-episode returns; suppress base prints so
     output is clean."""
@@ -40,11 +42,13 @@ def eval_policy(
         while not (terminated or truncated):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                approach._last_observation = np.asarray(obs, dtype=np.float32)
-                a = approach._get_action()
+                approach._last_observation = np.asarray(
+                    obs, dtype=np.float32
+                )  # pylint: disable=protected-access
+                a = approach._get_action()  # pylint: disable=protected-access
             obs, r, terminated, truncated, _ = env.step(a)
             ep_ret += float(r)
-        env.close()  
+        cast(Any, env).close()  # mypy: env.close is untyped
         returns.append(ep_ret)
     return np.asarray(returns, dtype=np.float32)
 
@@ -56,7 +60,7 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     base = PendulumStupidAlgorithm(
         "base", tmp.observation_space, tmp.action_space, seed=SEED
     )
-    tmp.close()  
+    cast(Any, tmp).close()  # mypy: close is untyped
 
     base_returns = eval_policy(base, n_episodes=EVAL_EPISODES, seed=SEED)
     assert base_returns.shape == (EVAL_EPISODES,)
@@ -74,11 +78,13 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
         total_timesteps=TRAIN_STEPS,
         verbose=0,
     )
-    tmp.close() 
+    cast(Any, tmp).close()  # mypy: close is untyped
 
     try:
-        residual._backend._model.learn(total_timesteps=TRAIN_STEPS, progress_bar=False)
-    except Exception:
+        residual._backend._model.learn(  # pylint: disable=protected-access
+            total_timesteps=TRAIN_STEPS, progress_bar=False
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
         residual.train()
     finally:
         pass

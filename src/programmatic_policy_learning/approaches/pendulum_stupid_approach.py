@@ -7,14 +7,14 @@ import numpy as np
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
-_ObsType = TypeVar("_ObsType")  
+_ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
 class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
     """A hardcoded approach that tries to balance the pendulum at the top."""
 
-    def _get_action(self) -> _ActType:  
+    def _get_action(self) -> _ActType:
         currobs = self._last_observation
 
         # Safety check
@@ -24,9 +24,9 @@ class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
 
         # Parse observation: [cos(θ), sin(θ), angular_velocity]
         obs = np.asarray(currobs, dtype=np.float32)
-        x = float(obs[0])  
-        y = float(obs[1])  
-        angvel = float(obs[2])  
+        x = float(obs[0])
+        y = float(obs[1])
+        angvel = float(obs[2])
 
         theta = np.arctan2(y, x)
 
@@ -34,14 +34,14 @@ class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
         is_near_top = abs(theta) < 0.5  # Near top
 
         if is_hanging_down:
-            # If already moving push it in the direction that it's going in 
+            # If already moving push it in the direction that it's going in
             if abs(angvel) > 0.1:
-                torque = 2.0 * np.sign(angvel)  
+                torque = 2.0 * np.sign(angvel)
             else:
-                torque = 2.0 * np.sign(theta)  
+                torque = 2.0 * np.sign(theta)
 
         elif is_near_top:
-            # small adjustments if near the target position 
+            # small adjustments if near the target position
             kp = 12.0
             kd = 3.0
             torque = -kp * theta - kd * angvel
@@ -50,7 +50,7 @@ class PendulumStupidAlgorithm(BaseApproach[_ObsType, _ActType]):
             kp = 5.0
             kd = 1.0
             torque = -kp * theta - kd * angvel
-            # if too slow, add more torque 
+            # if too slow, add more torque
             if abs(angvel) > 1.0:
                 torque += 1.0 * np.sign(angvel)
 
