@@ -53,9 +53,9 @@ class ResidualActionWrapper(ActionWrapper):
 
     def __init__(self, env: gym.Env, base_policy: Callable[[np.ndarray], np.ndarray]):
         super().__init__(env)
-        assert isinstance(env.action_space, Box), (
-            "ResidualActionWrapper requires a Box action space."
-        )
+        assert isinstance(
+            env.action_space, Box
+        ), "ResidualActionWrapper requires a Box action space."
         self._base: Callable[[np.ndarray], np.ndarray] = base_policy
 
         self.action_space = env.action_space
@@ -170,7 +170,6 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
             base_approach_instance
         )
 
-        
         env = env_builder()
         env.reset(seed=seed)
         self._env: gym.Env = ResidualActionWrapper(env, self._base_fn)
