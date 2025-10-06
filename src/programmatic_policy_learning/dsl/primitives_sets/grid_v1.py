@@ -190,3 +190,22 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
         }
     )
     return grammar
+
+
+__all__ = [
+    "cell_is_value",
+    "shifted",
+    "at_cell_with_value",
+    "at_action_cell",
+    "scanning",
+    "GridInput",
+    "make_dsl",
+    "create_grammar",
+    "START",
+    "CONDITION",
+    "LOCAL_PROGRAM",
+    "DIRECTION",
+    "POSITIVE_NUM",
+    "NEGATIVE_NUM",
+    "VALUE",
+]
