@@ -65,9 +65,13 @@ def test_dataset_pipeline_with_real_env() -> None:
     program_strs = []
     gen = program_generator.generate_programs()
     for _ in range(num_programs):
-        prog_str = next(gen)
+        prog_str, log_prior = next(gen)
         program_strs.append(prog_str)
 
+    assert isinstance(prog_str, str)
+    assert isinstance(log_prior, float)
+    assert np.isfinite(log_prior)
+    
     # Create top-level callables using functools.partial - needs work
     programs = [functools.partial(eval_program, prog_str=s) for s in program_strs]
 

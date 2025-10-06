@@ -59,7 +59,7 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
                 child_priority,
             ) in _get_child_programs(program, self._grammar):
                 if _program_is_complete(child_program):
-                    yield _stringify(cast(str, child_program))
+                    yield _stringify(cast(str, child_program)), production_neg_log_prob
                 else:
                     hq.heappush(
                         queue,
