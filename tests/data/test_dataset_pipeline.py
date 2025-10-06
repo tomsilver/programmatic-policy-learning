@@ -71,7 +71,7 @@ def test_dataset_pipeline_with_real_env() -> None:
     assert isinstance(prog_str, str)
     assert isinstance(log_prior, float)
     assert np.isfinite(log_prior)
-    
+
     # Create top-level callables using functools.partial - needs work
     programs = [functools.partial(eval_program, prog_str=s) for s in program_strs]
 

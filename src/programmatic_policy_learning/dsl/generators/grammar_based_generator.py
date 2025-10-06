@@ -45,7 +45,9 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
 
     def generate_programs(
         self,
-    ) -> Iterator[str]:  # to sync with stringify output, we need to make it str
+    ) -> Iterator[
+        tuple[str, float]
+    ]:  # to sync with stringify output, we need to make it str
         queue: list[tuple[float, float, int, DPType]] = []
         counter = itertools.count()
         hq.heappush(
@@ -59,7 +61,9 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
                 child_priority,
             ) in _get_child_programs(program, self._grammar):
                 if _program_is_complete(child_program):
-                    yield _stringify(cast(str, child_program)), production_neg_log_prob
+                    yield _stringify(cast(str, child_program)), float(
+                        production_neg_log_prob
+                    )
                 else:
                     hq.heappush(
                         queue,
