@@ -103,7 +103,7 @@ def test_grammar_based_program_generator_with_input() -> None:
     assert dsl.evaluate(program, 5) == 6
 
 
-def test_grid_grammar_infers_env_spec_from_env() -> None:
+def test_generated_programs_are_callable() -> None:
     """Test that env_spec is inferred from GGGEnvWithTypes and used in
     grammar."""
     cfg = OmegaConf.create({"make_kwargs": {"id": "TwoPileNim0-v0"}})

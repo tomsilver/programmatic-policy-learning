@@ -2,6 +2,13 @@
 
 from typing import Any
 
+# pylint: disable=unused-import
+from generalization_grid_games.envs import chase as ec
+from generalization_grid_games.envs import checkmate_tactic as ct
+from generalization_grid_games.envs import reach_for_the_star as rfts
+from generalization_grid_games.envs import stop_the_fall as stf
+from generalization_grid_games.envs import two_pile_nim as tpn
+
 # pylint: disable=wildcard-import, unused-wildcard-import
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *
 
