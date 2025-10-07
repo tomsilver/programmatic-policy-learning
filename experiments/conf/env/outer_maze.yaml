@@ -1,8 +1,0 @@
-# Passed into gymnasium.make() to create the environment.
-make_kwargs:
-  id: maze-sample-10x10-v0
-  enable_render: true
-
-provider: outer_maze
-
-description: "Gym-Maze wrapped in an outer world with one entrance"
