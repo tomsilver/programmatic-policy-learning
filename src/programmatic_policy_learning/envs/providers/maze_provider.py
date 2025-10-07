@@ -1,6 +1,6 @@
 """Custom Maze environment provider with outer void region."""
 
-from typing import Any, Optional
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -27,7 +27,7 @@ class MazeEnv(gym.Env):
 
     def __init__(
         self,
-        inner_maze: Optional[np.ndarray] = None,
+        inner_maze: np.ndarray,
         outer_margin: int = 3,
         enable_render: bool = True,
     ) -> None:
@@ -38,9 +38,7 @@ class MazeEnv(gym.Env):
         self.outer_margin = outer_margin
         self.enable_render = enable_render
 
-        if inner_maze is None:
-            inner_maze = np.zeros((10, 10), dtype=np.int8)
-
+        assert inner_maze is not None, "inner_maze must be provided"
         self.inner_maze: np.ndarray = inner_maze
         self.inner_h, self.inner_w = inner_maze.shape
 
@@ -120,7 +118,7 @@ class MazeEnv(gym.Env):
     # Gymnasium API
     # --------------------------------------------------------------
     def reset(
-        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         # Start in outer void above the maze
@@ -214,47 +212,3 @@ def create_maze_env(env_config: DictConfig) -> Env:
     )
 
     return env
-
-
-# Simple test run
-# if __name__ == "__main__":
-#     ACTIONS = {
-#         0: np.array([-1, 0]),  # N (up)
-#         1: np.array([1, 0]),  # S (down)
-#         2: np.array([0, 1]),  # E (right)
-#         3: np.array([0, -1]),  # W (left)
-#     }
-
-#     maze = np.array(
-#         [
-#             [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-#             [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-#             [1, 1, 1, 0, 1, 0, 1, 1, 0, 1],
-#             [1, 0, 0, 0, 1, 0, 1, 1, 0, 1],
-#             [1, 0, 1, 1, 1, 0, 0, 0, 0, 1],
-#             [1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-#             [1, 1, 1, 1, 1, 0, 1, 1, 0, 0],
-#             [1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
-#             [1, 0, 1, 1, 1, 1, 0, 1, 0, 0],
-#             [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-#         ]
-#     )
-
-#     env = MazeEnv(inner_maze=maze, outer_margin=3, enable_render=True)
-#     obs, _ = env.reset()
-#     print(f"Start obs: {obs}")
-#     previous_obs = obs
-#     for _ in range(4000):
-#         action = env.action_space.sample()
-#         obs, reward, done, _, _ = env.step(action)
-#         print(
-#             f"Prev: {previous_obs}, Action: {ACTIONS[action]},
-#               New: {obs}, Reward: {reward}"
-#         )
-#         previous_obs = obs
-#         env.render()
-#         pygame.display.set_caption("OuterMazeEnv")
-#         if done:
-#             print("Goal reached!")
-#             break
-#     env.close()
