@@ -123,7 +123,7 @@ def get_conjunctive_program(
             program = program + " and "
 
     program = program + ")"
-    return StateActionProgram(program), log_p
+    return program, log_p  # type: ignore
 
 
 def get_disjunctive_program(
@@ -141,10 +141,8 @@ def get_disjunctive_program(
         if i < len(conjunctive_programs) - 1:
             program = program + " or "
 
-    return StateActionProgram(
-        program
-    )  # it needs casting, otherwise linter raises errors.
-    # but program is originally a StateActionProgram object
+    return program  # type: ignore
+
 
 
 def extract_plp_from_dt(
