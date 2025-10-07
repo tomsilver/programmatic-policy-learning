@@ -123,7 +123,7 @@ def get_conjunctive_program(
             program = program + " and "
 
     program = program + ")"
-    return program, log_p  # type: ignore
+    return StateActionProgram(program), log_p
 
 
 def get_disjunctive_program(
@@ -141,8 +141,7 @@ def get_disjunctive_program(
         if i < len(conjunctive_programs) - 1:
             program = program + " or "
 
-    return program  # type: ignore
-
+    return StateActionProgram(program)
 
 
 def extract_plp_from_dt(

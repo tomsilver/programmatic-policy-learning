@@ -23,10 +23,10 @@ class StateActionProgram:
         return self.wrapped(*args, **kwargs)
 
     def __repr__(self) -> str:
-        return self.program
+        return str(self.program)
 
     def __str__(self) -> str:
-        return self.program
+        return str(self.program)
 
     def __getstate__(self) -> str:
         return self.program
