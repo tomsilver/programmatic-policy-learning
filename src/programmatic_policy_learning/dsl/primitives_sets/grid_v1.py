@@ -1,6 +1,5 @@
 """Grid DSL primitives and evaluation."""
 
-import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
@@ -198,19 +197,28 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
     return grammar
 
 
-def get_DSL_functions_dict() -> dict[str, Any]:
+def get_dsl_functions_dict() -> dict[str, Any]:
     """Return all grid_v1 DSL primitives as a dictionary."""
-    grid_v1 = sys.modules[__name__]
+
     DSL_FUNCTIONS = {
-        name: getattr(grid_v1, name)
-        for name in dir(grid_v1)
-        if not name.startswith("__")
+        "cell_is_value": cell_is_value,
+        "shifted": shifted,
+        "at_cell_with_value": at_cell_with_value,
+        "at_action_cell": at_action_cell,
+        "scanning": scanning,
+        "START": START,
+        "CONDITION": CONDITION,
+        "LOCAL_PROGRAM": LOCAL_PROGRAM,
+        "DIRECTION": DIRECTION,
+        "POSITIVE_NUM": POSITIVE_NUM,
+        "NEGATIVE_NUM": NEGATIVE_NUM,
+        "VALUE": VALUE,
+        "ec": ec,
+        "ct": ct,
+        "rfts": rfts,
+        "stf": stf,
+        "tpn": tpn,
     }
-    for mod in [ec, ct, rfts, stf, tpn]:
-        # Collect variable names first to avoid modifying globals during iteration
-        var_names = [var_name for var_name, obj in globals().items() if obj is mod]
-        for var_name in var_names:
-            DSL_FUNCTIONS[var_name] = mod
     return DSL_FUNCTIONS
 
 
