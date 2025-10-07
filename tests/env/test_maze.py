@@ -14,7 +14,7 @@ def test_maze_env_creation() -> None:
         {
             "make_kwargs": {
                 "outer_margin": 2,
-                "enable_render": False, 
+                "enable_render": False,
             }
         }
     )
