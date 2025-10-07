@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 import numpy as np
+from generalization_grid_games.envs import chase as ec
+from generalization_grid_games.envs import checkmate_tactic as ct
+from generalization_grid_games.envs import reach_for_the_star as rfts
+from generalization_grid_games.envs import stop_the_fall as stf
+from generalization_grid_games.envs import two_pile_nim as tpn
 
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
@@ -190,3 +195,47 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
         }
     )
     return grammar
+
+
+def get_dsl_functions_dict() -> dict[str, Any]:
+    """Return all grid_v1 DSL primitives as a dictionary."""
+
+    DSL_FUNCTIONS = {
+        "cell_is_value": cell_is_value,
+        "shifted": shifted,
+        "at_cell_with_value": at_cell_with_value,
+        "at_action_cell": at_action_cell,
+        "scanning": scanning,
+        "START": START,
+        "CONDITION": CONDITION,
+        "LOCAL_PROGRAM": LOCAL_PROGRAM,
+        "DIRECTION": DIRECTION,
+        "POSITIVE_NUM": POSITIVE_NUM,
+        "NEGATIVE_NUM": NEGATIVE_NUM,
+        "VALUE": VALUE,
+        "ec": ec,
+        "ct": ct,
+        "rfts": rfts,
+        "stf": stf,
+        "tpn": tpn,
+    }
+    return DSL_FUNCTIONS
+
+
+__all__ = [
+    "cell_is_value",
+    "shifted",
+    "at_cell_with_value",
+    "at_action_cell",
+    "scanning",
+    "GridInput",
+    "make_dsl",
+    "create_grammar",
+    "START",
+    "CONDITION",
+    "LOCAL_PROGRAM",
+    "DIRECTION",
+    "POSITIVE_NUM",
+    "NEGATIVE_NUM",
+    "VALUE",
+]
