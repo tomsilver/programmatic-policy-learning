@@ -1,7 +1,7 @@
 # Passed into gymnasium.make() to create the environment.
 make_kwargs:
   inner_maze_path: "data/mazes/maze_10x10.npy" 
-  outer_margin: 4
+  outer_margin: 1
   enable_render: True
 
 provider: maze

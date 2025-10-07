@@ -1,12 +1,16 @@
-import numpy as np
+"""Custom Maze environment provider with outer void region."""
+
+from typing import Optional
+
 import gymnasium as gym
-from gymnasium import spaces, Env
+import numpy as np
 import pygame
+from gymnasium import Env, spaces
 from omegaconf import DictConfig
 
+
 class MazeEnv(gym.Env):
-    """
-    A Gymnasium-compatible maze environment with an outer void region.
+    """A Gymnasium-compatible maze environment with an outer void region.
 
     Coordinate system uses NumPy convention:
         (0,0) is top-left, row increases downward, col increases rightward.
@@ -16,23 +20,28 @@ class MazeEnv(gym.Env):
 
     ACTIONS = {
         0: np.array([-1, 0]),  # N (up)
-        1: np.array([1, 0]),   # S (down)
-        2: np.array([0, 1]),   # E (right)
-        3: np.array([0, -1])   # W (left)
+        1: np.array([1, 0]),  # S (down)
+        2: np.array([0, 1]),  # E (right)
+        3: np.array([0, -1]),  # W (left)
     }
 
-    def __init__(self, inner_maze: np.ndarray | None = None,
-                 outer_margin: int = 3, enable_render: bool = True) -> None:
+    def __init__(
+        self,
+        inner_maze: Optional[np.ndarray] = None,
+        outer_margin: int = 3,
+        enable_render: bool = True,
+    ) -> None:
         super().__init__()
 
         # --- Maze setup ---
+        assert outer_margin >= 1, "outer_margin must be >= 1"
         self.outer_margin = outer_margin
         self.enable_render = enable_render
 
         if inner_maze is None:
             inner_maze = np.zeros((10, 10), dtype=np.int8)
 
-        self.inner_maze = inner_maze
+        self.inner_maze: np.ndarray = inner_maze
         self.inner_h, self.inner_w = inner_maze.shape
 
         # Global coordinate bounds
@@ -60,6 +69,9 @@ class MazeEnv(gym.Env):
         # --- Start and goal positions (NumPy convention) ---
         self.start_pos = np.array([0, 0])  # top-left
         self.goal_pos = np.array([self.inner_h - 1, self.inner_w - 1])  # bottom-right
+        self.agent_pos: np.ndarray = np.zeros(
+            2, dtype=np.int64
+        )  # properly initialized in reset()
 
         # --- Rendering setup ---
         if enable_render:
@@ -107,7 +119,7 @@ class MazeEnv(gym.Env):
     # --------------------------------------------------------------
     # Gymnasium API
     # --------------------------------------------------------------
-    def reset(self, *, seed=None, options=None):
+    def reset(self, *, seed=None, options=None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         # Start in outer void above the maze
         r = np.random.randint(self.row_min, -1)
@@ -115,13 +127,15 @@ class MazeEnv(gym.Env):
         self.agent_pos = np.array([r, c])
         return self.agent_pos.copy(), {}
 
-    def step(self, action):
+    def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
         move = self.ACTIONS[action]
         new_pos = self.agent_pos + move
         reward, terminated, truncated = -0.01, False, False
 
-        if (self.row_min <= new_pos[0] <= self.row_max
-                and self.col_min <= new_pos[1] <= self.col_max):
+        if (
+            self.row_min <= new_pos[0] <= self.row_max
+            and self.col_min <= new_pos[1] <= self.col_max
+        ):
             gr, gc = self._to_grid_idx(new_pos)
             if self.grid[gr, gc] == 0:
                 self.agent_pos = new_pos
@@ -149,22 +163,31 @@ class MazeEnv(gym.Env):
             for c in range(self.grid_w):
                 color = (0, 0, 0) if self.grid[r, c] == 1 else (220, 220, 220)
                 pygame.draw.rect(
-                    self.screen, color,
-                    (c * self.cell_size, r * self.cell_size,
-                     self.cell_size, self.cell_size)
+                    self.screen,
+                    color,
+                    (
+                        c * self.cell_size,
+                        r * self.cell_size,
+                        self.cell_size,
+                        self.cell_size,
+                    ),
                 )
 
         # Agent
         gr, gc = self._to_grid_idx(self.agent_pos)
-        pygame.draw.rect(self.screen, (0, 0, 255),
-                         (gc * self.cell_size, gr * self.cell_size,
-                          self.cell_size, self.cell_size))
+        pygame.draw.rect(
+            self.screen,
+            (0, 0, 255),
+            (gc * self.cell_size, gr * self.cell_size, self.cell_size, self.cell_size),
+        )
 
         # Goal
         gr, gc = self._to_grid_idx(self.goal_pos)
-        pygame.draw.rect(self.screen, (0, 255, 0),
-                         (gc * self.cell_size, gr * self.cell_size,
-                          self.cell_size, self.cell_size))
+        pygame.draw.rect(
+            self.screen,
+            (0, 255, 0),
+            (gc * self.cell_size, gr * self.cell_size, self.cell_size, self.cell_size),
+        )
 
         pygame.display.flip()
         self.clock.tick(30)
@@ -172,6 +195,7 @@ class MazeEnv(gym.Env):
     def close(self) -> None:
         if self.enable_render:
             pygame.quit()
+
 
 def create_maze_env(env_config: DictConfig) -> Env:
     """Create OuterMaze environment with optional custom inner maze."""
@@ -184,47 +208,51 @@ def create_maze_env(env_config: DictConfig) -> Env:
         inner_maze = None
 
     env = MazeEnv(
-        inner_maze=inner_maze,
-        outer_margin=outer_margin,
-        enable_render=enable_render
+        inner_maze=inner_maze, outer_margin=outer_margin, enable_render=enable_render
     )
 
     return env
 
-# Simple test run
-if __name__ == "__main__":
-    ACTIONS = {
-        0: np.array([-1, 0]),  # N (up)
-        1: np.array([1, 0]),   # S (down)
-        2: np.array([0, 1]),   # E (right)
-        3: np.array([0, -1])   # W (left)
-    }
-    
-    maze = np.array([
-    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-    [1, 1, 1, 0, 1, 0, 1, 1, 0, 1],
-    [1, 0, 0, 0, 1, 0, 1, 1, 0, 1],
-    [1, 0, 1, 1, 1, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1, 0, 1, 1, 0, 0],
-    [1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
-    [1, 0, 1, 1, 1, 1, 0, 1, 0, 0],
-    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-    ])
 
-    env = MazeEnv(inner_maze=maze, outer_margin=3, enable_render=True)
-    obs, _ = env.reset()
-    print(f"Start obs: {obs}")
-    previous_obs = obs
-    for _ in range(4000):
-        action = env.action_space.sample()
-        obs, reward, done, _, _ = env.step(action)
-        print(f"Prev: {previous_obs}, Action: {ACTIONS[action]}, New: {obs}, Reward: {reward}")
-        previous_obs = obs
-        env.render()
-        pygame.display.set_caption("OuterMazeEnv")
-        if done:
-            print("Goal reached!")
-            break
-    env.close()
+# Simple test run
+# if __name__ == "__main__":
+#     ACTIONS = {
+#         0: np.array([-1, 0]),  # N (up)
+#         1: np.array([1, 0]),  # S (down)
+#         2: np.array([0, 1]),  # E (right)
+#         3: np.array([0, -1]),  # W (left)
+#     }
+
+#     maze = np.array(
+#         [
+#             [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+#             [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+#             [1, 1, 1, 0, 1, 0, 1, 1, 0, 1],
+#             [1, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+#             [1, 0, 1, 1, 1, 0, 0, 0, 0, 1],
+#             [1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+#             [1, 1, 1, 1, 1, 0, 1, 1, 0, 0],
+#             [1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+#             [1, 0, 1, 1, 1, 1, 0, 1, 0, 0],
+#             [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+#         ]
+#     )
+
+#     env = MazeEnv(inner_maze=maze, outer_margin=3, enable_render=True)
+#     obs, _ = env.reset()
+#     print(f"Start obs: {obs}")
+#     previous_obs = obs
+#     for _ in range(4000):
+#         action = env.action_space.sample()
+#         obs, reward, done, _, _ = env.step(action)
+#         print(
+#             f"Prev: {previous_obs}, Action: {ACTIONS[action]},
+#               New: {obs}, Reward: {reward}"
+#         )
+#         previous_obs = obs
+#         env.render()
+#         pygame.display.set_caption("OuterMazeEnv")
+#         if done:
+#             print("Goal reached!")
+#             break
+#     env.close()
