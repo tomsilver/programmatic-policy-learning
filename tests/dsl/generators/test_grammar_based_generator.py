@@ -59,7 +59,7 @@ def test_grammar_based_program_generator() -> None:
     generated_programs = []
     gen = program_generator.generate_programs()
     for _ in range(3):
-        generated_programs.append(next(gen))
+        generated_programs.append(next(gen)[0])
 
     assert expected_programs == generated_programs
 
@@ -97,7 +97,7 @@ def test_grammar_based_program_generator_with_input() -> None:
     )
 
     gen = program_generator.generate_programs()
-    program = next(gen)  # 'add_one( x )'
+    program = next(gen)[0]  # 'add_one( x )'
 
     assert dsl.evaluate(program, 0) == 1
     assert dsl.evaluate(program, 5) == 6
@@ -118,9 +118,9 @@ def test_grid_grammar_infers_env_spec_from_env() -> None:
     )
     gen = generator.generate_programs()
 
-    assert next(gen) == "tpn.EMPTY"
-    assert next(gen) == "tpn.TOKEN"
-    assert next(gen) == "None"
+    assert next(gen)[0] == "tpn.EMPTY"
+    assert next(gen)[0] == "tpn.TOKEN"
+    assert next(gen)[0] == "None"
 
 
 def test_generate_program_with_custom_generator() -> None:
@@ -140,7 +140,7 @@ def test_generate_program_with_custom_generator() -> None:
     )
 
     gen = program_generator.generate_programs()
-    assert next(gen) == "42"
+    assert next(gen)[0] == "42"
 
 
 def test_generate_program_with_env_specific_grammar() -> None:
@@ -161,6 +161,6 @@ def test_generate_program_with_env_specific_grammar() -> None:
 
     gen = program_generator.generate_programs()
 
-    assert next(gen) == "tpn.EMPTY"
-    assert next(gen) == "tpn.TOKEN"
-    assert next(gen) == "None"
+    assert next(gen)[0] == "tpn.EMPTY"
+    assert next(gen)[0] == "tpn.TOKEN"
+    assert next(gen)[0] == "None"
