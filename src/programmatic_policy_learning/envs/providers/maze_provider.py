@@ -1,6 +1,6 @@
 """Custom Maze environment provider with outer void region."""
 
-from typing import Optional
+from typing import Any, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -86,7 +86,7 @@ class MazeEnv(gym.Env):
     # --------------------------------------------------------------
     # Utility
     # --------------------------------------------------------------
-    def _to_grid_idx(self, pos) -> tuple[int, int]:
+    def _to_grid_idx(self, pos: np.ndarray | tuple[int, int]) -> tuple[int, int]:
         """Map (row, col) world coords to array indices for rendering."""
         r = pos[0] - self.row_min
         c = pos[1] - self.col_min
@@ -119,7 +119,9 @@ class MazeEnv(gym.Env):
     # --------------------------------------------------------------
     # Gymnasium API
     # --------------------------------------------------------------
-    def reset(self, *, seed=None, options=None) -> tuple[np.ndarray, dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         # Start in outer void above the maze
         r = np.random.randint(self.row_min, -1)
@@ -127,7 +129,7 @@ class MazeEnv(gym.Env):
         self.agent_pos = np.array([r, c])
         return self.agent_pos.copy(), {}
 
-    def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         move = self.ACTIONS[action]
         new_pos = self.agent_pos + move
         reward, terminated, truncated = -0.01, False, False
