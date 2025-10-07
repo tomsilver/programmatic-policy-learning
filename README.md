@@ -201,29 +201,28 @@ def create_prbench_env(cfg: Any):
 ```
 
 > Your provider can do anything needed (import the external package, wrap the env, set seeds, apply wrappers, etc.). Just return the final `env`.
-### 2.4 Add the External Repo to the dependencies (if you import it)
+### 2.4 Add the External Repo to the dependencies
 
-If your provider imports an external repo, put it in `pyproject.toml` so CI and collaborators get the same version.
+If your provider imports an external repo, put it in `pyproject.toml` under `dependencies = [...]`, so CI and collaborators get the same version.
 
 **Example (GGG):**
 ```toml
-[project.optional-dependencies]
-ggg = [
-  "generalization_grid_games @ git+https://github.com/zahraabashir/generalization_grid_games.git"
+dependencies = [
+  "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
 ]
 ```
 
 **Example (your own repo):**
 ```toml
-my_env = [
-  "my_cool_env_pkg @ git+https://github.com/your-org/my_cool_env_pkg.git@<commit-hash>"
+dependencies = [
+  "my_cool_env_pkg@git+https://github.com/your-org/my_cool_env_pkg.git@<commit-hash>"
 ]
 ```
 
 After this, you only need to run the following command to install that dependency:
 
 ```bash
-uv pip install -e ".[my_env]"
+uv pip install -e ".[develop]"
 ```
 
 ## 3) How to Instantiate in Code
@@ -255,6 +254,19 @@ env = registry.load(cfg.env)  # uses provider if present, else gymnasium.make
 	    
 -   Instantiate with `EnvRegistry().load(cfg.env)`
 That's it!
+---
+
+## 3. Implementing Your Own Custom Env
+If you want to implement an environment yourself (instead of importing it from another repo), you can follow the same provider-based structure:
+
+- Create a new provider file under `programmatic_policy_learning/env/providers/x_provider.py`.
+- Inside this file, implement your custom environment class (e.g., MyCustomEnv).
+- At the end of the file, also implement a factory function (as before) like: def create_x_env(cfg: Any):
+- Add a YAML under conf/env/ (as in the examples above), and register your provider in EnvRegistry.
+  
+
+This way, whether your env comes from an external repo or is defined locally, the process looks the same, your provider file is the single place to keep both the environment definition and the factory function.
+
 ---
 
 ## Contributing
