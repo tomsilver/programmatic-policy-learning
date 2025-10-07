@@ -66,7 +66,7 @@ def _run_single_episode_evaluation(
         action = approach.step()
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
-        # env.render()
+        env.render()
         assert not truncated
         approach.update(obs, reward, done, info)
         total_rewards += reward
