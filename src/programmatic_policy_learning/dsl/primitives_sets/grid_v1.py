@@ -1,9 +1,15 @@
 """Grid DSL primitives and evaluation."""
 
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 import numpy as np
+from generalization_grid_games.envs import chase as ec
+from generalization_grid_games.envs import checkmate_tactic as ct
+from generalization_grid_games.envs import reach_for_the_star as rfts
+from generalization_grid_games.envs import stop_the_fall as stf
+from generalization_grid_games.envs import two_pile_nim as tpn
 
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
@@ -190,6 +196,22 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
         }
     )
     return grammar
+
+
+def get_DSL_functions_dict() -> dict[str, Any]:
+    """Return all grid_v1 DSL primitives as a dictionary."""
+    grid_v1 = sys.modules[__name__]
+    DSL_FUNCTIONS = {
+        name: getattr(grid_v1, name)
+        for name in dir(grid_v1)
+        if not name.startswith("__")
+    }
+    for mod in [ec, ct, rfts, stf, tpn]:
+        # Collect variable names first to avoid modifying globals during iteration
+        var_names = [var_name for var_name, obj in globals().items() if obj is mod]
+        for var_name in var_names:
+            DSL_FUNCTIONS[var_name] = mod
+    return DSL_FUNCTIONS
 
 
 __all__ = [
