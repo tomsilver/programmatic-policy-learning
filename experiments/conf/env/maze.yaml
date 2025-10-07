@@ -1,0 +1,9 @@
+# Passed into gymnasium.make() to create the environment.
+make_kwargs:
+  inner_maze_path: "data/mazes/maze_10x10.npy" 
+  outer_margin: 4
+  enable_render: True
+
+provider: maze
+
+description: "Gym-Maze wrapped in an outer world with one entrance"
