@@ -10,12 +10,11 @@ from programmatic_policy_learning.envs.providers.maze_provider import (
 
 def test_maze_env_creation() -> None:
     """Test Maze environment creation and basic API."""
-    # Create a DictConfig similar to test_prbench.py
     cfg: DictConfig = OmegaConf.create(
         {
             "make_kwargs": {
                 "outer_margin": 2,
-                "enable_render": False,  # Disable pygame window for tests
+                "enable_render": False, 
             }
         }
     )
