@@ -22,7 +22,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
-        pass
+        # sketch
+        # self._policy = self._train_policy() -> need to implement policyObject first
+        self._timestep = 0
+
 
     def _get_action(self) -> _ActType:
         assert self._policy is not None, "Call reset() first."
