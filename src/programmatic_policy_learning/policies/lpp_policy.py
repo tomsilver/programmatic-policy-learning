@@ -56,9 +56,12 @@ class LPPPolicy:
         else:
             idx = int(self.rng.choice(len(action_probs), p=action_probs))
 
-        row, col = np.unravel_index(idx, obs.shape) #TODO: for more than 2D grids, pylint error
+        row, col = np.unravel_index(  # pylint: disable=unbalanced-tuple-unpacking
+            idx, obs.shape
+        )
+        # TODOO: handle for other than 2D grids, pylint error
+
         return int(row), int(col)
-        # return np.unravel_index(idx, obs.shape)
 
     def hash_obs(self, obs: np.ndarray) -> Any:
         """Hash an observation for caching.
