@@ -10,7 +10,10 @@ class StateActionProgram:
     evals.
     """
 
-    def __init__(self, program: str, dsl_functions: dict[str, Any] | None) -> None:
+    def __init__(
+        self, program: str, dsl_functions: dict[str, Any] | None = None
+    ) -> None:
+
         self.program: str = program
         self.wrapped: Any = None
         self.dsl_functions = dsl_functions
@@ -21,10 +24,10 @@ class StateActionProgram:
         return self.wrapped(*args, **kwargs)
 
     def __repr__(self) -> str:
-        return self.program
+        return str(self.program)
 
     def __str__(self) -> str:
-        return self.program
+        return str(self.program)
 
     def __getstate__(self) -> str:
         return self.program
