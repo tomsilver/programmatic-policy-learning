@@ -12,8 +12,7 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import GrammarBasedProgramGenerator
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import create_grammar
-from programmatic_policy_learning.dsl.core import DSL
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import create_grammar, make_dsl
 from programmatic_policy_learning.data.collect import collect_demo
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
@@ -36,6 +35,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         num_programs: int = 100,
         num_dts: int = 5,
         max_num_particles: int = 10,
+        env_specs: dict[str, Any]=None,
+        start_symbol: int = 0,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -46,6 +47,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.num_programs = num_programs
         self.num_dts = num_dts
         self.max_num_particles = max_num_particles
+        self.env_specs = env_specs
+        self.start_symbol = start_symbol
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -54,10 +57,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        dsl = DSL(...)  # Fill in with your primitives and eval function
-
+        dsl = make_dsl()
         program_generator = GrammarBasedProgramGenerator(
-            create_grammar, dsl, env_spec={}, start_symbol=...  # Fill in start symbol
+            create_grammar, dsl, env_spec=self.env_specs, start_symbol= self.start_symbol
         )
 
         # Generate programs and their priors
@@ -69,15 +71,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs.append(program)
             program_prior_log_probs.append(prior)
 
-        traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=10)
-        X, y = run_all_programs_on_demonstrations(self.base_class_name, self.demo_numbers,programs, traj)
+        
+        # demonstrations = get_demonstrations(env_factory, expert, demo_numbers=self.demo_numbers) 
+        # uncomment after the PR is approved on dataset branch
+        
+        X, y = run_all_programs_on_demonstrations(self.base_class_name, self.demo_numbers,programs, demonstrations)
         plps, plp_priors = learn_plps(
             X, y, programs, program_prior_log_probs,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size
         )
-        # demonstrations = get_demonstrations(self.base_class_name, demo_numbers=self.demo_numbers)
-        likelihoods = compute_likelihood_plps(plps, traj)
+        likelihoods = compute_likelihood_plps(plps, demonstrations)
 
         particles = []
         particle_log_probs = []
