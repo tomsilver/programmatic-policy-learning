@@ -24,7 +24,7 @@ def test_lpp_policy_call() -> None:
     obs = np.ones((2, 2))
     plps = [DummyPLP()]
     probs = [1.0]
-    policy = LPPPolicy(plps, probs)
+    policy: LPPPolicy[np.ndarray, tuple[int, int]] = LPPPolicy(plps, probs)
     action = policy(obs)
     assert isinstance(action, tuple)
     assert len(action) == 2
@@ -36,7 +36,7 @@ def test_lpp_policy_top_row() -> None:
     obs = np.ones((2, 2))
     plps = [TopRowPLP()]
     probs = [1.0]
-    policy = LPPPolicy(plps, probs)
+    policy: LPPPolicy[np.ndarray, tuple[int, int]] = LPPPolicy(plps, probs)
     action = policy(obs)
     assert action[0] == 0  # Should always select top row
 
@@ -46,7 +46,7 @@ def test_lpp_policy_action_probs() -> None:
     obs = np.ones((2, 2))
     plps = [DummyPLP()]
     probs = [1.0]
-    policy = LPPPolicy(plps, probs)
+    policy: LPPPolicy[np.ndarray, tuple[int, int]] = LPPPolicy(plps, probs)
     action_probs = policy.get_action_probs(obs)
     assert isinstance(action_probs, np.ndarray)
     assert action_probs.shape == obs.shape
@@ -58,7 +58,7 @@ def test_lpp_policy_cache() -> None:
     obs = np.ones((2, 2))
     plps = [DummyPLP()]
     probs = [1.0]
-    policy = LPPPolicy(plps, probs)
+    policy: LPPPolicy[np.ndarray, tuple[int, int]] = LPPPolicy(plps, probs)
     _ = policy.get_action_probs(obs)
     hashed_obs = policy.hash_obs(obs)
     assert hashed_obs in policy._action_prob_cache  # pylint: disable=protected-access
@@ -69,7 +69,7 @@ def test_lpp_policy_multiple_plps() -> None:
     obs = np.ones((2, 2))
     plps = [DummyPLP(), TopRowPLP()]
     probs = [0.6, 0.4]
-    policy = LPPPolicy(plps, probs)
+    policy: LPPPolicy[np.ndarray, tuple[int, int]] = LPPPolicy(plps, probs)
     action_probs = policy.get_action_probs(obs)
     assert np.isclose(np.sum(action_probs), 1.0)
     assert action_probs.shape == obs.shape
