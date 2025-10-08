@@ -4,6 +4,7 @@ from typing import Any, Callable, TypeVar
 
 import numpy as np
 
+from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.data.demo_types import Trajectory
 
 EnvFactory = Callable[[], Any]
@@ -12,7 +13,10 @@ ActT = TypeVar("ActT")
 
 
 def collect_demo(
-    env_factory: EnvFactory, expert: Any, max_demo_length: int | float = np.inf
+    env_factory: EnvFactory,
+    expert: BaseApproach,
+    max_demo_length: int | float = np.inf,
+    env_num: int = 1,  # pylint: disable=unused-argument
 ) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
@@ -52,3 +56,25 @@ def collect_demo(
 
     steps = list(zip(obs_list, act_list))
     return Trajectory(steps=steps)
+
+
+def get_demonstrations(
+    env_factory: EnvFactory,
+    expert: BaseApproach,
+    demo_numbers: tuple[int, ...] = (1, 2, 3, 4),
+    max_demo_length: int | float = np.inf,
+) -> list[Trajectory]:
+    """Collect multiple demonstration trajectories using an expert policy."""
+    demonstrations: list[Trajectory] = []
+
+    for i in demo_numbers:
+        demonstrations.append(
+            collect_demo(
+                env_factory,
+                expert,
+                max_demo_length=max_demo_length,
+                env_num=i,
+            )
+        )
+
+    return demonstrations
