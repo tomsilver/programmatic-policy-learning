@@ -17,4 +17,4 @@ defaults:
   - approach: random_actions
   - env: lunar_lander
   - llm: openai
-  - provider: gymnasium
+  # - provider: gymnasium
