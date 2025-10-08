@@ -43,13 +43,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         env_factory: EnvFactory,
         expert: BaseApproach,
         base_class_name: str = "",
-        demo_numbers: list[int] = [],
+        demo_numbers: list[int] | None = None,
         program_generation_step_size: int = 10,
         num_programs: int = 100,
         num_dts: int = 5,
         max_num_particles: int = 10,
         max_demo_length: int | float = np.inf,
-        env_specs: dict[str, Any] = {},
+        env_specs: dict[str, Any] | None = None,
         start_symbol: int = 0,
     ) -> None:
         """LPP APProach."""
@@ -58,13 +58,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_factory = env_factory
         self.expert = expert
         self.base_class_name = base_class_name
-        self.demo_numbers = demo_numbers
+        self.demo_numbers = demo_numbers if demo_numbers is not None else []
         self.program_generation_step_size = program_generation_step_size
         self.num_programs = num_programs
         self.num_dts = num_dts
         self.max_num_particles = max_num_particles
         self.max_demo_length = max_demo_length
-        self.env_specs = env_specs
+        self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
@@ -95,23 +95,38 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_prior_log_probs.append(prior)
 
         # uncomment after the PR is approved on dataset branch
-        # demonstrations = get_demonstrations(self.env_factory, expert, demo_numbers=self.demo_numbers)
+        # demonstrations = get_demonstrations(self.env_factory,
+        # expert, demo_numbers=self.demo_numbers)
         demonstrations: list[Trajectory[np.ndarray, tuple[int, int]]] = [
             collect_demo(self.env_factory, self.expert, self.max_demo_length)
         ]
 
         X, y = run_all_programs_on_demonstrations(
-            self.base_class_name, self.demo_numbers, programs, demonstrations
+            self.base_class_name,
+            self.demo_numbers,
+            programs,
+            cast(
+                Trajectory[np.ndarray, tuple[int, int]], demonstrations[0]
+            ),  # short-term fix
         )
+        # Convert y to list[bool] - short term fix
+        y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
+        # Convert programs to list[StateActionProgram] - short term fix
+        programs_sa: list[StateActionProgram] = [
+            StateActionProgram(p) for p in programs
+        ]
+
         plps, plp_priors = learn_plps(
             X,
-            y,
-            programs,
+            y_bool,
+            programs_sa,
             program_prior_log_probs,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
         )
-        likelihoods = compute_likelihood_plps(plps, demonstrations)
+        likelihoods = compute_likelihood_plps(
+            plps, demonstrations[0]
+        )  # short term fix, it should take all demos
 
         particles = []
         particle_log_probs = []
@@ -126,6 +141,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, self.max_num_particles
         )
+        policy: LPPPolicy
         if len(top_particle_log_probs) > 0:
             top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
                 top_particle_log_probs
