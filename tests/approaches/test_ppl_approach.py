@@ -9,7 +9,7 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel, OrderedResponseModel
 from prpl_llm_utils.structs import Response
 
-from programmatic_policy_learning.approaches.ppl_approach import (
+from programmatic_policy_learning.approaches.llm_ppl_approach import (
     LLMPPLApproach,
 )
 
