@@ -10,14 +10,14 @@ from prpl_llm_utils.models import OpenAIModel, OrderedResponseModel
 from prpl_llm_utils.structs import Response
 
 from programmatic_policy_learning.approaches.ppl_approach import (
-    ProgrammaticPolicyLearningApproach,
+    LLMPPLApproach,
 )
 
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
 def test_ppl_approach() -> None:
-    """Tests for ProgrammaticPolicyLearningApproach()."""
+    """Tests for LLMPPLApproach()."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
     constant_action = env.action_space.sample()
@@ -38,7 +38,7 @@ def _policy(obs):
     )
     llm = OrderedResponseModel([response], cache)
 
-    approach = ProgrammaticPolicyLearningApproach(
+    approach = LLMPPLApproach(
         environment_description,
         env.observation_space,
         env.action_space,
@@ -57,7 +57,7 @@ def _policy(obs):
 
 @runllms
 def test_ppl_approach_with_real_llm() -> None:
-    """Tests for ProgrammaticPolicyLearningApproach() with real LLM."""
+    """Tests for LLMPPLApproach() with real LLM."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
     environment_description = (
@@ -69,7 +69,7 @@ def test_ppl_approach_with_real_llm() -> None:
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm = OpenAIModel("gpt-4o-mini", cache)
 
-    approach = ProgrammaticPolicyLearningApproach(
+    approach = LLMPPLApproach(
         environment_description,
         env.observation_space,
         env.action_space,
