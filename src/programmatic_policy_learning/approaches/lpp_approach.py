@@ -1,11 +1,15 @@
-from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+"""An approach that learns a logical programmatic policy from data."""
+
 from typing import Any, TypeVar
 
 from gymnasium.spaces import Space
 
+from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
+
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that learns a logical programmatic policy from data."""
@@ -17,6 +21,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         action_space: Space[_ActType],
         seed: int,
     ) -> None:
+        """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
         self._policy: StateActionProgram | None = None
 
@@ -25,7 +30,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         # sketch
         # self._policy = self._train_policy() -> need to implement policyObject first
         self._timestep = 0
-
 
     def _get_action(self) -> _ActType:
         assert self._policy is not None, "Call reset() first."
