@@ -13,6 +13,7 @@ class StateActionProgram:
     def __init__(
         self, program: str, dsl_functions: dict[str, Any] | None = None
     ) -> None:
+
         self.program: str = program
         self.wrapped: Any = None
         self.dsl_functions = dsl_functions
