@@ -7,9 +7,8 @@ from gymnasium.spaces import Space
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.data.collect import collect_demo
+from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
-from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
     Grammar,
     GrammarBasedProgramGenerator,
@@ -95,19 +94,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_prior_log_probs.append(prior)
 
         # uncomment after the PR is approved on dataset branch
-        # demonstrations = get_demonstrations(self.env_factory,
-        # expert, demo_numbers=self.demo_numbers)
-        demonstrations: list[Trajectory[np.ndarray, tuple[int, int]]] = [
-            collect_demo(self.env_factory, self.expert, self.max_demo_length)
-        ]
+        demonstrations = get_demonstrations(
+            self.env_factory, self.expert, demo_numbers=self.demo_numbers
+        )
+        # demonstrations: list[Trajectory[np.ndarray, tuple[int, int]]] = [
+        # collect_demo(self.env_factory, self.expert, self.max_demo_length)
+        # ]
 
         X, y = run_all_programs_on_demonstrations(
-            self.base_class_name,
-            self.demo_numbers,
-            programs,
-            cast(
-                Trajectory[np.ndarray, tuple[int, int]], demonstrations[0]
-            ),  # short-term fix
+            self.base_class_name, self.demo_numbers, programs, demonstrations
         )
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []

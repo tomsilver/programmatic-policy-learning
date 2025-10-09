@@ -1,6 +1,6 @@
 """Tests for collect.py."""
 
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
@@ -12,6 +12,8 @@ from programmatic_policy_learning.data.collect import collect_demo, get_demonstr
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 
 class DummySpace:
     """DummySpace."""
@@ -60,6 +62,7 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
         env.action_space,  # type: ignore
         seed=1,
     )
+
     traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
     assert isinstance(traj, Trajectory)
     assert isinstance(traj.steps, list)
@@ -131,10 +134,8 @@ def test_get_demonstrations() -> None:
     demonstrations = get_demonstrations(
         env_factory, expert, demo_numbers=demo_numbers, max_demo_length=5
     )
-    assert isinstance(demonstrations, list)
-    assert len(demonstrations) == len(demo_numbers)
-    for traj in demonstrations:
-        assert isinstance(traj, Trajectory)
-        assert isinstance(traj.steps, list)
-        assert len(traj.steps) > 0
-        assert isinstance(traj.steps[0], tuple)
+    assert isinstance(demonstrations, Trajectory)
+    assert len(demonstrations.steps) == len(demo_numbers)
+    for each in demonstrations.steps:
+        assert isinstance(each, tuple)
+

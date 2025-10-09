@@ -63,7 +63,7 @@ def get_demonstrations(
     expert: BaseApproach,
     demo_numbers: tuple[int, ...] = (1, 2, 3, 4),
     max_demo_length: int | float = np.inf,
-) -> list[Trajectory]:
+) -> Trajectory:
     """Collect multiple demonstration trajectories using an expert policy."""
     demonstrations: list[Trajectory] = []
 
@@ -76,5 +76,6 @@ def get_demonstrations(
                 env_num=i,
             )
         )
+    all_steps = [step for traj in demonstrations for step in traj.steps]
 
-    return demonstrations
+    return Trajectory(steps=all_steps)
