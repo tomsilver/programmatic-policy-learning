@@ -11,10 +11,8 @@ import numpy as np
 import pytest
 
 from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
-from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
-    Act as PendulumAct,)
-from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
-    Obs as PendulumObs,)
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import Act as PAct
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import Obs as PObs
 from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
     create_manual_pendulum_policy,
 )
@@ -61,7 +59,7 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     """Smoke test: residual approach runs and is not catastrophically worse than base."""
     tmp = build_env()
     assert isinstance(tmp.action_space, gym.spaces.Box)
-    base_policy: Callable[[PendulumObs], PendulumAct] = create_manual_pendulum_policy(
+    base_policy: Callable[[PObs], PAct] = create_manual_pendulum_policy(
         tmp.action_space
     )
     base: ExpertApproach = ExpertApproach(
