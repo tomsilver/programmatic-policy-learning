@@ -15,6 +15,7 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 
+
 class DummySpace:
     """DummySpace."""
 
@@ -138,4 +139,3 @@ def test_get_demonstrations() -> None:
     assert len(demonstrations.steps) == len(demo_numbers)
     for each in demonstrations.steps:
         assert isinstance(each, tuple)
-

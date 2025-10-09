@@ -61,7 +61,7 @@ def collect_demo(
 def get_demonstrations(
     env_factory: EnvFactory,
     expert: BaseApproach,
-    demo_numbers: tuple[int, ...] = (1, 2, 3, 4),
+    demo_numbers: tuple[int, ...],
     max_demo_length: int | float = np.inf,
 ) -> Trajectory:
     """Collect multiple demonstration trajectories using an expert policy."""

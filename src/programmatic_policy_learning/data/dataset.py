@@ -137,7 +137,7 @@ def run_all_programs_on_single_demonstration(
 # cache management decorator
 def run_all_programs_on_demonstrations(
     base_class_name: str,
-    demo_numbers: list[int],
+    demo_numbers: tuple[int, ...],
     programs: list,
     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
 ) -> tuple[Any | None, np.ndarray | None]:

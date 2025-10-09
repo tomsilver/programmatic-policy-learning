@@ -41,8 +41,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         seed: int,
         env_factory: EnvFactory,
         expert: BaseApproach,
+        demo_numbers: tuple[int, ...],
         base_class_name: str = "",
-        demo_numbers: list[int] | None = None,
         program_generation_step_size: int = 10,
         num_programs: int = 100,
         num_dts: int = 5,
@@ -57,7 +57,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_factory = env_factory
         self.expert = expert
         self.base_class_name = base_class_name
-        self.demo_numbers = demo_numbers if demo_numbers is not None else []
+        self.demo_numbers = demo_numbers
         self.program_generation_step_size = program_generation_step_size
         self.num_programs = num_programs
         self.num_dts = num_dts
@@ -120,8 +120,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
         )
         likelihoods = compute_likelihood_plps(
-            plps, demonstrations[0]
-        )  # short term fix, it should take all demos
+            plps, demonstrations
+        )
 
         particles = []
         particle_log_probs = []

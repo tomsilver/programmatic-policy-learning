@@ -36,7 +36,7 @@
 #         return (0, 0)
 
 #     def update(
-#         self, obs: np.ndarray, reward: float, 
+#         self, obs: np.ndarray, reward: float,
 #           terminated: bool, info: dict[Any, Any] | None = None
 #     ) -> None:
 #         """Update the expert with new experience."""
