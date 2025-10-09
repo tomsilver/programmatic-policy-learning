@@ -24,6 +24,7 @@ dependencies = [
    "hydra-core",
    "omegaconf",
    "stable-baselines3[extra]>=2.4.0,<3.0",
+   "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -68,5 +69,6 @@ module = [
     "matplotlib.*",
     "generalization_grid_games.*",
     "scipy.*",
+    "sklearn.*",
 ]
 ignore_missing_imports = true

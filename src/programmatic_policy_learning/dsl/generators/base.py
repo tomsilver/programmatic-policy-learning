@@ -22,7 +22,7 @@ class ProgramGenerator(Generic[ProgT, InT, OutT], abc.ABC):
     @abc.abstractmethod
     def generate_programs(
         self,
-    ) -> Iterator[str]:  # changed to str to match stringify output
+    ) -> Iterator[tuple[str, float]]:  # changed to str to match stringify output
         """Generate a potentially infinite number of programs from the DSL.
 
         Typically, program generators should go from "simplest" to "most

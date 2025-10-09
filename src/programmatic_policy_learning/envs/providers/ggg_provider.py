@@ -7,6 +7,8 @@ from prpl_utils.gym_utils import GymToGymnasium
 
 
 class GGGEnvWithTypes:
+    # When adding new environments, ensure this wrapper class provides access
+    # to key methods (e.g., get_object_types) needed by the Env object.
     """Wrapper for GGG environments that provides object type extraction."""
 
     def __init__(self, base_env: GymToGymnasium, base_class_name: str) -> None:
