@@ -15,7 +15,7 @@ def test_maze_env_creation() -> None:
             "make_kwargs": {
                 "outer_margin": 2,
                 "enable_render": False,
-                "inner_maze_path": "data/mazes/maze_10x10.npy",
+                "inner_maze_path": "data/mazes/maze1_10x10.npy",
             }
         }
     )
