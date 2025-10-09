@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
 from typing import (
     Any,
     Callable,
@@ -26,26 +24,6 @@ from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
-
-
-def _adapt_approach(
-    approach_instance: BaseApproach[Any, Any],
-) -> Callable[[np.ndarray], np.ndarray]:
-    """Wrap a BaseApproach instance as f(obs)->action (np.ndarray)."""
-    # pylint: disable=protected-access
-    act_shape: tuple[int, ...] = cast(
-        tuple[int, ...], approach_instance._action_space.shape
-    )
-
-    def f(obs: np.ndarray) -> np.ndarray:
-        # pylint: disable=protected-access
-        approach_instance._last_observation = obs
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            a = approach_instance._get_action()
-        return np.asarray(a, dtype=np.float32).reshape(act_shape)
-
-    return f
 
 
 class ResidualActionWrapper(ActionWrapper):
@@ -156,7 +134,7 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
         action_space: Space[_ActType],
         seed: int,
         env_builder: Callable[[], gym.Env],
-        base_approach_instance: BaseApproach[Any, Any],
+        base_fn: Callable[[np.ndarray], np.ndarray],
         backend: _BackendName = "sb3-td3",
         total_timesteps: int = 100_000,
         lr: float = 1e-3,
@@ -165,10 +143,7 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
 
-        # Bridge to base approach function.
-        self._base_fn: Callable[[np.ndarray], np.ndarray] = _adapt_approach(
-            base_approach_instance
-        )
+        self._base_fn = base_fn
 
         env = env_builder()
         env.reset(seed=seed)

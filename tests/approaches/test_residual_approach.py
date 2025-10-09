@@ -4,14 +4,19 @@
 
 import contextlib
 import io
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import gymnasium as gym
 import numpy as np
 import pytest
 
+from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
 from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
-    PendulumStupidAlgorithm,
+    Act as PendulumAct,)
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
+    Obs as PendulumObs,)
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
+    create_manual_pendulum_policy,
 )
 from programmatic_policy_learning.approaches.residual_approach import ResidualApproach
 
@@ -55,8 +60,16 @@ def eval_policy(
 def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     """Smoke test: residual approach runs and is not catastrophically worse than base."""
     tmp = build_env()
-    base = PendulumStupidAlgorithm(
-        "base", tmp.observation_space, tmp.action_space, seed=SEED
+    assert isinstance(tmp.action_space, gym.spaces.Box)
+    base_policy: Callable[[PendulumObs], PendulumAct] = create_manual_pendulum_policy(
+        tmp.action_space
+    )
+    base: ExpertApproach = ExpertApproach(
+        f"residual-{backend}",
+        tmp.observation_space,
+        tmp.action_space,
+        seed=SEED,
+        expert_fn=base_policy,
     )
 
     base_returns = eval_policy(base, n_episodes=EVAL_EPISODES, seed=SEED)
@@ -70,7 +83,7 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
         tmp.action_space,
         seed=SEED,
         env_builder=build_env,
-        base_approach_instance=base,
+        base_fn=base_policy,
         backend=backend,
         total_timesteps=TRAIN_STEPS,
         verbose=0,

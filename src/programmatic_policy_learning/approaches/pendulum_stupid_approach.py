@@ -1,28 +1,23 @@
 """A simple hardcoded approach for pendulum balancing."""
 
+from typing import Any, Callable
+
 import gymnasium as gym
 import numpy as np
 from numpy.typing import NDArray
 
-from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
 
 Obs = NDArray[np.float32]
 Act = NDArray[np.float32]
 
 
-class PendulumStupidAlgorithm(BaseApproach[Obs, Act]):
-    """A hardcoded approach that tries to balance the pendulum at the top."""
+def create_manual_pendulum_policy(action_space: gym.spaces.Box) -> Callable[[Obs], Act]:
+    """Create a manual pendulum policy given an action space."""
 
-    def _get_action(self) -> Act:
-
-        assert (
-            self._last_observation is not None
-        ), "Expected a last observation before calling _get_action()."
-        assert isinstance(
-            self._action_space, gym.spaces.Box
-        ), "PendulumStupidAlgorithm requires a Box action space."
-
-        currobs = self._last_observation
+    def manual_pendulum_policy(obs: Obs) -> Act:
+        """A manually defined policy for the pendulum environment."""
+        currobs = obs
 
         # Parse observation: [cos(θ), sin(θ), angular_velocity]
         obs = np.asarray(currobs, dtype=np.float32)
@@ -57,7 +52,25 @@ class PendulumStupidAlgorithm(BaseApproach[Obs, Act]):
                 torque += 1.0 * np.sign(angvel)
 
         # Clip to action space bounds
-        action_space = self._action_space
         low, high = float(action_space.low[0]), float(action_space.high[0])
         torque = float(np.clip(torque, low, high))
         return np.array([torque], dtype=action_space.dtype)
+
+    return manual_pendulum_policy
+
+
+class PendulumStupidAlgorithm(ExpertApproach[Obs, Act]):
+    """A hardcoded approach that tries to balance the pendulum at the top."""
+
+    def __init__(
+        self,
+        environment_description: str,
+        observation_space: Any,
+        action_space: Any,
+        seed: int,
+    ) -> None:
+        assert isinstance(action_space, gym.spaces.Box)
+        expert_fn = create_manual_pendulum_policy(action_space)
+        super().__init__(
+            environment_description, observation_space, action_space, seed, expert_fn
+        )
