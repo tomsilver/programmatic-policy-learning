@@ -78,7 +78,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             cast(
                 Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
                 create_grammar,
-            ),
+            ),  # short-term fix
             dsl,
             env_spec=self.env_specs,
             start_symbol=self.start_symbol,
@@ -93,23 +93,18 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs.append(program)
             program_prior_log_probs.append(prior)
 
-        # uncomment after the PR is approved on dataset branch
         demonstrations = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
-        # demonstrations: list[Trajectory[np.ndarray, tuple[int, int]]] = [
-        # collect_demo(self.env_factory, self.expert, self.max_demo_length)
-        # ]
-
+        programs_sa: list[StateActionProgram] = [
+            StateActionProgram(p) for p in programs
+        ]
         X, y = run_all_programs_on_demonstrations(
-            self.base_class_name, self.demo_numbers, programs, demonstrations
+            self.base_class_name, self.demo_numbers, programs_sa, demonstrations
         )
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
         # Convert programs to list[StateActionProgram] - short term fix
-        programs_sa: list[StateActionProgram] = [
-            StateActionProgram(p) for p in programs
-        ]
 
         plps, plp_priors = learn_plps(
             X,
@@ -119,9 +114,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
         )
-        likelihoods = compute_likelihood_plps(
-            plps, demonstrations
-        )
+        likelihoods = compute_likelihood_plps(plps, demonstrations)
 
         particles = []
         particle_log_probs = []
