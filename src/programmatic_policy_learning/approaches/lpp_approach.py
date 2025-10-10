@@ -35,14 +35,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def __init__(
         self,
-        environment_description: str,
+        environment_description: str, #env_id
         observation_space: Space[_ObsType],
         action_space: Space[_ActType],
         seed: int,
-        env_factory: EnvFactory,
         expert: BaseApproach,
-        demo_numbers: tuple[int, ...],
-        base_class_name: str = "",
+        env: Any,
+        demo_numbers: tuple[int, ...] = (1,2),
         program_generation_step_size: int = 10,
         num_programs: int = 100,
         num_dts: int = 5,
@@ -54,9 +53,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
         self._policy: LPPPolicy | None = None
-        self.env_factory = env_factory
+        self.env = env
         self.expert = expert
-        self.base_class_name = base_class_name
         self.demo_numbers = demo_numbers
         self.program_generation_step_size = program_generation_step_size
         self.num_programs = num_programs
@@ -92,15 +90,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program, prior = next(gen)
             programs.append(program)
             program_prior_log_probs.append(prior)
+        
 
+        env_factory = lambda: self.env
+        print(type(self.expert))
+        input()
         demonstrations = get_demonstrations(
-            self.env_factory, self.expert, demo_numbers=self.demo_numbers
+            env_factory, self.expert, demo_numbers=self.demo_numbers
         )
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
         X, y = run_all_programs_on_demonstrations(
-            self.base_class_name, self.demo_numbers, programs_sa, demonstrations
+            self._environment_description, self.demo_numbers, programs_sa, demonstrations
         )
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []

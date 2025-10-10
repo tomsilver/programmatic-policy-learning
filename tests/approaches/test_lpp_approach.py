@@ -12,7 +12,6 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 
 def test_lpp_approach_real_data() -> None:
     """Test lpp approach with real_data."""
-    base_class_name = "TwoPileNim"
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
@@ -20,11 +19,11 @@ def test_lpp_approach_real_data() -> None:
         }
     )
     registry = EnvRegistry()
-    env_factory = lambda: registry.load(cfg)
-    env = env_factory()  # type: ignore
-    expert_fn = get_grid_expert(base_class_name)
+    env = registry.load(cfg)
+    env_id = cfg["make_kwargs"]["id"]
+    expert_fn = get_grid_expert(env_id)
     expert = ExpertApproach(  # type: ignore
-        base_class_name,
+        env_id, #env_description
         env.observation_space,
         env.action_space,
         seed=1,
@@ -40,13 +39,12 @@ def test_lpp_approach_real_data() -> None:
 
     # Initialize the approach
     approach = LogicProgrammaticPolicyApproach(
-        environment_description=base_class_name,
+        environment_description=env_id,
         observation_space=observation_space,
         action_space=action_space,
         seed=42,
-        env_factory=env_factory,
+        env=env,
         expert=expert,
-        base_class_name=base_class_name,
         demo_numbers=(0, 1),
         num_programs=2,
         num_dts=1,
@@ -56,11 +54,12 @@ def test_lpp_approach_real_data() -> None:
         start_symbol=0,
     )
 
+    # Test reset and action
     obs = env.reset()[0]
     info = env.reset()[1]
     approach.reset(obs, info)
     # pylint: disable=protected-access
-    action = approach._get_action()
+    action = approach._get_action() 
     assert isinstance(action, tuple)
     assert len(action) == 2
     assert all(isinstance(x, int) for x in action)

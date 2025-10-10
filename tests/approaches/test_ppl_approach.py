@@ -1,4 +1,4 @@
-"""Tests for ppl_approach.py."""
+"""Tests for llm_ppl_approach.py."""
 
 import tempfile
 from pathlib import Path
@@ -16,7 +16,7 @@ from programmatic_policy_learning.approaches.llm_ppl_approach import (
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
-def test_ppl_approach() -> None:
+def test_llm_ppl_approach() -> None:
     """Tests for LLMPPLApproach()."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)
@@ -56,7 +56,7 @@ def _policy(obs):
 
 
 @runllms
-def test_ppl_approach_with_real_llm() -> None:
+def test_llm_ppl_approach_with_real_llm() -> None:
     """Tests for LLMPPLApproach() with real LLM."""
     env = gymnasium.make("LunarLander-v3")
     env.action_space.seed(123)

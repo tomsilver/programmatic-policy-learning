@@ -178,7 +178,7 @@ def expert_rfts_policy(layout: np.ndarray) -> tuple[int, int]:
 
 
 _EXPERTS: dict[str, ExpertPolicy] = {
-    "TwoPileNim": expert_nim_policy,
+    "TwoPileNim0-v0": expert_nim_policy,
     "CheckmateTactic": expert_checkmate_tactic_policy,
     "StopTheFall": expert_stf_policy,
     "Chase": expert_ec_policy,

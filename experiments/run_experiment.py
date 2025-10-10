@@ -22,7 +22,16 @@ def _main(cfg: DictConfig) -> None:
 
     registry = EnvRegistry()
     env = registry.load(cfg.env)
+    object_types = env.get_object_types()
+    env_specs = {"object_types": object_types}
 
+    expert = hydra.utils.instantiate(
+        cfg.expert, 
+        cfg.env.description,
+        env.observation_space,
+        env.action_space,
+        cfg.seed,
+        )
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -30,8 +39,12 @@ def _main(cfg: DictConfig) -> None:
         env.observation_space,
         env.action_space,
         cfg.seed,
+        expert,
+        env,
+        env_specs = env_specs,
     )
-
+    # import pdb
+    # pdb.set_trace()
     # Evaluate.
     rng = np.random.default_rng(cfg.seed)
     metrics: list[dict[str, float]] = []
