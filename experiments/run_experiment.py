@@ -26,12 +26,12 @@ def _main(cfg: DictConfig) -> None:
     env_specs = {"object_types": object_types}
 
     expert = hydra.utils.instantiate(
-        cfg.expert, 
+        cfg.expert,
         cfg.env.description,
         env.observation_space,
         env.action_space,
         cfg.seed,
-        )
+    )
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -41,7 +41,7 @@ def _main(cfg: DictConfig) -> None:
         cfg.seed,
         expert,
         env,
-        env_specs = env_specs,
+        env_specs=env_specs,
     )
     # import pdb
     # pdb.set_trace()

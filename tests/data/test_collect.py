@@ -103,7 +103,7 @@ def test_collect_demo_with_real_env_and_expert() -> None:
     registry = EnvRegistry()
     env_factory = lambda: registry.load(cfg)
     env: Any = env_factory()  # type: ignore
-    expert_fn = get_grid_expert("TwoPileNim")
+    expert_fn = get_grid_expert("TwoPileNim0-v0")
     expert = ExpertApproach(  # type: ignore
         "TwoPileNim",
         env.observation_space,

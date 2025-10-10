@@ -23,7 +23,7 @@ def test_lpp_approach_real_data() -> None:
     env_id = cfg["make_kwargs"]["id"]
     expert_fn = get_grid_expert(env_id)
     expert = ExpertApproach(  # type: ignore
-        env_id, #env_description
+        env_id,  # env_description
         env.observation_space,
         env.action_space,
         seed=1,
@@ -59,7 +59,7 @@ def test_lpp_approach_real_data() -> None:
     info = env.reset()[1]
     approach.reset(obs, info)
     # pylint: disable=protected-access
-    action = approach._get_action() 
+    action = approach._get_action()
     assert isinstance(action, tuple)
     assert len(action) == 2
     assert all(isinstance(x, int) for x in action)
