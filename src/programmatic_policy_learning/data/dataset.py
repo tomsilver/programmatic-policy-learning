@@ -131,7 +131,6 @@ def run_all_programs_on_single_demonstration(
         for X_idx, x in enumerate(results):
             X[X_idx, i:end] = x
     X = X.tocsr()
-    print()
     return X, np.array(y, dtype=np.uint8)  # y
 
 
@@ -145,8 +144,6 @@ def run_all_programs_on_demonstrations(
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     for demo_number in demo_numbers:
-        print(demo_number)
-        # input("EACH DEMO")  # Removed for automated testing compatibility
         demo_X, demo_y = run_all_programs_on_single_demonstration(
             base_class_name,
             demo_number,

@@ -91,7 +91,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program, prior = next(gen)
             programs.append(program)
             program_prior_log_probs.append(prior)
-        print("DONE")
+
         env_factory = lambda: self.env
         demonstrations, demo_dict = get_demonstrations(
             env_factory, self.expert, demo_numbers=self.demo_numbers

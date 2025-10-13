@@ -78,8 +78,5 @@ def get_demonstrations(
         demonstrations.append(traj)
         demo_dict[i] = traj
 
-    print("Number of demonstrations:", len(demonstrations))
     all_steps = [step for traj in demonstrations for step in traj.steps]
-    print(len(all_steps))
-    # input("END OF GET DEMONSTRATION")
     return Trajectory(steps=all_steps), demo_dict
