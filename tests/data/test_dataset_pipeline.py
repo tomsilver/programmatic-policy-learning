@@ -85,6 +85,7 @@ def test_dataset_pipeline_with_real_env() -> None:
     demonstration: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(
         steps=[(state, action)]
     )
+    demo_dict = {0: Trajectory(steps=[(state, action)])}
 
     print("\nDemonstrations:")
     for i, (s, a) in enumerate(demonstration.steps):
@@ -95,7 +96,7 @@ def test_dataset_pipeline_with_real_env() -> None:
         base_class_name=base_class_name,
         demo_numbers=demo_numbers,
         programs=programs,
-        demonstrations=demonstration,
+        demo_dict=demo_dict,
     )
     if X is not None and y is not None:
         print("\nDataset X (features matrix):")

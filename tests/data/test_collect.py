@@ -132,7 +132,7 @@ def test_get_demonstrations() -> None:
 
     demo_numbers = (1, 2, 3)
 
-    demonstrations = get_demonstrations(
+    demonstrations, _ = get_demonstrations(
         env_factory, expert, demo_numbers=demo_numbers, max_demo_length=5
     )
     assert isinstance(demonstrations, Trajectory)

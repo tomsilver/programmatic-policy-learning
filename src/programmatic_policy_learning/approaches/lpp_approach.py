@@ -82,6 +82,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             start_symbol=self.start_symbol,
         )
 
+        print(f"Generating {self.num_programs} programs")
         # Generate programs and their priors
         programs = []
         program_prior_log_probs = []
@@ -90,9 +91,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program, prior = next(gen)
             programs.append(program)
             program_prior_log_probs.append(prior)
-
+        print("DONE")
         env_factory = lambda: self.env
-        demonstrations = get_demonstrations(
+        demonstrations, demo_dict = get_demonstrations(
             env_factory, self.expert, demo_numbers=self.demo_numbers
         )
         programs_sa: list[StateActionProgram] = [
@@ -102,7 +103,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self._environment_description,
             self.demo_numbers,
             programs_sa,
-            demonstrations,
+            demo_dict,
         )
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []

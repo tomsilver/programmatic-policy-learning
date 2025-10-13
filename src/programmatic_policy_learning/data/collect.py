@@ -46,6 +46,7 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
+        print("Nim board layout for env_num", env_num)  # ":\n", obs)
         t += 1
         expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):
@@ -63,19 +64,23 @@ def get_demonstrations(
     expert: BaseApproach,
     demo_numbers: tuple[int, ...],
     max_demo_length: int | float = np.inf,
-) -> Trajectory:
+) -> tuple[Trajectory, dict[int, Trajectory]]:
     """Collect multiple demonstration trajectories using an expert policy."""
     demonstrations: list[Trajectory] = []
+    demo_dict: dict[int, Trajectory] = {}
 
     for i in demo_numbers:
-        demonstrations.append(
-            collect_demo(
-                env_factory,
-                expert,
-                max_demo_length=max_demo_length,
-                env_num=i,
-            )
+        traj: Trajectory = collect_demo(
+            env_factory,
+            expert,
+            max_demo_length=max_demo_length,
+            env_num=i,
         )
-    all_steps = [step for traj in demonstrations for step in traj.steps]
+        demonstrations.append(traj)
+        demo_dict[i] = traj
 
-    return Trajectory(steps=all_steps)
+    print("Number of demonstrations:", len(demonstrations))
+    all_steps = [step for traj in demonstrations for step in traj.steps]
+    print(len(all_steps))
+    # input("END OF GET DEMONSTRATION")
+    return Trajectory(steps=all_steps), demo_dict
