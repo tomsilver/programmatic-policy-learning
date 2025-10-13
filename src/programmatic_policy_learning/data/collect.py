@@ -46,7 +46,7 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
-        print("Nim board layout for env_num", env_num)  # ":\n", obs)
+        print("Nim board layout for env_num", env_num, ":\n", obs)
         t += 1
         expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):
@@ -54,7 +54,6 @@ def collect_demo(
                 # keep behavior parity with original: warn if didn’t succeed
                 print("WARNING: demo did not succeed!")
             break
-
     steps = list(zip(obs_list, act_list))
     return Trajectory(steps=steps)
 

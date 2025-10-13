@@ -1,12 +1,12 @@
 # GGG → Gym env id (see repo README for naming pattern)
 make_kwargs:
-  id: TwoPileNim0-v0
-  render: human  # null | human | rgb_array (mapped to render_mode if supported)
+  id: "TwoPileNim${instance_num}-v0"
+  render: human # null | human | rgb_array (mapped to render_mode if supported)
   seed: 0
   max_episode_steps: 200
 
 # provider tells the factory how to build
 provider: ggg
 env_id: ${make_kwargs.id}
-
 description: "Generalization Grid Games: TwoPileNim instance 0 (v0)"
+instance_num: 0

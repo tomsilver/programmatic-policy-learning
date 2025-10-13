@@ -10,11 +10,14 @@ from programmatic_policy_learning.envs.providers.ggg_provider import (
 
 def test_ggg_env_creation() -> None:
     """Test GGG environment creation and basic API."""
+    instance_num = 0
     cfg: DictConfig = OmegaConf.create(
         {
-            "make_kwargs": {"id": "TwoPileNim0-v0"},
+            "make_kwargs": {"id": f"TwoPileNim{instance_num}-v0"},
+            "instance_num": instance_num,
         }
     )
+
     env = create_ggg_env(cfg)
     assert env is not None
     obs, _ = env.reset()
@@ -29,9 +32,11 @@ def test_ggg_env_creation() -> None:
 
 def test_ggg_env_with_types_classname_extraction() -> None:
     """Test GGGEnvWithTypes class name extraction and object types."""
+    instance_num = 0
     cfg: DictConfig = OmegaConf.create(
         {
-            "make_kwargs": {"id": "TwoPileNim0-v0"},
+            "make_kwargs": {"id": f"TwoPileNim{instance_num}-v0"},
+            "instance_num": instance_num,
         }
     )
     env = create_ggg_env(cfg)

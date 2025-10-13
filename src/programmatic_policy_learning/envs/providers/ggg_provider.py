@@ -17,9 +17,9 @@ class GGGEnvWithTypes:
 
     def get_object_types(self) -> tuple[str, ...]:
         """Return object types for the each env."""
-        if self.base_class_name == "TwoPileNimGymEnv0":
+        if self.base_class_name.startswith("TwoPileNimGymEnv"):
             return ("tpn.EMPTY", "tpn.TOKEN", "None")
-        if self.base_class_name == "CheckmateTacticGymEnv0":
+        if self.base_class_name.startswith("CheckmateTacticGymEnv"):
             return (
                 "ct.EMPTY",
                 "ct.HIGHLIGHTED_WHITE_QUEEN",
@@ -29,7 +29,7 @@ class GGGEnvWithTypes:
                 "ct.WHITE_QUEEN",
                 "None",
             )
-        if self.base_class_name == "StopTheFallGymEnv0":
+        if self.base_class_name.startswith("StopTheFallGymEnv"):
             return (
                 "stf.EMPTY",
                 "stf.FALLING",
@@ -39,7 +39,7 @@ class GGGEnvWithTypes:
                 "stf.DRAWN",
                 "None",
             )
-        if self.base_class_name == "ChaseGymEnv0":
+        if self.base_class_name.startswith("ChaseGymEnv"):
             return (
                 "ec.EMPTY",
                 "ec.TARGET",
@@ -52,7 +52,7 @@ class GGGEnvWithTypes:
                 "ec.DOWN_ARROW",
                 "None",
             )
-        if self.base_class_name == "ReachForTheStarGymEnv0":
+        if self.base_class_name.startswith("ReachForTheStarGymEnv"):
             return (
                 "rfts.EMPTY",
                 "rfts.AGENT",
@@ -83,8 +83,11 @@ def create_ggg_env(env_config: DictConfig) -> GGGEnvWithTypes:
     # Lazy import, to avoid deprecation warnings at module import time
     import generalization_grid_games  # pylint: disable=unused-import,import-outside-toplevel
     import gym as legacy_gym  # pylint: disable=import-outside-toplevel
-
-    env_id = env_config.make_kwargs.id
+    if "instance_num" in env_config:
+        instance_num = env_config.get("instance_num", 0)
+    env_id = f"TwoPileNim{instance_num}-v0"
+    env_config.make_kwargs.id = env_id
+    # env_id = env_config.make_kwargs.id
     base = legacy_gym.make(env_id, disable_env_checker=True)
     env_name = base.unwrapped.__class__.__name__
     wrapped = GymToGymnasium(base)

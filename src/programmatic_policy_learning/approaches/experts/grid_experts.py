@@ -178,19 +178,18 @@ def expert_rfts_policy(layout: np.ndarray) -> tuple[int, int]:
 
 
 _EXPERTS: dict[str, ExpertPolicy] = {
-    "TwoPileNim0-v0": expert_nim_policy,
+    "TwoPileNim": expert_nim_policy,
     "CheckmateTactic": expert_checkmate_tactic_policy,
     "StopTheFall": expert_stf_policy,
     "Chase": expert_ec_policy,
     "ReachForTheStar": expert_rfts_policy,
 }
 
-
 def get_grid_expert(env_name: str) -> ExpertPolicy:
     """Return expert policy function for a given grid environment name."""
-    try:
-        return _EXPERTS[env_name]
-    except KeyError as e:
-        raise ValueError(
-            f"Unknown grid expert '{env_name}'. " f"Available: {sorted(_EXPERTS)}"
-        ) from e
+    for key, expert in _EXPERTS.items():
+        if env_name.startswith(key):
+            return expert
+    raise ValueError(
+        f"Unknown grid expert '{env_name}'. Available: {sorted(_EXPERTS)}"
+    )
