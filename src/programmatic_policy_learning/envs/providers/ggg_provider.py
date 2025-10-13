@@ -83,8 +83,8 @@ def create_ggg_env(env_config: DictConfig) -> GGGEnvWithTypes:
     # Lazy import, to avoid deprecation warnings at module import time
     import generalization_grid_games  # pylint: disable=unused-import,import-outside-toplevel
     import gym as legacy_gym  # pylint: disable=import-outside-toplevel
-    if "instance_num" in env_config:
-        instance_num = env_config.get("instance_num", 0)
+
+    instance_num = env_config.get("instance_num", 0)
     env_id = f"TwoPileNim{instance_num}-v0"
     env_config.make_kwargs.id = env_id
     # env_id = env_config.make_kwargs.id
