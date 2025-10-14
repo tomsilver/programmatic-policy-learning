@@ -45,7 +45,7 @@ def compute_likelihood_single_plp(
     return ll
 
 
-def compute_likelihood_plps(  # TODOO: need it to support list[Traj]
+def compute_likelihood_plps(
     plps: list[StateActionProgram],
     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
 ) -> list[float]:
