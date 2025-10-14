@@ -25,7 +25,8 @@ def test_run_all_programs_on_single_demonstration() -> None:
         base_class_name="DummyEnv",
         demo_number=0,
         programs=programs,
-        demonstrations=traj,
+        # demonstrations=traj,
+        demo_traj=traj,
     )
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)

@@ -12,7 +12,7 @@ We strongly recommend [uv](https://docs.astral.sh/uv/getting-started/installatio
 uv pip install -e ".[develop]"
 ```
 
-Check the installation: ```./run_ci_checks.sh```
+Check the installation: `./run_ci_checks.sh`
 
 If you want to use an OpenAI LLM, make sure you have an `OPENAI_API_KEY` set (e.g., see [here](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety))
 
@@ -26,7 +26,7 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
 from programmatic_policy_learning.approaches.ppl_approach import (
-    ProgrammaticPolicyLearningApproach,
+    LLMPPLApproach,
 )
 
 env = gymnasium.make("LunarLander-v3")
@@ -39,7 +39,7 @@ environment_description = (
 cache = SQLite3PretrainedLargeModelCache(Path("llm_cache.db"))
 llm = OpenAIModel("gpt-4o-mini", cache)
 
-approach = ProgrammaticPolicyLearningApproach(
+approach = LLMPPLApproach(
     environment_description,
     env.observation_space,
     env.action_space,
@@ -67,7 +67,6 @@ We use [hydra](https://hydra.cc/) to run experiments at scale. See `experiments/
 python experiments/run_experiment.py -m env=lunar_lander llm=openai seed='range(0,2)'
 ```
 
-
 ## Notes
 
 ### Box2D Installation on macOS
@@ -89,6 +88,7 @@ To fix this issue, try these steps:
 1. **Reinstall or point to the correct Command Line Tools (CLT):**
 
    - Remove any broken or partial CLT installations:
+
      ```bash
      sudo rm -rf /Library/Developer/CommandLineTools
      ```
@@ -108,14 +108,15 @@ If you are using `uv` to manage your virtual environment, you can also try insta
 ```bash
 uv pip install box2d-py
 ```
+
 ---
+
 # Adding a New Environment to PPL
 
 You can add environments in two ways:
 
-1. **Plain Gymnasium env** (already registered via `gymnasium.make`)  
+1. **Plain Gymnasium env** (already registered via `gymnasium.make`)
 2. **Provider-based env** (env lives in a separate repo and needs a small adapter)
-
 
 ## 1. Plain Gymnasium Env (no provider)
 
@@ -126,12 +127,11 @@ If the env is already registered with Gymnasium, just add a YAML under `conf/env
 # Passed into gymnasium.make() to create the environment.
 make_kwargs:
   id: "LunarLander-v3"
-  render_mode: null  # "human", "rgb_array", or null
+  render_mode: null # "human", "rgb_array", or null
 
 # Optional, purely descriptive.
 description: "The well-known LunarLander in gymnasium, i.e., env = gymnasium.make('LunarLander-v3')"
 ```
-
 
 **How it’s used in code:**
 
@@ -141,6 +141,7 @@ from programmatic_policy_learning.env.registry import EnvRegistry
 registry = EnvRegistry()
 env = registry.load(cfg.env)  # default fallback is gymnasium.make(**make_kwargs)
 ```
+
 > If you don’t specify a `provider`, `EnvRegistry` falls back to `gymnasium.make(**make_kwargs)`.
 
 ## 2. Provider-Based Env (from a separate repo)
@@ -157,15 +158,17 @@ make_kwargs:
   id: "prbench/Motion2D-p1-v0"
   render_mode: null
 
-provider: prbench  # <--- important
+provider: prbench # <--- important
 
 description: "PRBench Motion2D-p1. Gymnasium-style env registered by PRBench"
 ```
+
 ### 2.2 Register the Provider
 
 **Edit:** `programmatic_policy_learning/env/registry.py`
 
 Add an entry to the provider map:
+
 ```python
 self._providers: dict[str, Callable[[Any], Any]] = {
     "ggg": create_ggg_env,
@@ -177,6 +180,7 @@ self._providers: dict[str, Callable[[Any], Any]] = {
 ### 2.3 Implement the Provider Function
 
 **File structure:**
+
 ```cpp
 programmatic_policy_learning/
   env/
@@ -201,11 +205,13 @@ def create_prbench_env(cfg: Any):
 ```
 
 > Your provider can do anything needed (import the external package, wrap the env, set seeds, apply wrappers, etc.). Just return the final `env`.
+
 ### 2.4 Add the External Repo to the dependencies
 
 If your provider imports an external repo, put it in `pyproject.toml` under `dependencies = [...]`, so CI and collaborators get the same version.
 
 **Example (GGG):**
+
 ```toml
 dependencies = [
   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
@@ -213,6 +219,7 @@ dependencies = [
 ```
 
 **Example (your own repo):**
+
 ```toml
 dependencies = [
   "my_cool_env_pkg@git+https://github.com/your-org/my_cool_env_pkg.git@<commit-hash>"
@@ -228,6 +235,7 @@ uv pip install -e ".[develop]"
 ## 3) How to Instantiate in Code
 
 Same pattern for both plain and provider-based envs:
+
 ```python
 from programmatic_policy_learning.env.registry import EnvRegistry
 
@@ -235,35 +243,29 @@ registry = EnvRegistry()
 env = registry.load(cfg.env)  # uses provider if present, else gymnasium.make
 ```
 
--   If your YAML has `provider: ...`, `EnvRegistry` routes to the matching provider function.
-    
--   If there’s **no** `provider`, it calls `gymnasium.make(**make_kwargs)`.
-
-
+- If your YAML has `provider: ...`, `EnvRegistry` routes to the matching provider function.
+- If there’s **no** `provider`, it calls `gymnasium.make(**make_kwargs)`.
 
 ## Minimal Checklist
 
--   Add `conf/env/<your_env>.yaml`
+- Add `conf/env/<your_env>.yaml`
 - If external repo:
-    
-	-  Add dependency pin in `pyproject.toml` under `[project.optional-dependencies]`
-	    
-	-   Add provider entry in `EnvRegistry` (provider name → function)
-	    
-	-   Implement `create_<provider>_env(cfg)` in `env/providers/<provider>_provider.py`
-	    
--   Instantiate with `EnvRegistry().load(cfg.env)`
-That's it!
+  - Add dependency pin in `pyproject.toml` under `[project.optional-dependencies]`
+  - Add provider entry in `EnvRegistry` (provider name → function)
+  - Implement `create_<provider>_env(cfg)` in `env/providers/<provider>_provider.py`
+- Instantiate with `EnvRegistry().load(cfg.env)`
+  That's it!
+
 ---
 
 ## 3. Implementing Your Own Custom Env
+
 If you want to implement an environment yourself (instead of importing it from another repo), you can follow the same provider-based structure:
 
 - Create a new provider file under `programmatic_policy_learning/env/providers/x_provider.py`.
 - Inside this file, implement your custom environment class (e.g., MyCustomEnv).
 - At the end of the file, also implement a factory function (as before) like: def create_x_env(cfg: Any):
 - Add a YAML under conf/env/ (as in the examples above), and register your provider in EnvRegistry.
-  
 
 This way, whether your env comes from an external repo or is defined locally, the process looks the same, your provider file is the single place to keep both the environment definition and the factory function.
 
@@ -271,6 +273,6 @@ This way, whether your env comes from an external repo or is defined locally, th
 
 ## Contributing
 
-* Ask an owner of the repository to add your GitHub username to the collaborators list
-* All checks must pass before code is merged (see `./run_ci_checks.sh`)
-* All code goes through the pull request review process on GitHub
+- Ask an owner of the repository to add your GitHub username to the collaborators list
+- All checks must pass before code is merged (see `./run_ci_checks.sh`)
+- All code goes through the pull request review process on GitHub

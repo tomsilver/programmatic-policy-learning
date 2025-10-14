@@ -2,6 +2,12 @@
 
 from typing import Any
 
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    get_dsl_functions_dict,
+)
+
+DSL_FUNCTIONS = get_dsl_functions_dict()
+
 
 class StateActionProgram:
     """A callable object with input (state, action) and Boolean output.
@@ -10,17 +16,15 @@ class StateActionProgram:
     evals.
     """
 
-    def __init__(
-        self, program: str, dsl_functions: dict[str, Any] | None = None
-    ) -> None:
+    def __init__(self, program: str) -> None:
 
         self.program: str = program
         self.wrapped: Any = None
-        self.dsl_functions = dsl_functions
+        # self.dsl_functions = dsl_functions
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if self.wrapped is None:
-            self.wrapped = eval("lambda s, a: " + self.program, self.dsl_functions)
+            self.wrapped = eval("lambda s, a: " + self.program, DSL_FUNCTIONS)
         return self.wrapped(*args, **kwargs)
 
     def __repr__(self) -> str:
@@ -38,9 +42,9 @@ class StateActionProgram:
 
     def __add__(self, s: Any) -> "StateActionProgram":
         if isinstance(s, str):
-            return StateActionProgram(self.program + s, self.dsl_functions)
+            return StateActionProgram(self.program + s)
         if isinstance(s, StateActionProgram):
-            return StateActionProgram(self.program + s.program, self.dsl_functions)
+            return StateActionProgram(self.program + s.program)
         raise TypeError(
             f"Unsupported operand type(s) for +: '\
             {type(self).__name__}' and '{type(s).__name__}'"
@@ -48,9 +52,9 @@ class StateActionProgram:
 
     def __radd__(self, s: Any) -> "StateActionProgram":
         if isinstance(s, str):
-            return StateActionProgram(s + self.program, self.dsl_functions)
+            return StateActionProgram(s + self.program)
         if isinstance(s, StateActionProgram):
-            return StateActionProgram(s.program + self.program, self.dsl_functions)
+            return StateActionProgram(s.program + self.program)
         raise TypeError(
             f"Unsupported operand type(s) for +: '\
                 {type(s).__name__}' and '{type(self).__name__}'"
