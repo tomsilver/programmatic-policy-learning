@@ -16,7 +16,7 @@ def test_get_grid_expert_returns_callable() -> None:
 def test_get_grid_expert_valid_names() -> None:
     """Test get_grid_expert returns callable for valid names."""
     for name in [
-        "TwoPileNim0-v0",
+        "TwoPileNim",
         "CheckmateTactic",
         "StopTheFall",
         "Chase",

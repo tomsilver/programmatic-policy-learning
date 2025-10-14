@@ -1,5 +1,6 @@
 """Demo collection utilities."""
 
+import logging
 from typing import Any, Callable, TypeVar
 
 import numpy as np
@@ -22,7 +23,7 @@ def collect_demo(
     policy."""
 
     env = env_factory(env_num)  # type: ignore
-    # (becuase not all the providers have this env_num thing)
+    # (because not all the providers have this 'env_num' attribute)
     reset_out = env.reset()
     assert (
         isinstance(reset_out, tuple) and len(reset_out) == 2
@@ -46,13 +47,12 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
-        # print("Nim board layout for env_num", env_num, ":\n", obs)
         t += 1
         expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):
             if not reward > 0:
                 # keep behavior parity with original: warn if didn’t succeed
-                print("WARNING: demo did not succeed!")
+                logging.warning("WARNING: demo did not succeed!")
             break
     steps = list(zip(obs_list, act_list))
     return Trajectory(steps=steps)

@@ -89,9 +89,10 @@ def create_ggg_env(
     if instance_num is None:
         instance_num = env_config.get("instance_num", 0)
 
-    env_id = f"TwoPileNim{instance_num}-v0"
+    base_name = env_config.make_kwargs.get("base_name")
+    env_id = f"{base_name}{instance_num}-v0"
     env_config.make_kwargs.id = env_id
-    # env_id = env_config.make_kwargs.id
+
     base = legacy_gym.make(env_id, disable_env_checker=True)
     env_name = base.unwrapped.__class__.__name__
     wrapped = GymToGymnasium(base)

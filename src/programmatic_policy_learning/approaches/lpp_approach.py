@@ -1,5 +1,6 @@
 """An approach that learns a logical programmatic policy from data."""
 
+import logging
 from typing import Any, Callable, TypeVar, cast
 
 import numpy as np
@@ -82,7 +83,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             start_symbol=self.start_symbol,
         )
 
-        print(f"Generating {self.num_programs} programs")
+        logging.info(f"Generating {self.num_programs} programs")
+
         # Generate programs and their priors
         programs = []
         program_prior_log_probs = []
@@ -125,8 +127,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             particle_log_probs.append(prior + likelihood)
 
         map_idx = np.argmax(particle_log_probs).squeeze()
-        print(f"MAP program ({particle_log_probs[map_idx]}):")
-        print(particles[map_idx])
+        logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
+        logging.info(particles[map_idx])
 
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, self.max_num_particles
@@ -137,10 +139,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 top_particle_log_probs
             )
             top_particle_probs = np.exp(top_particle_log_probs)
-            print("top_particle_probs:", top_particle_probs)
+            logging.info("top_particle_probs: %s", top_particle_probs)
             policy = LPPPolicy(top_particles, top_particle_probs)
         else:
-            print("no nontrivial particles found")
+            logging.info("no nontrivial particles found")
             policy = LPPPolicy([StateActionProgram("False")], [1.0])
 
         return policy
