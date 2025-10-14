@@ -105,14 +105,15 @@ def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
     programs: list,
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demo_traj: Trajectory[np.ndarray, tuple[int, int]],
     program_interval: int = 1000,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
+
     print(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
-        demonstrations
+        demo_traj
     )
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
     num_data = len(y)
@@ -130,22 +131,24 @@ def run_all_programs_on_single_demonstration(
         for X_idx, x in enumerate(results):
             X[X_idx, i:end] = x
     X = X.tocsr()
-    print()
     return X, np.array(y, dtype=np.uint8)  # y
 
 
 # cache management decorator
 def run_all_programs_on_demonstrations(
     base_class_name: str,
-    demo_numbers: list[int],
+    demo_numbers: tuple[int, ...],
     programs: list,
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demo_dict: dict[int, Trajectory],
 ) -> tuple[Any | None, np.ndarray | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     for demo_number in demo_numbers:
         demo_X, demo_y = run_all_programs_on_single_demonstration(
-            base_class_name, demo_number, programs, demonstrations
+            base_class_name,
+            demo_number,
+            programs,
+            demo_dict[demo_number],
         )
         if X is None:
             X = demo_X

@@ -1,0 +1,5 @@
+_target_: "programmatic_policy_learning.approaches.expert_approach.ExpertApproach"
+
+expert_fn:
+  _target_: "programmatic_policy_learning.approaches.experts.grid_experts.get_grid_expert"
+  env_name: ${env.make_kwargs.id}

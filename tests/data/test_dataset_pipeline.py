@@ -48,8 +48,14 @@ def test_dataset_pipeline_with_real_env() -> None:
     # Setup environment
     base_class_name = "TwoPileNim"
     num_programs = 2
-    demo_numbers = [0]
-    cfg = OmegaConf.create({"provider": "ggg", "make_kwargs": {"id": "TwoPileNim0-v0"}})
+    demo_numbers = (0,)
+    cfg = OmegaConf.create(
+        {
+            "provider": "ggg",
+            "make_kwargs": {"base_name": "TwoPileNim", "id": "TwoPileNim0-v0"},
+            "instance_num": 0,
+        }
+    )
     env = create_ggg_env(cfg)
     # Setup DSL and program generator
     dsl: DSL[str, Any, Any] = DSL(
@@ -85,6 +91,7 @@ def test_dataset_pipeline_with_real_env() -> None:
     demonstration: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(
         steps=[(state, action)]
     )
+    demo_dict = {0: Trajectory(steps=[(state, action)])}
 
     print("\nDemonstrations:")
     for i, (s, a) in enumerate(demonstration.steps):
@@ -95,7 +102,7 @@ def test_dataset_pipeline_with_real_env() -> None:
         base_class_name=base_class_name,
         demo_numbers=demo_numbers,
         programs=programs,
-        demonstrations=demonstration,
+        demo_dict=demo_dict,
     )
     if X is not None and y is not None:
         print("\nDataset X (features matrix):")

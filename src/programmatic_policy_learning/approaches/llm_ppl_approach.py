@@ -18,7 +18,7 @@ _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
-class ProgrammaticPolicyLearningApproach(BaseApproach[_ObsType, _ActType]):
+class LLMPPLApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that synthesizes a programmatic policy using an LLM."""
 
     def __init__(

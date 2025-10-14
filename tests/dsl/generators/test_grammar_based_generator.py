@@ -106,7 +106,13 @@ def test_grammar_based_program_generator_with_input() -> None:
 def test_grid_grammar_infers_env_spec_from_env() -> None:
     """Test that env_spec is inferred from GGGEnvWithTypes and used in
     grammar."""
-    cfg = OmegaConf.create({"make_kwargs": {"id": "TwoPileNim0-v0"}})
+    cfg = OmegaConf.create(
+        {
+            "provider": "ggg",
+            "make_kwargs": {"base_name": "TwoPileNim", "id": "TwoPileNim0-v0"},
+            "instance_num": 0,
+        }
+    )
     env = create_ggg_env(cfg)
     object_types = env.get_object_types()
     env_spec = {"object_types": object_types}
@@ -146,7 +152,13 @@ def test_generate_program_with_custom_generator() -> None:
 def test_generate_program_with_env_specific_grammar() -> None:
     """Test program generation with environment-specific grammar."""
 
-    cfg = OmegaConf.create({"make_kwargs": {"id": "TwoPileNim0-v0"}})
+    cfg = OmegaConf.create(
+        {
+            "provider": "ggg",
+            "make_kwargs": {"base_name": "TwoPileNim", "id": "TwoPileNim0-v0"},
+            "instance_num": 0,
+        }
+    )
     env = create_ggg_env(cfg)
     object_types = env.get_object_types()
     env_spec = {"object_types": object_types}

@@ -1,2 +1,2 @@
-_target_: "programmatic_policy_learning.approaches.ppl_approach.ProgrammaticPolicyLearningApproach"
+_target_: "programmatic_policy_learning.approaches.llm_ppl_approach.LLMPPLApproach"
 llm: ${llm}

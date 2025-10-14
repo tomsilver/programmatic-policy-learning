@@ -23,10 +23,15 @@ class EnvRegistry:
             "maze": create_maze_env,
         }
 
-    def load(self, env_config: Any) -> Any:
+    def load(self, env_config: Any, instance_num: int | None = None) -> Any:
         """Load environment from provider or fallback to gymnasium."""
         if "provider" in env_config:
             provider: str = env_config["provider"]
+            if provider == "ggg" and instance_num is not None:
+                return self._providers[provider](
+                    env_config, instance_num
+                )  # type: ignore
             return self._providers[provider](env_config)
+
         # Fall back to gymnasium if nothing was found...
         return gymnasium.make(**env_config.make_kwargs)
