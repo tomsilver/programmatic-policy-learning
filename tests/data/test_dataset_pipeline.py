@@ -49,7 +49,13 @@ def test_dataset_pipeline_with_real_env() -> None:
     base_class_name = "TwoPileNim"
     num_programs = 2
     demo_numbers = (0,)
-    cfg = OmegaConf.create({"provider": "ggg", "make_kwargs": {"id": "TwoPileNim0-v0"}})
+    cfg = OmegaConf.create(
+        {
+            "provider": "ggg",
+            "make_kwargs": {"base_name": "TwoPileNim", "id": "TwoPileNim0-v0"},
+            "instance_num": 0,
+        }
+    )
     env = create_ggg_env(cfg)
     # Setup DSL and program generator
     dsl: DSL[str, Any, Any] = DSL(

@@ -15,7 +15,11 @@ def test_lpp_approach_real_data() -> None:
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
-            "make_kwargs": {"id": "TwoPileNim0-v0"},
+            "make_kwargs": {
+                "base_name": "TwoPileNim",
+                "id": "TwoPileNim0-v0",
+            },
+            "instance_num": 0,
         }
     )
     registry = EnvRegistry()

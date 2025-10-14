@@ -79,7 +79,10 @@ def test_collect_demo_with_real_env() -> None:
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
-            "make_kwargs": {"id": f"TwoPileNim{env_num}-v0"},
+            "make_kwargs": {
+                "base_name": "TwoPileNim",
+                "id": f"TwoPileNim{env_num}-v0",
+            },
         }
     )
     registry = EnvRegistry()
@@ -105,14 +108,19 @@ def test_collect_demo_with_real_env_and_expert() -> None:
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
-            "make_kwargs": {"id": "TwoPileNim1-v0"},
+            "make_kwargs": {
+                "base_name": "TwoPileNim",
+                "id": "TwoPileNim1-v0",
+            },
+            "instance_num": 1,
         }
     )
     registry = EnvRegistry()
     env_factory = lambda instance_num=None: registry.load(
         cfg, instance_num=instance_num
     )
-    env: Any = env_factory()  # type: ignore
+    env: Any = env_factory(1)  # type: ignore
+
     expert_fn = get_grid_expert("TwoPileNim1-v0")
     expert = ExpertApproach(  # type: ignore
         "TwoPileNim",
