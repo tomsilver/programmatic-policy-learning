@@ -94,12 +94,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs.append(program)
             program_prior_log_probs.append(prior)
 
-        demonstrations, demo_dict = get_demonstrations(
-            self.env_factory, self.expert, demo_numbers=self.demo_numbers
-        )
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
+        demonstrations, demo_dict = get_demonstrations(
+            self.env_factory, self.expert, demo_numbers=self.demo_numbers
+        )
+
         X, y = run_all_programs_on_demonstrations(
             self._environment_description,
             self.demo_numbers,
