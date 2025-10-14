@@ -40,7 +40,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         action_space: Space[_ActType],
         seed: int,
         expert: BaseApproach,
-        env: Any,
+        env_factory: Any,
         demo_numbers: tuple[int, ...] = (1, 2),
         program_generation_step_size: int = 10,
         num_programs: int = 100,
@@ -53,7 +53,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
         self._policy: LPPPolicy | None = None
-        self.env = env
+        self.env_factory = env_factory
         self.expert = expert
         self.demo_numbers = demo_numbers
         self.program_generation_step_size = program_generation_step_size
@@ -92,9 +92,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs.append(program)
             program_prior_log_probs.append(prior)
 
-        env_factory = lambda: self.env
         demonstrations, demo_dict = get_demonstrations(
-            env_factory, self.expert, demo_numbers=self.demo_numbers
+            self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs

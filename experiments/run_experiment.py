@@ -22,6 +22,8 @@ def _main(cfg: DictConfig) -> None:
 
     registry = EnvRegistry()
     env = registry.load(cfg.env)
+    env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+
     object_types = env.get_object_types()
     env_specs = {"object_types": object_types}
 
@@ -40,7 +42,7 @@ def _main(cfg: DictConfig) -> None:
         env.action_space,
         cfg.seed,
         expert,
-        env,
+        env_factory,
         env_specs=env_specs,
     )
     # import pdb

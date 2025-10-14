@@ -16,12 +16,13 @@ def collect_demo(
     env_factory: EnvFactory,
     expert: BaseApproach,
     max_demo_length: int | float = np.inf,
-    env_num: int = 1,  # pylint: disable=unused-argument
+    env_num: int = 0,  # pylint: disable=unused-argument
 ) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
 
-    env = env_factory()
+    env = env_factory(env_num)  # type: ignore
+    # (becuase not all the providers have this env_num thing)
     reset_out = env.reset()
     assert (
         isinstance(reset_out, tuple) and len(reset_out) == 2
@@ -37,7 +38,6 @@ def collect_demo(
         action = expert.step()
         obs_list.append(obs)
         act_list.append(action)
-
         step_out = env.step(action)
 
         # handle gym vs. gymnasium
@@ -46,7 +46,7 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
-        print("Nim board layout for env_num", env_num, ":\n", obs)
+        # print("Nim board layout for env_num", env_num, ":\n", obs)
         t += 1
         expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):

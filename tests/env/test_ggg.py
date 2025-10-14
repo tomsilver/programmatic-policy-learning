@@ -32,7 +32,7 @@ def test_ggg_env_creation() -> None:
 
 def test_ggg_env_with_types_classname_extraction() -> None:
     """Test GGGEnvWithTypes class name extraction and object types."""
-    instance_num = 0
+    instance_num = 1
     cfg: DictConfig = OmegaConf.create(
         {
             "make_kwargs": {"id": f"TwoPileNim{instance_num}-v0"},
@@ -42,9 +42,10 @@ def test_ggg_env_with_types_classname_extraction() -> None:
     env = create_ggg_env(cfg)
     # Check that the wrapper is used
     assert isinstance(env, GGGEnvWithTypes)
-
+    obs, _ = env.reset()
+    print(obs)
     class_name = env.env.unwrapped.__class__.__name__
-    assert class_name == "TwoPileNimGymEnv0"
+    assert class_name == "TwoPileNimGymEnv1"
     object_types = env.get_object_types()
     assert "tpn.EMPTY" in object_types
     assert "tpn.TOKEN" in object_types

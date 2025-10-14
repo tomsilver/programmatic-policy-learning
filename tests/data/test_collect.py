@@ -55,7 +55,9 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
     DummyEnv."""
 
     env = DummyEnv()
-    env_factory = lambda: env  # returns a new environment each time you call
+    env_factory = (
+        lambda instance_num=None: env
+    )  # returns a new environment each time you call
 
     expert: RandomActionsApproach = RandomActionsApproach(
         "TEST",
@@ -64,7 +66,7 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
         seed=1,
     )
 
-    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5, env_num=0)
     assert isinstance(traj, Trajectory)
     assert isinstance(traj.steps, list)
     assert isinstance(traj.steps[0], tuple)
@@ -73,19 +75,25 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
 
 def test_collect_demo_with_real_env() -> None:
     """Test collect_demo with a real environment using EnvRegistry."""
+    env_num = 2
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
-            "make_kwargs": {"id": "TwoPileNim0-v0"},
+            "make_kwargs": {"id": f"TwoPileNim{env_num}-v0"},
         }
     )
     registry = EnvRegistry()
-    env_factory = lambda: registry.load(cfg)
-    env: Any = env_factory()  # type: ignore
+    env = registry.load(cfg)
+    env_factory = lambda instance_num=None: registry.load(
+        cfg, instance_num=instance_num
+    )
+    env: Any = env_factory(env_num)  # type: ignore
     expert = RandomActionsApproach(
         "TEST", env.observation_space, env.action_space, seed=1
     )
-    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5)
+    traj: Trajectory = collect_demo(
+        env_factory, expert, max_demo_length=5, env_num=env_num
+    )
     assert isinstance(traj, Trajectory)
     assert isinstance(traj.steps, list)
     assert isinstance(traj.steps[0], tuple)
@@ -97,13 +105,15 @@ def test_collect_demo_with_real_env_and_expert() -> None:
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
-            "make_kwargs": {"id": "TwoPileNim0-v0"},
+            "make_kwargs": {"id": "TwoPileNim1-v0"},
         }
     )
     registry = EnvRegistry()
-    env_factory = lambda: registry.load(cfg)
+    env_factory = lambda instance_num=None: registry.load(
+        cfg, instance_num=instance_num
+    )
     env: Any = env_factory()  # type: ignore
-    expert_fn = get_grid_expert("TwoPileNim0-v0")
+    expert_fn = get_grid_expert("TwoPileNim1-v0")
     expert = ExpertApproach(  # type: ignore
         "TwoPileNim",
         env.observation_space,
@@ -111,7 +121,7 @@ def test_collect_demo_with_real_env_and_expert() -> None:
         seed=1,
         expert_fn=expert_fn,
     )
-    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=10)
+    traj: Trajectory = collect_demo(env_factory, expert, max_demo_length=5, env_num=1)
     assert isinstance(traj, Trajectory)
     assert isinstance(traj.steps, list)
     assert isinstance(traj.steps[0], tuple)
@@ -121,7 +131,7 @@ def test_collect_demo_with_real_env_and_expert() -> None:
 def test_get_demonstrations() -> None:
     """Test get_demonstrations collects multiple trajectories."""
     env = DummyEnv()
-    env_factory = lambda: env
+    env_factory = lambda instance_num=None: env
 
     expert: RandomActionsApproach = RandomActionsApproach(
         "TEST",

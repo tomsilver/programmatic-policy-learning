@@ -36,14 +36,14 @@ def test_lpp_approach_real_data() -> None:
 
     # Environment specifications
     env_specs = {"object_types": env.get_object_types()}
-
+    env_factory = lambda instance_num=None: env
     # Initialize the approach
     approach = LogicProgrammaticPolicyApproach(
         environment_description=env_id,
         observation_space=observation_space,
         action_space=action_space,
         seed=42,
-        env=env,
+        env_factory=env_factory,
         expert=expert,
         demo_numbers=(0, 1),
         num_programs=2,
