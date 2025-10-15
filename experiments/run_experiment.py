@@ -45,7 +45,8 @@ def _main(cfg: DictConfig) -> None:
         env_factory,
         env_specs=env_specs,
     )
-
+    # import pdb
+    # pdb.set_trace()
     # Evaluate.
     rng = np.random.default_rng(cfg.seed)
     metrics: list[dict[str, float]] = []
