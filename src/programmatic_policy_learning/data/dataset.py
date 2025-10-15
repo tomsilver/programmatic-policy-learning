@@ -1,6 +1,7 @@
 """Dataset creation and processing utilities for programmatic policy
 learning."""
 
+import logging
 import multiprocessing
 from functools import partial
 from typing import Any
@@ -111,7 +112,7 @@ def run_all_programs_on_single_demonstration(
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
 
-    print(f"Running all programs on {base_class_name}, {demo_number}")
+    logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
         demo_traj
     )
@@ -121,7 +122,7 @@ def run_all_programs_on_single_demonstration(
     X = lil_matrix((num_data, num_programs), dtype=bool)
     for i in range(0, num_programs, program_interval):
         end = min(i + program_interval, num_programs)
-        print(f"Iteration {i} of {num_programs}", end="\r")
+        logging.info(f"Iteration {i} of {num_programs}", end="\n")
         num_workers = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(num_workers)
         fn = partial(apply_programs, programs[i:end])

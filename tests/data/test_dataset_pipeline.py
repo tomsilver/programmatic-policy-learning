@@ -2,6 +2,7 @@
 generator."""
 
 import functools
+import logging
 from typing import Any
 
 import numpy as np
@@ -81,9 +82,9 @@ def test_dataset_pipeline_with_real_env() -> None:
     # Create top-level callables using functools.partial - needs work
     programs = [functools.partial(eval_program, prog_str=s) for s in program_strs]
 
-    print("Programs:")
+    logging.info("Programs:")
     for i, prog in enumerate(program_strs):
-        print(f"Program {i}: {prog}")
+        logging.info(f"Program {i}: {prog}")
 
     # Collect demonstrations (simulate a single demo)
     state = np.zeros((2, 2))
@@ -93,9 +94,9 @@ def test_dataset_pipeline_with_real_env() -> None:
     )
     demo_dict = {0: Trajectory(steps=[(state, action)])}
 
-    print("\nDemonstrations:")
+    logging.info("\nDemonstrations:")
     for i, (s, a) in enumerate(demonstration.steps):
-        print(f"Demo {i}: state=\n{s}, action={a}")
+        logging.info(f"Demo {i}: state=\n{s}, action={a}")
 
     # Run dataset pipeline
     X, y = run_all_programs_on_demonstrations(
@@ -105,10 +106,10 @@ def test_dataset_pipeline_with_real_env() -> None:
         demo_dict=demo_dict,
     )
     if X is not None and y is not None:
-        print("\nDataset X (features matrix):")
-        print(X.toarray())
-        print("\nDataset y (labels):")
-        print(y)
+        logging.info("\nDataset X (features matrix):")
+        logging.info(X.toarray())
+        logging.info("\nDataset y (labels):")
+        logging.info(y)
         assert X.shape[0] == len(y)
         assert X.shape[1] == num_programs
         assert set(y.tolist()) <= {0, 1}

@@ -1,5 +1,7 @@
 """Tests for GGG environment provider."""
 
+import logging
+
 from omegaconf import OmegaConf
 
 from programmatic_policy_learning.envs.providers.ggg_provider import (
@@ -44,7 +46,7 @@ def test_ggg_env_with_types_classname_extraction() -> None:
     # Check that the wrapper is used
     assert isinstance(env, GGGEnvWithTypes)
     obs, _ = env.reset()
-    print(obs)
+    logging.info(obs)
     class_name = env.env.unwrapped.__class__.__name__
     assert class_name == "TwoPileNimGymEnv1"
     object_types = env.get_object_types()
