@@ -61,9 +61,9 @@ def _main(cfg: DictConfig) -> None:
 
     # Aggregate and save results.
     df = pd.DataFrame(metrics)
-    print(df)
+    logging.info(df)
 
-    print("END OF TRAINING")
+    # Test the approach on new envs
     test_accuracies = approach.test_policy_on_envs(
         base_class_name=cfg.env.make_kwargs.base_name,
         test_env_nums=range(11, 20),
@@ -71,7 +71,7 @@ def _main(cfg: DictConfig) -> None:
         record_videos=False,
         video_format="mp4",
     )
-    print(test_accuracies)
+    logging.info(test_accuracies)
 
 
 def _run_single_episode_evaluation(
@@ -90,7 +90,7 @@ def _run_single_episode_evaluation(
         action = approach.step()
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
-        # env.render()
+        env.render()
         assert not truncated
         approach.update(obs, reward, done, info)
         total_rewards += reward
