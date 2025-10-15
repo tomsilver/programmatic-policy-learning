@@ -5,6 +5,8 @@ programs from them, and combine these programs into higher-level policy
 representations using StateActionProgram class.
 """
 
+import logging
+
 import numpy as np
 from scipy.sparse import csr_matrix
 from sklearn.tree import DecisionTreeClassifier
@@ -42,7 +44,7 @@ def learn_plps(
     num_programs = len(programs)
 
     for i in range(0, num_programs, program_generation_step_size):
-        print(f"Learning plps with {i} programs")
+        logging.info(f"Learning plps with {i} programs")
         for clf in learn_single_batch_decision_trees(y, num_dts, X[:, : i + 1]):
             plp, plp_prior_log_prob = extract_plp_from_dt(
                 clf, programs, program_prior_log_probs
