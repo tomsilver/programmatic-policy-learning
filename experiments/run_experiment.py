@@ -45,8 +45,7 @@ def _main(cfg: DictConfig) -> None:
         env_factory,
         env_specs=env_specs,
     )
-    # import pdb
-    # pdb.set_trace()
+
     # Evaluate.
     rng = np.random.default_rng(cfg.seed)
     metrics: list[dict[str, float]] = []
@@ -62,7 +61,17 @@ def _main(cfg: DictConfig) -> None:
 
     # Aggregate and save results.
     df = pd.DataFrame(metrics)
-    print(df)
+    logging.info(df)
+
+    # Test the approach on new envs
+    test_accuracies = approach.test_policy_on_envs(
+        base_class_name=cfg.env.make_kwargs.base_name,
+        test_env_nums=range(11, 20),
+        max_num_steps=50,
+        record_videos=False,
+        video_format="mp4",
+    )
+    logging.info(test_accuracies)
 
 
 def _run_single_episode_evaluation(

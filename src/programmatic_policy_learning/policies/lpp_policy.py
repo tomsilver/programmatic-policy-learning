@@ -98,6 +98,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
             Array of action probabilities.
         """
         hashed_obs = self.hash_obs(obs)
+
         if hashed_obs in self._action_prob_cache:
             return self._action_prob_cache[hashed_obs]
 
