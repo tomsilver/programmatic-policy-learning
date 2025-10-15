@@ -1,13 +1,14 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
@@ -147,6 +148,34 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             policy = LPPPolicy([StateActionProgram("False")], [1.0])
 
         return policy
+
+    def test_policy_on_envs(
+        self,
+        base_class_name: str,
+        test_env_nums: Sequence[int] = range(11, 20),
+        max_num_steps: int = 50,
+        record_videos: bool = True,
+        video_format: str | None = "mp4",
+    ) -> list[bool]:
+        """Train the logical programmatic policy using demonstrations."""
+        accuracies = []
+        for i in test_env_nums:
+            env = self.env_factory(i)
+            video_out_path = f"/tmp/lfd_{base_class_name}.{video_format}"
+            assert self._policy is not None, "Policy must be trained before testing."
+            result = (
+                run_single_episode(
+                    env,
+                    self._policy,
+                    max_num_steps=max_num_steps,
+                    record_video=record_videos,
+                    video_out_path=video_out_path,
+                )
+                > 0
+            )
+            accuracies.append(result)
+            env.close()
+        return accuracies
 
     def _get_action(self) -> _ActType:
         assert self._policy is not None, "Call reset() first."
