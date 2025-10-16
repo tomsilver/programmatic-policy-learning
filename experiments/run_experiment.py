@@ -24,7 +24,7 @@ def _main(cfg: DictConfig) -> None:
     env = registry.load(cfg.env)
     env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
 
-    object_types = env.get_object_types()
+    object_types = getattr(env, "get_object_types", lambda: [])()
     env_specs = {"object_types": object_types}
 
     expert = hydra.utils.instantiate(
