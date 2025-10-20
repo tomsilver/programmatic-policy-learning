@@ -1,18 +1,19 @@
 """Tests for structs.py."""
 
-from programmatic_policy_learning.approaches.structs import ParametricPolicyBase
 from typing import Any
 
+from programmatic_policy_learning.approaches.structs import ParametricPolicyBase
 
-def test_parameteric_policy():
+
+def test_parameteric_policy() -> None:
     """Tests for ParametericPolicyBase()."""
 
     class SimpleParametricPolicyBase(ParametricPolicyBase):
-        """A simple parameteric policy that just returns the "act" parameter."""
+        """A simple parameteric policy that just returns the "act"
+        parameter."""
 
         def act(self, obs: Any) -> Any:
             return self._params["act"]
-
 
     parameteric_policy = SimpleParametricPolicyBase(
         init_params={"act": 0.0},
