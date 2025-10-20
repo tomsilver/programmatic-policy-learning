@@ -1,12 +1,10 @@
 """Expert policies for the pendulum environment (may not be optimal!)."""
 
-from typing import Any, Callable
+from typing import Callable
 
 import gymnasium as gym
 import numpy as np
 from numpy.typing import NDArray
-
-from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
 
 Obs = NDArray[np.float32]
 Act = NDArray[np.float32]
