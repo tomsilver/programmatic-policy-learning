@@ -1,2 +1,0 @@
-# conf/expert/pendulum_stupid.yaml
-_target_: programmatic_policy_learning.approaches.experts.pendulum_base.PendulumStupidExpert

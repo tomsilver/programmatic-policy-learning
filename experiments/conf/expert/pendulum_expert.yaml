@@ -1,0 +1,2 @@
+# conf/expert/pendulum_expert.yaml
+_target_: programmatic_policy_learning.approaches.experts.pendulum_experts.PendulumExpert

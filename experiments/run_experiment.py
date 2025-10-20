@@ -1,6 +1,7 @@
 """Script for running experiments with hydra."""
 
 import logging
+from typing import Any
 
 import hydra
 import numpy as np
@@ -24,8 +25,8 @@ def _main(cfg: DictConfig) -> None:
     env = registry.load(cfg.env)
     env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
 
-    object_types = getattr(env, "get_object_types", lambda: [])()
-    env_specs = {"object_types": object_types}
+    object_types: list[Any] = getattr(env, "get_object_types", lambda: [])()
+    env_specs: dict[str, Any] = {"object_types": object_types}
 
     expert = hydra.utils.instantiate(
         cfg.expert,

@@ -1,9 +1,10 @@
 """Expert policies for the pendulum environment (may not be optimal!)."""
 
-from typing import Callable
+from typing import Any, Callable
 
 import gymnasium as gym
 import numpy as np
+from gymnasium.spaces import Box, Space
 from numpy.typing import NDArray
 
 Obs = NDArray[np.float32]
@@ -55,3 +56,25 @@ def create_manual_pendulum_policy(action_space: gym.spaces.Box) -> Callable[[Obs
         return np.array([torque], dtype=action_space.dtype)
 
     return manual_pendulum_policy
+
+
+class PendulumExpert:
+    """Hydra-friendly wrapper that builds the manual policy and exposes
+    get_action()."""
+
+    def __init__(
+        self,
+        environment_description: str,
+        observation_space: Space,
+        action_space: Space,
+        seed: int,
+        **_: Any,
+    ):
+        if not isinstance(action_space, Box):
+            raise TypeError("PendulumManualExpert requires a Box action space.")
+        self._fn: Callable[[np.ndarray], np.ndarray] = create_manual_pendulum_policy(
+            action_space
+        )
+
+    def get_action(self, obs: np.ndarray) -> np.ndarray:
+        return self._fn(np.asarray(obs, dtype=np.float32))

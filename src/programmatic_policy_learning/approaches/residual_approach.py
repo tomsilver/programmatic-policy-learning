@@ -6,7 +6,9 @@ from typing import (
     Any,
     Callable,
     Generic,
+    Iterable,
     Literal,
+    Optional,
     SupportsFloat,
     TypeVar,
     cast,
@@ -26,6 +28,9 @@ _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
+# ---------------------------------------------------------------------
+# Env wrapper: executes base(obs) + residual action from the agent
+# ---------------------------------------------------------------------
 class ResidualActionWrapper(ActionWrapper):
     """Adds a residual to the base policy."""
 
@@ -41,8 +46,8 @@ class ResidualActionWrapper(ActionWrapper):
 
         self._last_obs: np.ndarray | None = None
 
-    def action(self, action: np.ndarray) -> np.ndarray:
-        """Action is determined in step()"""
+    def action(self, action: np.ndarray) -> np.ndarray:  # noqa: D401
+        """Action is determined in step()."""
         return action
 
     def reset(self, **kw: Any) -> tuple[np.ndarray, dict]:
@@ -65,15 +70,19 @@ class ResidualActionWrapper(ActionWrapper):
 
         obs, r, term, trunc, info = self.env.step(total)
         self._last_obs = np.asarray(obs, dtype=np.float32)
+        info = cast(dict[str, Any], info)
         info["base_action"] = base
         info["residual_action"] = residual
         info["total_action"] = total
-        return obs, float(r), bool(term), bool(trunc), cast(dict[str, Any], info)
+        return obs, float(r), bool(term), bool(trunc), info
 
 
 _BackendName = Literal["sb3-td3", "sb3-ddpg"]
 
 
+# ---------------------------------------------------------------------
+# Tiny SB3 wrapper (TD3/DDPG + Gaussian action noise)
+# ---------------------------------------------------------------------
 class _SB3Backend:
     """Tiny SB3 wrapper that handles TD3/DDPG with Gaussian action noise."""
 
@@ -124,6 +133,10 @@ class _SB3Backend:
         self._model = self._model.load(path, env=self._model.get_env())
 
 
+# ---------------------------------------------------------------------
+# Test-facing residual approach (used by unit tests / simple scripts)
+# API: env_builder + base_fn, implements _get_action()
+# ---------------------------------------------------------------------
 class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActType]):
     """Approach that learns a residual on top of a provided base policy."""
 
@@ -156,7 +169,7 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
             noise_std=noise_std,
             verbose=verbose,
         )
-        self._total = total_timesteps
+        self._total = int(total_timesteps)
 
         # Keep a Box-typed handle to action space for mypy (low/high/dtype).
         if not isinstance(self._action_space, Box):
@@ -170,11 +183,12 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
     def _get_action(self) -> _ActType:
         """Return clipped action = base + residual."""
         # pylint: disable=protected-access
-        obs = np.asarray(self._last_observation, dtype=np.float32)
-        base = self._base_fn(obs)  # fixed/base policy
-        residual = self._backend.predict(obs)  # learned residual
+        obs_nd = np.asarray(self._last_observation, dtype=np.float32)  # type: ignore[arg-type]
+        base = self._base_fn(obs_nd)  # fixed/base policy
+        residual = self._backend.predict(obs_nd)  # learned residual
         total = np.clip(base + residual, self._act_box.low, self._act_box.high)
-        return total.astype(self._act_box.dtype)  # type: ignore[return-value]
+        total = total.astype(self._act_box.dtype, copy=False)
+        return cast(_ActType, total)
 
     def save(self, path: str) -> None:
         """Save residual policy backend."""
@@ -182,4 +196,132 @@ class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActT
 
     def load(self, path: str) -> None:
         """Load residual policy backend."""
+        self._backend.load(path)
+
+
+# ---------------------------------------------------------------------
+# Hydra adapter residual approach (accepts expert + env_factory)
+# API matches experiments/run_experiment.py expectations
+# ---------------------------------------------------------------------
+class ResidualFromExpert(BaseApproach[np.ndarray, np.ndarray]):
+    """Hydra-compatible residual approach: action = clip(expert(obs) + residual(obs))."""
+
+    def __init__(
+        self,
+        environment_description: str,
+        observation_space: Space[np.ndarray],
+        action_space: Space[np.ndarray],
+        seed: int,
+        expert: Any,
+        env_factory: Callable[[int], gym.Env],
+        *,
+        env_specs: Optional[dict[str, Any]] = None,
+        backend: str = "sb3-td3",
+        total_timesteps: int = 100_000,
+        lr: float = 1e-3,
+        noise_std: float = 0.1,
+        verbose: int = 1,
+        train_before_eval: bool = True,
+        train_env_instance: int = 0,
+    ) -> None:
+        super().__init__(environment_description, observation_space, action_space, seed)
+
+        if not isinstance(action_space, Box):
+            raise TypeError("ResidualFromExpert requires a Box action space.")
+        self._act_box: Box = cast(Box, action_space)
+
+        self._env_factory = env_factory
+        self._env_specs = env_specs or {}
+        self._expert = expert
+
+        def _base_fn(obs: np.ndarray) -> np.ndarray:
+            o = np.asarray(obs, dtype=np.float32)
+            if hasattr(expert, "get_action"):
+                a = expert.get_action(o)
+            elif hasattr(expert, "policy"):
+                a = expert.policy(o)
+            elif callable(expert):
+                a = expert(o)
+            else:
+                a = np.zeros(self._act_box.shape, dtype=np.float32)
+            return np.asarray(a, dtype=np.float32)
+
+        self._base_fn: Callable[[np.ndarray], np.ndarray] = _base_fn
+
+        train_env = self._env_factory(train_env_instance)
+        train_env.reset(seed=seed)
+        self._train_env = ResidualActionWrapper(train_env, self._base_fn)
+        self._backend = _SB3Backend(
+            name=cast(_BackendName, backend),
+            env=self._train_env,
+            seed=seed,
+            lr=lr,
+            noise_std=noise_std,
+            verbose=verbose,
+        )
+        self._total = int(total_timesteps)
+
+        self._is_trained: bool = False
+        self._train_before_eval = bool(train_before_eval)
+        self._last_obs: Optional[np.ndarray] = None
+
+    # ------- pipeline hooks used by the Hydra runner -------
+    def train(self) -> None:
+        self._backend.learn(total_timesteps=self._total)
+        self._is_trained = True
+
+    def reset(self, observation: np.ndarray, info: dict) -> None:
+        if self._train_before_eval and not self._is_trained:
+            self.train()
+        self._last_observation = np.asarray(observation, dtype=np.float32)
+        self._last_obs = self._last_observation
+
+    def step(self) -> np.ndarray:
+        assert self._last_obs is not None, "Call reset() before step()."
+        obs = np.asarray(self._last_obs, dtype=np.float32)
+        base = self._base_fn(obs)
+        residual = self._backend.predict(obs)
+        total = np.clip(base + residual, self._act_box.low, self._act_box.high)
+        return total.astype(self._act_box.dtype)
+
+    def update(
+        self, observation: np.ndarray, reward: float, done: bool, info: dict
+    ) -> None:
+        self._last_observation = np.asarray(observation, dtype=np.float32)
+        self._last_obs = self._last_observation
+
+    def test_policy_on_envs(
+        self,
+        base_class_name: str,
+        test_env_nums: Iterable[int] = range(11, 20),
+        max_num_steps: int = 50,
+        record_videos: bool = False,
+        video_format: str = "mp4",
+    ) -> dict[int, float]:
+        """Evaluate current (base + residual) policy on env instances; return
+        {env_num: total_reward}."""
+        results: dict[int, float] = {}
+        for env_num in test_env_nums:
+            env = self._env_factory(env_num)
+            obs, info = env.reset(seed=self._seed if hasattr(self, "_seed") else None)
+            total_reward = 0.0
+            for _ in range(int(max_num_steps)):
+                obs = np.asarray(obs, dtype=np.float32)
+                base = self._base_fn(obs)
+                residual = self._backend.predict(obs)
+                act = np.clip(
+                    base + residual, self._act_box.low, self._act_box.high
+                ).astype(self._act_box.dtype)
+                obs, rew, terminated, truncated, info = env.step(act)
+                total_reward += float(rew)
+                if terminated or truncated:
+                    break
+            results[int(env_num)] = total_reward
+        return results
+
+    # ------- persistence -------
+    def save(self, path: str) -> None:
+        self._backend.save(path)
+
+    def load(self, path: str) -> None:
         self._backend.load(path)
