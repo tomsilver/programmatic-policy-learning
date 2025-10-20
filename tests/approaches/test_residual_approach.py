@@ -11,11 +11,11 @@ import numpy as np
 import pytest
 
 from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
-from programmatic_policy_learning.approaches.pendulum_stupid_approach import Act as PAct
-from programmatic_policy_learning.approaches.pendulum_stupid_approach import Obs as PObs
-from programmatic_policy_learning.approaches.pendulum_stupid_approach import (
+from programmatic_policy_learning.approaches.experts.pendulum_experts import (
     create_manual_pendulum_policy,
 )
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import Act as PAct
+from programmatic_policy_learning.approaches.pendulum_stupid_approach import Obs as PObs
 from programmatic_policy_learning.approaches.residual_approach import ResidualApproach
 
 ENV_ID = "Pendulum-v1"
