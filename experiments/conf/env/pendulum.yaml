@@ -1,5 +1,6 @@
 make_kwargs:
   id: Pendulum-v1
+  base_name: pendulum 
 
 # Gymnasium Pendulum (continuous control)
 description: "Gymnasium Pendulum-v1 (continuous)"            
