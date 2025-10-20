@@ -22,7 +22,18 @@ def _main(cfg: DictConfig) -> None:
 
     registry = EnvRegistry()
     env = registry.load(cfg.env)
+    env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
 
+    object_types = env.get_object_types()
+    env_specs = {"object_types": object_types}
+
+    expert = hydra.utils.instantiate(
+        cfg.expert,
+        cfg.env.description,
+        env.observation_space,
+        env.action_space,
+        cfg.seed,
+    )
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -30,6 +41,9 @@ def _main(cfg: DictConfig) -> None:
         env.observation_space,
         env.action_space,
         cfg.seed,
+        expert,
+        env_factory,
+        env_specs=env_specs,
     )
 
     # Evaluate.
@@ -47,7 +61,17 @@ def _main(cfg: DictConfig) -> None:
 
     # Aggregate and save results.
     df = pd.DataFrame(metrics)
-    print(df)
+    logging.info(df)
+
+    # Test the approach on new envs
+    test_accuracies = approach.test_policy_on_envs(
+        base_class_name=cfg.env.make_kwargs.base_name,
+        test_env_nums=range(11, 20),
+        max_num_steps=50,
+        record_videos=False,
+        video_format="mp4",
+    )
+    logging.info(test_accuracies)
 
 
 def _run_single_episode_evaluation(
@@ -66,6 +90,7 @@ def _run_single_episode_evaluation(
         action = approach.step()
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
+        env.render()
         assert not truncated
         approach.update(obs, reward, done, info)
         total_rewards += reward
