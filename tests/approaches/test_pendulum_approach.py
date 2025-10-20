@@ -3,7 +3,6 @@
 from typing import Any
 
 import gymnasium as gym
-import imageio.v3 as iio
 import numpy as np
 from gymnasium.core import Env
 from numpy.typing import NDArray
@@ -52,6 +51,8 @@ def test_pendulum_stupid_algorithm() -> None:
             -20.0 < avg_reward <= 0.0
         ), f"Average reward out of expected range: {avg_reward:.2f}"
 
-    if frames:
-        gif_array: NDArray[np.uint8] = np.stack(frames, axis=0)
-        iio.imwrite("pendulum.gif", gif_array, duration=0.033, loop=0)
+    # Uncomment to make a GIF
+    # import imageio.v3 as iio
+    # if frames:
+    #     gif_array: NDArray[np.uint8] = np.stack(frames, axis=0)
+    #     iio.imwrite("pendulum.gif", gif_array, duration=0.033, loop=0)
