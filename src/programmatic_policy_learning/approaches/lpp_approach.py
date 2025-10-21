@@ -94,7 +94,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program, prior = next(gen)
             programs.append(program)
             program_prior_log_probs.append(prior)
-
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
