@@ -34,7 +34,7 @@ def test_grid_search() -> None:
     baseline_kp = 6.0
     baseline_avg = evaluate_policy(
         p=lambda: policy_builder(kp=baseline_kp, kd=2.0),
-        environment=env,
+        environment_factory=env,
         steps=steps,
         episodes=episodes,
         seed_base=seed_base,
@@ -51,7 +51,5 @@ def test_grid_search() -> None:
         kd=2.0,
     )
 
-    assert (
-        tuned_avg >= baseline_avg - 1e-6
-    ), f"tuned {tuned_avg:.2f} < baseline {baseline_avg:.2f}"
+    assert tuned_avg >= baseline_avg
     assert 4.0 <= best_kp <= 14.0
