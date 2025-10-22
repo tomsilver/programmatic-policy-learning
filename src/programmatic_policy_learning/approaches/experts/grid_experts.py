@@ -188,9 +188,7 @@ _EXPERTS: dict[str, ExpertPolicy] = {
 
 def get_grid_expert(env_name: str) -> ExpertPolicy:
     """Return expert policy function for a given grid environment name."""
-    try:
-        return _EXPERTS[env_name]
-    except KeyError as e:
-        raise ValueError(
-            f"Unknown grid expert '{env_name}'. " f"Available: {sorted(_EXPERTS)}"
-        ) from e
+    for key, expert in _EXPERTS.items():
+        if env_name.startswith(key):
+            return expert
+    raise ValueError(f"Unknown grid expert '{env_name}'. Available: {sorted(_EXPERTS)}")

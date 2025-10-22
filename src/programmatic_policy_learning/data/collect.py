@@ -1,5 +1,6 @@
 """Demo collection utilities."""
 
+import logging
 from typing import Any, Callable, TypeVar
 
 import numpy as np
@@ -16,12 +17,13 @@ def collect_demo(
     env_factory: EnvFactory,
     expert: BaseApproach,
     max_demo_length: int | float = np.inf,
-    env_num: int = 1,  # pylint: disable=unused-argument
+    env_num: int = 0,  # pylint: disable=unused-argument
 ) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
 
-    env = env_factory()
+    env = env_factory(env_num)  # type: ignore
+    # (because not all the providers have this 'env_num' attribute)
     reset_out = env.reset()
     assert (
         isinstance(reset_out, tuple) and len(reset_out) == 2
@@ -37,7 +39,6 @@ def collect_demo(
         action = expert.step()
         obs_list.append(obs)
         act_list.append(action)
-
         step_out = env.step(action)
 
         # handle gym vs. gymnasium
@@ -51,9 +52,8 @@ def collect_demo(
         if terminated or truncated or (t >= max_demo_length):
             if not reward > 0:
                 # keep behavior parity with original: warn if didn’t succeed
-                print("WARNING: demo did not succeed!")
+                logging.warning("WARNING: demo did not succeed!")
             break
-
     steps = list(zip(obs_list, act_list))
     return Trajectory(steps=steps)
 
@@ -61,20 +61,22 @@ def collect_demo(
 def get_demonstrations(
     env_factory: EnvFactory,
     expert: BaseApproach,
-    demo_numbers: tuple[int, ...] = (1, 2, 3, 4),
+    demo_numbers: tuple[int, ...],
     max_demo_length: int | float = np.inf,
-) -> list[Trajectory]:
+) -> tuple[Trajectory, dict[int, Trajectory]]:
     """Collect multiple demonstration trajectories using an expert policy."""
     demonstrations: list[Trajectory] = []
+    demo_dict: dict[int, Trajectory] = {}
 
     for i in demo_numbers:
-        demonstrations.append(
-            collect_demo(
-                env_factory,
-                expert,
-                max_demo_length=max_demo_length,
-                env_num=i,
-            )
+        traj: Trajectory = collect_demo(
+            env_factory,
+            expert,
+            max_demo_length=max_demo_length,
+            env_num=i,
         )
+        demonstrations.append(traj)
+        demo_dict[i] = traj
 
-    return demonstrations
+    all_steps = [step for traj in demonstrations for step in traj.steps]
+    return Trajectory(steps=all_steps), demo_dict

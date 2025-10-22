@@ -1,6 +1,7 @@
 """Dataset creation and processing utilities for programmatic policy
 learning."""
 
+import logging
 import multiprocessing
 from functools import partial
 from typing import Any
@@ -9,6 +10,7 @@ import numpy as np
 from scipy.sparse import lil_matrix, vstack
 
 from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
 def apply_programs(programs: list, fn_input: Any) -> list[bool]:
@@ -100,19 +102,35 @@ def extract_examples_from_demonstration(
     return positive_examples, negative_examples
 
 
-# cache management decorator
+def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
+    """Short id for caching: keep values but skip `programs` and `demo_traj`."""
+    # args: base_class_name, demo_number, programs, demo_traj, program_interval
+    parts = [str(a) for i, a in enumerate(args) if i not in (2, 3)]
+    print(parts)
+
+    # include programs length
+    try:
+        parts.append(str(len(args[2])))
+    except Exception as exc:
+        raise TypeError("programs argument must be a sized list") from exc
+    parts += [str(v) for k, v in kwargs.items() if k not in ("programs", "demo_traj")]
+    return "-".join(parts)
+
+
+@manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
     programs: list,
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demo_traj: Trajectory[np.ndarray, tuple[int, int]],
     program_interval: int = 1000,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
-    print(f"Running all programs on {base_class_name}, {demo_number}")
+
+    logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
-        demonstrations
+        demo_traj
     )
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
     num_data = len(y)
@@ -120,7 +138,7 @@ def run_all_programs_on_single_demonstration(
     X = lil_matrix((num_data, num_programs), dtype=bool)
     for i in range(0, num_programs, program_interval):
         end = min(i + program_interval, num_programs)
-        print(f"Iteration {i} of {num_programs}", end="\r")
+        logging.info(f"Iteration {i} of {num_programs}")
         num_workers = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(num_workers)
         fn = partial(apply_programs, programs[i:end])
@@ -130,22 +148,23 @@ def run_all_programs_on_single_demonstration(
         for X_idx, x in enumerate(results):
             X[X_idx, i:end] = x
     X = X.tocsr()
-    print()
     return X, np.array(y, dtype=np.uint8)  # y
 
 
-# cache management decorator
 def run_all_programs_on_demonstrations(
     base_class_name: str,
-    demo_numbers: list[int],
+    demo_numbers: tuple[int, ...],
     programs: list,
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demo_dict: dict[int, Trajectory],
 ) -> tuple[Any | None, np.ndarray | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     for demo_number in demo_numbers:
         demo_X, demo_y = run_all_programs_on_single_demonstration(
-            base_class_name, demo_number, programs, demonstrations
+            base_class_name,
+            demo_number,
+            programs,
+            demo_dict[demo_number],
         )
         if X is None:
             X = demo_X

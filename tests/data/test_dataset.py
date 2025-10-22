@@ -22,10 +22,10 @@ def test_run_all_programs_on_single_demonstration() -> None:
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
     programs = [dummy_program]
     X, y = run_all_programs_on_single_demonstration(
-        base_class_name="DummyEnv",
-        demo_number=0,
-        programs=programs,
-        demonstrations=traj,
+        "DummyEnv",  # base_class_name
+        0,  # demo_number
+        [dummy_program],  # programs
+        traj,  # demo_traj
     )
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)

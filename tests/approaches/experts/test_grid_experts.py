@@ -9,7 +9,7 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 
 def test_get_grid_expert_returns_callable() -> None:
     """Test that get_grid_expert returns a callable."""
-    expert_fn = get_grid_expert("TwoPileNim")
+    expert_fn = get_grid_expert("TwoPileNim0-v0")
     assert callable(expert_fn)
 
 
@@ -37,6 +37,6 @@ def test_expert_nim_policy_returns_action() -> None:
     layout = np.zeros((2, 2), dtype=object)
     layout[0, 0] = tpn.EMPTY
     layout[0, 1] = tpn.TOKEN
-    expert_fn = get_grid_expert("TwoPileNim")
+    expert_fn = get_grid_expert("TwoPileNim0-v0")
     action = expert_fn(layout)
     assert isinstance(action, tuple)
