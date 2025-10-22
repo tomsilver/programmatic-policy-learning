@@ -33,9 +33,21 @@ _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
 
 
-@manage_cache("cache", [".pkl", ".pkl"])
+def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
+    """Return cache run id, excluding 'env_specs' which is too long."""
+    # join all positional args except index 2 and all kwargs except
+    # 'env_specs'.
+    parts = [str(a) for i, a in enumerate(args) if i != 2]
+    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
+    return "-".join(parts)
+
+
+@manage_cache("cache", [".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
-    num_programs: int, env_specs: dict[str, Any] | None = None, start_symbol: int = 0
+    num_programs: int,
+    base_class_name: str,  # pylint: disable=unused-argument
+    env_specs: dict[str, Any] | None = None,
+    start_symbol: int = 0,
 ) -> tuple[list, list]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -79,6 +91,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         seed: int,
         expert: BaseApproach,
         env_factory: Any,
+        base_class_name: str,
         demo_numbers: tuple[int, ...] = (1, 2),
         program_generation_step_size: int = 10,
         num_programs: int = 100,
@@ -92,6 +105,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         super().__init__(environment_description, observation_space, action_space, seed)
         self._policy: LPPPolicy | None = None
         self.env_factory = env_factory
+        self.base_class_name = base_class_name
         self.expert = expert
         self.demo_numbers = demo_numbers
         self.program_generation_step_size = program_generation_step_size
@@ -110,7 +124,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
         programs, program_prior_log_probs = get_program_set(
-            self.num_programs, env_specs=self.env_specs, start_symbol=self.start_symbol
+            self.num_programs,
+            self.base_class_name,
+            env_specs=self.env_specs,
+            start_symbol=self.start_symbol,
         )
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [

@@ -45,7 +45,9 @@ def load_single_cache_output(cache_file: str) -> Any:
 
 
 def manage_cache(
-    cache_dir: str, extensions: Union[str, Iterable[str]]
+    cache_dir: str,
+    extensions: Union[str, Iterable[str]],
+    key_fn: Callable[[tuple[Any, ...], dict[str, Any]], str] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Return a decorator that caches function outputs under ``cache_dir``.
 
@@ -75,7 +77,11 @@ def manage_cache(
     def decorator_manage_cache(func: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper_cache_output(*args: Any, **kwargs: Any) -> Any:
             # Create a simple run id from positional args
-            run_id = "-".join([str(arg) for arg in args])
+            if key_fn is not None:
+                # key_fn should return a short string
+                run_id = key_fn(args, kwargs)
+            else:
+                run_id = "-".join([str(arg) for arg in args])
 
             # Check the existence of the first cache file for this run
             cache_file = os.path.join(
