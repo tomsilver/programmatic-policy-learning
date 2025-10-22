@@ -43,6 +43,7 @@ def _main(cfg: DictConfig) -> None:
         cfg.seed,
         expert,
         env_factory,
+        cfg.env.make_kwargs.base_name,
         env_specs=env_specs,
     )
 
