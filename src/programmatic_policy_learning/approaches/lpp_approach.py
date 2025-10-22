@@ -33,6 +33,25 @@ _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
 
 
+def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
+    """Build a compact run id from training-related attributes on `self`."""
+    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
+    if self_obj is None:
+        return ""
+    demo_numbers = getattr(self_obj, "demo_numbers", ())
+    demo_part = "-".join(str(x) for x in demo_numbers) if demo_numbers else ""
+    parts = [
+        str(getattr(self_obj, "base_class_name", "")),
+        demo_part,
+        str(getattr(self_obj, "program_generation_step_size", "")),
+        str(getattr(self_obj, "num_programs", "")),
+        str(getattr(self_obj, "num_dts", "")),
+        str(getattr(self_obj, "max_num_particles", "")),
+    ]
+    # filter empty pieces and join
+    return "-".join([p for p in parts if p != ""])
+
+
 def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
     """Return cache run id, excluding 'env_specs' which is too long."""
     # join all positional args except index 2 and all kwargs except
@@ -121,6 +140,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
+    @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
         programs, program_prior_log_probs = get_program_set(
