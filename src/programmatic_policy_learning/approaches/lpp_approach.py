@@ -138,7 +138,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
 
         X, y = run_all_programs_on_demonstrations(
-            self._environment_description,
+            self.base_class_name,
             self.demo_numbers,
             programs_sa,
             demo_dict,
