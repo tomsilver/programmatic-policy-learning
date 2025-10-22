@@ -39,7 +39,7 @@ def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
     if self_obj is None:
         return ""
     demo_numbers = getattr(self_obj, "demo_numbers", ())
-    demo_part = "-".join(str(x) for x in demo_numbers) if demo_numbers else ""
+    demo_part = "-".join(str(x) for x in demo_numbers)
     parts = [
         str(getattr(self_obj, "base_class_name", "")),
         demo_part,

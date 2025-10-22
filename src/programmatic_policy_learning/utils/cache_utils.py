@@ -1,5 +1,6 @@
 """Cache utilities."""
 
+import logging
 import os
 import pickle
 from typing import Any, Callable, Iterable, Union
@@ -11,7 +12,7 @@ def cache_single_output(output: Any, cache_file: str) -> None:
     """Persist a single cached output to disk.
 
     If the output is a SciPy CSR matrix it is written with ``save_npz`` and
-    otherwise pickled. The function prints a short confirmation message.
+    otherwise pickled. The function logs a short confirmation message.
 
     Args:
         output: The Python object to cache.
@@ -22,7 +23,7 @@ def cache_single_output(output: Any, cache_file: str) -> None:
     else:
         with open(cache_file, "wb") as f:
             pickle.dump(output, f)
-    print(f"Cached output to {cache_file}.")
+    logging.info(f"Cached output to {cache_file}.")
 
 
 def load_single_cache_output(cache_file: str) -> Any:
@@ -40,7 +41,7 @@ def load_single_cache_output(cache_file: str) -> Any:
         with open(cache_file, "rb") as f:
             output = pickle.load(f)
 
-    print(f"Loaded cache from {cache_file}.")
+    logging.info(f"Loaded cache from {cache_file}.")
     return output
 
 
