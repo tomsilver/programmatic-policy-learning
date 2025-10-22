@@ -26,10 +26,46 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
+
+
+@manage_cache("cache", [".pkl", ".pkl"])
+def get_program_set(
+    num_programs: int, env_specs: dict[str, Any] | None = None, start_symbol: int = 0
+) -> tuple[list, list]:
+    """Enumerate programs from the grammar and return programs + prior log-
+    probs.
+
+    This helper creates the DSL and the grammar-based generator, then
+    samples `num_programs` programs from the generator. It returns a tuple of
+    (programs, program_prior_log_probs).
+    """
+    dsl = make_dsl()
+    program_generator = GrammarBasedProgramGenerator(
+        cast(
+            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+            create_grammar,
+        ),
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+    )
+
+    logging.info(f"Generating {num_programs} programs")
+
+    programs = []
+    program_prior_log_probs = []
+    gen = program_generator.generate_programs()
+    for _ in range(num_programs):
+        program, prior = next(gen)
+        programs.append(program)
+        program_prior_log_probs.append(prior)
+
+    return programs, program_prior_log_probs
 
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
@@ -73,27 +109,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        dsl = make_dsl()
-        program_generator = GrammarBasedProgramGenerator(
-            cast(
-                Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-                create_grammar,
-            ),  # short-term fix
-            dsl,
-            env_spec=self.env_specs,
-            start_symbol=self.start_symbol,
+        programs, program_prior_log_probs = get_program_set(
+            self.num_programs, env_specs=self.env_specs, start_symbol=self.start_symbol
         )
-
-        logging.info(f"Generating {self.num_programs} programs")
-
-        # Generate programs and their priors
-        programs = []
-        program_prior_log_probs = []
-        gen = program_generator.generate_programs()
-        for _ in range(self.num_programs):
-            program, prior = next(gen)
-            programs.append(program)
-            program_prior_log_probs.append(prior)
+        logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
