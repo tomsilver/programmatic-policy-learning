@@ -33,7 +33,7 @@ def test_grid_search() -> None:
 
     baseline_kp = 6.0
     baseline_avg = evaluate_policy(
-        p=lambda: policy_builder(kp=baseline_kp, kd=2.0),
+        policy_factory=lambda: policy_builder(kp=baseline_kp, kd=2.0),
         environment_factory=env,
         steps=steps,
         episodes=episodes,

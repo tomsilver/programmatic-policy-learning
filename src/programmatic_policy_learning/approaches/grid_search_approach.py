@@ -21,7 +21,7 @@ from programmatic_policy_learning.approaches.structs import ParametricPolicyBase
 
 
 def evaluate_policy(
-    p: Callable[[], ParametricPolicyBase],
+    policy_factory: Callable[[], ParametricPolicyBase],
     environment_factory: Callable[[], Any],
     steps: int = 300,
     episodes: int = 5,
@@ -33,7 +33,7 @@ def evaluate_policy(
     for i in range(int(episodes)):
         env = environment_factory()
         obs, _ = env.reset(seed=int(seed_base + i))
-        policy = p()
+        policy = policy_factory()
         total = 0.0
         for _ in range(int(steps)):
             act = policy.act(obs)
@@ -72,13 +72,12 @@ def grid_search_param(
             return policy_builder(**params)
 
         avg_ret = evaluate_policy(
-            p=policytemp,
+            policy_factory=policytemp,
             environment_factory=env,
             steps=steps,
             episodes=episodes,
             seed_base=0,
         )
-        print(f"{param_name}={val:.4g} -> avg_return={avg_ret:.4g}")
 
         if avg_ret > best_ret:
             best_val, best_ret = float(val), float(avg_ret)
