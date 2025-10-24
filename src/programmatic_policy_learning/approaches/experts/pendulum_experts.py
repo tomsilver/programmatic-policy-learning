@@ -4,8 +4,9 @@ from typing import Any, Callable
 
 import gymnasium as gym
 import numpy as np
-from gymnasium.spaces import Box, Space
 from numpy.typing import NDArray
+
+from programmatic_policy_learning.approaches.structs import ParametricPolicyBase
 
 Obs = NDArray[np.float32]
 Act = NDArray[np.float32]
@@ -58,25 +59,51 @@ def create_manual_pendulum_policy(action_space: gym.spaces.Box) -> Callable[[Obs
     return manual_pendulum_policy
 
 
-class PendulumExpert:
-    """Hydra-friendly wrapper that builds the manual policy and exposes
-    get_action()."""
+class PendulumParametricPolicy(ParametricPolicyBase):
+    """An "expert" parametric policy for the pendulum environment."""
 
     def __init__(
         self,
-        _environment_description: str,
-        _observation_space: Space,
-        action_space: Space,
-        _seed: int | None = None,
-        **_: Any,
-    ):
-        if not isinstance(action_space, Box):
-            raise TypeError("PendulumManualExpert requires a Box action space.")
-        self._fn: Callable[[np.ndarray], np.ndarray] = create_manual_pendulum_policy(
-            action_space
-        )
+        _env_description: Any,
+        _observation_space: gym.spaces.Space,
+        _action_space: gym.spaces.Box,
+        _seed: int,
+        *_args: dict[str, Any],
+        init_params: dict[str, float] | None = None,
+        param_bounds: dict[str, tuple[float, float]] | None = None,
+        min_torque: float = -2.0,
+        max_torque: float = 2.0,
+        **_kwargs: dict[str, Any],
+    ) -> None:
 
-    def get_action(self, obs: np.ndarray) -> np.ndarray:
-        """Return the policy action for the given observation (cast to
-        float32)."""
-        return self._fn(np.asarray(obs, dtype=np.float32))
+        if init_params is None:
+            init_params = {"kp": 12.0, "kd": 3.0}
+        if param_bounds is None:
+            param_bounds = {"kp": (-50.0, 50.0), "kd": (0.0, 20.0)}
+
+        super().__init__(init_params=init_params, param_bounds=param_bounds)
+        self._min_torque = min_torque
+        self._max_torque = max_torque
+
+    def act(self, obs: Any) -> Any:
+        # Extract the parameters.
+        kp = self._params["kp"]
+        kd = self._params["kd"]
+
+        # Main logic.
+        assert isinstance(obs, np.ndarray)
+        x, y, angvel = float(obs[0]), float(obs[1]), float(obs[2])
+        theta = float(np.arctan2(y, x))
+
+        near_top = abs(theta) < 0.5
+        if near_top:
+            torque = -kp * theta - kd * angvel
+        else:
+            torque = self._max_torque if angvel >= 0.0 else self._min_torque
+
+        # Clip.
+        torque = np.clip(torque, self._min_torque, self._max_torque)
+
+        # Return the action as a numpy arary.
+        act = np.array([torque], dtype=np.float32)
+        return act
