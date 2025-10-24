@@ -64,12 +64,24 @@ class PendulumParametricPolicy(ParametricPolicyBase):
 
     def __init__(
         self,
-        *args: dict[str, Any],
+        _env_description: Any | None = None,
+        _observation_space: gym.spaces.Space | None = None,
+        _action_space: gym.spaces.Box | None = None,
+        _seed: int | None = None,
+        *,
+        init_params: dict[str, float] | None = None,
+        param_bounds: dict[str, tuple[float, float]] | None = None,
         min_torque: float = -2.0,
         max_torque: float = 2.0,
-        **kwargs: dict[str, Any],
+        **_kwargs: dict[str, Any],
     ) -> None:
-        super().__init__(*args, **kwargs)
+
+        if init_params is None:
+            init_params = {"kp": 12.0, "kd": 3.0}
+        if param_bounds is None:
+            param_bounds = {"kp": (-50.0, 50.0), "kd": (0.0, 20.0)}
+
+        super().__init__(init_params=init_params, param_bounds=param_bounds)
         self._min_torque = min_torque
         self._max_torque = max_torque
 
