@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
 from typing import Any, Callable, Literal
 
 import gymnasium as gym
@@ -54,18 +52,15 @@ def eval_policy(
         env = build_env()
         obs, info = env.reset(seed=seed + ep)
 
-        # Silence any prints from envs/policies to keep CI logs clean.
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            approach.reset(obs, info)
+        approach.reset(obs, info)
 
-            terminated = truncated = False
-            ep_ret = 0.0
-            while not (terminated or truncated):
-                action = approach.step()
-                obs, rew, terminated, truncated, info = env.step(action)
-                approach.update(obs, float(rew), terminated, info)
-                ep_ret += float(rew)
+        terminated = truncated = False
+        ep_ret = 0.0
+        while not (terminated or truncated):
+            action = approach.step()
+            obs, rew, terminated, truncated, info = env.step(action)
+            approach.update(obs, float(rew), terminated, info)
+            ep_ret += float(rew)
 
         returns.append(ep_ret)
     return np.asarray(returns, dtype=np.float32)
@@ -76,6 +71,7 @@ def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
     """Smoke test: residual approach runs and is not catastrophically worse than base."""
     tmp = build_env()
     assert isinstance(tmp.action_space, gym.spaces.Box)
+    assert isinstance(tmp.observation_space, gym.spaces.Box)
 
     # Base (manual) policy used as the expert's action.
     base_policy: Callable[[np.ndarray], np.ndarray] = create_manual_pendulum_policy(

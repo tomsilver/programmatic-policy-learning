@@ -7,24 +7,19 @@ from typing import (
     Callable,
     Iterable,
     Literal,
-    Optional,
     SupportsFloat,
-    TypeVar,
     cast,
 )
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import ActionWrapper
-from gymnasium.spaces import Box, Space
+from gymnasium.spaces import Box
 from stable_baselines3 import DDPG, TD3
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-
-_ObsType = TypeVar("_ObsType")
-_ActType = TypeVar("_ActType")
 
 
 # ---------------------------------------------------------------------
@@ -45,7 +40,7 @@ class ResidualActionWrapper(ActionWrapper):
 
         self._last_obs: np.ndarray | None = None
 
-    def action(self, action: np.ndarray) -> np.ndarray:  # noqa: D401
+    def action(self, action: np.ndarray) -> np.ndarray:
         """Action is determined in step()."""
         return action
 
@@ -69,7 +64,6 @@ class ResidualActionWrapper(ActionWrapper):
 
         obs, r, term, trunc, info = self.env.step(total)
         self._last_obs = np.asarray(obs, dtype=np.float32)
-        info = cast(dict[str, Any], info)
         info["base_action"] = base
         info["residual_action"] = residual
         info["total_action"] = total
@@ -142,13 +136,13 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
     def __init__(
         self,
         environment_description: str,
-        observation_space: Space[np.ndarray],
-        action_space: Space[np.ndarray],
+        observation_space: Box,
+        action_space: Box,
         seed: int,
         expert: Any,
         env_factory: Callable[[int], gym.Env],
         *_: Any,
-        env_specs: Optional[dict[str, Any]] = None,
+        env_specs: dict[str, Any] | None = None,
         backend: str = "sb3-td3",
         total_timesteps: int = 100_000,
         lr: float = 1e-3,
@@ -196,7 +190,7 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
 
         self._is_trained: bool = False
         self._train_before_eval = bool(train_before_eval)
-        self._last_obs: Optional[np.ndarray] = None
+        self._last_obs: np.ndarray | None = None
 
     # ------- pipeline hooks used by the Hydra runner -------
     def train(self) -> None:
@@ -235,7 +229,7 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
         test_env_nums: Iterable[int] = range(11, 20),
         max_num_steps: int = 50,
         *,
-        _base_class_name: Optional[str] = None,
+        _base_class_name: str | None = None,
         _record_videos: bool = False,
         _video_format: str = "mp4",
         **_extra_env_kwargs: Any,
