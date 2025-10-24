@@ -1,4 +1,4 @@
-"""LLM + 1D grid search
+"""LLM + 1D grid search.
 
 This program ties together:
   - synthesize_llm_parametric_policy (single prompt → parametric policy)
@@ -10,17 +10,17 @@ best parameter value, and the average return at that value.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple, Callable, Optional
+from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 from gymnasium.spaces import Box
 from prpl_llm_utils.models import PretrainedLargeModel
 
+from programmatic_policy_learning.approaches.grid_search_approach import (
+    grid_search_param,
+)
 from programmatic_policy_learning.approaches.llm_single_search_approach import (
     LLMGeneratedParametricPolicy,
     synthesize_llm_parametric_policy,
-)
-from programmatic_policy_learning.approaches.grid_search_approach import (
-    grid_search_param,
 )
 from programmatic_policy_learning.approaches.structs import ParametricPolicyBase
 
@@ -58,7 +58,8 @@ def synthesize_and_grid_search(
         init_params=init_params,
         param_bounds=param_bounds_all,
     )
-    generated_fn = base_policy._fn  # pylint: disable=protected-access
+    policytemp = cast(LLMGeneratedParametricPolicy, base_policy)
+    generated_fn = policytemp.function
 
     def policy_builder(**params: float) -> ParametricPolicyBase:
         """Used by grid_search_param to create a fresh policy instance."""

@@ -41,6 +41,11 @@ class LLMGeneratedParametricPolicy(ParametricPolicyBase):
         self._fn = fn
         self._action_space = action_space
 
+    @property
+    def function(self) -> Callable[[Any, Dict[str, float]], Any]:
+        """Read-only access to the synthesized policy function."""
+        return self._fn
+
     def act(self, obs: Any) -> np.ndarray:
         out = self._fn(obs, self._params)
         if not isinstance(out, np.ndarray):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 import gymnasium as gym
 import numpy as np
@@ -26,12 +27,10 @@ runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
 def test_llm_grid_search_fake() -> None:
-    """
-    The policy follows the interface and uses params['kp'] 
-    """
+    """The policy follows the interface and uses params['kp']"""
     env = gym.make("Pendulum-v1")
     obs, _ = env.reset(seed=0)
-    env.close()
+    cast(Any, env).close()
 
     env_desc = (
         "Pendulum-v1: keep upright. obs=[cos(theta), sin(theta), theta_dot]. "
@@ -64,9 +63,11 @@ def test_llm_grid_search_fake() -> None:
     tuned_policy, best_kp, best_avg = synthesize_and_grid_search(
         env_factory=lambda: gym.make("Pendulum-v1"),
         environment_description=env_desc,
-        action_space=Box(low=np.array([-2.0], dtype=np.float32),
-                        high=np.array([2.0], dtype=np.float32),
-                        dtype=np.float32),
+        action_space=Box(
+            low=np.array([-2.0], dtype=np.float32),
+            high=np.array([2.0], dtype=np.float32),
+            dtype=np.float32,
+        ),
         llm=fake_llm,
         example_observation=obs,
         param_name="kp",
@@ -84,7 +85,7 @@ def test_llm_grid_search_fake() -> None:
     obs, _ = env.reset(seed=1)
     act = tuned_policy.act(obs)
     assert env.action_space.contains(act)
-    env.close()
+    cast(Any, env).close()
 
 
 @runllms
@@ -92,7 +93,7 @@ def test_llm_grid_search_real_llm() -> None:
     """Optional: use a real LLM if --runllms is enabled."""
     env = gym.make("Pendulum-v1")
     obs, _ = env.reset(seed=0)
-    env.close()
+    cast(Any, env).close()
 
     env_desc = (
         "Pendulum-v1: keep the pendulum upright. Observation is "
@@ -102,12 +103,14 @@ def test_llm_grid_search_real_llm() -> None:
     cache = SQLite3PretrainedLargeModelCache(Path("llm_cache.db"))
     llm = OpenAIModel("gpt-4o-mini", cache)
 
-    tuned_policy, best_kp, best_avg = synthesize_and_grid_search(
+    tuned_policy, _, best_avg = synthesize_and_grid_search(
         env_factory=lambda: gym.make("Pendulum-v1"),
         environment_description=env_desc,
-        action_space=Box(low=np.array([-2.0], dtype=np.float32),
-                        high=np.array([2.0], dtype=np.float32),
-                        dtype=np.float32),
+        action_space=Box(
+            low=np.array([-2.0], dtype=np.float32),
+            high=np.array([2.0], dtype=np.float32),
+            dtype=np.float32,
+        ),
         llm=llm,
         example_observation=obs,
         param_name="kp",
@@ -120,7 +123,6 @@ def test_llm_grid_search_real_llm() -> None:
         param_bounds_all={"kp": (0.0, 50.0), "kd": (0.0, 10.0)},
     )
 
-
     assert np.isfinite(best_avg)
     assert best_avg > -1900.0
 
@@ -128,4 +130,4 @@ def test_llm_grid_search_real_llm() -> None:
     obs, _ = env.reset(seed=2)
     act = tuned_policy.act(obs)
     assert env.action_space.contains(act)
-    env.close()
+    cast(Any, env).close()
