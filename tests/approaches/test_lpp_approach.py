@@ -33,6 +33,7 @@ def test_lpp_approach_real_data() -> None:
         seed=1,
         expert_fn=expert_fn,
     )
+    base_class_name = cfg.make_kwargs.base_name
 
     # Define observation and action spaces
     observation_space = env.observation_space
@@ -48,6 +49,7 @@ def test_lpp_approach_real_data() -> None:
         action_space=action_space,
         seed=42,
         env_factory=env_factory,
+        base_class_name=base_class_name,
         expert=expert,
         demo_numbers=(0, 1),
         num_programs=2,

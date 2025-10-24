@@ -26,10 +26,77 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
+
+
+def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
+    """Build a compact run id from training-related attributes on `self`."""
+    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
+    if self_obj is None:
+        return ""
+    demo_numbers = getattr(self_obj, "demo_numbers", ())
+    demo_part = "-".join(str(x) for x in demo_numbers)
+    parts = [
+        str(getattr(self_obj, "base_class_name", "")),
+        demo_part,
+        str(getattr(self_obj, "program_generation_step_size", "")),
+        str(getattr(self_obj, "num_programs", "")),
+        str(getattr(self_obj, "num_dts", "")),
+        str(getattr(self_obj, "max_num_particles", "")),
+    ]
+    # filter empty pieces and join
+    return "-".join([p for p in parts if p != ""])
+
+
+def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
+    """Return cache run id, excluding 'env_specs' which is too long."""
+    # join all positional args except index 2 and all kwargs except
+    # 'env_specs'.
+    parts = [str(a) for i, a in enumerate(args) if i != 2]
+    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
+    return "-".join(parts)
+
+
+@manage_cache("cache", [".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
+def get_program_set(
+    num_programs: int,
+    base_class_name: str,  # pylint: disable=unused-argument
+    env_specs: dict[str, Any] | None = None,
+    start_symbol: int = 0,
+) -> tuple[list, list]:
+    """Enumerate programs from the grammar and return programs + prior log-
+    probs.
+
+    This helper creates the DSL and the grammar-based generator, then
+    samples `num_programs` programs from the generator. It returns a tuple of
+    (programs, program_prior_log_probs).
+    """
+    dsl = make_dsl()
+    program_generator = GrammarBasedProgramGenerator(
+        cast(
+            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+            create_grammar,
+        ),
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+    )
+
+    logging.info(f"Generating {num_programs} programs")
+
+    programs = []
+    program_prior_log_probs = []
+    gen = program_generator.generate_programs()
+    for _ in range(num_programs):
+        program, prior = next(gen)
+        programs.append(program)
+        program_prior_log_probs.append(prior)
+
+    return programs, program_prior_log_probs
 
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
@@ -43,6 +110,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         seed: int,
         expert: BaseApproach,
         env_factory: Any,
+        base_class_name: str,
         demo_numbers: tuple[int, ...] = (1, 2),
         program_generation_step_size: int = 10,
         num_programs: int = 100,
@@ -56,6 +124,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         super().__init__(environment_description, observation_space, action_space, seed)
         self._policy: LPPPolicy | None = None
         self.env_factory = env_factory
+        self.base_class_name = base_class_name
         self.expert = expert
         self.demo_numbers = demo_numbers
         self.program_generation_step_size = program_generation_step_size
@@ -71,30 +140,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
+    @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        dsl = make_dsl()
-        program_generator = GrammarBasedProgramGenerator(
-            cast(
-                Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-                create_grammar,
-            ),  # short-term fix
-            dsl,
-            env_spec=self.env_specs,
+        programs, program_prior_log_probs = get_program_set(
+            self.num_programs,
+            self.base_class_name,
+            env_specs=self.env_specs,
             start_symbol=self.start_symbol,
         )
-
-        logging.info(f"Generating {self.num_programs} programs")
-
-        # Generate programs and their priors
-        programs = []
-        program_prior_log_probs = []
-        gen = program_generator.generate_programs()
-        for _ in range(self.num_programs):
-            program, prior = next(gen)
-            programs.append(program)
-            program_prior_log_probs.append(prior)
-
+        logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
@@ -103,7 +158,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
 
         X, y = run_all_programs_on_demonstrations(
-            self._environment_description,
+            self.base_class_name,
             self.demo_numbers,
             programs_sa,
             demo_dict,
