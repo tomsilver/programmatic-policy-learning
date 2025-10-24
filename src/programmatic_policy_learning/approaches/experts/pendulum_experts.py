@@ -64,10 +64,10 @@ class PendulumExpert:
 
     def __init__(
         self,
-        environment_description: str,
-        observation_space: Space,
+        _environment_description: str,
+        _observation_space: Space,
         action_space: Space,
-        seed: int,
+        _seed: int | None = None,
         **_: Any,
     ):
         if not isinstance(action_space, Box):
@@ -77,4 +77,6 @@ class PendulumExpert:
         )
 
     def get_action(self, obs: np.ndarray) -> np.ndarray:
+        """Return the policy action for the given observation (cast to
+        float32)."""
         return self._fn(np.asarray(obs, dtype=np.float32))
