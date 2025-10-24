@@ -64,11 +64,11 @@ class PendulumParametricPolicy(ParametricPolicyBase):
 
     def __init__(
         self,
-        _env_description: Any,
-        _observation_space: gym.spaces.Space,
-        _action_space: gym.spaces.Box,
-        _seed: int,
-        *_args: dict[str, Any],
+        _env_description: Any | None = None,
+        _observation_space: gym.spaces.Space | None = None,
+        _action_space: gym.spaces.Box | None = None,
+        _seed: int | None = None,
+        *,
         init_params: dict[str, float] | None = None,
         param_bounds: dict[str, tuple[float, float]] | None = None,
         min_torque: float = -2.0,
