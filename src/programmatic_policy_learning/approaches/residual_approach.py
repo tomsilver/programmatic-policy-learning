@@ -147,7 +147,7 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
         seed: int,
         expert: Any,
         env_factory: Callable[[int], gym.Env],
-        *,
+        *_: Any,
         env_specs: Optional[dict[str, Any]] = None,
         backend: str = "sb3-td3",
         total_timesteps: int = 100_000,
