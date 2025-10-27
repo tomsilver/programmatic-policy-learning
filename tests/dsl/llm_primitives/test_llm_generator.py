@@ -1,17 +1,22 @@
 """Tests for LLM primitive generator."""
 
 import json
-import tempfile
 import logging
-from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
-from programmatic_policy_learning.dsl.llm_primitives.llm_generator import LLMPrimitivesGenerator
-from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-from prpl_llm_utils.models import OpenAIModel
+import tempfile
 from pathlib import Path
 
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel
+
+from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
+from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
+    LLMPrimitivesGenerator,
+)
+
+
 def test_create_grammar() -> None:
-    """Test the create_grammar_from_response function to ensure it correctly constructs a
-    Grammar object from the LLM's JSON output.
+    """Test the create_grammar_from_response function to ensure it correctly
+    constructs a Grammar object from the LLM's JSON output.
 
     Validates the structure of the grammar, including nonterminals,
     rules, and probabilities.
@@ -73,11 +78,17 @@ def test_create_grammar() -> None:
 
 def test_generate_grammar_with_real_llm() -> None:
     """Test the generate_grammar method with the real LLM."""
-    
+
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
-    with open("src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt.txt", "r", encoding="utf-8") as file:
+
+    with open(
+        "src/programmatic_policy_learning/dsl/llm_primitives/prompts/"
+        + "one_missing_prompt.txt",
+        "r",
+        encoding="utf-8",
+    ) as file:
         prompt = file.read()
 
     object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
@@ -102,5 +113,3 @@ def test_generate_grammar_with_real_llm() -> None:
     value_rules, value_probs = grammar.rules[4]
     assert len(value_rules) == len(value_probs)
     assert all(prob == 1.0 / len(object_types) for prob in value_probs)
-
-
