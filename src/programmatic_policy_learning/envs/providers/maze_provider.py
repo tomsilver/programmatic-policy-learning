@@ -19,10 +19,10 @@ class MazeEnv(gym.Env):
     metadata = {"render.modes": ["human", "rgb_array"]}
 
     ACTIONS = {
-        0: np.array([-1, 0]),  # N (up)
-        1: np.array([1, 0]),  # S (down)
-        2: np.array([0, 1]),  # E (right)
-        3: np.array([0, -1]),  # W (left)
+        0: (-1, 0),  # N (up)
+        1: (1, 0),  # S (down)
+        2: (0, 1),  # E (right)
+        3: (0, -1),  # W (left)
     }
 
     def __init__(
@@ -65,11 +65,9 @@ class MazeEnv(gym.Env):
         self._build_grid()
 
         # --- Start and goal positions (NumPy convention) ---
-        self.start_pos = np.array([0, 0])  # top-left
-        self.goal_pos = np.array([self.inner_h - 1, self.inner_w - 1])  # bottom-right
-        self.agent_pos: np.ndarray = np.zeros(
-            2, dtype=np.int64
-        )  # properly initialized in reset()
+        self.start_pos = (0, 0)  # top-left
+        self.goal_pos = (self.inner_h - 1, self.inner_w - 1)  # bottom-right
+        self.agent_pos = (0, 0) # properly initialized in reset()
 
         # --- Rendering setup ---
         if enable_render:
@@ -84,7 +82,7 @@ class MazeEnv(gym.Env):
     # --------------------------------------------------------------
     # Utility
     # --------------------------------------------------------------
-    def _to_grid_idx(self, pos: np.ndarray | tuple[int, int]) -> tuple[int, int]:
+    def _to_grid_idx(self, pos: tuple[int, int]) -> tuple[int, int]:
         """Map (row, col) world coords to array indices for rendering."""
         r = pos[0] - self.row_min
         c = pos[1] - self.col_min
@@ -117,19 +115,23 @@ class MazeEnv(gym.Env):
     # --------------------------------------------------------------
     # Gymnasium API
     # --------------------------------------------------------------
+    def _get_info(self) -> dict[str, Any]:
+        return {"goal": self.goal_pos}
+
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
-    ) -> tuple[np.ndarray, dict]:
+    ) -> tuple[tuple[int, int], dict]:
         super().reset(seed=seed)
         # Start in outer void above the maze
         r = np.random.randint(self.row_min, -1)
         c = np.random.randint(self.col_min, self.col_max + 1)
-        self.agent_pos = np.array([r, c])
-        return self.agent_pos.copy(), {}
+        self.agent_pos = (r, c)
+        info = self._get_info()
+        return self.agent_pos, info
 
-    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, action: int) -> tuple[tuple[int, int], float, bool, bool, dict[str, Any]]:
         move = self.ACTIONS[action]
-        new_pos = self.agent_pos + move
+        new_pos = (self.agent_pos[0] + move[0], self.agent_pos[1] + move[1])
         reward, terminated, truncated = -0.01, False, False
 
         if (
@@ -143,7 +145,9 @@ class MazeEnv(gym.Env):
         if np.array_equal(self.agent_pos, self.goal_pos):
             reward, terminated = 1.0, True
 
-        return self.agent_pos.copy(), reward, terminated, truncated, {}
+        info = self._get_info()
+
+        return self.agent_pos, reward, terminated, truncated, info
     
     # --------------------------------------------------------------
     # For Search Approach
@@ -152,10 +156,10 @@ class MazeEnv(gym.Env):
         """Return the list of possible actions."""
         return list(self.ACTIONS.keys())
 
-    def get_next_state(self, state: np.ndarray, action: int) -> np.ndarray:
+    def get_next_state(self, state: tuple[int, int], action: int) -> tuple[int, int]:
         """Compute the next state given the current state and action."""
         move = self.ACTIONS[action]
-        next_state = state + move
+        next_state = (state[0] + move[0], state[1] + move[1])
         if (
             self.row_min <= next_state[0] <= self.row_max
             and self.col_min <= next_state[1] <= self.col_max
@@ -165,13 +169,13 @@ class MazeEnv(gym.Env):
                 return next_state
         return state  # No movement if invalid
 
-    def get_cost(self, state: np.ndarray, action: int, next_state: np.ndarray) -> float:
+    def get_cost(self, state: tuple[int, int], action: int, next_state: tuple[int, int]) -> float:
         """Return the cost of transitioning from state to next_state."""
         return 1.0  # Uniform cost for all actions
 
-    def check_goal(self, state: np.ndarray, goal: np.ndarray) -> bool:
+    def check_goal(self, state: tuple[int, int], goal: tuple[int, int]) -> bool:
         """Check if the current state matches the goal."""
-        return np.array_equal(state, goal)
+        return state == goal
 
     # --------------------------------------------------------------
     # Rendering

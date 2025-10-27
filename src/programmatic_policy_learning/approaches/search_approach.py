@@ -7,7 +7,7 @@ from gymnasium.spaces import Space
 
 from programmatic_policy_learning.approaches.base_approach import (BaseApproach, _ObsType, _ActType)
 from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
-from tomsutils.search import run_astar
+from prpl_utils.search import run_astar
 
 _State = TypeVar("_State")
 
@@ -32,17 +32,17 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         self._check_goal = check_goal
         self._plan: list[_ActType] = []
 
-    def reset(self, obs: _ObsType, info: dict) -> None:
-        """Reset the approach and generate a new plan."""
-        # Fetch the goal directly from the environment
-        goal = info["goal"]  # Assuming `self.env` is the environment instance
-        self._plan = self._generate_plan(obs, goal)
-
-    def step(self) -> _ActType:
-        """Return the next action in the plan."""
+    def _get_action(self):
         if not self._plan:
             raise ValueError("Plan is empty. Ensure reset() was called.")
         return self._plan.pop(0)
+
+    def reset(self, obs: _ObsType, info: dict) -> None:
+        """Reset the approach and generate a new plan."""
+        # Fetch the goal directly from the environment
+        super().reset(obs, info)
+        goal = info["goal"]  # Assuming `self.env` is the environment instance
+        self._plan = self._generate_plan(obs, goal)
 
     def _generate_plan(self, start: np.ndarray, goal: np.ndarray) -> list[_ActType]:
         """Generate a plan using A* search."""

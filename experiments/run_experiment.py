@@ -103,9 +103,6 @@ def _run_single_episode_evaluation(
     total_rewards = 0.0
     total_steps = 0
     obs, info = env.reset(seed=sample_seed_from_rng(rng))
-
-    # for maze env
-    info["goal"] = env.goal_pos
     approach.reset(obs, info)
 
     for _ in range(max_eval_steps):
