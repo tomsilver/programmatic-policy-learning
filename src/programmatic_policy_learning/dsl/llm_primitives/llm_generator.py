@@ -4,70 +4,110 @@ LLM into a formal Grammar object.
 It processes nonterminals, terminals, and production rules to
 dynamically construct grammars for DSLs.
 """
-
+import json
 from typing import Any
-
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 
-
-def create_grammar(
-    llm_output: dict[str, Any], object_types: list[Any]
-) -> Grammar[str, int, int]:
-    """Create a Grammar object from the LLM's JSON output.
-
-    Args:
-        llm_output (dict[str, Any]): Parsed JSON output from the LLM.
-        object_types (list[Any]): list of object types for the VALUE nonterminal.
-
-    Returns:
-        Grammar[str, int, int]: A reconstructed Grammar object.
+class LLPrimitivesGenerator:
     """
-    # Extract the proposal and updated grammar
-    proposal = llm_output["proposal"]
-    updated_grammar = llm_output["updated_grammar"]
+    A class to interact with an LLM, process its response, and generate a Grammar object.
+    """
 
-    # Initialize the rules dictionary
-    rules: dict[int, tuple[list[list[Any]], list[float]]] = {}
+    def __init__(self, llm_client: Any):
+        """
+        Initialize the generator with an LLM client.
 
-    # Map nonterminal names to integer constants
-    nonterminal_map = {
-        name: idx for idx, name in enumerate(updated_grammar["nonterminals"])
-    }
+        Args:
+            llm_client (Any): An object or function to interact with the LLM (e.g., OpenAI API client).
+        """
+        self.llm_client = llm_client
 
-    # Build the rules
-    for nonterminal, production_rules in updated_grammar["productions"].items():
-        # Parse the production rules into lists of tokens
-        parsed_rules = [rule.split() for rule in production_rules.split(" | ")]
-        probabilities = [1.0 / len(parsed_rules)] * len(
-            parsed_rules
-        )  # Uniform probabilities
-        rules[nonterminal_map[nonterminal]] = (parsed_rules, probabilities)
+    def query_llm(self, prompt: str) -> dict:
+        """
+        Send a query to the LLM and return the parsed JSON response.
 
-    # Handle the VALUE nonterminal separately
-    if "VALUE" in nonterminal_map:
-        value_rules = [[str(v)] for v in object_types]
-        value_probabilities = [1.0 / len(object_types)] * len(object_types)
-        rules[nonterminal_map["VALUE"]] = (value_rules, value_probabilities)
+        Args:
+            prompt (str): The query or prompt to send to the LLM.
 
-    # Integrate the proposal into the grammar
-    pcfg_insertion = proposal["pcfg_insertion"]
-    nonterminal_to_update = pcfg_insertion["nonterminal"]
-    new_production = pcfg_insertion["production"].split()
+        Returns:
+            dict: The parsed JSON response from the LLM.
+        """
+        response = self.llm_client.generate(prompt)  # Replace with actual LLM call
+        return json.loads(response)
 
-    if nonterminal_to_update in nonterminal_map:
-        nonterminal_idx = nonterminal_map[nonterminal_to_update]
-        if new_production not in rules[nonterminal_idx][0]:
-            rules[nonterminal_idx][0].append(new_production)
-            rules[nonterminal_idx][1].append(
-                1.0
-            )  # Assign equal probability to the new rule
 
-            # Normalize probabilities
-            total = sum(rules[nonterminal_idx][1])
-            rules[nonterminal_idx] = (
-                rules[nonterminal_idx][0],
-                [p / total for p in rules[nonterminal_idx][1]],
-            )
+    def create_grammar_from_response(
+        self, llm_output: dict[str, Any], object_types: list[Any]
+    ) -> Grammar[str, int, int]:
+        """Create a Grammar object from the LLM's JSON output.
 
-    # Create and return the Grammar object
-    return Grammar(rules=rules)
+        Args:
+            llm_output (dict[str, Any]): Parsed JSON output from the LLM.
+            object_types (list[Any]): list of object types for the VALUE nonterminal.
+
+        Returns:
+            Grammar[str, int, int]: A reconstructed Grammar object.
+        """
+        # Extract the proposal and updated grammar
+        proposal = llm_output["proposal"]
+        updated_grammar = llm_output["updated_grammar"]
+
+        # Initialize the rules dictionary
+        rules: dict[int, tuple[list[list[Any]], list[float]]] = {}
+
+        # Map nonterminal names to integer constants
+        nonterminal_map = {
+            name: idx for idx, name in enumerate(updated_grammar["nonterminals"])
+        }
+
+        # Build the rules
+        for nonterminal, production_rules in updated_grammar["productions"].items():
+            # Parse the production rules into lists of tokens
+            parsed_rules = [rule.split() for rule in production_rules.split(" | ")]
+            probabilities = [1.0 / len(parsed_rules)] * len(
+                parsed_rules
+            )  # Uniform probabilities
+            rules[nonterminal_map[nonterminal]] = (parsed_rules, probabilities)
+
+        # Handle the VALUE nonterminal separately
+        if "VALUE" in nonterminal_map:
+            value_rules = [[str(v)] for v in object_types]
+            value_probabilities = [1.0 / len(object_types)] * len(object_types)
+            rules[nonterminal_map["VALUE"]] = (value_rules, value_probabilities)
+
+        # Integrate the proposal into the grammar
+        pcfg_insertion = proposal["pcfg_insertion"]
+        nonterminal_to_update = pcfg_insertion["nonterminal"]
+        new_production = pcfg_insertion["production"].split()
+
+        if nonterminal_to_update in nonterminal_map:
+            nonterminal_idx = nonterminal_map[nonterminal_to_update]
+            if new_production not in rules[nonterminal_idx][0]:
+                rules[nonterminal_idx][0].append(new_production)
+                rules[nonterminal_idx][1].append(
+                    1.0
+                )  # Assign equal probability to the new rule
+
+                # Normalize probabilities
+                total = sum(rules[nonterminal_idx][1])
+                rules[nonterminal_idx] = (
+                    rules[nonterminal_idx][0],
+                    [p / total for p in rules[nonterminal_idx][1]],
+                )
+
+        # Create and return the Grammar object
+        return Grammar(rules=rules)
+
+    def generate_grammar(self, prompt: str, object_types: list[Any]) -> Grammar[str, int, int]:
+        """
+        Generate a Grammar object by querying the LLM and processing its response.
+
+        Args:
+            prompt (str): The query or prompt to send to the LLM.
+            object_types (list[Any]): List of object types for the VALUE nonterminal.
+
+        Returns:
+            Grammar[str, int, int]: The constructed Grammar object.
+        """
+        llm_response = self.query_llm(prompt)
+        return self.create_grammar_from_response(llm_response, object_types)
