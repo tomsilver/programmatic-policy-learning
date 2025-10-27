@@ -16,24 +16,42 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
 
+    # logging.info(
+    #     f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
+    # )
+
+    # registry = EnvRegistry()
+    # env = registry.load(cfg.env)
+    # env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+
+    # object_types = env.get_object_types()
+    # env_specs = {"object_types": object_types}
+
+    # expert = hydra.utils.instantiate(
+    #     cfg.expert,
+    #     cfg.env.description,
+    #     env.observation_space,
+    #     env.action_space,
+    #     cfg.seed,
+    # )
+    # # Create the approach.
+    # approach = hydra.utils.instantiate(
+    #     cfg.approach,
+    #     cfg.env.description,
+    #     env.observation_space,
+    #     env.action_space,
+    #     cfg.seed,
+    #     expert,
+    #     env_factory,
+    #     cfg.env.make_kwargs.base_name,
+    #     env_specs=env_specs,
+    # )
     logging.info(
-        f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
+    f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
     )
 
     registry = EnvRegistry()
     env = registry.load(cfg.env)
-    env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
-
-    object_types = env.get_object_types()
-    env_specs = {"object_types": object_types}
-
-    expert = hydra.utils.instantiate(
-        cfg.expert,
-        cfg.env.description,
-        env.observation_space,
-        env.action_space,
-        cfg.seed,
-    )
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -41,10 +59,10 @@ def _main(cfg: DictConfig) -> None:
         env.observation_space,
         env.action_space,
         cfg.seed,
-        expert,
-        env_factory,
-        cfg.env.make_kwargs.base_name,
-        env_specs=env_specs,
+        get_actions=env.get_actions,
+        get_next_state=env.get_next_state,
+        get_cost=env.get_cost,
+        check_goal=env.check_goal,
     )
 
     # Evaluate.
@@ -85,6 +103,9 @@ def _run_single_episode_evaluation(
     total_rewards = 0.0
     total_steps = 0
     obs, info = env.reset(seed=sample_seed_from_rng(rng))
+
+    # for maze env
+    info["goal"] = env.goal_pos
     approach.reset(obs, info)
 
     for _ in range(max_eval_steps):

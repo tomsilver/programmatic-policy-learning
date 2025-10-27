@@ -15,7 +15,7 @@ expert_policy: ${hydra:runtime.choices.expert}
 
 defaults:
   - _self_
-  - approach: random_actions
+  - approach: random
   - env: ggg_two_pile_nim
   - llm: openai
   - expert: ggg_expert

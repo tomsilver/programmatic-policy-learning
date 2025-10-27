@@ -144,6 +144,34 @@ class MazeEnv(gym.Env):
             reward, terminated = 1.0, True
 
         return self.agent_pos.copy(), reward, terminated, truncated, {}
+    
+    # --------------------------------------------------------------
+    # For Search Approach
+    # --------------------------------------------------------------
+    def get_actions(self) -> list[int]:
+        """Return the list of possible actions."""
+        return list(self.ACTIONS.keys())
+
+    def get_next_state(self, state: np.ndarray, action: int) -> np.ndarray:
+        """Compute the next state given the current state and action."""
+        move = self.ACTIONS[action]
+        next_state = state + move
+        if (
+            self.row_min <= next_state[0] <= self.row_max
+            and self.col_min <= next_state[1] <= self.col_max
+        ):
+            gr, gc = self._to_grid_idx(next_state)
+            if self.grid[gr, gc] == 0:  # Valid move (not a wall)
+                return next_state
+        return state  # No movement if invalid
+
+    def get_cost(self, state: np.ndarray, action: int, next_state: np.ndarray) -> float:
+        """Return the cost of transitioning from state to next_state."""
+        return 1.0  # Uniform cost for all actions
+
+    def check_goal(self, state: np.ndarray, goal: np.ndarray) -> bool:
+        """Check if the current state matches the goal."""
+        return np.array_equal(state, goal)
 
     # --------------------------------------------------------------
     # Rendering
