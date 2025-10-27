@@ -5,15 +5,21 @@ It processes nonterminals, terminals, and production rules to
 dynamically construct grammars for DSLs.
 """
 import json
+import logging
 from typing import Any
-from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
+from prpl_llm_utils.models import PretrainedLargeModel
+from prpl_llm_utils.structs import Query
+from prpl_llm_utils.reprompting import query_with_reprompts
 
-class LLPrimitivesGenerator:
+from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
+from programmatic_policy_learning.dsl.llm_primitives.utils import JSONStructureRepromptCheck
+
+class LLMPrimitivesGenerator:
     """
     A class to interact with an LLM, process its response, and generate a Grammar object.
     """
 
-    def __init__(self, llm_client: Any):
+    def __init__(self, llm_client: PretrainedLargeModel):
         """
         Initialize the generator with an LLM client.
 
@@ -32,8 +38,12 @@ class LLPrimitivesGenerator:
         Returns:
             dict: The parsed JSON response from the LLM.
         """
-        response = self.llm_client.generate(prompt)  # Replace with actual LLM call
-        return json.loads(response)
+        query = Query(prompt)
+        reprompt_checks = [JSONStructureRepromptCheck()]
+        response = query_with_reprompts(self.llm_client, query, reprompt_checks, max_attempts = 5)
+        logging.info("Response from LLM:")
+        logging.info(response)
+        return json.loads(response.text)
 
 
     def create_grammar_from_response(

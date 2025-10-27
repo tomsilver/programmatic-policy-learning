@@ -1,13 +1,16 @@
 """Tests for LLM primitive generator."""
 
 import json
-
+import tempfile
+import logging
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
-from programmatic_policy_learning.dsl.llm_primitives.llm_generator import create_grammar
-
+from programmatic_policy_learning.dsl.llm_primitives.llm_generator import LLMPrimitivesGenerator
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel
+from pathlib import Path
 
 def test_create_grammar() -> None:
-    """Test the create_grammar function to ensure it correctly constructs a
+    """Test the create_grammar_from_response function to ensure it correctly constructs a
     Grammar object from the LLM's JSON output.
 
     Validates the structure of the grammar, including nonterminals,
@@ -45,7 +48,8 @@ def test_create_grammar() -> None:
 
     llm_output_dict = json.loads(llm_output)
     object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
-    new_grammar = create_grammar(llm_output_dict, object_types)
+    generator = LLMPrimitivesGenerator(None)
+    new_grammar = generator.create_grammar_from_response(llm_output_dict, object_types)
 
     # Assertions to validate the grammar
     assert isinstance(new_grammar, Grammar)
@@ -65,3 +69,38 @@ def test_create_grammar() -> None:
     assert ["tpn.EMPTY"] in value_rules
     assert len(value_rules) == len(value_probs)
     assert all(prob == 1.0 / len(object_types) for prob in value_probs)
+
+
+def test_generate_grammar_with_real_llm() -> None:
+    """Test the generate_grammar method with the real LLM."""
+    
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache = SQLite3PretrainedLargeModelCache(cache_path)
+    llm_client = OpenAIModel("gpt-4o-mini", cache)
+    with open("src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt.txt", "r", encoding="utf-8") as file:
+        prompt = file.read()
+
+    object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+
+    generator = LLMPrimitivesGenerator(llm_client)
+
+    grammar = generator.generate_grammar(prompt, object_types)
+    logging.info(grammar)
+
+    assert isinstance(grammar, Grammar)
+    assert 0 in grammar.rules  # START nonterminal
+    assert 1 in grammar.rules  # LOCAL_PROGRAM nonterminal
+    assert 2 in grammar.rules  # CONDITION nonterminal
+    assert 3 in grammar.rules  # DIRECTION nonterminal
+    assert 4 in grammar.rules  # VALUE nonterminal
+
+    # Check CONDITION rules
+    condition_rules, condition_probs = grammar.rules[2]
+    assert len(condition_rules) == len(condition_probs)
+
+    # Check VALUE rules
+    value_rules, value_probs = grammar.rules[4]
+    assert len(value_rules) == len(value_probs)
+    assert all(prob == 1.0 / len(object_types) for prob in value_probs)
+
+
