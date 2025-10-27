@@ -22,18 +22,18 @@ def _main(cfg: DictConfig) -> None:
 
     registry = EnvRegistry()
     env = registry.load(cfg.env)
-    env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+    # env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
 
-    object_types = env.get_object_types()
-    env_specs = {"object_types": object_types}
+    # object_types = env.get_object_types()
+    # env_specs = {"object_types": object_types}
 
-    expert = hydra.utils.instantiate(
-        cfg.expert,
-        cfg.env.description,
-        env.observation_space,
-        env.action_space,
-        cfg.seed,
-    )
+    # expert = hydra.utils.instantiate(
+    #     cfg.expert,
+    #     cfg.env.description,
+    #     env.observation_space,
+    #     env.action_space,
+    #     cfg.seed,
+    # )
     # Create the approach.
     approach = hydra.utils.instantiate(
         cfg.approach,
@@ -41,10 +41,10 @@ def _main(cfg: DictConfig) -> None:
         env.observation_space,
         env.action_space,
         cfg.seed,
-        expert,
-        env_factory,
-        cfg.env.make_kwargs.base_name,
-        env_specs=env_specs,
+        # expert,
+        # env_factory,
+        # cfg.env.make_kwargs.base_name,
+        # env_specs=env_specs,
     )
 
     # Evaluate.
