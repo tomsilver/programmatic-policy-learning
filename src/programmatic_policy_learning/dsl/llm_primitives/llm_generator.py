@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any, Callable
 
-from prpl_llm_utils.models import PretrainedLargeModel  # OpenAIModel
+from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
@@ -128,15 +128,14 @@ class LLMPrimitivesGenerator:
         """Generate a Grammar object by querying the LLM and processing its
         response."""
         llm_response = self.query_llm(prompt_text)
-        print(llm_response)
         new_primitive_name = llm_response["proposal"]["name"]
+        # pylint: disable=unused-variable
         new_get_dsl_functions_dict = self.add_primitive_to_dsl(
             new_primitive_name,
             create_function_from_stub(
                 llm_response["proposal"]["semantics_py_stub"], new_primitive_name
             ),
         )
-        print(new_get_dsl_functions_dict)
 
         return self.create_grammar_from_response(llm_response, object_types)
 
