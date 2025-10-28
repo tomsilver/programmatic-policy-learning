@@ -7,7 +7,6 @@ dynamically construct grammars for DSLs.
 
 import json
 import logging
-
 from typing import Any, Callable
 
 from prpl_llm_utils.models import PretrainedLargeModel  # OpenAIModel
