@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any, cast
 
 import gymnasium as gym
 import numpy as np
@@ -28,10 +27,9 @@ runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 def test_llm_grid_search_fake() -> None:
     """The policy follows the interface and uses params['kp']"""
-    env = gym.make("Pendulum-v1")
-    obs, _ = env.reset(seed=0)
-    cast(Any, env).close()
-
+    env0 = gym.make("Pendulum-v1")
+    obs, _ = env0.reset(seed=0)
+    env0.close()  # type: ignore[no-untyped-call]
     env_desc = (
         "Pendulum-v1: keep upright. obs=[cos(theta), sin(theta), theta_dot]. "
         "Action is 1-D torque in [-2, 2]. PD around upright is fine; clip."
@@ -81,19 +79,19 @@ def test_llm_grid_search_fake() -> None:
     )
     assert isinstance(best_kp, float)
     assert np.isfinite(best_avg)
-    env = gym.make("Pendulum-v1")
-    obs, _ = env.reset(seed=1)
+    env1 = gym.make("Pendulum-v1")
+    obs, _ = env1.reset(seed=1)
     act = tuned_policy.act(obs)
-    assert env.action_space.contains(act)
-    cast(Any, env).close()
+    assert env1.action_space.contains(act)
+    env1.close()  # type: ignore[no-untyped-call]
 
 
 @runllms
 def test_llm_grid_search_real_llm() -> None:
     """Optional: use a real LLM if --runllms is enabled."""
-    env = gym.make("Pendulum-v1")
-    obs, _ = env.reset(seed=0)
-    cast(Any, env).close()
+    env2 = gym.make("Pendulum-v1")
+    obs, _ = env2.reset(seed=0)
+    env2.close()  # type: ignore[no-untyped-call]
 
     env_desc = (
         "Pendulum-v1: keep the pendulum upright. Observation is "
@@ -126,8 +124,8 @@ def test_llm_grid_search_real_llm() -> None:
     assert np.isfinite(best_avg)
     assert best_avg > -1900.0
 
-    env = gym.make("Pendulum-v1")
-    obs, _ = env.reset(seed=2)
+    env3 = gym.make("Pendulum-v1")
+    obs, _ = env3.reset(seed=2)
     act = tuned_policy.act(obs)
-    assert env.action_space.contains(act)
-    cast(Any, env).close()
+    assert env3.action_space.contains(act)
+    env3.close()  # type: ignore[no-untyped-call]
