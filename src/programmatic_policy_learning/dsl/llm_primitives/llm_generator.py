@@ -7,7 +7,7 @@ dynamically construct grammars for DSLs.
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import query_with_reprompts
@@ -16,6 +16,10 @@ from prpl_llm_utils.structs import Query
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
+    create_function_from_stub,
+)
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    get_dsl_functions_dict,
 )
 
 
@@ -119,17 +123,45 @@ class LLMPrimitivesGenerator:
         return Grammar(rules=rules)
 
     def generate_grammar(
-        self, prompt: str, object_types: list[Any]
+        self, prompt_text: str, object_types: list[Any]
     ) -> Grammar[str, int, int]:
         """Generate a Grammar object by querying the LLM and processing its
-        response.
+        response."""
+        llm_response = self.query_llm(prompt_text)
+        new_primitive_name = llm_response["proposal"]["name"]
+        # pylint: disable=unused-variable
+        new_get_dsl_functions_dict = self.add_primitive_to_dsl(
+            new_primitive_name,
+            create_function_from_stub(
+                llm_response["proposal"]["semantics_py_stub"], new_primitive_name
+            ),
+        )
+
+        return self.create_grammar_from_response(llm_response, object_types)
+
+    def add_primitive_to_dsl(
+        self, name: str, implementation: Callable[..., Any]
+    ) -> Callable[[], dict[str, Any]]:
+        """Add a new primitive to the DSL functions dictionary.
 
         Args:
-            prompt (str): The query or prompt to send to the LLM.
-            object_types (list[Any]): List of object types for the VALUE nonterminal.
+            name: The name of the new primitive.
+            implementation: The Python implementation of the primitive.
 
         Returns:
-            Grammar[str, int, int]: The constructed Grammar object.
+            A modified `get_dsl_functions_dict` function.
         """
-        llm_response = self.query_llm(prompt)
-        return self.create_grammar_from_response(llm_response, object_types)
+        # Get the base DSL functions
+        base_dsl_functions = get_dsl_functions_dict()
+
+        if name in base_dsl_functions:
+            raise ValueError(f"Primitive '{name}' already exists in the DSL.")
+
+        # Add the new primitive
+        base_dsl_functions[name] = implementation
+
+        # Return a new function that includes the updated DSL
+        def updated_get_dsl_functions_dict() -> dict[str, Any]:
+            return base_dsl_functions
+
+        return updated_get_dsl_functions_dict

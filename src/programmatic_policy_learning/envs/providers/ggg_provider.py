@@ -1,9 +1,14 @@
 """GGG environment provider."""
 
+import os
+import sys
 from typing import Any
 
 from omegaconf import DictConfig
 from prpl_utils.gym_utils import GymToGymnasium
+
+# Suppress stderr globally
+sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 
 class GGGEnvWithTypes:
@@ -96,4 +101,6 @@ def create_ggg_env(
     base = legacy_gym.make(env_id, disable_env_checker=True)
     env_name = base.unwrapped.__class__.__name__
     wrapped = GymToGymnasium(base)
+    # Restore stderr
+    sys.stderr = sys.__stderr__
     return GGGEnvWithTypes(wrapped, env_name)

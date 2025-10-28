@@ -198,6 +198,7 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 - Deterministic and side-effect-free
 - Must type-check
     - Results may be any well-typed expression of the declared return type, literals, composed primitives, or helper-based expressions.(*)
+    - For python stub, we don't need type annotation.
 - Output only valid JSON, nothing else.
 - Output must be a single valid JSON object with exactly the two top-level keys: `"proposal"` and `"updated_grammar"`.
 - The `updated_grammar` must be a self-contained full grammar (not a diff), consistent with the insertion described in `proposal.pcfg_insertion`.
