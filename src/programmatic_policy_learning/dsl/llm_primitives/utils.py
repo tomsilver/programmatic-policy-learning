@@ -1,6 +1,7 @@
 """Util for LLM-based Primitives Generation."""
 
 import json
+from typing import Any, Callable
 
 from prpl_llm_utils.reprompting import RepromptCheck, create_reprompt_from_error_message
 from prpl_llm_utils.structs import Query, Response
@@ -26,3 +27,12 @@ class JSONStructureRepromptCheck(RepromptCheck):
             return create_reprompt_from_error_message(query, response, error_msg)
 
         return None
+
+
+def create_function_from_stub(stub: str, function_name: str) -> Callable[..., Any]:
+    """Convert a Python stub string into a callable function."""
+    stub = stub.replace("\\n", "\n")
+    stub = stub.replace("...", "pass")
+    local_namespace: dict[str, Any] = {}
+    exec(stub, {}, local_namespace)  # pylint: disable=exec-used
+    return local_namespace[function_name]
