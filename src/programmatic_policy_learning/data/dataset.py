@@ -106,7 +106,6 @@ def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
     """Short id for caching: keep values but skip `programs` and `demo_traj`."""
     # args: base_class_name, demo_number, programs, demo_traj, program_interval
     parts = [str(a) for i, a in enumerate(args) if i not in (2, 3)]
-    print(parts)
 
     # include programs length
     try:
