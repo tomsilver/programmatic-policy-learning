@@ -4,6 +4,7 @@ import json
 import logging
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
@@ -12,6 +13,9 @@ from prpl_llm_utils.models import OpenAIModel
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
+)
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    get_dsl_functions_dict,
 )
 
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
@@ -117,3 +121,35 @@ def test_generate_grammar_with_real_llm() -> None:
     value_rules, value_probs = grammar.rules[4]
     assert len(value_rules) == len(value_probs)
     assert all(prob == 1.0 / len(object_types) for prob in value_probs)
+
+
+def test_add_primitive_to_dsl() -> None:
+    """Test that a new primitive is successfully added to the DSL."""
+
+    def new_primitive(cell: tuple[int, int], obs: Any) -> bool:
+        """Example of a new primitive."""
+        return cell is not None and obs[cell[0]][cell[1]] == 42
+
+    generator = LLMPrimitivesGenerator(None)
+
+    # Add the new primitive to the DSL
+    updated_get_dsl_functions_dict = generator.add_primitive_to_dsl(
+        "new_primitive", new_primitive
+    )
+
+    # Retrieve the updated DSL functions
+    updated_dsl_functions = updated_get_dsl_functions_dict()
+
+    # Assertions
+    assert "new_primitive" in updated_dsl_functions
+    assert updated_dsl_functions["new_primitive"] is new_primitive
+
+    # Ensure the original DSL functions are still present
+    base_dsl_functions = get_dsl_functions_dict()
+    for key, value in base_dsl_functions.items():
+        assert key in updated_dsl_functions
+        assert updated_dsl_functions[key] == value
+
+    # Test the new primitive
+    assert updated_dsl_functions["new_primitive"]((1, 1), [[0, 0], [0, 42]]) is True
+    assert updated_dsl_functions["new_primitive"]((0, 0), [[0, 0], [0, 42]]) is False
