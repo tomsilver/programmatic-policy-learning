@@ -5,6 +5,7 @@ import logging
 import tempfile
 from pathlib import Path
 
+import pytest
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
@@ -12,6 +13,8 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
 )
+
+runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
 def test_create_grammar() -> None:
@@ -76,6 +79,7 @@ def test_create_grammar() -> None:
     assert all(prob == 1.0 / len(object_types) for prob in value_probs)
 
 
+@runllms
 def test_generate_grammar_with_real_llm() -> None:
     """Test the generate_grammar method with the real LLM."""
 
