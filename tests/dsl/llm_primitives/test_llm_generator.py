@@ -73,7 +73,7 @@ def test_create_grammar() -> None:
 
     # Check CONDITION rules
     condition_rules, condition_probs = new_grammar.rules[2]
-    assert ["step(DIRECTION,", "LOCAL_PROGRAM,", "cell,", "obs)"] in condition_rules
+    assert ["step(", 3, ", ", 1, ", cell, obs)"] in condition_rules
     assert len(condition_rules) == len(condition_probs)
 
     # Check VALUE rules
@@ -103,7 +103,7 @@ def test_generate_grammar_with_real_llm() -> None:
 
     generator = LLMPrimitivesGenerator(llm_client)
 
-    grammar = generator.generate_grammar(prompt, object_types)
+    grammar, _, _ = generator.generate_and_process_grammar(prompt, object_types)
     logging.info(grammar)
 
     assert isinstance(grammar, Grammar)
