@@ -12,9 +12,7 @@ from typing import Any, Callable, Dict, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Box, Space
-from prpl_llm_utils.code import (
-    synthesize_python_function_with_llm,
-)
+from prpl_llm_utils.code import synthesize_python_function_with_llm
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.structs import Query
 
