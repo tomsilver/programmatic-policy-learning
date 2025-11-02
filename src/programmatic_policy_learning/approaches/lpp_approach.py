@@ -1,10 +1,13 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-from typing import Any, Callable, Sequence, TypeVar, cast
+from typing import Any, Callable, Sequence, TypeVar
 
 import numpy as np
 from gymnasium.spaces import Space
+
+# from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+# from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -12,21 +15,26 @@ from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
-    Grammar,
     GrammarBasedProgramGenerator,
 )
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
-    GridInput,
-    LocalProgram,
-    create_grammar,
-    make_dsl,
+from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
+    LLMPrimitivesGenerator,
 )
+
+# from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+#     GridInput,
+#     LocalProgram,
+#     create_grammar,
+#     get_dsl_functions_dict,
+#     make_dsl,
+# )
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-from programmatic_policy_learning.utils.cache_utils import manage_cache
+
+# from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -61,13 +69,13 @@ def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
     return "-".join(parts)
 
 
-@manage_cache("cache", [".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
+# @manage_cache("cache", [".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
-) -> tuple[list, list]:
+) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
 
@@ -75,12 +83,41 @@ def get_program_set(
     samples `num_programs` programs from the generator. It returns a tuple of
     (programs, program_prior_log_probs).
     """
-    dsl = make_dsl()
+    # dsl = make_dsl()
+    # new_dsl_dict = dsl
+
+    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    # cache = SQLite3PretrainedLargeModelCache(cache_path)
+    # llm_client = OpenAIModel("gpt-4o-mini", cache)
+
+    # with open(
+    #     "src/programmatic_policy_learning/dsl/llm_primitives/prompts/"
+    #     + "one_missing_prompt.txt",
+    #     # "one_missing_prompt+helpersAllowed.txt",
+    #     "r",
+    #     encoding="utf-8",
+    # ) as file:
+    #     prompt = file.read()
+
+    # object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+
+    generator = LLMPrimitivesGenerator(None)
+    # grammar, updated_get_dsl_callable, new_dsl_object = (
+    #     generator.generate_and_process_grammar(prompt, object_types)
+    # )
+
+    _, updated_get_dsl_callable, new_dsl_object = generator.offline_loader(
+        "2025-10-30_13-39-03"
+    )  # grammar, _
+    dsl = new_dsl_object
+    new_dsl_dict = updated_get_dsl_callable()
+
     program_generator = GrammarBasedProgramGenerator(
-        cast(
-            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-            create_grammar,
-        ),
+        generator.create_grammar,
+        # cast(
+        #     Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+        #     create_grammar,
+        # ),
         dsl,
         env_spec=env_specs if env_specs is not None else {},
         start_symbol=start_symbol,
@@ -96,7 +133,10 @@ def get_program_set(
         programs.append(program)
         program_prior_log_probs.append(prior)
 
-    return programs, program_prior_log_probs
+    if new_dsl_dict is None:
+        raise ValueError("new_dsl_dict is not being created properly.")
+
+    return programs, program_prior_log_probs, new_dsl_dict
 
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
@@ -140,29 +180,44 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
-    @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
+    # @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        programs, program_prior_log_probs = get_program_set(
+        programs, program_prior_log_probs, dsl_functions = get_program_set(
             self.num_programs,
             self.base_class_name,
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
         )
         logging.info("Programs Generation is Done.")
+
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
-
+        # dsl_functions = get_dsl_functions_dict()
+        print(dsl_functions)
         X, y = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
             programs_sa,
             demo_dict,
+            dsl_functions,
         )
+        # print(f"Shape of X: {X.shape}")
+        # print(f"Shape of y: {y.shape}")
+
+        if X is None:
+            raise ValueError(
+                "X is None. Ensure the program execution results are valid."
+            )
+        print(f"Contents of X: {X.toarray()}")
+        is_all_false = np.all(X.toarray() is False)
+        print(f"Is X all False? {is_all_false}")
+        # print(f"Contents of y: {y}")
+        # print(f"Unique classes in y: {np.unique(y)}")
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
         # Convert programs to list[StateActionProgram] - short term fix
@@ -174,6 +229,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_prior_log_probs,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
+            dsl_functions=dsl_functions,
         )
         likelihoods = compute_likelihood_plps(plps, demonstrations)
 
