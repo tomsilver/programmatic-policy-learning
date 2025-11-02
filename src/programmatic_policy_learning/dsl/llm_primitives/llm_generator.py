@@ -289,7 +289,7 @@ class LLMPrimitivesGenerator:
 
     def offline_loader(self, run_id: str) -> tuple[
         Grammar[str, int, int],
-        Callable[[], dict[str, Any]],
+        dict[str, Any],
         DSL[LocalProgram, GridInput, Any],
     ]:
         """Load the grammar, DSL functions, and DSL object from a previous run.
@@ -318,13 +318,9 @@ class LLMPrimitivesGenerator:
 
         # Extract the new primitive details
         new_primitive_name = metadata["proposal"]["name"]
-        python_str = metadata["proposal"]["semantics_py_stub"]
-        python_file = create_function_from_stub(python_str, new_primitive_name)
+        # python_str = metadata["proposal"]["semantics_py_stub"]
+        # python_file = create_function_from_stub(python_str, new_primitive_name)
 
-        # Add the new primitive to the DSL
-        # new_get_dsl_functions_dict = self.add_primitive_to_dsl(
-        #     new_primitive_name, python_file
-        # )
         # Dynamically construct the file path using run_id
         output_dir = Path(__file__).parent / "outputs" / run_id
         python_files = list(output_dir.glob("*.py"))
@@ -333,16 +329,14 @@ class LLMPrimitivesGenerator:
         file_path = python_files[0]  # Assuming there's only one Python file
 
         implementation = self.load_function_from_file(
-            str(file_path), "any_adjacent_cells_have_value"
+            str(file_path), new_primitive_name
         )
-        new_get_dsl_functions_dict = self.add_primitive_to_dsl(
-            new_primitive_name, implementation
-        )
+        updated_dsl_fn = self.add_primitive_to_dsl(new_primitive_name, implementation)
 
         # Create the DSL object
-        new_dsl_object = self.make_dsl(new_primitive_name, python_file)
+        new_dsl_object = self.make_dsl(new_primitive_name, implementation)
 
-        return self.grammar, new_get_dsl_functions_dict, new_dsl_object
+        return self.grammar, updated_dsl_fn(), new_dsl_object
 
 
 # if __name__ == "__main__":

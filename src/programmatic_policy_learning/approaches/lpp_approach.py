@@ -1,13 +1,14 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-from typing import Any, Callable, Sequence, TypeVar
+import tempfile
+from pathlib import Path
+from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
-
-# from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-# from prpl_llm_utils.models import OpenAIModel
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -15,19 +16,19 @@ from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
+    Grammar,
     GrammarBasedProgramGenerator,
 )
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
 )
-
-# from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
-#     GridInput,
-#     LocalProgram,
-#     create_grammar,
-#     get_dsl_functions_dict,
-#     make_dsl,
-# )
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    GridInput,
+    LocalProgram,
+    create_grammar,
+    get_dsl_functions_dict,
+    make_dsl,
+)
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
@@ -75,6 +76,7 @@ def get_program_set(
     base_class_name: str,  # pylint: disable=unused-argument
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
+    program_generation: dict[str, Any] | None = None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -83,48 +85,118 @@ def get_program_set(
     samples `num_programs` programs from the generator. It returns a tuple of
     (programs, program_prior_log_probs).
     """
-    # dsl = make_dsl()
-    # new_dsl_dict = dsl
+    if program_generation is None:
+        raise ValueError(
+            "program_generation configuration is required for LPP approach."
+        )
 
-    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
-    # cache = SQLite3PretrainedLargeModelCache(cache_path)
-    # llm_client = OpenAIModel("gpt-4o-mini", cache)
+    strategy = program_generation.get("strategy", "fixed_grid_v1")
 
-    # with open(
-    #     "src/programmatic_policy_learning/dsl/llm_primitives/prompts/"
-    #     + "one_missing_prompt.txt",
-    #     # "one_missing_prompt+helpersAllowed.txt",
-    #     "r",
-    #     encoding="utf-8",
-    # ) as file:
-    #     prompt = file.read()
+    # Define strategies as a dictionary
+    strategies = {
+        "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
+        "dsl_generator": lambda: _generate_with_dsl_generator(
+            program_generation, env_specs, start_symbol
+        ),
+        "offline_loader": lambda: _generate_with_offline_loader(
+            program_generation, env_specs, start_symbol
+        ),
+    }
 
-    # object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+    if strategy not in strategies:
+        raise ValueError(f"Unknown strategy: {strategy}")
 
-    generator = LLMPrimitivesGenerator(None)
-    # grammar, updated_get_dsl_callable, new_dsl_object = (
-    #     generator.generate_and_process_grammar(prompt, object_types)
-    # )
+    # Call the appropriate strategy
+    program_generator, dsl_fns = strategies[strategy]()
+    # Generate programs using the shared helper function
+    programs, program_prior_log_probs = _generate_programs(
+        program_generator, num_programs
+    )
+    return programs, program_prior_log_probs, dsl_fns
 
-    _, updated_get_dsl_callable, new_dsl_object = generator.offline_loader(
-        "2025-10-30_13-39-03"
-    )  # grammar, _
-    dsl = new_dsl_object
-    new_dsl_dict = updated_get_dsl_callable()
+
+def _generate_with_fixed_grid_v1(
+    env_specs: dict[str, Any] | None, start_symbol: int
+) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
+    """Generate programs using the fixed grid_v1 DSL."""
+
+    dsl = make_dsl()
+    dsl_dict = get_dsl_functions_dict()
 
     program_generator = GrammarBasedProgramGenerator(
+        cast(
+            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+            create_grammar,
+        ),
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+    )
+    return program_generator, dsl_dict
+
+
+def _generate_with_dsl_generator(
+    program_generation: dict[str, Any],
+    env_specs: dict[str, Any] | None,
+    start_symbol: int,
+) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
+    """Generate programs using the DSL generator."""
+
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache = SQLite3PretrainedLargeModelCache(cache_path)
+    llm_client = OpenAIModel("gpt-4o-mini", cache)
+    prompt_path = program_generation.get("dsl_generator_prompt", "")
+    with open(
+        prompt_path,
+        "r",
+        encoding="utf-8",
+    ) as file:
+        prompt = file.read()
+
+    object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+
+    generator = LLMPrimitivesGenerator(llm_client)
+    _, updated_get_dsl_callable, new_dsl_object = (
+        generator.generate_and_process_grammar(prompt, object_types)
+    )
+    dsl = new_dsl_object
+    new_dsl_dict = updated_get_dsl_callable()
+    program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
-        # cast(
-        #     Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-        #     create_grammar,
-        # ),
         dsl,
         env_spec=env_specs if env_specs is not None else {},
         start_symbol=start_symbol,
     )
 
-    logging.info(f"Generating {num_programs} programs")
+    return program_generator, new_dsl_dict
 
+
+def _generate_with_offline_loader(
+    program_generation: dict[str, Any],
+    env_specs: dict[str, Any] | None,
+    start_symbol: int,
+) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
+    """Generate programs using the offline loader."""
+    run_id = program_generation.get("offline_loader_run_id", "")
+    generator = LLMPrimitivesGenerator(None)
+    _, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
+
+    dsl = new_dsl_object
+
+    program_generator = GrammarBasedProgramGenerator(
+        generator.create_grammar,
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+    )
+    return program_generator, new_dsl_dict
+
+
+def _generate_programs(
+    program_generator: GrammarBasedProgramGenerator, num_programs: int
+) -> tuple[list[Any], list[float]]:
+    """Shared logic for generating programs."""
+    logging.info(f"Generating {num_programs} programs")
     programs = []
     program_prior_log_probs = []
     gen = program_generator.generate_programs()
@@ -132,11 +204,7 @@ def get_program_set(
         program, prior = next(gen)
         programs.append(program)
         program_prior_log_probs.append(prior)
-
-    if new_dsl_dict is None:
-        raise ValueError("new_dsl_dict is not being created properly.")
-
-    return programs, program_prior_log_probs, new_dsl_dict
+    return programs, program_prior_log_probs
 
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
@@ -159,6 +227,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         max_demo_length: int | float = np.inf,
         env_specs: dict[str, Any] | None = None,
         start_symbol: int = 0,
+        program_generation: dict[str, Any] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -174,6 +243,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.max_demo_length = max_demo_length
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
+        self.program_generation = program_generation
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -188,6 +258,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self.base_class_name,
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
+            program_generation=self.program_generation,
         )
         logging.info("Programs Generation is Done.")
 
@@ -197,8 +268,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
-        # dsl_functions = get_dsl_functions_dict()
-        print(dsl_functions)
+
         X, y = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
@@ -213,9 +283,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             raise ValueError(
                 "X is None. Ensure the program execution results are valid."
             )
-        print(f"Contents of X: {X.toarray()}")
-        is_all_false = np.all(X.toarray() is False)
-        print(f"Is X all False? {is_all_false}")
+        # print(f"Contents of X: {X.toarray()}")
+        # is_all_false = np.all(X.toarray() is False)
+        # print(f"Is X all False? {is_all_false}")
         # print(f"Contents of y: {y}")
         # print(f"Unique classes in y: {np.unique(y)}")
         # Convert y to list[bool] - short term fix

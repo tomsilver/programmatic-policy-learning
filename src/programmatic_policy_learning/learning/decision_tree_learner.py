@@ -172,12 +172,8 @@ def extract_plp_from_dt(
     stack = [0]
     parents: dict[int, tuple[int, str] | None] = {0: None}
     true_leaves = []
-    # print(f"value: {value}")
-    # print(f"value.shape: {value.shape if hasattr(value, 'shape') else 'Not an array'}")
     while len(stack) > 0:
         node_id = stack.pop()
-        # print(node_id)
-        # input()
         if children_left[node_id] != children_right[node_id]:
             assert 0 < threshold[node_id] < 1
             stack.append(children_left[node_id])
