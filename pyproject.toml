@@ -25,6 +25,9 @@ dependencies = [
    "omegaconf",
    "stable-baselines3[extra]>=2.4.0,<3.0",
    "scikit-learn",
+    "cloudpickle>=2.0.0",
+    "pathos>=0.3.0",
+
 ]
 
 [project.optional-dependencies]
@@ -61,8 +64,7 @@ disallow_untyped_calls = true
 disallow_untyped_defs = true
 check_untyped_defs = true
 warn_unreachable = true
-exclude = ["venv/*", ".venv/*"]
-
+exclude = ["venv/*", ".venv/*", "src/programmatic_policy_learning/dsl/llm_primitives/outputs"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -70,5 +72,7 @@ module = [
     "generalization_grid_games.*",
     "scipy.*",
     "sklearn.*",
+    "pathos.*",
 ]
 ignore_missing_imports = true
+
