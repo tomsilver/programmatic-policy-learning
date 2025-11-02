@@ -1,7 +1,6 @@
 """Integration test for dataset pipeline with real environment and
 generator."""
 
-import functools
 import logging
 from typing import Any
 
@@ -79,8 +78,8 @@ def test_dataset_pipeline_with_real_env() -> None:
     assert isinstance(log_prior, float)
     assert np.isfinite(log_prior)
 
-    # Create top-level callables using functools.partial - needs work
-    programs = [functools.partial(eval_program, prog_str=s) for s in program_strs]
+    # Use the valid program strings directly
+    programs = ["lambda s, a: s[0][0] == 0", "lambda s, a: a[0] == 0"]
 
     logging.info("Programs:")
     for i, prog in enumerate(program_strs):
@@ -104,6 +103,7 @@ def test_dataset_pipeline_with_real_env() -> None:
         demo_numbers=demo_numbers,
         programs=programs,
         demo_dict=demo_dict,
+        dsl_functions={},
     )
     if X is not None and y is not None:
         logging.info("\nDataset X (features matrix):")

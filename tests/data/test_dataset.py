@@ -9,23 +9,26 @@ from programmatic_policy_learning.data.dataset import (
 from programmatic_policy_learning.data.demo_types import Trajectory
 
 
-def dummy_program(state: np.ndarray, _: tuple[int, int]) -> bool:
-    """Return True if sum of state is even, else False."""
-    return np.sum(state) % 2 == 0
-
-
 def test_run_all_programs_on_single_demonstration() -> None:
     """Test running programs on a single demonstration."""
     # Create a dummy demonstration
     state = np.array([[1, 2], [3, 4]])
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
-    programs = [dummy_program]
+
+    # Define a simpler dummy program for evaluation
+    def dummy_program(state: np.ndarray, _: tuple[int, int]) -> bool:
+        """Return True if the sum of the state is greater than 10."""
+        return np.sum(state) > 10
+
+    # programs = [dummy_program]
+    programs = ["lambda s, a: np.sum(s) > 10"]
     X, y = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
         0,  # demo_number
-        [dummy_program],  # programs
+        programs,  # programs
         traj,  # demo_traj
+        dsl_functions={},
     )
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)
