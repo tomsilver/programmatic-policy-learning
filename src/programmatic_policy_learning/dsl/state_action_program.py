@@ -13,8 +13,6 @@ DSL_FUNCTIONS: dict[str, Any] | None = None
 def set_dsl_functions(new_dsl: dict[str, Any]) -> None:
     """Thread-safe setter for global DSL dictionary."""
     global DSL_FUNCTIONS  # pylint: disable=global-statement
-    print("INSIDE SET")
-    print(new_dsl)
     DSL_FUNCTIONS = new_dsl.copy()  # copy avoids shared mutation
 
 
