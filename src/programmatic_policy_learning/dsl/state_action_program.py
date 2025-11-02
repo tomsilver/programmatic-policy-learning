@@ -2,11 +2,20 @@
 
 from typing import Any
 
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (  # pylint: disable=unused-import
     get_dsl_functions_dict,
 )
 
-DSL_FUNCTIONS = get_dsl_functions_dict()
+# DSL_FUNCTIONS = get_dsl_functions_dict()
+DSL_FUNCTIONS: dict[str, Any] | None = None
+
+
+def set_dsl_functions(new_dsl: dict[str, Any]) -> None:
+    """Thread-safe setter for global DSL dictionary."""
+    global DSL_FUNCTIONS  # pylint: disable=global-statement
+    print("INSIDE SET")
+    print(new_dsl)
+    DSL_FUNCTIONS = new_dsl.copy()  # copy avoids shared mutation
 
 
 class StateActionProgram:
@@ -20,11 +29,14 @@ class StateActionProgram:
 
         self.program: str = program
         self.wrapped: Any = None
-        # self.dsl_functions = dsl_functions
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if DSL_FUNCTIONS is None:
+            raise RuntimeError("DSL_FUNCTIONS not set. Call set_dsl_functions first.")
+
         if self.wrapped is None:
             self.wrapped = eval("lambda s, a: " + self.program, DSL_FUNCTIONS)
+
         return self.wrapped(*args, **kwargs)
 
     def __repr__(self) -> str:
