@@ -3,6 +3,7 @@
 import ast
 import builtins
 import json
+import logging
 from typing import Any, Callable
 
 from prpl_llm_utils.reprompting import RepromptCheck, create_reprompt_from_error_message
@@ -325,18 +326,18 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
     Python code that meets the required syntax and execution constraints."""
 
     def get_reprompt(self, query: Query, response: Response) -> Query | None:
-        print("Checking semantics_py_stub for validity...")
+        logging.info("Checking semantics_py_stub for validity...")
 
         # Assume JSON structure is already validated
         llm_output = json.loads(response.text)
         stub = llm_output["proposal"]["semantics_py_stub"]
         stub = stub.replace("\\n", "\n")
-        print(stub)
+
         try:
             # Ensure the stub is valid Python code /Syntax
             tree = ast.parse(stub)  # pylint: disable=unused-variable
         except SyntaxError as e:
-            print(f"Syntax error in semantics_py_stub: {e}")  # Log the error
+            logging.info(f"Syntax error in semantics_py_stub: {e}")  # Log the error
             error_msg = (
                 f"The semantics_py_stub contains invalid Python syntax: {str(e)}"
             )
@@ -348,7 +349,7 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
             # Execute in a restricted environment
             exec(stub, {}, local_namespace)  # pylint: disable=exec-used
         except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Execution error in semantics_py_stub: {e}")  # Log the error
+            logging.info(f"Execution error in semantics_py_stub: {e}")  # Log the error
             error_msg = (
                 f"The semantics_py_stub raised an error during execution: {str(e)}"
             )
@@ -361,9 +362,9 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
             error_msg = "The semantics_py_stub contains undefined names: " + ", ".join(
                 sorted(undefined)
             )
-            print(error_msg)
+            logging.info(error_msg)
             return create_reprompt_from_error_message(query, response, error_msg)
-        print("semantics_py_stub passed all checks.")
+        logging.info("semantics_py_stub passed all checks.")
         return None
 
 
