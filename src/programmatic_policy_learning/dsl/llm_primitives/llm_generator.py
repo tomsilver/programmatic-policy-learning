@@ -105,10 +105,8 @@ class LLMPrimitivesGenerator:
         # Map nonterminal name -> index
         nt_to_id: Dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
 
-        # Regex to find any NT name inside a string (longest-first to avoid partial
-        # overlaps). We match literally (not word-boundaries) so NTs embedded in
-        # text still get replaced, which yields the "surrounding text chunk"
-        # behavior we want.
+        # Find any NT name in a string. Match longest first to avoid partial overlaps.
+        # Literal match so NTs inside text are also caught.
         sorted_nts = sorted(nonterminals, key=len, reverse=True)
         nt_pattern = re.compile("|".join(re.escape(nt) for nt in sorted_nts))
 
@@ -318,8 +316,6 @@ class LLMPrimitivesGenerator:
 
         # Extract the new primitive details
         new_primitive_name = metadata["proposal"]["name"]
-        # python_str = metadata["proposal"]["semantics_py_stub"]
-        # python_file = create_function_from_stub(python_str, new_primitive_name)
 
         # Dynamically construct the file path using run_id
         output_dir = Path(__file__).parent / "outputs" / run_id
