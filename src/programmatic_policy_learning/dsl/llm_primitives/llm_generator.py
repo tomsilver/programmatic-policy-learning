@@ -337,27 +337,3 @@ class LLMPrimitivesGenerator:
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
 
         return self.grammar, updated_dsl_fn(), new_dsl_object
-
-
-# if __name__ == "__main__":
-#     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
-#     cache = SQLite3PretrainedLargeModelCache(cache_path)
-#     llm_client = OpenAIModel("gpt-4o-mini", cache)
-
-#     with open(
-#         "src/programmatic_policy_learning/dsl/llm_primitives/prompts/"
-#         + "one_missing_prompt.txt",
-#         # "one_missing_prompt+helpersAllowed.txt",
-#         "r",
-#         encoding="utf-8",
-#     ) as file:
-#         prompt = file.read()
-
-#     object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
-
-#     generator = LLMPrimitivesGenerator(llm_client)
-#     grammar, updated_get_dsl, new_dsl_object =
-#       generator.generate_and_process_grammar(prompt, object_types)
-#     print(generator.create_grammar())
-#     print(grammar)
-#     print(new_dsl_object)

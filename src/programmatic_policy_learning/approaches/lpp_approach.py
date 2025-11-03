@@ -70,7 +70,7 @@ def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
     return "-".join(parts)
 
 
-# @manage_cache("cache", [".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
+# @manage_cache("cache", [".pkl", ".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -276,18 +276,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict,
             dsl_functions,
         )
-        # print(f"Shape of X: {X.shape}")
-        # print(f"Shape of y: {y.shape}")
-
         if X is None:
             raise ValueError(
                 "X is None. Ensure the program execution results are valid."
             )
-        # print(f"Contents of X: {X.toarray()}")
-        # is_all_false = np.all(X.toarray() is False)
-        # print(f"Is X all False? {is_all_false}")
-        # print(f"Contents of y: {y}")
-        # print(f"Unique classes in y: {np.unique(y)}")
+
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
         # Convert programs to list[StateActionProgram] - short term fix
