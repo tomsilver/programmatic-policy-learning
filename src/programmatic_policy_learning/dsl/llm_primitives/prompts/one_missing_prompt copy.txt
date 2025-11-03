@@ -1,6 +1,6 @@
 ## SYSTEM
 
-You are designing a type-safe DSL primitive for Logical Programmatic Policies in Generalization Grid Games.
+You are designing a type-safe DSL primitive for Logical Programmatic Policies (LPP) in Generalization Grid Games.
 
 Your job is to propose **ONE** new primitive and also output the **FULL updated grammar** that results from inserting that primitive into the current grammar. Output a single STRICT JSON object only. No prose, comments, or markdown.
 
@@ -193,7 +193,7 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
 "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","scanning","NAME"],
 "productions": {
-"START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s) | <INSERTED_RULE>",
+"START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, ACTION, s) | <INSERTED_RULE>",
 "LOCAL_PROGRAM": "CONDITION | <INSERTED_RULE>",
 "CONDITION": "cell_is_value(VALUE, cell, obs) | scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | <INSERTED_RULE>",
 "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
@@ -213,12 +213,10 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 ### Safety Requirements
 
 - Deterministic and side-effect-free
-- No dependencies. Do not call or define any helpers inside semantics_py_stub. Your stub may use only its own parameters, literals, basic boolean/arithmetic operators, and simple Python control flow; no imports, no globals, no external identifiers.
-- The python stub can also use other terminals or nonterminal defined above.
+- No dependencies. Do not call or define any helpers, and do not invoke any existing terminals/primitives (e.g., cell_is_value, scanning, etc.) inside semantics_py_stub. Your stub may use only its own parameters, literals, basic boolean/arithmetic operators, and simple Python control flow; no imports, no globals, no external identifiers.
 - Must type-check
     - Results may be any well-typed expression of the declared return type, literals, composed primitives.
     - For python stub, no type annotation is needed.
-- Always start your python stub with this import: "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *" (the code should start immediately at its next line)
 - Do not use import statements; the code must run with only the provided stubs.
 - Output only valid JSON, nothing else.
 - Output must be a single valid JSON object with exactly the two top-level keys: `"proposal"` and `"updated_grammar"`.

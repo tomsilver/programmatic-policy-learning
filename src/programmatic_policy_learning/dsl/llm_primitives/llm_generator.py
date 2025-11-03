@@ -58,7 +58,8 @@ class LLMPrimitivesGenerator:
         base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_path = base_dir / output_dir / self.run_id
-        self.output_path.mkdir(parents=True, exist_ok=True)
+        if llm_client is not None:
+            self.output_path.mkdir(parents=True, exist_ok=True)
         self.grammar: Grammar[str, int, int] | None = None
 
     def query_llm(self, prompt: str) -> dict:
