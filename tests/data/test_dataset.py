@@ -16,13 +16,6 @@ def test_run_all_programs_on_single_demonstration() -> None:
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
-    # Define a simpler dummy program for evaluation
-    def dummy_program(state: np.ndarray, _: tuple[int, int]) -> bool:
-        """Return True if the sum of the state is greater than 10."""
-        return np.sum(state) > 10
-
-    # programs = [dummy_program]
-    # programs = ["lambda s, a: np.sum(s) > 10"]
     programs = ["np.sum(s) > 10"]
     X, y = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
