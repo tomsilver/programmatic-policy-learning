@@ -30,6 +30,7 @@ def test_run_all_programs_on_single_demonstration() -> None:
         traj,  # demo_traj
         {},
     )
+
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)
     assert set(y) <= {0, 1}  # binary labels
