@@ -20,15 +20,15 @@ from programmatic_policy_learning.dsl.state_action_program import (
 # from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
+# Add type annotations to the function to resolve the missing type annotation error
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
 ) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
+    list[tuple[np.ndarray, tuple[int, int]]],
+    list[tuple[np.ndarray, tuple[int, int]]],
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
-
-    All actions not taken in the demonstration_item are considered negative.
 
     Parameters
     ----------
@@ -120,6 +120,15 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     return base, module_map
 
 
+# Add type annotations to eval_program_fn to resolve the untyped function error
+def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None:
+    """Evaluate a program on a state-action pair."""
+    try:
+        return eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
+    except Exception: # pylint: disable=broad-exception-caught
+        return None
+
+
 # Global worker states
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
@@ -164,14 +173,8 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             Ensure worker_init is called before using worker_eval_example."
         )
 
-    # Proceed with the iteration after the check
-    results = []
-    for f in _WORKER_PROGRAMS:
-        try:
-            results.append(f(s, a))
-        except Exception:  # pylint: disable=broad-exception-caught
-            results.append(None)
-    return results
+    results = [eval_program_fn(s, a, prog) for prog in _WORKER_PROGRAMS]
+    return [result if result is not None else False for result in results]
 
 
 # @manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
@@ -197,8 +200,8 @@ def run_all_programs_on_single_demonstration(
     try:
         dsl_blob = cloudpickle.dumps(base_dsl)
         cloudpickle.loads(dsl_blob)  # Test deserialization
-    except Exception as e:
-        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}")
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
 
     # Extract program strings (don’t pickle heavy objects repeatedly)
     program_strs = [
@@ -221,7 +224,7 @@ def run_all_programs_on_single_demonstration(
 
     num_workers = max(1, multiprocessing.cpu_count())
 
-    for p_start in range(0, num_programs, num_workers):
+    for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
 
