@@ -6,3 +6,8 @@ num_programs: 10000
 num_dts: 5
 max_num_particles: 25
 start_symbol: 0
+program_generation:
+  strategy: "fixed_grid_v1"  # Options: "fixed_grid_v1", "dsl_generator", "offline_loader"
+  offline_loader_run_id: "2025-10-30_13-39-03"  # Only used for "offline_loader"
+  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt.txt"  # Only used for "dsl_generator"
+  # object_types: ["tpn.EMPTY", "tpn.TOKEN", "None"]  # Only used for "dsl_generator"
