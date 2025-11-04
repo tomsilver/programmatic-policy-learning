@@ -22,7 +22,8 @@ def test_run_all_programs_on_single_demonstration() -> None:
         return np.sum(state) > 10
 
     # programs = [dummy_program]
-    programs = ["lambda s, a: np.sum(s) > 10"]
+    # programs = ["lambda s, a: np.sum(s) > 10"]
+    programs = ["np.sum(s) > 10"]
     X, y = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
         0,  # demo_number

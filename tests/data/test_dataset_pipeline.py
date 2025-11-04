@@ -79,8 +79,9 @@ def test_dataset_pipeline_with_real_env() -> None:
     assert np.isfinite(log_prior)
 
     # Use the valid program strings directly
-    programs = ["lambda s, a: s[0][0] == 0", "lambda s, a: a[0] == 0"]
-
+    # programs = ["lambda s, a: s[0][0] == 0", "lambda s, a: a[0] == 0"]
+    # Use the named functions in the programs list
+    programs = ["s[0][0] == 0", "a[0] == 0"]
     logging.info("Programs:")
     for i, prog in enumerate(program_strs):
         logging.info(f"Program {i}: {prog}")
