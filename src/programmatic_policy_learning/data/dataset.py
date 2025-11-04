@@ -124,8 +124,11 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
 def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None:
     """Evaluate a program on a state-action pair."""
     try:
-        return eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
-    except Exception: # pylint: disable=broad-exception-caught
+        result = eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
+        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
+        return result
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
         return None
 
 
@@ -166,15 +169,19 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     """
     s, a = fn_input
 
-    # Ensure _WORKER_PROGRAMS is initialized before iterating
     if _WORKER_PROGRAMS is None:
         raise RuntimeError(
             "_WORKER_PROGRAMS is not initialized.\
             Ensure worker_init is called before using worker_eval_example."
         )
 
-    results = [eval_program_fn(s, a, prog) for prog in _WORKER_PROGRAMS]
-    return [result if result is not None else False for result in results]
+    results = []
+    for f in _WORKER_PROGRAMS:
+        try:
+            results.append(f(s, a))
+        except Exception:  # pylint: disable=broad-exception-caught
+            results.append(None)
+    return results
 
 
 # @manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
@@ -236,6 +243,10 @@ def run_all_programs_on_single_demonstration(
             results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=128)
             batch_rows = np.array(list(results_iter), dtype=bool)
             X[:, p_start:p_end] = batch_rows
+
+    # Check if X is all False
+    # if not X.nnz:  # nnz is the number of non-zero elements in the sparse matrix
+    #     print("The feature matrix X contains only False values.")
 
     # # Add program-level chunking for multiprocessing
     # num_workers = cpu_count()

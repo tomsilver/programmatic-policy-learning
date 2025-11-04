@@ -258,7 +258,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
         )
-        # print(dsl_functions)
         logging.info("Programs Generation is Done.")
 
         programs_sa: list[StateActionProgram] = [
