@@ -140,7 +140,7 @@ _WORKER_PROGRAMS = None
 def worker_init(
     dsl_blob: bytes, module_map: dict[str, str], program_batch: list[str]
 ) -> None:
-    """"Set up the worker once.
+    """Set up the worker once.
 
     Loads the DSL, reimports modules, and compiles the given program
     batch. Runs only once per process before handling any examples.
