@@ -20,7 +20,6 @@ from programmatic_policy_learning.dsl.state_action_program import (
 # from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
-# Add type annotations to the function to resolve the missing type annotation error
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
 ) -> tuple[
@@ -120,7 +119,6 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     return base, module_map
 
 
-# Add type annotations to eval_program_fn to resolve the untyped function error
 def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None:
     """Evaluate a program on a state-action pair."""
     try:
@@ -243,33 +241,6 @@ def run_all_programs_on_single_demonstration(
             results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=128)
             batch_rows = np.array(list(results_iter), dtype=bool)
             X[:, p_start:p_end] = batch_rows
-
-    # Check if X is all False
-    # if not X.nnz:  # nnz is the number of non-zero elements in the sparse matrix
-    #     print("The feature matrix X contains only False values.")
-
-    # # Add program-level chunking for multiprocessing
-    # num_workers = cpu_count()
-    # # NOTE: one pool reused for the entire demo
-    # with Pool(processes=num_workers) as pool:
-    #     # Chunk examples to cut scheduling overhead
-    #     # Chunking number of (s,a) pairs assigned to the worker
-    #     CHUNK = 64
-    #     for program_start in range(0, len(program_strs), program_interval):
-    #         program_end = min(program_start + program_interval, len(program_strs))
-    #         program_batch = program_strs[program_start:program_end]
-
-    #         # results_iter = pool.imap(
-    #         #     lambda fn_input, batch=program_batch: _eval_all_on_example_with_dsl(
-    #         #         fn_input, dsl_blob, module_map, batch
-    #         #     ),
-    #         #     fn_inputs,
-    #         #     chunksize=CHUNK,
-    #         # )
-    #         results_iter = pool.imap(worker_eval_example,
-    # [(x, dsl_blob, module_map, program_batch) for x in fn_inputs], chunksize=CHUNK)
-    #         for row_idx, row in enumerate(results_iter):
-    #             X[row_idx, program_start:program_end] = row
 
     return X.tocsr(), np.array(y, dtype=np.uint8)
 
