@@ -6,7 +6,7 @@ import logging
 from importlib import import_module
 from typing import Any
 
-import cloudpickle  # type: ignore
+import cloudpickle
 import numpy as np
 from pathos.helpers import cpu_count
 from pathos.multiprocessing import Pool
@@ -157,10 +157,10 @@ def _eval_all_on_example_with_dsl(
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
-    programs: list,  # list[StateActionProgram] (or strings)
+    programs: list[StateActionProgram] | list[str],
     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
+    dsl_functions: dict,
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-    dsl_functions: dict | None = None,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
@@ -171,10 +171,6 @@ def run_all_programs_on_single_demonstration(
     )
     fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-
-    # Prepare DSL blob and module map ONCE
-    if dsl_functions is None:
-        raise ValueError("DSL_FUNCTIONS IS NONE!")
 
     base_dsl, module_map = _split_dsl(dsl_functions)
 
@@ -197,7 +193,7 @@ def run_all_programs_on_single_demonstration(
     # NOTE: one pool reused for the entire demo
     with Pool(processes=num_workers) as pool:
         # Chunk examples to cut scheduling overhead
-        # Chuncking number of (s,a) pairs assigned to the worker
+        # Chunking number of (s,a) pairs assigned to the worker
         CHUNK = 64
         results_iter = pool.imap(
             lambda fn_input: _eval_all_on_example_with_dsl(
@@ -227,7 +223,7 @@ def run_all_programs_on_demonstrations(
             demo_number,
             programs,
             demo_dict[demo_number],
-            dsl_functions=dsl_functions,
+            dsl_functions,
         )
 
         if X is None:
