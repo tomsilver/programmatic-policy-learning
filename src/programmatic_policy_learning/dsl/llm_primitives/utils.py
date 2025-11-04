@@ -8,7 +8,11 @@ from typing import Any, Callable
 
 from prpl_llm_utils.reprompting import RepromptCheck, create_reprompt_from_error_message
 from prpl_llm_utils.structs import Query, Response
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import get_dsl_functions_dict
+
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    get_dsl_functions_dict,
+)
+
 
 class JSONStructureRepromptCheck(RepromptCheck):
     """Check whether the LLM's response contains valid JSON with required
@@ -360,8 +364,7 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
 
         # Merge the hand-written functions with the provided globals
         undefined = find_undefined_names(
-            stub, 
-            provided_globals = set(local_namespace) | set(hand_written_functions)
+            stub, provided_globals=set(local_namespace) | set(hand_written_functions)
         )
         if undefined:
             error_msg = "The semantics_py_stub contains undefined names: " + ", ".join(
