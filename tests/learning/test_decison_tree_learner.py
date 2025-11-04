@@ -59,7 +59,7 @@ def test_extract_plp_from_dt() -> None:
     clf.fit(X, y)
     features = [StateActionProgram("a"), StateActionProgram("b")]
     feature_log_probs = [0.5, 0.2]
-    plp, log_p = extract_plp_from_dt(clf, features, feature_log_probs)
+    plp, log_p = extract_plp_from_dt(clf, features, feature_log_probs, dsl_functions={})
     assert isinstance(plp, StateActionProgram)
     assert isinstance(log_p, float)
 
@@ -77,6 +77,7 @@ def test_learn_plps() -> None:
         program_prior_log_probs,
         num_dts=1,
         program_generation_step_size=1,
+        dsl_functions={},
     )
     assert isinstance(plps, list)
     assert isinstance(plp_priors, list)
