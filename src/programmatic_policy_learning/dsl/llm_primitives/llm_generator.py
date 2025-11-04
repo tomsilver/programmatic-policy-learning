@@ -81,8 +81,8 @@ class LLMPrimitivesGenerator:
             reprompt_checks,  # type: ignore[arg-type]
             max_attempts=5,
         )
-        # logging.info("Response from LLM:")
-        # logging.info(response)
+        logging.debug("Response from LLM:")
+        logging.debug(response)
         return json.loads(response.text)
 
     def create_grammar_from_response(
@@ -195,7 +195,7 @@ class LLMPrimitivesGenerator:
         if self.grammar is None:
             raise ValueError("Grammar is not initialized")
         object_types = env_spec["object_types"]
-        # object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+
         self.grammar.rules[4] = (
             [[str(v)] for v in object_types],
             [1.0 / len(object_types) for _ in object_types],
