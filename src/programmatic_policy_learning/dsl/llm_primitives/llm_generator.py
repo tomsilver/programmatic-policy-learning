@@ -11,7 +11,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Tuple, Union, cast
+from typing import Any, Callable, Mapping, Union, cast
 
 import black
 import numpy as np
@@ -58,8 +58,7 @@ class LLMPrimitivesGenerator:
         base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_path = base_dir / output_dir / self.run_id
-        if llm_client is not None:
-            self.output_path.mkdir(parents=True, exist_ok=True)
+        self.output_path.mkdir(parents=True, exist_ok=True)
         self.grammar: Grammar[str, int, int] | None = None
 
     def query_llm(self, prompt: str) -> dict:
@@ -82,14 +81,14 @@ class LLMPrimitivesGenerator:
             reprompt_checks,  # type: ignore[arg-type]
             max_attempts=5,
         )
-        # logging.info("Response from LLM:")
-        # logging.info(response)
+        logging.debug("Response from LLM:")
+        logging.debug(response)
         return json.loads(response.text)
 
     def create_grammar_from_response(
         self,
-        llm_output: Dict[str, Any],
-        object_types: List[Any],
+        llm_output: dict[str, Any],
+        object_types: list[Any],
     ) -> Grammar[str, int, int]:
         """Convert a JSON-like grammar spec (with strings for productions) into
         a Grammar where nonterminals are numbered 0..N-1 and RHS alternatives
@@ -100,21 +99,21 @@ class LLMPrimitivesGenerator:
         it's expanded using object_types.
         """
         rules = llm_output["updated_grammar"]
-        nonterminals: List[str] = rules["nonterminals"]
-        productions: Dict[str, str] = rules["productions"]
+        nonterminals: list[str] = rules["nonterminals"]
+        productions: dict[str, str] = rules["productions"]
 
         # Map nonterminal name -> index
-        nt_to_id: Dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
+        nt_to_id: dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
 
         # Find any NT name in a string. Match longest first to avoid partial overlaps.
         # Literal match so NTs inside text are also caught.
         sorted_nts = sorted(nonterminals, key=len, reverse=True)
         nt_pattern = re.compile("|".join(re.escape(nt) for nt in sorted_nts))
 
-        def split_replace_nts(s: str) -> List[Sym]:
+        def split_replace_nts(s: str) -> list[Sym]:
             """Split s around any NT occurrences, returning
             [str/int/str/...]."""
-            out: List[Sym] = []
+            out: list[Sym] = []
             pos = 0
             for m in nt_pattern.finditer(s):
                 if m.start() > pos:
@@ -130,7 +129,7 @@ class LLMPrimitivesGenerator:
             out = [tok for tok in out if not (isinstance(tok, str) and tok == "")]
             return out
 
-        def parse_alternatives(prod_str: str, nt_name: str) -> List[List[Sym]]:
+        def parse_alternatives(prod_str: str, nt_name: str) -> list[list[Sym]]:
             """Split a production 'a | b | c' into RHS lists with NT
             replacement."""
             prod_str = prod_str.strip()
@@ -143,7 +142,7 @@ class LLMPrimitivesGenerator:
             return [split_replace_nts(alt) for alt in raw_alts]
 
         # Build the rules: { nt_id: (alternatives, probabilities) }
-        grammar_rules: Dict[int, Tuple[List[List[Sym]], List[float]]] = {}
+        grammar_rules: dict[int, tuple[list[list[Sym]], list[float]]] = {}
         for nt_name, nt_id in nt_to_id.items():
             if nt_name not in productions:
                 raise KeyError(f"Missing production for nonterminal '{nt_name}'")
@@ -196,7 +195,6 @@ class LLMPrimitivesGenerator:
         if self.grammar is None:
             raise ValueError("Grammar is not initialized")
         object_types = env_spec["object_types"]
-        # object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
         self.grammar.rules[4] = (
             [[str(v)] for v in object_types],
             [1.0 / len(object_types) for _ in object_types],

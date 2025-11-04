@@ -73,6 +73,7 @@ module = [
     "scipy.*",
     "sklearn.*",
     "pathos.*",
+    "cloudpickle.*",
 ]
 ignore_missing_imports = true
 

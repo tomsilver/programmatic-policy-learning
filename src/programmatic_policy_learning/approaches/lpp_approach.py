@@ -153,13 +153,11 @@ def _generate_with_dsl_generator(
     ) as file:
         prompt = file.read()
 
-    object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
-
     generator = LLMPrimitivesGenerator(llm_client)
-    _, updated_get_dsl_callable, new_dsl_object = (
-        generator.generate_and_process_grammar(prompt, object_types)
+    _, updated_get_dsl_callable, dsl = generator.generate_and_process_grammar(
+        prompt, env_specs["object_types"]  # type: ignore
     )
-    dsl = new_dsl_object
+
     new_dsl_dict = updated_get_dsl_callable()
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,

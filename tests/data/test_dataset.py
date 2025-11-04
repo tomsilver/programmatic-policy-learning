@@ -28,7 +28,7 @@ def test_run_all_programs_on_single_demonstration() -> None:
         0,  # demo_number
         programs,  # programs
         traj,  # demo_traj
-        dsl_functions={},
+        {},
     )
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)

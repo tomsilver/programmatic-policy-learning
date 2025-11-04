@@ -6,7 +6,7 @@ import logging
 from importlib import import_module
 from typing import Any
 
-import cloudpickle  # type: ignore
+import cloudpickle
 import numpy as np
 from pathos.helpers import cpu_count
 from pathos.multiprocessing import Pool
@@ -157,24 +157,19 @@ def _eval_all_on_example_with_dsl(
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
-    programs: list,  # list[StateActionProgram] (or strings)
+    programs: list[StateActionProgram] | list[str],
     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
+    dsl_functions: dict,
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-    dsl_functions: dict | None = None,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
-
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
         demo_traj
     )
     fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-
-    # Prepare DSL blob and module map ONCE
-    if dsl_functions is None:
-        raise ValueError("DSL_FUNCTIONS IS NONE!")
 
     base_dsl, module_map = _split_dsl(dsl_functions)
 
@@ -193,21 +188,26 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
     X = lil_matrix((num_data, num_programs), dtype=bool)
 
+    # Add program-level chunking for multiprocessing
     num_workers = cpu_count()
     # NOTE: one pool reused for the entire demo
     with Pool(processes=num_workers) as pool:
         # Chunk examples to cut scheduling overhead
-        # Chuncking number of (s,a) pairs assigned to the worker
+        # Chunking number of (s,a) pairs assigned to the worker
         CHUNK = 64
-        results_iter = pool.imap(
-            lambda fn_input: _eval_all_on_example_with_dsl(
-                fn_input, dsl_blob, module_map, program_strs
-            ),
-            fn_inputs,
-            chunksize=CHUNK,
-        )
-        for row_idx, row in enumerate(results_iter):
-            X[row_idx, :] = row
+        for program_start in range(0, len(program_strs), program_interval):
+            program_end = min(program_start + program_interval, len(program_strs))
+            program_batch = program_strs[program_start:program_end]
+
+            results_iter = pool.imap(
+                lambda fn_input, batch=program_batch: _eval_all_on_example_with_dsl(
+                    fn_input, dsl_blob, module_map, batch
+                ),
+                fn_inputs,
+                chunksize=CHUNK,
+            )
+            for row_idx, row in enumerate(results_iter):
+                X[row_idx, program_start:program_end] = row
 
     return X.tocsr(), np.array(y, dtype=np.uint8)
 
@@ -227,7 +227,7 @@ def run_all_programs_on_demonstrations(
             demo_number,
             programs,
             demo_dict[demo_number],
-            dsl_functions=dsl_functions,
+            dsl_functions,
         )
 
         if X is None:
