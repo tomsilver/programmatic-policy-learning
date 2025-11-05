@@ -336,6 +336,7 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
         llm_output = json.loads(response.text)
         stub = llm_output["proposal"]["semantics_py_stub"]
         stub = stub.replace("\\n", "\n")
+        logging.info(stub)
         try:
             # Ensure the stub is valid Python code /Syntax
             tree = ast.parse(stub)  # pylint: disable=unused-variable

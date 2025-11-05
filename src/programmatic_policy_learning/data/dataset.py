@@ -199,7 +199,6 @@ def run_all_programs_on_single_demonstration(
     )
     fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-
     base_dsl, module_map = _split_dsl(dsl_functions)
 
     try:

@@ -3,6 +3,7 @@
 You are designing a type-safe DSL primitive for Logical Programmatic Policies in Generalization Grid Games.
 
 Your job is to propose **ONE** new primitive and also output the **FULL updated grammar** that results from inserting that primitive into the current grammar. Output a single STRICT JSON object only. No prose, comments, or markdown.
+In your reasoning process, analyze the existing DSL primitives and infer what capabilities or compositional patterns are currently under-represented. Then hypothesize which primitive would make the program search space more efficient or compact.
 
 ## USER:
 
@@ -219,10 +220,14 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
     - Results may be any well-typed expression of the declared return type, literals, composed primitives.
     - For python stub, no type annotation is needed.
 - Always start your python stub with this import: "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *" (the code should start immediately at its next line)
+- Be careful that cell values can be None too. Check for that to avoid syntax errors in the python stub.
+- Do not combine or modify Nonterminal names (e.g., def x(CONDITIONS) or def x(CONDITION1, CONDITION2) => THESE ARE FORBIDDEN) — only use existing single Nonterminals as defined in the grammar.
+- Arguments in the 'production' field can only be among the Nonterminals (like: CONDITION, DIRECTION, VALUE, LOCAL_PROGRAM) or fixed variables (like: cell, o, a, s).
 - Do not use import statements; the code must run with only the provided stubs.
 - Output only valid JSON, nothing else.
 - Output must be a single valid JSON object with exactly the two top-level keys: `"proposal"` and `"updated_grammar"`.
 - The `updated_grammar` must be a self-contained full grammar (not a diff), consistent with the insertion described in `proposal.pcfg_insertion`.
+
 
 ### Final Note
 

@@ -292,7 +292,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
-        likelihoods = compute_likelihood_plps(plps, demonstrations)
+        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
 
         particles = []
         particle_log_probs = []
