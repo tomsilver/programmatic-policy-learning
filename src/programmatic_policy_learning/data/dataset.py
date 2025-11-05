@@ -17,7 +17,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
+from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
 def extract_examples_from_demonstration_item(
@@ -88,18 +88,47 @@ def extract_examples_from_demonstration(
     return positive_examples, negative_examples
 
 
-def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
-    """Short id for caching: keep values but skip `programs` and `demo_traj`."""
-    # args: base_class_name, demo_number, programs, demo_traj, program_interval
-    parts = [str(a) for i, a in enumerate(args) if i not in (2, 3)]
+# def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
+#     """Short id for caching: keep values but skip `programs` and `demo_traj`."""
+#     # args: base_class_name, demo_number, programs, demo_traj, program_interval
+#     parts = [str(a) for i, a in enumerate(args) if i not in (2, 3)]
 
-    # include programs length
+#     # include programs length
+#     try:
+#         parts.append(str(len(args[2])))
+#     except Exception as exc:
+#         raise TypeError("programs argument must be a sized list") from exc
+#     parts += [str(v) for k, v in kwargs.items() if k not in ("programs", "demo_traj")]
+#     return "-".join(parts)
+
+
+def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
+    """Short id for caching: skip large/unpicklable args like programs, demo_traj, dsl_functions."""
+    # args: base_class_name, demo_number, programs, demo_traj, dsl_functions, program_interval
+    parts = []
+    for i, a in enumerate(args):
+        # skip heavy objects (programs, trajectories, dsl)
+        if i in (2, 3, 4):
+            continue
+        parts.append(str(a))
+
+    # include programs length for uniqueness
     try:
         parts.append(str(len(args[2])))
     except Exception as exc:
         raise TypeError("programs argument must be a sized list") from exc
-    parts += [str(v) for k, v in kwargs.items() if k not in ("programs", "demo_traj")]
-    return "-".join(parts)
+
+    # include lightweight kwargs only
+    for k, v in kwargs.items():
+        if k not in ("programs", "demo_traj", "dsl_functions"):
+            parts.append(str(v))
+
+    # truncate long ids if necessary
+    key = "-".join(parts)
+    if len(key) > 200:
+        import hashlib
+        key = hashlib.sha1(key.encode()).hexdigest()[:16]
+    return key
 
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -182,7 +211,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     return results
 
 
-# @manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
+@manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
