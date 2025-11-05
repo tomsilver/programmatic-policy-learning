@@ -12,9 +12,7 @@ from typing import Any, Callable, Dict, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Box, Space
-from prpl_llm_utils.code import (
-    synthesize_python_function_with_llm,
-)
+from prpl_llm_utils.code import synthesize_python_function_with_llm
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.structs import Query
 
@@ -40,6 +38,11 @@ class LLMGeneratedParametricPolicy(ParametricPolicyBase):
         super().__init__(init_params, param_bounds)
         self._fn = fn
         self._action_space = action_space
+
+    @property
+    def function(self) -> Callable[[Any, Dict[str, float]], Any]:
+        """Read-only access to the synthesized policy function."""
+        return self._fn
 
     def act(self, obs: Any) -> np.ndarray:
         out = self._fn(obs, self._params)

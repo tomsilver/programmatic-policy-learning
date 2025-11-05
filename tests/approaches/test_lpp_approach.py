@@ -1,5 +1,8 @@
 """Tests for LPP Approach."""
 
+from pathlib import Path
+
+import pytest
 from omegaconf import DictConfig, OmegaConf
 
 from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
@@ -10,6 +13,10 @@ from programmatic_policy_learning.approaches.lpp_approach import (
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
+@pytest.mark.skipif(
+    not Path("src/programmatic_policy_learning/dsl/llm_primitives/outputs/*").exists(),
+    reason="Required output files are missing",
+)
 def test_lpp_approach_real_data() -> None:
     """Test lpp approach with real_data."""
     cfg: DictConfig = OmegaConf.create(

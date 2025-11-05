@@ -6,12 +6,16 @@ representations using StateActionProgram class.
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 from scipy.sparse import csr_matrix
 from sklearn.tree import DecisionTreeClassifier
 
-from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+from programmatic_policy_learning.dsl.state_action_program import (
+    StateActionProgram,
+    set_dsl_functions,
+)
 
 
 def learn_plps(
@@ -21,6 +25,7 @@ def learn_plps(
     program_prior_log_probs: list[float],
     num_dts: int = 5,
     program_generation_step_size: int = 10,
+    dsl_functions: dict | None = None,
 ) -> tuple[list[StateActionProgram], list[float]]:
     """
     Parameters
@@ -47,7 +52,7 @@ def learn_plps(
         logging.info(f"Learning plps with {i} programs")
         for clf in learn_single_batch_decision_trees(y, num_dts, X[:, : i + 1]):
             plp, plp_prior_log_prob = extract_plp_from_dt(
-                clf, programs, program_prior_log_probs
+                clf, programs, program_prior_log_probs, dsl_functions
             )
             plps.append(plp)
             plp_priors.append(plp_prior_log_prob)
@@ -150,9 +155,14 @@ def extract_plp_from_dt(
     estimator: DecisionTreeClassifier,
     features: list[StateActionProgram],
     feature_log_probs: list[float],
+    dsl_functions: dict[str, Any] | None,
 ) -> tuple[StateActionProgram, float]:
     """Extract a program and its log probability from a decision tree."""
     # n_nodes = estimator.tree_.node_count
+    if dsl_functions is None:
+        raise ValueError("dsl_functions cannot be None when calling set_dsl_functions.")
+
+    set_dsl_functions(dsl_functions)
     children_left = estimator.tree_.children_left
     children_right = estimator.tree_.children_right
     node_to_features = estimator.tree_.feature
@@ -162,16 +172,15 @@ def extract_plp_from_dt(
     stack = [0]
     parents: dict[int, tuple[int, str] | None] = {0: None}
     true_leaves = []
-
     while len(stack) > 0:
         node_id = stack.pop()
-
         if children_left[node_id] != children_right[node_id]:
             assert 0 < threshold[node_id] < 1
             stack.append(children_left[node_id])
             parents[children_left[node_id]] = (node_id, "left")
             stack.append(children_right[node_id])
             parents[children_right[node_id]] = (node_id, "right")
+
         elif value[node_id][1] > value[node_id][0]:
             true_leaves.append(node_id)
 
@@ -188,8 +197,5 @@ def extract_plp_from_dt(
         program_log_prob += log_p
 
     disjunctive_program = get_disjunctive_program(conjunctive_programs)
-
-    # if not isinstance(disjunctive_program, StateActionProgram):
-    #     disjunctive_program = StateActionProgram(disjunctive_program)
 
     return disjunctive_program, program_log_prob
