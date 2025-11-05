@@ -10,11 +10,9 @@ def test_maze_env_creation() -> None:
     """Test Maze environment creation and basic API."""
     cfg: DictConfig = OmegaConf.create(
         {
-            "make_kwargs": {
-                "outer_margin": 2,
-                "enable_render": False,
-                "inner_maze_path": "data/mazes/maze1_10x10.npy",
-            }
+            "outer_margin": 2,
+            "enable_render": False,
+            "inner_maze_path": "data/mazes/maze1_10x10.npy",
         }
     )
 
