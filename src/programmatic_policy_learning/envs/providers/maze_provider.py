@@ -67,7 +67,7 @@ class MazeEnv(gym.Env):
         # --- Start and goal positions (NumPy convention) ---
         self.start_pos = (0, 0)  # top-left
         self.goal_pos = (self.inner_h - 1, self.inner_w - 1)  # bottom-right
-        self.agent_pos = (0, 0) # properly initialized in reset()
+        self.agent_pos = (0, 0)  # properly initialized in reset()
 
         # --- Rendering setup ---
         if enable_render:
@@ -129,7 +129,9 @@ class MazeEnv(gym.Env):
         info = self._get_info()
         return self.agent_pos, info
 
-    def step(self, action: int) -> tuple[tuple[int, int], float, bool, bool, dict[str, Any]]:
+    def step(
+        self, action: int
+    ) -> tuple[tuple[int, int], float, bool, bool, dict[str, Any]]:
         move = self.ACTIONS[action]
         new_pos = (self.agent_pos[0] + move[0], self.agent_pos[1] + move[1])
         reward, terminated, truncated = -0.01, False, False
@@ -148,7 +150,7 @@ class MazeEnv(gym.Env):
         info = self._get_info()
 
         return self.agent_pos, reward, terminated, truncated, info
-    
+
     # --------------------------------------------------------------
     # For Search Approach
     # --------------------------------------------------------------
@@ -169,7 +171,9 @@ class MazeEnv(gym.Env):
                 return next_state
         return state  # No movement if invalid
 
-    def get_cost(self, state: tuple[int, int], action: int, next_state: tuple[int, int]) -> float:
+    def get_cost(
+        self, state: tuple[int, int], action: int, next_state: tuple[int, int]
+    ) -> float:
         """Return the cost of transitioning from state to next_state."""
         return 1.0  # Uniform cost for all actions
 

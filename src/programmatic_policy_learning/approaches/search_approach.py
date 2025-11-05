@@ -1,15 +1,21 @@
 """An approach that uses uniform-cost search to find a plan."""
 
-from typing import TypeVar, Iterator, Callable, Tuple, Any, List
-import numpy as np
 from heapq import heappop, heappush
-from gymnasium.spaces import Space
+from typing import Any, Callable, Iterator, List, Tuple, TypeVar
 
-from programmatic_policy_learning.approaches.base_approach import (BaseApproach, _ObsType, _ActType)
-from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
+import numpy as np
+from gymnasium.spaces import Space
 from prpl_utils.search import run_astar
 
+from programmatic_policy_learning.approaches.base_approach import (
+    BaseApproach,
+    _ActType,
+    _ObsType,
+)
+from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
+
 _State = TypeVar("_State")
+
 
 class SearchApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that uses A* search to find a plan."""
@@ -46,7 +52,10 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
 
     def _generate_plan(self, start: np.ndarray, goal: np.ndarray) -> list[_ActType]:
         """Generate a plan using A* search."""
-        def get_successors(state: Tuple[int, int]) -> Iterator[Tuple[_ActType, Tuple[int, int], float]]:
+
+        def get_successors(
+            state: Tuple[int, int],
+        ) -> Iterator[Tuple[_ActType, Tuple[int, int], float]]:
             """Generate successors for the current state."""
             for action in self._get_actions():
                 next_state = self._get_next_state(state, action)

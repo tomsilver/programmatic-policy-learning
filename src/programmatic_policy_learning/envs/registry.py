@@ -5,9 +5,7 @@ from typing import Any, Callable
 import gymnasium
 
 from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_env
-from programmatic_policy_learning.envs.providers.maze_provider import (
-    create_maze_env,
-)
+from programmatic_policy_learning.envs.providers.maze_provider import create_maze_env
 from programmatic_policy_learning.envs.providers.prbench_provider import (
     create_prbench_env,
 )

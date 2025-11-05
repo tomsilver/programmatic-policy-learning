@@ -1,10 +1,11 @@
 """Functions for computing log likelihoods of programmatic logical policies
 (PLPs) given demonstrations."""
 
-import multiprocessing
 from functools import partial
 
 import numpy as np
+from pathos.helpers import cpu_count
+from pathos.multiprocessing import Pool
 
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
@@ -53,11 +54,9 @@ def compute_likelihood_plps(
 
     See compute_likelihood_single_plp.
     """
-    num_workers = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(num_workers)
-
-    fn = partial(compute_likelihood_single_plp, demonstrations)
-    likelihoods = pool.map(fn, plps)
-    pool.close()
+    num_workers = cpu_count()
+    with Pool(processes=num_workers) as pool:
+        fn = partial(compute_likelihood_single_plp, demonstrations)
+        likelihoods = pool.map(fn, plps)
 
     return likelihoods
