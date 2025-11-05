@@ -235,16 +235,11 @@ class MazeEnv(gym.Env):
 
 def create_maze_env(env_config: DictConfig) -> Env:
     """Create OuterMaze environment with optional custom inner maze."""
-    outer_margin = env_config.make_kwargs.get("outer_margin", 3)
-    enable_render = env_config.make_kwargs.get("enable_render", True)
-    inner_maze_path = env_config.make_kwargs.get("inner_maze_path", None)
-    if inner_maze_path is not None:
-        inner_maze = np.load(inner_maze_path)
-    else:
-        inner_maze = None
-
+    outer_margin = env_config.outer_margin
+    enable_render = env_config.enable_render
+    inner_maze_path = env_config.inner_maze_path
+    inner_maze = np.load(inner_maze_path)
     env = MazeEnv(
         inner_maze=inner_maze, outer_margin=outer_margin, enable_render=enable_render
     )
-
     return env
