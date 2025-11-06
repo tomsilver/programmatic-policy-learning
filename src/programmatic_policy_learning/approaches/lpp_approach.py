@@ -177,10 +177,10 @@ def _generate_with_offline_loader(
     """Generate programs using the offline loader."""
     run_id = program_generation.get("offline_loader_run_id", "")
     generator = LLMPrimitivesGenerator(None)
-    _, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
+    grammar, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
 
     dsl = new_dsl_object
-
+    print(grammar)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,

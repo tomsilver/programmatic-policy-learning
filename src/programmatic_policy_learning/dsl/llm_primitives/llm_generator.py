@@ -26,7 +26,8 @@ from programmatic_policy_learning.dsl.llm_primitives.utils import (
     SemanticsPyStubRepromptCheck,
     create_function_from_stub,
 )
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (  # shifted,
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    # shifted,
     GridInput,
     _eval,
     at_action_cell,
@@ -152,6 +153,14 @@ class LLMPrimitivesGenerator:
             p = 1.0 / len(alts_tokens)
             probs = [p] * len(alts_tokens)
             grammar_rules[nt_id] = (alts_tokens, probs)
+            
+        for nt_id, (alts, _) in grammar_rules.items():
+            if not alts:
+                raise ValueError(f"No RHS for nonterminal {nt_id}")
+            for alt in alts:
+                for sym in alt:
+                    if not (isinstance(sym, (int, str))):
+                        raise TypeError(f"Bad symbol {sym!r} in {nt_id}")
 
         self.write_json("grammar.json", grammar_rules)
         return Grammar(rules=grammar_rules)
@@ -307,6 +316,7 @@ class LLMPrimitivesGenerator:
                 grammar_file, object_hook=lambda d: {int(k): v for k, v in d.items()}
             )
         self.grammar = Grammar(rules=grammar_data)
+        
 
         # Load the metadata
         metadata_path = output_path / "metadata.json"
