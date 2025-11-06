@@ -53,9 +53,12 @@ def shifted(
 
 def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
     """Check if a cell contains a specific value."""
-    if cell is None or value is None or out_of_bounds(cell[0], cell[1], obs.shape):
-        return False
-    return obs[cell[0], cell[1]] == value
+    if cell is None or out_of_bounds(cell[0], cell[1], obs.shape):
+        focus = None
+    else:
+        focus = obs[cell[0], cell[1]]
+
+    return focus == value
 
 
 def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
@@ -206,6 +209,7 @@ def get_dsl_functions_dict() -> dict[str, Any]:
         "at_cell_with_value": at_cell_with_value,
         "at_action_cell": at_action_cell,
         "scanning": scanning,
+        "out_of_bounds": out_of_bounds,
         "START": START,
         "CONDITION": CONDITION,
         "LOCAL_PROGRAM": LOCAL_PROGRAM,
@@ -228,6 +232,7 @@ __all__ = [
     "at_cell_with_value",
     "at_action_cell",
     "scanning",
+    "out_of_bounds",
     "GridInput",
     "make_dsl",
     "create_grammar",

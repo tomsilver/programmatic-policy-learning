@@ -3,13 +3,12 @@ learning."""
 
 import inspect
 import logging
+import multiprocessing
 from importlib import import_module
 from typing import Any
 
 import cloudpickle
 import numpy as np
-from pathos.helpers import cpu_count
-from pathos.multiprocessing import Pool
 from scipy.sparse import lil_matrix, vstack
 
 from programmatic_policy_learning.data.demo_types import Trajectory
@@ -24,12 +23,11 @@ from programmatic_policy_learning.dsl.state_action_program import (
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
 ) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
+    list[tuple[np.ndarray, tuple[int, int]]],
+    list[tuple[np.ndarray, tuple[int, int]]],
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
-
-    All actions not taken in the demonstration_item are considered negative.
 
     Parameters
     ----------
@@ -121,35 +119,66 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     return base, module_map
 
 
-def _eval_all_on_example_with_dsl(
-    fn_input: tuple[np.ndarray, tuple[int, int]],
-    dsl_blob: bytes,
-    module_map: dict[str, str],
-    program_strs: list[str],
-) -> list[bool | None]:
-    """Worker task: apply ALL programs to ONE example (s, a), with DSL setup."""
+def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None:
+    """Evaluate a program on a state-action pair."""
+    try:
+        result = eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
+        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
+        return result
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
+        return None
 
-    base = cloudpickle.loads(dsl_blob)  # functions/constants
-    for name, modpath in module_map.items():  # re-bind modules
+
+# Global worker states
+_WORKER_DSL = None
+_WORKER_PROGRAMS = None
+
+
+def worker_init(
+    dsl_blob: bytes, module_map: dict[str, str], program_batch: list[str]
+) -> None:
+    """Set up the worker once.
+
+    Loads the DSL, reimports modules, and compiles the given program
+    batch. Runs only once per process before handling any examples.
+    """
+
+    base = cloudpickle.loads(dsl_blob)
+    for name, modpath in module_map.items():
         base[name] = import_module(modpath)
-
     set_dsl_functions(base)
 
     from programmatic_policy_learning.dsl.state_action_program import (  # pylint: disable=import-outside-toplevel
         DSL_FUNCTIONS,
     )
 
-    worker_funs = [eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_strs]
+    global _WORKER_DSL, _WORKER_PROGRAMS  # pylint: disable=global-statement
+    _WORKER_DSL = DSL_FUNCTIONS
+    _WORKER_PROGRAMS = [
+        eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
+    ]
+
+
+def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
+    """Run all precompiled programs on one (state, action) example.
+
+    Uses the DSL and program_batch already set up by worker_init.
+    """
+    s, a = fn_input
+
+    if _WORKER_PROGRAMS is None:
+        raise RuntimeError(
+            "_WORKER_PROGRAMS is not initialized.\
+            Ensure worker_init is called before using worker_eval_example."
+        )
 
     results = []
-    for f in worker_funs:
+    for f in _WORKER_PROGRAMS:
         try:
-            result = f(*fn_input)
-            results.append(result)
-        except Exception as e:
+            results.append(f(s, a))
+        except Exception:  # pylint: disable=broad-exception-caught
             results.append(None)
-            raise RuntimeError(f"Error executing program: {f}, Error: {e}")
-
     return results
 
 
@@ -164,21 +193,19 @@ def run_all_programs_on_single_demonstration(
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
-
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
         demo_traj
     )
     fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-
     base_dsl, module_map = _split_dsl(dsl_functions)
 
     try:
         dsl_blob = cloudpickle.dumps(base_dsl)
         cloudpickle.loads(dsl_blob)  # Test deserialization
-    except Exception as e:
-        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}")
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
 
     # Extract program strings (don’t pickle heavy objects repeatedly)
     program_strs = [
@@ -189,21 +216,30 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
     X = lil_matrix((num_data, num_programs), dtype=bool)
 
-    num_workers = cpu_count()
-    # NOTE: one pool reused for the entire demo
-    with Pool(processes=num_workers) as pool:
-        # Chunk examples to cut scheduling overhead
-        # Chunking number of (s,a) pairs assigned to the worker
-        CHUNK = 64
-        results_iter = pool.imap(
-            lambda fn_input: _eval_all_on_example_with_dsl(
-                fn_input, dsl_blob, module_map, program_strs
-            ),
-            fn_inputs,
-            chunksize=CHUNK,
-        )
-        for row_idx, row in enumerate(results_iter):
-            X[row_idx, :] = row
+    # Combine the context initialization into a single block to avoid redefinition
+    try:
+        ctx: multiprocessing.context.ForkContext = multiprocessing.get_context(
+            "fork"
+        )  # linux
+    except (ValueError, RuntimeError):
+        ctx: multiprocessing.context.DefaultContext = (  # type: ignore[no-redef]
+            multiprocessing.get_context()
+        )  # macOS/Windows fallback (spawn)
+
+    num_workers = max(1, multiprocessing.cpu_count())
+
+    for p_start in range(0, num_programs, program_interval):
+        p_end = min(p_start + program_interval, num_programs)
+        program_batch = program_strs[p_start:p_end]
+
+        with ctx.Pool(
+            processes=num_workers,
+            initializer=worker_init,
+            initargs=(dsl_blob, module_map, program_batch),
+        ) as pool:
+            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=128)
+            batch_rows = np.array(list(results_iter), dtype=bool)
+            X[:, p_start:p_end] = batch_rows
 
     return X.tocsr(), np.array(y, dtype=np.uint8)
 

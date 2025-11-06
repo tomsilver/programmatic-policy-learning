@@ -9,6 +9,10 @@ from typing import Any, Callable
 from prpl_llm_utils.reprompting import RepromptCheck, create_reprompt_from_error_message
 from prpl_llm_utils.structs import Query, Response
 
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
+    get_dsl_functions_dict,
+)
+
 
 class JSONStructureRepromptCheck(RepromptCheck):
     """Check whether the LLM's response contains valid JSON with required
@@ -332,7 +336,7 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
         llm_output = json.loads(response.text)
         stub = llm_output["proposal"]["semantics_py_stub"]
         stub = stub.replace("\\n", "\n")
-
+        logging.info(stub)
         try:
             # Ensure the stub is valid Python code /Syntax
             tree = ast.parse(stub)  # pylint: disable=unused-variable
@@ -355,9 +359,13 @@ class SemanticsPyStubRepromptCheck(RepromptCheck):
             )
             return create_reprompt_from_error_message(query, response, error_msg)
 
-        # Identify undefined variable names in the semantics_py_stub using
-        # the provided local namespace.
-        undefined = find_undefined_names(stub, provided_globals=set(local_namespace))
+        # Add a set of hand-written function names
+        hand_written_functions = list(get_dsl_functions_dict().keys())
+
+        # Merge the hand-written functions with the provided globals
+        undefined = find_undefined_names(
+            stub, provided_globals=set(local_namespace) | set(hand_written_functions)
+        )
         if undefined:
             error_msg = "The semantics_py_stub contains undefined names: " + ", ".join(
                 sorted(undefined)
