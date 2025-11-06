@@ -17,7 +17,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
-from programmatic_policy_learning.utils.cache_utils import manage_cache
+# from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
 def extract_examples_from_demonstration_item(
@@ -211,7 +211,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     return results
 
 
-@manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
+# @manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
