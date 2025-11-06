@@ -17,7 +17,7 @@ dependencies = [
    "tomsgeoms2d@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=toms-geoms-2d",
    "relational_structs@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=relational-structs",
    "prbench[geom2d]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=prbench",
-   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@ee0a559",
+   "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@07f0f97",
    "moviepy",
    "pandas",
    "pandas-stubs",
@@ -25,6 +25,9 @@ dependencies = [
    "omegaconf",
    "stable-baselines3[extra]>=2.4.0,<3.0",
    "scikit-learn",
+    "cloudpickle>=2.0.0",
+    "pathos>=0.3.0",
+
 ]
 
 [project.optional-dependencies]
@@ -61,8 +64,7 @@ disallow_untyped_calls = true
 disallow_untyped_defs = true
 check_untyped_defs = true
 warn_unreachable = true
-exclude = ["venv/*", ".venv/*"]
-
+exclude = ["venv/*", ".venv/*", "src/programmatic_policy_learning/dsl/llm_primitives/outputs"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -70,5 +72,8 @@ module = [
     "generalization_grid_games.*",
     "scipy.*",
     "sklearn.*",
+    "pathos.*",
+    "cloudpickle.*",
 ]
 ignore_missing_imports = true
+

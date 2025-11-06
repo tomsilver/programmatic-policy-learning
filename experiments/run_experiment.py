@@ -1,6 +1,7 @@
 """Script for running experiments with hydra."""
 
 import logging
+from typing import Any
 
 import hydra
 import numpy as np
@@ -13,6 +14,46 @@ from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
+def instantiate_approach(
+    cfg: DictConfig, env: Any, registry: EnvRegistry
+) -> BaseApproach:
+    """Instantiate the approach based on the configuration.
+
+    Handles specific parameters required for certain approaches like `lpp`.
+    """
+    if cfg.approach_name == "lpp":
+        env_factory = lambda instance_num: registry.load(
+            cfg.env, instance_num=instance_num
+        )
+
+        if not hasattr(env, "get_object_types"):
+            raise AttributeError(
+                f"Environment {cfg.env_name} does not support `get_object_types`."
+            )
+
+        object_types = env.get_object_types()
+        env_specs = {"object_types": object_types}
+
+        expert = hydra.utils.instantiate(
+            cfg.expert,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+        )
+
+        # Instantiate the approach with additional parameters.
+        return hydra.utils.instantiate(
+            cfg.approach,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+            expert,
+            env_factory,
+            cfg.env.make_kwargs.base_name,
+            env_specs=env_specs,
+        )
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
 
@@ -65,6 +106,29 @@ def _main(cfg: DictConfig) -> None:
         check_goal=env.check_goal,
     )
 
+    # Default instantiation for other approaches.
+    return hydra.utils.instantiate(
+        cfg.approach,
+        cfg.env.description,
+        env.observation_space,
+        env.action_space,
+        cfg.seed,
+    )
+
+
+@hydra.main(version_base=None, config_name="config", config_path="conf/")
+def _main(cfg: DictConfig) -> None:
+
+    logging.info(
+        f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
+    )
+
+    registry = EnvRegistry()
+    env = registry.load(cfg.env)
+
+    # Instantiate the approach
+    approach = instantiate_approach(cfg, env, registry)
+
     # Evaluate.
     rng = np.random.default_rng(cfg.seed)
     metrics: list[dict[str, float]] = []
@@ -83,14 +147,19 @@ def _main(cfg: DictConfig) -> None:
     logging.info(df)
 
     # Test the approach on new envs
-    test_accuracies = approach.test_policy_on_envs(
-        base_class_name=cfg.env.make_kwargs.base_name,
-        test_env_nums=range(11, 20),
-        max_num_steps=50,
-        record_videos=False,
-        video_format="mp4",
-    )
-    logging.info(test_accuracies)
+    if hasattr(approach, "test_policy_on_envs"):
+        test_accuracies = approach.test_policy_on_envs(
+            base_class_name=cfg.env.make_kwargs.base_name,
+            test_env_nums=range(11, 20),
+            max_num_steps=50,
+            record_videos=False,
+            video_format="mp4",
+        )
+        logging.info(test_accuracies)
+    else:
+        logging.warning(
+            f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
+        )
 
 
 def _run_single_episode_evaluation(

@@ -3,20 +3,16 @@
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
-from programmatic_policy_learning.envs.providers.maze_provider import (
-    create_maze_env,
-)
+from programmatic_policy_learning.envs.providers.maze_provider import create_maze_env
 
 
 def test_maze_env_creation() -> None:
     """Test Maze environment creation and basic API."""
     cfg: DictConfig = OmegaConf.create(
         {
-            "make_kwargs": {
-                "outer_margin": 2,
-                "enable_render": False,
-                "inner_maze_path": "data/mazes/maze_10x10.npy",
-            }
+            "outer_margin": 2,
+            "enable_render": False,
+            "inner_maze_path": "data/mazes/maze1_10x10.npy",
         }
     )
 
