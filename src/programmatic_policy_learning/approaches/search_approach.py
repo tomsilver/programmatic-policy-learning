@@ -1,7 +1,6 @@
 """An approach that uses uniform-cost search to find a plan."""
 
-from heapq import heappop, heappush
-from typing import Any, Callable, Iterator, List, Tuple, TypeVar
+from typing import Any, Callable, Iterator, List, Tuple
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -12,9 +11,8 @@ from programmatic_policy_learning.approaches.base_approach import (
     _ActType,
     _ObsType,
 )
-from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
 
-_State = TypeVar("_State")
+_State = Tuple[int, int]
 
 
 class SearchApproach(BaseApproach[_ObsType, _ActType]):
@@ -28,7 +26,7 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         seed: int,
         get_actions: Callable[[], List[_ActType]],
         get_next_state: Callable[[_State, _ActType], _State],
-        get_cost: Callable[[_State, _ActType, _State], float],
+        get_cost: Callable[[], float],
         check_goal: Callable[[_State, Any], bool],
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -38,7 +36,8 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         self._check_goal = check_goal
         self._plan: list[_ActType] = []
 
-    def _get_action(self):
+    def _get_action(self) -> _ActType:
+        """Return the next action from the plan."""
         if not self._plan:
             raise ValueError("Plan is empty. Ensure reset() was called.")
         return self._plan.pop(0)
@@ -48,7 +47,7 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         # Fetch the goal directly from the environment
         super().reset(obs, info)
         goal = info["goal"]  # Assuming `self.env` is the environment instance
-        self._plan = self._generate_plan(obs, goal)
+        self._plan = self._generate_plan(np.array(obs), goal)
 
     def _generate_plan(self, start: np.ndarray, goal: np.ndarray) -> list[_ActType]:
         """Generate a plan using A* search."""
@@ -60,7 +59,7 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
             for action in self._get_actions():
                 next_state = self._get_next_state(state, action)
                 if not np.array_equal(next_state, state):  # Valid transition
-                    cost = self._get_cost(state, action, next_state)
+                    cost = self._get_cost()
                     yield (action, next_state, cost)
 
         _, plan = run_astar(

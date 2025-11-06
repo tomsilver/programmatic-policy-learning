@@ -171,9 +171,7 @@ class MazeEnv(gym.Env):
                 return next_state
         return state  # No movement if invalid
 
-    def get_cost(
-        self, state: tuple[int, int], action: int, next_state: tuple[int, int]
-    ) -> float:
+    def get_cost(self) -> float:
         """Return the cost of transitioning from state to next_state."""
         return 1.0  # Uniform cost for all actions
 
