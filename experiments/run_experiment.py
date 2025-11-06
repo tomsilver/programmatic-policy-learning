@@ -54,57 +54,6 @@ def instantiate_approach(
             cfg.env.make_kwargs.base_name,
             env_specs=env_specs,
         )
-@hydra.main(version_base=None, config_name="config", config_path="conf/")
-def _main(cfg: DictConfig) -> None:
-
-    # logging.info(
-    #     f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
-    # )
-
-    # registry = EnvRegistry()
-    # env = registry.load(cfg.env)
-    # env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
-
-    # object_types = env.get_object_types()
-    # env_specs = {"object_types": object_types}
-
-    # expert = hydra.utils.instantiate(
-    #     cfg.expert,
-    #     cfg.env.description,
-    #     env.observation_space,
-    #     env.action_space,
-    #     cfg.seed,
-    # )
-    # # Create the approach.
-    # approach = hydra.utils.instantiate(
-    #     cfg.approach,
-    #     cfg.env.description,
-    #     env.observation_space,
-    #     env.action_space,
-    #     cfg.seed,
-    #     expert,
-    #     env_factory,
-    #     cfg.env.make_kwargs.base_name,
-    #     env_specs=env_specs,
-    # )
-    logging.info(
-    f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
-    )
-
-    registry = EnvRegistry()
-    env = registry.load(cfg.env)
-    # Create the approach.
-    approach = hydra.utils.instantiate(
-        cfg.approach,
-        cfg.env.description,
-        env.observation_space,
-        env.action_space,
-        cfg.seed,
-        get_actions=env.get_actions,
-        get_next_state=env.get_next_state,
-        get_cost=env.get_cost,
-        check_goal=env.check_goal,
-    )
 
     # Default instantiation for other approaches.
     return hydra.utils.instantiate(
