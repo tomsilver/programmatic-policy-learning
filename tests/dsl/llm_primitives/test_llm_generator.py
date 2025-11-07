@@ -21,6 +21,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
+@runllms
 def test_create_grammar() -> None:
     """Test the create_grammar_from_response function to ensure it correctly
     constructs a Grammar object from the LLM's JSON output.
