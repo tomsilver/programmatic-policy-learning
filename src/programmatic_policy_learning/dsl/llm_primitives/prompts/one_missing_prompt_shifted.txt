@@ -187,7 +187,7 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 "semantics_py_stub": "def NAME(ARG1, ARG2, ..., cell, obs):\\n    ...",  // pure, deterministic
 "pcfg_insertion": {
 "nonterminal": "START|LOCAL_PROGRAM|CONDITION|DIRECTION|VALUE",
-"production": "NAME(ARG1, ARG2, ..., cell, obs) | lambda cell,o: NAME(ARG1,ARG2,...,cell,o)", #<INSERTED_RULE>
+"production": "lambda cell, obs: NAME(ARG1, ARG2, ..., cell, obs)", #<INSERTED_RULE>
 }
 },
 "updated_grammar": {

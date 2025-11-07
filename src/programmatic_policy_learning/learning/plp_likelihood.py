@@ -48,40 +48,41 @@ def likelihood_worker_init(
     global _WORKER_PLPS  # pylint: disable=global-statement
     _WORKER_PLPS = [eval("lambda s, a: " + p, base) for p in plp_batch]
 
-def _compute_likelihood_worker(
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
-) -> list[float]:
-    """Compute log-likelihoods for all precompiled PLPs efficiently."""
-    global _WORKER_PLPS
-    assert _WORKER_PLPS is not None, "Worker not initialized."
 
-    steps = demonstrations.steps
-    obs_list = [obs for obs, _ in steps]
-    act_list = [act for _, act in steps]
+# def _compute_likelihood_worker(
+#     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+# ) -> list[float]:
+#     """Compute log-likelihoods for all precompiled PLPs efficiently."""
+#     global _WORKER_PLPS
+#     assert _WORKER_PLPS is not None, "Worker not initialized."
 
-    results = []
-    for plp in _WORKER_PLPS:
-        ll = 0.0
-        valid = True
+#     steps = demonstrations.steps
+#     obs_list = [obs for obs, _ in steps]
+#     act_list = [act for _, act in steps]
 
-        # precompute all plp(obs, r, c)
-        obs_masks = [
-            np.array([[plp(obs, (r, c)) for c in range(obs.shape[1])]
-                      for r in range(obs.shape[0])], dtype=bool)
-            for obs in obs_list
-        ]
+#     results = []
+#     for plp in _WORKER_PLPS:
+#         ll = 0.0
+#         valid = True
 
-        for mask, act in zip(obs_masks, act_list):
-            if not mask[act]:
-                ll = -np.inf
-                valid = False
-                break
-            size = int(mask.sum())
-            ll += -np.log(size)
+#         # precompute all plp(obs, r, c)
+#         obs_masks = [
+#             np.array([[plp(obs, (r, c)) for c in range(obs.shape[1])]
+#                       for r in range(obs.shape[0])], dtype=bool)
+#             for obs in obs_list
+#         ]
 
-        results.append(ll if valid else -np.inf)
+#         for mask, act in zip(obs_masks, act_list):
+#             if not mask[act]:
+#                 ll = -np.inf
+#                 valid = False
+#                 break
+#             size = int(mask.sum())
+#             ll += -np.log(size)
 
-    return results
+#         results.append(ll if valid else -np.inf)
+
+#     return results
 
 # def _compute_likelihood_worker(
 #     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
@@ -93,7 +94,8 @@ def _compute_likelihood_worker(
 #     steps = demonstrations.steps
 #     # Precompute coordinates excluding each action
 #     coords = [
-#         [(r, c) for r in range(obs.shape[0]) for c in range(obs.shape[1]) if (r, c) != act]
+#         [(r, c) for r in range(obs.shape[0]) for c in
+#               range(obs.shape[1]) if (r, c) != act]
 #         for obs, act in steps
 #     ]
 
@@ -110,35 +112,36 @@ def _compute_likelihood_worker(
 #         results.append(ll)
 #     return results
 
-# def _compute_likelihood_worker(
-#     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
-# ) -> list[float]:
-#     """Compute log-likelihoods for all precompiled PLPs on the given
-#     demonstrations."""
-#     global _WORKER_PLPS  # pylint: disable=global-variable-not-assigned
-#     assert _WORKER_PLPS is not None, "Worker not initialized with PLPs."
 
-#     results: list[float] = []
-#     for plp in _WORKER_PLPS:
-#         ll = 0.0
-#         valid = True
-#         for obs, action in demonstrations.steps:
-#             if not plp(obs, action):
-#                 ll = -np.inf
-#                 valid = False
-#                 break
+def _compute_likelihood_worker(
+    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+) -> list[float]:
+    """Compute log-likelihoods for all precompiled PLPs on the given
+    demonstrations."""
+    global _WORKER_PLPS  # pylint: disable=global-variable-not-assigned
+    assert _WORKER_PLPS is not None, "Worker not initialized with PLPs."
 
-#             rows, cols = obs.shape[:2]
-#             size = 1
-#             for r in range(rows):
-#                 for c in range(cols):
-#                     if (r, c) == action:
-#                         continue
-#                     if plp(obs, (r, c)):
-#                         size += 1
-#             ll += np.log(1.0 / size)
-#         results.append(ll if valid else -np.inf)
-#     return results
+    results: list[float] = []
+    for plp in _WORKER_PLPS:
+        ll = 0.0
+        valid = True
+        for obs, action in demonstrations.steps:
+            if not plp(obs, action):
+                ll = -np.inf
+                valid = False
+                break
+
+            rows, cols = obs.shape[:2]
+            size = 1
+            for r in range(rows):
+                for c in range(cols):
+                    if (r, c) == action:
+                        continue
+                    if plp(obs, (r, c)):
+                        size += 1
+            ll += np.log(1.0 / size)
+        results.append(ll if valid else -np.inf)
+    return results
 
 
 def compute_likelihood_plps(

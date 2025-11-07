@@ -11,7 +11,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping, Union, cast
+from typing import Any, Callable, MutableMapping, Union, cast
 
 import black
 import numpy as np
@@ -23,11 +23,11 @@ from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
+    SemanticJSONVerifierReprompt,
     SemanticsPyStubRepromptCheck,
     create_function_from_stub,
 )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
-    # shifted,
     GridInput,
     _eval,
     at_action_cell,
@@ -35,6 +35,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     cell_is_value,
     get_dsl_functions_dict,
     scanning,
+    shifted,
 )
 
 Cell = tuple[int, int] | None
@@ -47,7 +48,10 @@ class LLMPrimitivesGenerator:
     Grammar object."""
 
     def __init__(
-        self, llm_client: PretrainedLargeModel | None, output_dir: str = "outputs/"
+        self,
+        llm_client: PretrainedLargeModel | None,
+        removed_primitive: str | None,
+        output_dir: str = "outputs/",
     ) -> None:
         """Initialize the generator with an LLM client.
 
@@ -59,8 +63,10 @@ class LLMPrimitivesGenerator:
         base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_path = base_dir / output_dir / self.run_id
-        self.output_path.mkdir(parents=True, exist_ok=True)
+        if llm_client is not None:
+            self.output_path.mkdir(parents=True, exist_ok=True)
         self.grammar: Grammar[str, int, int] | None = None
+        self.removed_primitive = removed_primitive
 
     def query_llm(self, prompt: str) -> dict:
         """Send a query to the LLM and return the parsed JSON response.
@@ -75,7 +81,11 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         query = Query(prompt)
-        reprompt_checks = [JSONStructureRepromptCheck(), SemanticsPyStubRepromptCheck()]
+        reprompt_checks = [
+            JSONStructureRepromptCheck(),
+            SemanticJSONVerifierReprompt(),
+            SemanticsPyStubRepromptCheck(),
+        ]
         response = query_with_reprompts(
             self.llm_client,
             query,
@@ -153,13 +163,13 @@ class LLMPrimitivesGenerator:
             p = 1.0 / len(alts_tokens)
             probs = [p] * len(alts_tokens)
             grammar_rules[nt_id] = (alts_tokens, probs)
-            
+
         for nt_id, (alts, _) in grammar_rules.items():
             if not alts:
                 raise ValueError(f"No RHS for nonterminal {nt_id}")
             for alt in alts:
                 for sym in alt:
-                    if not (isinstance(sym, (int, str))):
+                    if not isinstance(sym, (int, str)):
                         raise TypeError(f"Bad symbol {sym!r} in {nt_id}")
 
         self.write_json("grammar.json", grammar_rules)
@@ -283,14 +293,16 @@ class LLMPrimitivesGenerator:
         self, added_name: str, added_python_fn: Callable[..., Any]
     ) -> DSL[LocalProgram, GridInput, Any]:
         """Construct the grid DSL object with the added primitive."""
-        prims: Mapping[str, Callable[..., Any]] = {
+        prims: MutableMapping[str, Callable[..., Any]] = {
             "cell_is_value": cell_is_value,
-            # "shifted": shifted, #TODOO: later automate the removal
+            "shifted": shifted,
             "at_cell_with_value": at_cell_with_value,
             "at_action_cell": at_action_cell,
             "scanning": scanning,
             added_name: added_python_fn,
         }
+        if self.removed_primitive is not None:
+            del prims[self.removed_primitive]
         return DSL(id="grid_v1_augmented", primitives=prims, evaluate_fn=_eval)
 
     def offline_loader(self, run_id: str) -> tuple[
@@ -316,7 +328,6 @@ class LLMPrimitivesGenerator:
                 grammar_file, object_hook=lambda d: {int(k): v for k, v in d.items()}
             )
         self.grammar = Grammar(rules=grammar_data)
-        
 
         # Load the metadata
         metadata_path = output_path / "metadata.json"

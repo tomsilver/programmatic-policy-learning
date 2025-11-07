@@ -64,6 +64,7 @@ def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> 
 def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
     """Execute a local program at the first cell containing a specific
     value."""
+
     matches = np.argwhere(obs == value)
     if len(matches) == 0:
         cell = None
