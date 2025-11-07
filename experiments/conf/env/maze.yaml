@@ -1,5 +1,5 @@
 inner_maze_path: "data/mazes/maze3_15x15.npy" 
-outer_margin: 1
+outer_margin: 10
 enable_render: True
 
 provider: maze

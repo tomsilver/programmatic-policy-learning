@@ -157,6 +157,7 @@ def _generate_with_dsl_generator(
     _, updated_get_dsl_callable, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
+
     new_dsl_dict = updated_get_dsl_callable()
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
@@ -291,7 +292,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
-        likelihoods = compute_likelihood_plps(plps, demonstrations)
+        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
 
         particles = []
         particle_log_probs = []
