@@ -23,7 +23,7 @@ def test_maze_env_creation() -> None:
     # Reset environment and check observation
     obs, info = env.reset()
     assert obs is not None, "Observation after reset should not be None"
-    assert isinstance(obs, np.ndarray), "Observation should be a numpy array"
+    assert isinstance(obs, tuple), "Observation should be a numpy array"
 
     # Verify action space exists and sample an action
     assert env.action_space is not None, "Action space must be defined"
