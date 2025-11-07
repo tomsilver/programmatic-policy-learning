@@ -1,6 +1,7 @@
 """Dataset creation and processing utilities for programmatic policy
 learning."""
 
+import hashlib
 import inspect
 import logging
 import multiprocessing
@@ -103,8 +104,10 @@ def extract_examples_from_demonstration(
 
 
 def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
-    """Short id for caching: skip large/unpicklable args like programs, demo_traj, dsl_functions."""
-    # args: base_class_name, demo_number, programs, demo_traj, dsl_functions, program_interval
+    """Short id for caching: skip large/unpicklable args like programs,
+    demo_traj, dsl_functions."""
+    # args: base_class_name, demo_number, programs,
+    # demo_traj, dsl_functions, program_interval
     parts = []
     for i, a in enumerate(args):
         # skip heavy objects (programs, trajectories, dsl)
@@ -126,7 +129,6 @@ def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
     # truncate long ids if necessary
     key = "-".join(parts)
     if len(key) > 200:
-        import hashlib
         key = hashlib.sha1(key.encode()).hexdigest()[:16]
     return key
 
@@ -203,10 +205,16 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
         )
 
     results = []
-    for f in _WORKER_PROGRAMS:
+    for i, f in enumerate(_WORKER_PROGRAMS):
         try:
             results.append(f(s, a))
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.warning(
+                f"[worker_eval_example] Error executing program #{i}:\n"
+                f"Program source: {f}\n"
+                f"Error type: {type(e).__name__}\n"
+                f"Error message: {e}"
+            )
             results.append(None)
     return results
 
@@ -243,6 +251,7 @@ def run_all_programs_on_single_demonstration(
 
     num_data = len(fn_inputs)
     num_programs = len(program_strs)
+
     X = lil_matrix((num_data, num_programs), dtype=bool)
 
     # Combine the context initialization into a single block to avoid redefinition

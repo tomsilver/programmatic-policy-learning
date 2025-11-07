@@ -145,20 +145,20 @@ def _generate_with_dsl_generator(
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
-    prompt_path = program_generation.get("dsl_generator_prompt", "")
+    prompt_path = program_generation["dsl_generator_prompt"]
     with open(
         prompt_path,
         "r",
         encoding="utf-8",
     ) as file:
         prompt = file.read()
-
-    generator = LLMPrimitivesGenerator(llm_client)
+    removed_primitive = program_generation["removed_primitive"]
+    generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
     _, updated_get_dsl_callable, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
-
     new_dsl_dict = updated_get_dsl_callable()
+
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
@@ -175,12 +175,11 @@ def _generate_with_offline_loader(
     start_symbol: int,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the offline loader."""
-    run_id = program_generation.get("offline_loader_run_id", "")
-    generator = LLMPrimitivesGenerator(None)
-    grammar, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
-
+    run_id = program_generation["offline_loader_run_id"]
+    removed_primitive = program_generation["removed_primitive"]
+    generator = LLMPrimitivesGenerator(None, removed_primitive)
+    _, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
     dsl = new_dsl_object
-    print(grammar)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
