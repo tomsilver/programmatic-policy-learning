@@ -26,7 +26,6 @@ dependencies = [
    "stable-baselines3[extra]>=2.4.0,<3.0",
    "scikit-learn",
     "cloudpickle>=2.0.0",
-    "pathos>=0.3.0",
 
 ]
 
@@ -72,7 +71,6 @@ module = [
     "generalization_grid_games.*",
     "scipy.*",
     "sklearn.*",
-    "pathos.*",
     "cloudpickle.*",
 ]
 ignore_missing_imports = true
