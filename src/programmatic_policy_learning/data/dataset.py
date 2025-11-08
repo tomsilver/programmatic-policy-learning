@@ -209,7 +209,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     for f in _WORKER_PROGRAMS:
         try:
             results.append(f(s, a))
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception:  # pylint: disable=broad-exception-caught
             results.append(None)
             # logging.warning(
             #     f"[worker_eval_example] Error executing program #{i}:\n"
@@ -217,7 +217,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             #     f"Error type: {type(e).__name__}\n"
             #     f"Error message: {e}"
             # )
-            
+
     return results
 
 

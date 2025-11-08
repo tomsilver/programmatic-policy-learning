@@ -97,7 +97,6 @@ class LLMPrimitivesGenerator:
         logging.debug(response)
         return json.loads(response.text)
 
-
     def create_grammar_from_response(
         self,
         llm_output: dict[str, Any],
