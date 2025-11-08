@@ -176,9 +176,8 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
                 response,
                 f"Production contains undefined or disallowed symbols: \
                 {', '.join(sorted(set(invalid)))}. Use only declared\
-                nonterminals, terminals, or bound variables (cell, obs, s, a)."
+                nonterminals, terminals, or bound variables (cell, obs, s, a).",
             )
-                
 
         return None
 
