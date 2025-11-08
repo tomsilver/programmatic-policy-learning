@@ -86,6 +86,7 @@ class LLMPrimitivesGenerator:
             SemanticJSONVerifierReprompt(),
             SemanticsPyStubRepromptCheck(),
         ]
+
         response = query_with_reprompts(
             self.llm_client,
             query,
@@ -95,6 +96,7 @@ class LLMPrimitivesGenerator:
         logging.debug("Response from LLM:")
         logging.debug(response)
         return json.loads(response.text)
+
 
     def create_grammar_from_response(
         self,

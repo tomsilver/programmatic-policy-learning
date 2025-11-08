@@ -156,30 +156,29 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
         ALLOWED_KEYWORDS = {"lambda", "True", "False", "None"}
         declared_nts = set(grammar.get("nonterminals", []))
         declared_terms = terminals
-
-        # Collect every identifier that looks like a Python name
+        # Extract all Python-like identifiers
         tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", prod)
 
         invalid = []
         for tok in tokens:
-            if (
-                tok not in ALLOWED_RUNTIME_VARS
-                and tok not in ALLOWED_KEYWORDS
-                and tok not in declared_nts
-                and tok not in declared_terms
-                and not tok.isupper()  # sometimes DSL constants like TPN.EMPTY
-            ):
-                invalid.append(tok)
+            # allow lambda & bound runtime vars
+            if tok in ALLOWED_RUNTIME_VARS or tok in ALLOWED_KEYWORDS:
+                continue
+            # allow declared grammar symbols (NTs or terminals)
+            if tok in declared_nts or tok in declared_terms:
+                continue
+            # everything else is invalid
+            invalid.append(tok)
 
         if invalid:
             return create_reprompt_from_error_message(
                 query,
                 response,
-                f"Production contains undefined symbols: \
-                    {', '.join(sorted(set(invalid)))}. "
-                "Use only declared nonterminals, DSL terminals, \
-                or bound variables (cell, obs, s, a).",
+                f"Production contains undefined or disallowed symbols: \
+                {', '.join(sorted(set(invalid)))}. Use only declared\
+                nonterminals, terminals, or bound variables (cell, obs, s, a)."
             )
+                
 
         return None
 

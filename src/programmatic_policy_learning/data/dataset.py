@@ -186,6 +186,7 @@ def worker_init(
 
     global _WORKER_DSL, _WORKER_PROGRAMS  # pylint: disable=global-statement
     _WORKER_DSL = DSL_FUNCTIONS
+
     _WORKER_PROGRAMS = [
         eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
     ]
@@ -205,17 +206,18 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
         )
 
     results = []
-    for i, f in enumerate(_WORKER_PROGRAMS):
+    for f in _WORKER_PROGRAMS:
         try:
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logging.warning(
-                f"[worker_eval_example] Error executing program #{i}:\n"
-                f"Program source: {f}\n"
-                f"Error type: {type(e).__name__}\n"
-                f"Error message: {e}"
-            )
             results.append(None)
+            # logging.warning(
+            #     f"[worker_eval_example] Error executing program #{i}:\n"
+            #     f"Program source: {f}\n"
+            #     f"Error type: {type(e).__name__}\n"
+            #     f"Error message: {e}"
+            # )
+            
     return results
 
 
