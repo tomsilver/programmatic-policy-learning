@@ -24,7 +24,7 @@ eval:
     base:
       strategy: "fixed_grid_v1"
     base_prime:
-      strategy: "fixed_grid_v1"
+      strategy: "grid_v1_ablated"
       removed_primitive: "shifted"
     llm:
       strategy: "dsl_generator"

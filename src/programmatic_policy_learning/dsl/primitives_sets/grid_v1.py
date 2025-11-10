@@ -1,7 +1,7 @@
 """Grid DSL primitives and evaluation."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, MutableMapping
 
 import numpy as np
 from generalization_grid_games.envs import chase as ec
@@ -127,6 +127,22 @@ def make_dsl() -> DSL[LocalProgram, GridInput, Any]:
     return DSL(id="grid_v1", primitives=prims, evaluate_fn=_eval)
 
 
+def make_ablated_dsl(removed_primitive: str) -> DSL[LocalProgram, GridInput, Any]:
+    """Construct the grid DSL object."""
+    prims: MutableMapping[str, Callable[..., Any]] = {
+        "cell_is_value": cell_is_value,
+        "shifted": shifted,
+        "at_cell_with_value": at_cell_with_value,
+        "at_action_cell": at_action_cell,
+        "scanning": scanning,
+    }
+    if removed_primitive is not None:
+        del prims[removed_primitive]
+    return DSL(
+        id=f"grid_v1_no_{removed_primitive}", primitives=prims, evaluate_fn=_eval
+    )
+
+
 # Grammar symbol constants
 START, CONDITION, LOCAL_PROGRAM, DIRECTION, POSITIVE_NUM, NEGATIVE_NUM, VALUE = range(7)
 
@@ -201,8 +217,11 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
     return grammar
 
 
-def get_dsl_functions_dict() -> dict[str, Any]:
-    """Return all grid_v1 DSL primitives as a dictionary."""
+def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, Any]:
+    """Return all grid_v1 DSL primitives as a dictionary.
+
+    If there is a removed_primitive, remove it and then return it.
+    """
 
     DSL_FUNCTIONS = {
         "cell_is_value": cell_is_value,
@@ -224,6 +243,8 @@ def get_dsl_functions_dict() -> dict[str, Any]:
         "stf": stf,
         "tpn": tpn,
     }
+    if removed_primitive:
+        del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS
 
 

@@ -27,6 +27,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     LocalProgram,
     create_grammar,
     get_dsl_functions_dict,
+    make_ablated_dsl,
     make_dsl,
 )
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
@@ -90,12 +91,15 @@ def get_program_set(
             "program_generation configuration is required for LPP approach."
         )
 
-    strategy = program_generation.get("strategy", "fixed_grid_v1")
+    strategy = program_generation["strategy"]
 
     # Define strategies as a dictionary
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
+            program_generation, env_specs, start_symbol
+        ),
+        "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
         ),
         "offline_loader": lambda: _generate_with_offline_loader(
@@ -122,6 +126,28 @@ def _generate_with_fixed_grid_v1(
 
     dsl = make_dsl()
     dsl_dict = get_dsl_functions_dict()
+
+    program_generator = GrammarBasedProgramGenerator(
+        cast(
+            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+            create_grammar,
+        ),
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+    )
+    return program_generator, dsl_dict
+
+
+def _generate_with_ablated_grid_v1(
+    program_generation: dict[str, Any],
+    env_specs: dict[str, Any] | None,
+    start_symbol: int,
+) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
+    """Generate programs using the ablated grid_v1 DSL."""
+    removed_primitive = program_generation["removed_primitive"]
+    dsl = make_ablated_dsl(removed_primitive)
+    dsl_dict = get_dsl_functions_dict(removed_primitive)
 
     program_generator = GrammarBasedProgramGenerator(
         cast(

@@ -75,13 +75,27 @@ def evaluate_single(
     registry = EnvRegistry()
     env = registry.load(env_cfg)
 
-    # Merge DSL into approach
+    # Merge DSL into approach with additional fields if they exist
     run_cfg = OmegaConf.merge(
         cfg,
         OmegaConf.create(
             {
                 "seed": seed,
-                "approach": {"program_generation": {"strategy": dsl_cfg.strategy}},
+                "approach": {
+                    "program_generation": {
+                        "strategy": dsl_cfg.strategy,
+                        **(
+                            {"removed_primitive": dsl_cfg.removed_primitive}
+                            if "removed_primitive" in dsl_cfg
+                            else {}
+                        ),
+                        **(
+                            {"dsl_generator_prompt": dsl_cfg.dsl_generator_prompt}
+                            if "dsl_generator_prompt" in dsl_cfg
+                            else {}
+                        ),
+                    }
+                },
             }
         ),
     )
