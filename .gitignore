@@ -1,6 +1,7 @@
 .DS_Store
 .python-version
 logs
+multirun
 llm_cache.db
 results
 
