@@ -1,13 +1,14 @@
 """Script for running experiments with hydra."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import hydra
 import numpy as np
 import pandas as pd
 from gymnasium.core import Env
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -65,21 +66,30 @@ def instantiate_approach(
     )
 
 
-@hydra.main(version_base=None, config_name="config", config_path="conf/")
-def _main(cfg: DictConfig) -> None:
-
-    logging.info(
-        f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
-    )
-
+def evaluate_single(
+    cfg: DictConfig, env_cfg: DictConfig, dsl_cfg: DictConfig, seed: int
+) -> dict:
+    """Evaluate a single environment, DSL, and seed combination."""
+    score = {}
+    np.random.seed(seed)
     registry = EnvRegistry()
-    env = registry.load(cfg.env)
+    env = registry.load(env_cfg)
 
-    # Instantiate the approach
-    approach = instantiate_approach(cfg, env, registry)
+    # Merge DSL into approach
+    run_cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "seed": seed,
+                "approach": {"program_generation": {"strategy": dsl_cfg.strategy}},
+            }
+        ),
+    )
+    if not isinstance(run_cfg, DictConfig):
+        raise TypeError("run_cfg must be a DictConfig")
+    approach = instantiate_approach(run_cfg, env, registry)
+    rng = np.random.default_rng(seed)
 
-    # Evaluate.
-    rng = np.random.default_rng(cfg.seed)
     metrics: list[dict[str, float]] = []
     for eval_episode in range(cfg.num_eval_episodes):
         episode_metrics = _run_single_episode_evaluation(
@@ -93,6 +103,7 @@ def _main(cfg: DictConfig) -> None:
 
     # Aggregate and save results.
     df = pd.DataFrame(metrics)
+    score["train"] = df["total_rewards"].mean()
     logging.info(df)
 
     # Test the approach on new envs
@@ -109,6 +120,87 @@ def _main(cfg: DictConfig) -> None:
         logging.warning(
             f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
         )
+    num_correct_test = 0
+    for each in test_accuracies:
+        if each is True:
+            num_correct_test += 1
+    score["test"] = num_correct_test // len(test_accuracies)
+
+    return score
+
+
+def evaluate_all(cfg: DictConfig) -> pd.DataFrame:
+    """Evaluate all environments and DSL variants specified in the
+    configuration."""
+    results = []
+    env_name = cfg.env.make_kwargs.base_name
+    logging.info(f"\n=== Environment: {env_name} ===")
+    for dsl_name, dsl_cfg in cfg.eval.dsl_variants.items():
+        num_seeds = len(cfg.eval.seeds) if dsl_name == "llm" else 1
+        for i in range(num_seeds):
+            seed = cfg.eval.seeds[i] if dsl_name == "llm" else cfg.seed
+            logging.info(f"→ env={env_name}, dsl={dsl_name}, seed={seed}")
+            score = evaluate_single(cfg, cfg.env, dsl_cfg, seed)
+            results.append(
+                {"env": env_name, "dsl": dsl_name, "seed": seed, "score": score}
+            )
+    # Write results to a CSV file in the Hydra output directory
+    results_df = pd.DataFrame(results)
+    output_dir = hydra.core.hydra_config.HydraConfig.get().run.dir
+    results_path = Path(output_dir) / "results.csv"
+
+    logging.debug(f"Results CSV path: {results_path}")
+    results_df.to_csv(results_path, index=False)
+    return results_df
+
+
+@hydra.main(version_base=None, config_name="config", config_path="conf/")
+def _main(cfg: DictConfig) -> None:
+
+    if cfg.eval.mode == 1:
+        evaluate_all(cfg)
+    else:
+        logging.info(
+            f"Running seed={cfg.seed}, env={cfg.env_name}, approach={cfg.approach_name}"
+        )
+        registry = EnvRegistry()
+
+        env = registry.load(cfg.env)
+
+        # Instantiate the approach
+        approach = instantiate_approach(cfg, env, registry)
+
+        # Evaluate.
+        rng = np.random.default_rng(cfg.seed)
+        metrics: list[dict[str, float]] = []
+        for eval_episode in range(cfg.num_eval_episodes):
+            episode_metrics = _run_single_episode_evaluation(
+                approach,
+                env,
+                rng,
+                max_eval_steps=cfg.max_eval_steps,
+            )
+            episode_metrics["eval_episode"] = eval_episode
+            metrics.append(episode_metrics)
+
+        # Aggregate and save results.
+        df = pd.DataFrame(metrics)
+        logging.info(df)
+
+        # Test the approach on new envs
+        if hasattr(approach, "test_policy_on_envs"):
+            test_accuracies = approach.test_policy_on_envs(
+                base_class_name=cfg.env.make_kwargs.base_name,
+                test_env_nums=range(11, 20),
+                max_num_steps=50,
+                record_videos=False,
+                video_format="mp4",
+            )
+            logging.info(test_accuracies)
+        else:
+            logging.warning(
+                f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
+            )
 
 
 def _run_single_episode_evaluation(

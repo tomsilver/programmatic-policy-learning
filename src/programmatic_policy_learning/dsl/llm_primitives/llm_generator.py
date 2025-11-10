@@ -201,6 +201,7 @@ class LLMPrimitivesGenerator:
             new_primitive_name, python_file
         )
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
+        logging.info(python_str)
         logging.info(self.grammar)
         return self.grammar, new_get_dsl_functions_dict, new_dsl_object
 

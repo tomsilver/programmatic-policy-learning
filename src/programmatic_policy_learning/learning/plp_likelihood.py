@@ -18,7 +18,10 @@ from programmatic_policy_learning.dsl.state_action_program import (
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Return (base, module_map) — base is pickleable; module_map is
-    name→import_path."""
+    name→import_path.
+
+    Ensure `out_of_bounds` is included in the DSL.
+    """
     base, module_map = {}, {}
     for k, v in dsl.items():
         if inspect.ismodule(v):
@@ -26,6 +29,7 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
         else:
             base[k] = v
     base.pop("__builtins__", None)
+
     return base, module_map
 
 
@@ -47,70 +51,6 @@ def likelihood_worker_init(
 
     global _WORKER_PLPS  # pylint: disable=global-statement
     _WORKER_PLPS = [eval("lambda s, a: " + p, base) for p in plp_batch]
-
-
-# def _compute_likelihood_worker(
-#     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
-# ) -> list[float]:
-#     """Compute log-likelihoods for all precompiled PLPs efficiently."""
-#     global _WORKER_PLPS
-#     assert _WORKER_PLPS is not None, "Worker not initialized."
-
-#     steps = demonstrations.steps
-#     obs_list = [obs for obs, _ in steps]
-#     act_list = [act for _, act in steps]
-
-#     results = []
-#     for plp in _WORKER_PLPS:
-#         ll = 0.0
-#         valid = True
-
-#         # precompute all plp(obs, r, c)
-#         obs_masks = [
-#             np.array([[plp(obs, (r, c)) for c in range(obs.shape[1])]
-#                       for r in range(obs.shape[0])], dtype=bool)
-#             for obs in obs_list
-#         ]
-
-#         for mask, act in zip(obs_masks, act_list):
-#             if not mask[act]:
-#                 ll = -np.inf
-#                 valid = False
-#                 break
-#             size = int(mask.sum())
-#             ll += -np.log(size)
-
-#         results.append(ll if valid else -np.inf)
-
-#     return results
-
-# def _compute_likelihood_worker(
-#     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
-# ) -> list[float]:
-#     """Compute log-likelihoods for all precompiled PLPs on given demos."""
-#     global _WORKER_PLPS
-#     assert _WORKER_PLPS is not None, "Worker not initialized."
-
-#     steps = demonstrations.steps
-#     # Precompute coordinates excluding each action
-#     coords = [
-#         [(r, c) for r in range(obs.shape[0]) for c in
-#               range(obs.shape[1]) if (r, c) != act]
-#         for obs, act in steps
-#     ]
-
-#     results = []
-#     for plp in _WORKER_PLPS:
-#         ll = 0.0
-#         for (obs, act), cell_list in zip(steps, coords):
-#             if not plp(obs, act):
-#                 ll = -np.inf
-#                 break
-#             # Count valid alternative actions
-#             size = 1 + sum(plp(obs, rc) for rc in cell_list)
-#             ll += -np.log(size)
-#         results.append(ll)
-#     return results
 
 
 def _compute_likelihood_worker(
@@ -159,7 +99,6 @@ def compute_likelihood_plps(
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
     dsl_blob = cloudpickle.dumps(base_dsl)
-
     plp_strs = [
         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in plps
     ]
