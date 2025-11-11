@@ -141,8 +141,6 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
         seed: int,
         expert: Any,
         env_factory: Callable[[int], gym.Env],
-        *_: Any,
-        env_specs: dict[str, Any] | None = None,
         backend: str = "sb3-td3",
         total_timesteps: int = 100_000,
         lr: float = 1e-3,
@@ -158,7 +156,6 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
         self._act_box: Box = cast(Box, action_space)
 
         self._env_factory = env_factory
-        self._env_specs = env_specs or {}
         self._expert = expert
 
         def _base_fn(obs: np.ndarray) -> np.ndarray:

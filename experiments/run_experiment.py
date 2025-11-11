@@ -54,6 +54,31 @@ def instantiate_approach(
             cfg.env.make_kwargs.base_name,
             env_specs=env_specs,
         )
+    
+    # Handle residual learning.
+    if cfg.approach_name == "residual":
+
+        env_factory = lambda instance_num: registry.load(
+            cfg.env, instance_num=instance_num
+        )
+
+        expert = hydra.utils.instantiate(
+            cfg.expert,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+        )
+
+        return hydra.utils.instantiate(
+            cfg.approach,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+            expert,
+            env_factory,
+        )
 
     # Default instantiation for other approaches.
     return hydra.utils.instantiate(
@@ -138,4 +163,7 @@ def _run_single_episode_evaluation(
 
 
 if __name__ == "__main__":
-    _main()  # pylint: disable=no-value-for-parameter
+    try:
+        _main()  # pylint: disable=no-value-for-parameter
+    except BaseException as e:
+        logging.exception(e)
