@@ -43,8 +43,7 @@ class ExpertApproach(BaseApproach[_ObsType, _ActType]):
 
     def _get_action(self) -> Any:
         assert self._last_observation is not None
-        obs = np.asarray(self._last_observation, dtype=np.float32)
-        return self._expert_fn(obs)
+        return self._expert_fn(self._last_observation)
 
     def test_policy_on_envs(
         self,
