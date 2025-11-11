@@ -9,5 +9,5 @@ make_kwargs:
 # provider tells the factory how to build
 provider: ggg
 env_id: ${make_kwargs.id}
-description: "Generalization Grid Games: TwoPileNim instance 0 (v0)"
+description: "Generalization Grid Games"
 instance_num: 0
