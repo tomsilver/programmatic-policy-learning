@@ -164,7 +164,7 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
                 a = expert.get_action(o)
             elif hasattr(expert, "policy"):
                 a = expert.policy(o)
-            elif hasattr(expert, "act"):                     
+            elif hasattr(expert, "act"):
                 a = expert.act(o)
             elif callable(expert):
                 a = expert(o)
