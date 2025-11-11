@@ -31,5 +31,10 @@ class EnvRegistry:
                 )  # type: ignore
             return self._providers[provider](env_config)
 
+        mk = dict(env_config.make_kwargs)
+        env_id = mk.pop("id")
+        mk.pop("base_name", None)
+        mk.pop("description", None)
+
         # Fall back to gymnasium if nothing was found...
-        return gymnasium.make(**env_config.make_kwargs)
+        return gymnasium.make(env_id, **mk)
