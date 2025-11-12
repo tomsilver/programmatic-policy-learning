@@ -1,29 +1,32 @@
 ## SYSTEM
 
-You are designing a type-safe DSL primitive for Logical Programmatic Policies in Generalization Grid Games.
+You are an expert, designing a type-safe DSL primitive for Logical Programmatic Policies in Generalization Grid Games.
 
 Your job is to propose **ONE** new primitive and also output the **FULL updated grammar** that results from inserting that primitive into the current grammar. Output a single STRICT JSON object only. No prose, comments, or markdown.
-In your reasoning process, analyze the existing DSL primitives and infer what capabilities or compositional patterns are currently under-represented. Then hypothesize which primitive would make the program search space more efficient or compact.
+In your reasoning process, internally analyze the existing DSL primitives and infer what capabilities or compositional patterns are currently under-represented. Propose a primitive that expands the DSL’s functional capabilities while also supporting efficient search.
+TRY TO BE CREATIVE in coming up with the new primitive. We want a useful function.
+Do not propose functions that are simple "and" or "or"s of a few expressions in the dsl. We have and/or combination in our algorithm later.
 
-SYSTEM
-
-You design ONE type-safe DSL primitive for Logical Programmatic Policies in Generalization Grid Games and output a single STRICT JSON object. No prose, no Markdown, no comments.
-
-You MUST follow every constraint below. If any constraint would be violated, revise your idea until it satisfies all constraints.
 ## USER:
 
 ### Task
 
-There is a partial DSL used for learning logical policies in grid-based environments. Propose ONE new primitive that:
+There is a partial DSL used for learning logical policies in grid-based environments. You must:
 
-- Improves DSL utility (generalization, expressiveness, search efficiency)
-- Is type-safe and executable
-- Composes naturally with the existing grammar
-- Fits into the specified nonterminal slot
+1. Propose ONE new primitive that:
+  - Expands the DSL’s functional capabilities or reasoning expressiveness
+  - Is type-safe and executable
+  - Composes naturally with the existing grammar
+  - Fits into the specified nonterminal slot
 
-In addition, return the **FULL updated grammar** reflecting the insertion of your primitive.
+2. Output the full updated grammar that includes this new primitive.
 
 ---
+### DSL Overview
+
+The DSL defines logical programs as a hierarchy:
+START → LOCAL_PROGRAM → CONDITION → TERMINALS.
+Each primitive has a typed signature (Cell, Obs) -> Bool
 
 ### DSL Type System
 
@@ -31,11 +34,12 @@ PROGRAM        := Bool
 LOCAL_PROGRAM  := (Cell, Obs) -> Bool
 CONDITION      := (Cell, Obs) -> Bool
 DIRECTION      := (Int, Int)
-VALUE          := Int
+VALUE          := ObjectType
 CELL           := (Int, Int)
 OBS            := Observation
 ACTION         := DiscreteAction
 STATE          := Observation
+ObjectType     := {OBJECT_TYPES}
 
 ### Current Grammar
 
@@ -51,10 +55,10 @@ at_cell_with_value(VALUE, LOCAL_PROGRAM, s)
 | at_action_cell(LOCAL_PROGRAM, a, s) # s =state, a=action
 
 LOCAL_PROGRAM ->
-CONDITION | lambda cell,o : shifted(DIRECTION, CONDITION, cell, obs)
+CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs)
 
 CONDITION ->
-lambda cell,o: cell_is_value(VALUE, cell, obs)
+lambda cell,obs: cell_is_value(VALUE, cell, obs)
 
 DIRECTION -> (1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)
 
@@ -63,18 +67,7 @@ VALUE ->
 
 ### Existing Primitive Summaries (Terminals)
 
-cell_is_value(v, cell, obs): True if the object at cell has value v.
-
-```python
-def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
-    """Check if a cell contains a specific value."""
-    if cell is None or value is None or out_of_bounds(cell[0], cell[1], obs.shape):
-        return False
-    return obs[cell[0], cell[1]] == value
-
-```
-
-at_cell_with_value(v, prog, s): True if prog holds at a cell with value v in s.
+at_cell_with_value(v, prog, s): Executes a local program at the first cell with value v.
 
 ```python
 def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
@@ -89,7 +82,7 @@ def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> 
 
 ```
 
-at_action_cell(prog, a, s): True if prog holds at the action-conditioned cell in s.
+at_action_cell(prog, a, s): Executes a local program at the action-conditioned cell.
 
 ```python
 def at_action_cell(
@@ -97,6 +90,17 @@ def at_action_cell(
 ) -> bool:
     """Execute a local program at the action cell position."""
     return local_program(cell, obs)
+
+```
+
+cell_is_value(v, cell, obs): True if obs[cell]==v.
+
+```python
+def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
+    """Check if a cell contains a specific value."""
+    if cell is None or value is None or out_of_bounds(cell[0], cell[1], obs.shape):
+        return False
+    return obs[cell[0], cell[1]] == value
 
 ```
 
@@ -150,7 +154,7 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
     
     Deterministic grid update defined by each game’s rule (e.g., removing, moving, or swapping objects).
     
-- **Example games:**
+- **Example games: (All follow deterministic transitions defined by each game’s rule)** 
     - **TwoPileNim:** Each cell may hold a token (like: tpn.EMPTY, tpn.TOKEN, or None). Clicking a cell removes a token from that location, following the rules of a simplified spatial Nim game.
     - **Chase:** The agent moves toward a target while avoiding walls.
     - **CheckmateTactic:** Move a piece to put the opponent’s king in checkmate within a limited number of turns.
@@ -164,74 +168,105 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 2. at_action_cell(lambda c,o: cell_is_value(2,c,o), a, s): Checks whether the cell on which the current action `a` operates in state `s` has the grid value 2.
 3. at_cell_with_value(3, lambda c,o: shifted((1,0), P1, c, o), s): Looks for a cell of value 3 in state s such that the cell immediately to its right satisfies predicate P1.
 
+
 ### Output Format (STRICT JSON)
 
+```json
 {
-"proposal": {
-"rationale_short": "≤20 words on why this helps search.",
-"name": "STRING_SNAKE_CASE",
-"type_signature": "SIGNATURE",                // must evaluate to Bool with (cell, obs)
-"args": [{"name":"...","type":"..."}],
-"semantics_py_stub": "def NAME(ARG1, ARG2, ..., cell, obs):\\n    ...",  // pure, deterministic
-"pcfg_insertion": {
-"nonterminal": "START|LOCAL_PROGRAM|CONDITION|DIRECTION|VALUE",
-"production": "NAME(ARG1, ARG2, ..., cell, obs) | lambda cell,o: NAME(ARG1,ARG2,...,cell,o)", #<INSERTED_RULE>
+  "proposal": {
+    "rationale_short": "<=20 words on why this helps search.",
+    "name": "string_name",
+    "type_signature": "(Cell, Obs) -> Bool",
+    "args": [{"name": "...", "type": "..."}],
+    "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef NAME(ARG1, ARG2, ..., cell, obs):\n    ...",
+    "pcfg_insertion": {
+      "nonterminal": "LOCAL_PROGRAM" | "CONDITION",
+      "production": "lambda cell, obs: NAME(ARG1, ARG2, ..., cell, obs)"
+    }
+  },
+  "updated_grammar": {
+    "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
+    "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","shifted","NAME"],
+    "productions": {
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
+      "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs) | <INSERTED_RULE>",
+      "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | <INSERTED_RULE>",
+      "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
+      "VALUE": "{OBJECT_TYPES}"
+    }
+  }
 }
-},
-"updated_grammar": {
-"nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
-"terminals": ["at_cell_with_value","at_action_cell","cell_is_value","shifted","NAME"],
-"productions": {
-"START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s) | <INSERTED_RULE>",
-"LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs) | <INSERTED_RULE>",
-"CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | <INSERTED_RULE>",
-"DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
-"VALUE": "{OBJECT_TYPES}"
-},
+```
+
+---
+### Rules and Constraints
+
+1. Primitive Definition
+- Must have type (Cell, Obs) → Bool.
+- Must be deterministic, terminating, and side-effect-free.
+- Implementation may use only:
+  - literals and boolean/arithmetic operators,
+  - bounded loops or conditionals,
+  - existing DSL primitives or the helper out_of_bounds.
+- The Python stub must begin exactly with: `from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *`
+followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or undefined references).
+- No type-annotation needed for the python stub.
+
+2. Grammar Insertion
+- Insert the new primitive only under the nonterminal "LOCAL_PROGRAM" or "CONDITION".
+- The "pcfg_insertion.nonterminal" value must be one of those two strings.
+- The production must be a valid Python lambda of the form: `lambda cell, obs: NAME(ARG_NONTERMINALS..., cell, obs)`.
+- Allowed nonterminal arguments inside NAME: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
+- Only the bound variables cell and obs may appear literally inside the lambda.
+- The primitive name must appear in exactly one production rule.
+
+3. Argument Specification
+- The "args" field lists logical parameters of the primitive.
+- Each "type" must be one of: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
+- In the production string, arguments are replaced by their nonterminal names, not variable names.
+- If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | ... (as many as needed)".
+- Do not use literal names like `max_steps`, `threshold`, etc, inside the grammar.
+
+4. Updated Grammar Structure
+- "nonterminals" = original five + any new ones (e.g. VALUE_INT).
+- "terminals" = existing four + the new primitive.
+- "productions" must:
+  - add one new alternative (<INSERTED_RULE>) only,
+  - keep all other rules unchanged and in the same order,
+  - contain no duplicate or conflicting entries.
+
+5. Output Formatting
+
+- Return exactly one JSON object with top-level keys "proposal" and "updated_grammar".
+- JSON must be parsable by json.loads, use double quotes throughout, and contain no markdown, comments or extra fields.
+
+
+### Example of a Correct JSON Output (for structure only)
+{
+  "proposal": {
+    "rationale_short": "Adds spatial negation pattern for pruning search.",
+    "name": "not_condition",
+    "type_signature": "(Cell, Obs) -> Bool",
+    "args": [{"name": "cond", "type": "CONDITION"}],
+    "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef not_condition(cond, cell, obs):\n    return not cond(cell, obs)",
+    "pcfg_insertion": {
+      "nonterminal": "CONDITION",
+      "production": "lambda cell, obs: not_condition(CONDITION, cell, obs)"
+    }
+  },
+  "updated_grammar": {
+    "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
+    "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","shifted","not_condition"],
+    "productions": {
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
+      "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs)",
+      "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | lambda cell, obs: not_condition(CONDITION, cell, obs)",
+      "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
+      "VALUE": "{OBJECT_TYPES}"
+    }
+  }
 }
-}
 
-**Rules for building updated_grammar:**
+### Goal
 
-- Add the new primitive's `NAME` to terminals.
-- Insert exactly one new production alternative under the specified nonterminal (from `pcfg_insertion.nonterminal`).
-- Do not modify other nonterminals or terminals.
-- Rules can be inserted at any of the placeholders specified with “<INSERTED_RULE>”.
-- Keep formatting and ordering consistent with the current grammar.
-
-### Safety Requirements
-
-- Deterministic and side-effect-free
-- No dependencies. Do not call or define any helpers inside semantics_py_stub. Your stub may use only its own parameters, literals, basic boolean/arithmetic operators, and simple Python control flow; no imports, no globals, no external identifiers.
-- The python stub can also use other terminals or nonterminal defined above.
-- Must type-check
-    - Results may be any well-typed expression of the declared return type, literals, composed primitives.
-    - For python stub, no type annotation is needed.
-- Always start your python stub with this import: "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *" (the code should start immediately at its next line)
-- Be careful that cell values can be None too. Check for that to avoid syntax errors in the python stub.
-- Do not combine or modify Nonterminal names (e.g., def x(CONDITIONS) or def x(CONDITION1, CONDITION2) => THESE ARE FORBIDDEN) — only use existing single Nonterminals as defined in the grammar.
-- Arguments in the 'production' field can only be among the Nonterminals (like: CONDITION, DIRECTION, VALUE, LOCAL_PROGRAM) or fixed variables (like: cell, obs, a, s).
-- Do not use import statements; the code must run with only the provided stubs.
-- Output only valid JSON, nothing else.
-- Output must be a single valid JSON object with exactly the two top-level keys: `"proposal"` and `"updated_grammar"`.
-- The `updated_grammar` must be a self-contained full grammar (not a diff), consistent with the insertion described in `proposal.pcfg_insertion`.
-
-### Argument Usage Rule
-
-- Each argument listed in "args" must correspond to an existing nonterminal in the grammar, or one of these predefined argument types:
-    - "Int" → use the nonterminal VALUE_INT
-    - "VALUE" → use the nonterminal VALUE
-    - "DIRECTION" → use the nonterminal DIRECTION
-    - "LOCAL_PROGRAM" → use the nonterminal LOCAL_PROGRAM
-    - "CONDITION" → use the nonterminal CONDITION
-- You must not use literal names like "max_steps" or "threshold" directly in the "production" string.
-- Instead, map them to the corresponding nonterminal:
-    - Example:
-    "args": [{"name": "max_steps", "type": "Int"}] ⇒ "production": "loop_detection(VALUE_INT, cell, obs)".
-- If the grammar does not already contain that nonterminal (e.g. VALUE_INT), add it to "nonterminals" and define its expansion rule explicitly, e.g.:
-"VALUE_INT": "1 | 2 | 3 | 4 | 5".
-- Never insert undeclared variable names directly (e.g., max_steps, threshold, etc.) into productions.
-
-### Final Note
-
-Propose anything that improves DSL utility and fits the type + grammar constraints.
+Propose a new primitive (different from `not_condition`) that genuinely extends the DSL’s reasoning or compositional capacity while respecting all the above constraints.

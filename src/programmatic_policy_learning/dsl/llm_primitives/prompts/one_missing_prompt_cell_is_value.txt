@@ -47,18 +47,17 @@ Nonterminals:
 START, LOCAL_PROGRAM, CONDITION, DIRECTION, VALUE = range(5)
 
 Terminals:
-at_cell_with_value, cell_is_value, scanning, shifted
+at_cell_with_value, at_action_cell, scanning, shifted
 
 Productions:
 START ->
-at_cell_with_value(VALUE, LOCAL_PROGRAM, s) # s =state, a=action
+at_cell_with_value(VALUE, LOCAL_PROGRAM, s)
+| at_action_cell(LOCAL_PROGRAM, a, s) # s =state, a=action
 
 LOCAL_PROGRAM ->
 CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs)
 
-CONDITION ->
-lambda cell,obs: cell_is_value(VALUE, cell, obs)
-| lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs)
+CONDITION -> lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs)
 
 DIRECTION -> (1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)
 
@@ -82,14 +81,14 @@ def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> 
 
 ```
 
-cell_is_value(v, cell, obs): True if obs[cell]==v.
+at_action_cell(prog, a, s): Executes a local program at the action-conditioned cell.
 
 ```python
-def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
-    """Check if a cell contains a specific value."""
-    if cell is None or value is None or out_of_bounds(cell[0], cell[1], obs.shape):
-        return False
-    return obs[cell[0], cell[1]] == value
+def at_action_cell(
+    local_program: Callable, cell: tuple[int, int] | None, obs: np.ndarray
+) -> bool:
+    """Execute a local program at the action cell position."""
+    return local_program(cell, obs)
 
 ```
 
@@ -143,7 +142,6 @@ def shifted(
     return local_program(new_cell, obs)
 ```
 
-
 ### Existing helper function used in the implementations:
 
 out_of_bounds(r, c, shape) → Returns `True` if `(r, c)` lies outside the grid defined by `shape` (rows × cols); otherwise `False` .
@@ -185,10 +183,11 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
     - **ReachForTheStar:** Navigate the agent to collect the star while avoiding obstacles.
     - **FenceIn:** Build barriers to surround or trap a moving target inside a bounded region.
 
-
 ### Example DSL Programs
-1. at_cell_with_value(1, lambda c,o: cell_is_value(1,c,o), s): Checks whether there exists a cell in state `s` whose grid value is `1` and (redundantly) confirms that same cell’s value is `1`.
-2. at_cell_with_value(3, lambda c,o: shifted((1,0), P1, c, o), s): Looks for a cell of value 3 in state s such that the cell immediately to its right satisfies predicate P1.
+
+1. at_cell_with_value(1, lambda c,o: shifted((0,1), lambda c2,o2: True, c,o), s): checks whether there exists a cell of value 1 that has at least one valid neighbor to the right.
+2. at_action_cell(lambda c,o: shifted((1,0), lambda c2,o2: shifted((0,1), lambda c3,o3: True, c2,o2), c,o), a, s): It checks whether, starting from the action cell a in state s, moving one step down and then one step right stays within the grid (i.e., both shifted cells exist).
+3. at_cell_with_value(3, lambda c,o: scanning((1,0), P1, P2, c,o), s): Looks for a cell of value `3` in state `s` such that scanning to the right from that cell finds a cell satisfying P1 and later a cell satisfying P2 **(**P1 and P2 are pure (Cell,Obs)->Bool predicates )
 
 
 ### Output Format (STRICT JSON)
@@ -208,11 +207,11 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
   },
   "updated_grammar": {
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
-    "terminals": ["at_cell_with_value","cell_is_value","scanning", "shifted", "NAME"],
+    "terminals": ["at_cell_with_value","at_action_cell","scanning","shifted", "NAME"],
     "productions": {
-      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s)",
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
       "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs) | <INSERTED_RULE>",
-      "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | <INSERTED_RULE>",
+      "CONDITION": "lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | <INSERTED_RULE>",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}"
     }
@@ -278,11 +277,11 @@ followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or und
   },
   "updated_grammar": {
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
-    "terminals": ["at_cell_with_value","cell_is_value","scanning","shifted","not_condition"],
+    "terminals": ["at_cell_with_value","at_action_cell","scanning","shifted","not_condition"],
     "productions": {
-      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s)",
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
       "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs)",
-      "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | lambda cell, obs: not_condition(CONDITION, cell, obs)",
+      "CONDITION": "lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | lambda cell, obs: not_condition(CONDITION, cell, obs)",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}"
     }

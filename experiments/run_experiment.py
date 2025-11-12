@@ -68,7 +68,7 @@ def instantiate_approach(
 
 def evaluate_single(
     cfg: DictConfig, env_cfg: DictConfig, dsl_cfg: DictConfig, seed: int
-) -> dict:
+) -> tuple[dict, str, float]:
     """Evaluate a single environment, DSL, and seed combination."""
     score = {}
     np.random.seed(seed)
@@ -140,32 +140,63 @@ def evaluate_single(
             num_correct_test += 1
     score["test"] = num_correct_test // len(test_accuracies)
 
-    return score
+    map_program = (
+        # pylint: disable=protected-access
+        approach._policy.map_program  # type: ignore[attr-defined, protected-access]
+    )
+    map_posterior = (
+        # pylint: disable=protected-access
+        approach._policy.map_posterior  # type: ignore[attr-defined, protected-access]
+    )
+    return (
+        score,
+        map_program,
+        map_posterior,
+    )
 
 
-def evaluate_all(cfg: DictConfig) -> pd.DataFrame:
+def evaluate_all(cfg: DictConfig) -> None:
     """Evaluate all environments and DSL variants specified in the
     configuration."""
     results = []
     env_name = cfg.env.make_kwargs.base_name
+    output_dir = hydra.core.hydra_config.HydraConfig.get().run.dir
+    results_path = (
+        Path(output_dir)
+        / f"results_{env_name}_{cfg.eval.dsl_variants.base_prime.removed_primitive}.csv"
+    )
     logging.info(f"\n=== Environment: {env_name} ===")
     for dsl_name, dsl_cfg in cfg.eval.dsl_variants.items():
         num_seeds = len(cfg.eval.seeds) if dsl_name == "llm" else 1
         for i in range(num_seeds):
             seed = cfg.eval.seeds[i] if dsl_name == "llm" else cfg.seed
             logging.info(f"→ env={env_name}, dsl={dsl_name}, seed={seed}")
-            score = evaluate_single(cfg, cfg.env, dsl_cfg, seed)
-            results.append(
-                {"env": env_name, "dsl": dsl_name, "seed": seed, "score": score}
-            )
-    # Write results to a CSV file in the Hydra output directory
-    results_df = pd.DataFrame(results)
-    output_dir = hydra.core.hydra_config.HydraConfig.get().run.dir
-    results_path = Path(output_dir) / "results.csv"
+            try:
+                score, map_program, map_posterior = evaluate_single(
+                    cfg, cfg.env, dsl_cfg, seed
+                )
+                results.append(
+                    {
+                        "env": env_name,
+                        "dsl": dsl_name,
+                        "seed": seed,
+                        "score": score,
+                        "map_posterior": map_posterior,
+                        "map_program": map_program,
+                    }
+                )
+                results_df = pd.DataFrame(results)
+                results_df.to_csv(results_path, index=False)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logging.error(
+                    f"Error during evaluation: env={env_name}, "
+                    f"dsl={dsl_name}, seed={seed}. Error: {e}"
+                )
+                continue
 
-    logging.debug(f"Results CSV path: {results_path}")
+    results_df = pd.DataFrame(results)
     results_df.to_csv(results_path, index=False)
-    return results_df
+    logging.info(f"Final results written to {results_path}")
 
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")

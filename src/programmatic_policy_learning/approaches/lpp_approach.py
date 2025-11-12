@@ -338,6 +338,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             top_particle_probs = np.exp(top_particle_log_probs)
             logging.info("top_particle_probs: %s", top_particle_probs)
             policy = LPPPolicy(top_particles, top_particle_probs)
+            policy.map_program = str(particles[map_idx])
+            policy.map_posterior = particle_log_probs[map_idx]
         else:
             logging.info("no nontrivial particles found")
             policy = LPPPolicy([StateActionProgram("False")], [1.0])
