@@ -1,0 +1,7 @@
+make_kwargs:
+  id: Pendulum-v1
+  base_name: pendulum 
+  render_mode: "rgb_array"
+
+# Gymnasium Pendulum (continuous control)
+description: "Gymnasium Pendulum-v1 (continuous)"            

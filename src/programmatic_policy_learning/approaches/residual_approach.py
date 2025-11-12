@@ -5,27 +5,26 @@ from __future__ import annotations
 from typing import (
     Any,
     Callable,
-    Generic,
+    Iterable,
     Literal,
     SupportsFloat,
-    TypeVar,
     cast,
 )
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import ActionWrapper
-from gymnasium.spaces import Box, Space
+from gymnasium.spaces import Box
 from stable_baselines3 import DDPG, TD3
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
-_ObsType = TypeVar("_ObsType")
-_ActType = TypeVar("_ActType")
 
-
+# ---------------------------------------------------------------------
+# Env wrapper: executes base(obs) + residual action from the agent
+# ---------------------------------------------------------------------
 class ResidualActionWrapper(ActionWrapper):
     """Adds a residual to the base policy."""
 
@@ -42,7 +41,7 @@ class ResidualActionWrapper(ActionWrapper):
         self._last_obs: np.ndarray | None = None
 
     def action(self, action: np.ndarray) -> np.ndarray:
-        """Action is determined in step()"""
+        """Action is determined in step()."""
         return action
 
     def reset(self, **kw: Any) -> tuple[np.ndarray, dict]:
@@ -68,12 +67,15 @@ class ResidualActionWrapper(ActionWrapper):
         info["base_action"] = base
         info["residual_action"] = residual
         info["total_action"] = total
-        return obs, float(r), bool(term), bool(trunc), cast(dict[str, Any], info)
+        return obs, float(r), bool(term), bool(trunc), info
 
 
 _BackendName = Literal["sb3-td3", "sb3-ddpg"]
 
 
+# ---------------------------------------------------------------------
+# Tiny SB3 wrapper (TD3/DDPG + Gaussian action noise)
+# ---------------------------------------------------------------------
 class _SB3Backend:
     """Tiny SB3 wrapper that handles TD3/DDPG with Gaussian action noise."""
 
@@ -124,62 +126,141 @@ class _SB3Backend:
         self._model = self._model.load(path, env=self._model.get_env())
 
 
-class ResidualApproach(BaseApproach[_ObsType, _ActType], Generic[_ObsType, _ActType]):
-    """Approach that learns a residual on top of a provided base policy."""
+# ---------------------------------------------------------------------
+# Hydra adapter residual approach (accepts expert + env_factory)
+# API matches experiments/run_experiment.py expectations
+# ---------------------------------------------------------------------
+class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
+    """Hydra-compatible residual approach: action = clip(expert(obs) + residual(obs))."""
 
     def __init__(
         self,
         environment_description: str,
-        observation_space: Space[_ObsType],
-        action_space: Space[_ActType],
+        observation_space: Box,
+        action_space: Box,
         seed: int,
-        env_builder: Callable[[], gym.Env],
-        base_fn: Callable[[np.ndarray], np.ndarray],
-        backend: _BackendName = "sb3-td3",
+        expert: Any,
+        env_factory: Callable[[int], gym.Env],
+        backend: str = "sb3-td3",
         total_timesteps: int = 100_000,
         lr: float = 1e-3,
         noise_std: float = 0.1,
         verbose: int = 1,
+        train_before_eval: bool = True,
+        train_env_instance: int = 0,
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
 
-        self._base_fn = base_fn
+        if not isinstance(action_space, Box):
+            raise TypeError("ResidualFromExpert requires a Box action space.")
+        self._act_box: Box = cast(Box, action_space)
 
-        env = env_builder()
-        env.reset(seed=seed)
-        self._env: gym.Env = ResidualActionWrapper(env, self._base_fn)
+        self._env_factory = env_factory
+        self._expert = expert
+
+        def _base_fn(obs: np.ndarray) -> np.ndarray:
+            o = np.asarray(obs, dtype=np.float32)
+            if hasattr(expert, "get_action"):
+                a = expert.get_action(o)
+            elif hasattr(expert, "policy"):
+                a = expert.policy(o)
+            elif hasattr(expert, "act"):
+                a = expert.act(o)
+            elif callable(expert):
+                a = expert(o)
+            else:
+                a = np.zeros(self._act_box.shape, dtype=np.float32)
+            return np.asarray(a, dtype=np.float32)
+
+        self._base_fn: Callable[[np.ndarray], np.ndarray] = _base_fn
+
+        train_env = self._env_factory(train_env_instance)
+        train_env.reset(seed=seed)
+        self._train_env = ResidualActionWrapper(train_env, self._base_fn)
         self._backend = _SB3Backend(
-            backend,
-            env=self._env,
+            name=cast(_BackendName, backend),
+            env=self._train_env,
             seed=seed,
             lr=lr,
             noise_std=noise_std,
             verbose=verbose,
         )
-        self._total = total_timesteps
+        self._total = int(total_timesteps)
 
-        # Keep a Box-typed handle to action space for mypy (low/high/dtype).
-        if not isinstance(self._action_space, Box):
-            raise TypeError("ResidualApproach requires a Box action space.")
-        self._act_box: Box = cast(Box, self._action_space)
+        self._is_trained: bool = False
+        self._train_before_eval = bool(train_before_eval)
+        self._last_obs: np.ndarray | None = None
 
+    # ------- pipeline hooks used by the Hydra runner -------
     def train(self) -> None:
-        """Train the residual policy."""
         self._backend.learn(total_timesteps=self._total)
+        self._is_trained = True
 
-    def _get_action(self) -> _ActType:
+    def reset(self, obs: np.ndarray, info: dict) -> None:
+        if self._train_before_eval and not self._is_trained:
+            self.train()
+        self._last_observation = np.asarray(obs, dtype=np.float32)
+        self._last_obs = self._last_observation
+
+    def _get_action(self) -> np.ndarray:
         """Return clipped action = base + residual."""
-        # pylint: disable=protected-access
+        assert self._last_observation is not None, "Call reset() before _get_action()."
         obs = np.asarray(self._last_observation, dtype=np.float32)
-        base = self._base_fn(obs)  # fixed/base policy
-        residual = self._backend.predict(obs)  # learned residual
+        base = self._base_fn(obs)
+        residual = self._backend.predict(obs)
         total = np.clip(base + residual, self._act_box.low, self._act_box.high)
-        return total.astype(self._act_box.dtype)  # type: ignore[return-value]
+        return total.astype(self._act_box.dtype)
 
+    def step(self) -> np.ndarray:
+        assert self._last_obs is not None, "Call reset() before step()."
+        obs = np.asarray(self._last_obs, dtype=np.float32)
+        base = self._base_fn(obs)
+        residual = self._backend.predict(obs)
+        total = np.clip(base + residual, self._act_box.low, self._act_box.high)
+        return total.astype(self._act_box.dtype)
+
+    def update(self, obs: np.ndarray, reward: float, done: bool, info: dict) -> None:
+        self._last_observation = np.asarray(obs, dtype=np.float32)
+        self._last_obs = self._last_observation
+
+    def test_policy_on_envs(
+        self,
+        test_env_nums: Iterable[int] = range(11, 20),
+        max_num_steps: int = 50,
+        *,
+        _base_class_name: str | None = None,
+        _record_videos: bool = False,
+        _video_format: str = "mp4",
+        **_extra_env_kwargs: Any,
+    ) -> dict[int, float]:
+        """Evaluate current (base + residual) policy on env instances; return
+        {env_num: total_reward}."""
+        results: dict[int, float] = {}
+        for env_num in test_env_nums:
+            env = self._env_factory(env_num)
+            obs, _ = env.reset(seed=self._seed if hasattr(self, "_seed") else None)
+            total_reward = 0.0
+            for _ in range(int(max_num_steps)):
+                obs = np.asarray(obs, dtype=np.float32)
+                base = self._base_fn(obs)
+                residual = self._backend.predict(obs)
+                act = np.clip(
+                    base + residual, self._act_box.low, self._act_box.high
+                ).astype(self._act_box.dtype)
+                obs, rew, terminated, truncated, _ = env.step(act)
+                total_reward += float(rew)
+                if terminated or truncated:
+                    break
+            results[int(env_num)] = total_reward
+        return results
+
+    # ------- persistence -------
     def save(self, path: str) -> None:
-        """Save residual policy backend."""
+        """Save this object's state to the given filesystem path via the
+        backend."""
         self._backend.save(path)
 
     def load(self, path: str) -> None:
-        """Load residual policy backend."""
+        """Load this object's state from the given filesystem path via the
+        backend."""
         self._backend.load(path)

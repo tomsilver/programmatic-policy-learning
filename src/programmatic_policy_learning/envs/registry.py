@@ -5,9 +5,7 @@ from typing import Any, Callable
 import gymnasium
 
 from programmatic_policy_learning.envs.providers.ggg_provider import create_ggg_env
-from programmatic_policy_learning.envs.providers.maze_provider import (
-    create_maze_env,
-)
+from programmatic_policy_learning.envs.providers.maze_provider import create_maze_env
 from programmatic_policy_learning.envs.providers.prbench_provider import (
     create_prbench_env,
 )
@@ -33,5 +31,10 @@ class EnvRegistry:
                 )  # type: ignore
             return self._providers[provider](env_config)
 
+        mk = dict(env_config.make_kwargs)
+        env_id = mk.pop("id")
+        mk.pop("base_name", None)
+        mk.pop("description", None)
+
         # Fall back to gymnasium if nothing was found...
-        return gymnasium.make(**env_config.make_kwargs)
+        return gymnasium.make(env_id, **mk)
