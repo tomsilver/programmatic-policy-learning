@@ -98,6 +98,7 @@ Example observation:
 
 
 def addfeedback(base_prompt: str, feedback: List[str]) -> str:
+    """Method to add feedback and append to reprompt LLM."""
     if not feedback:
         return base_prompt
     fixes = "\n".join(f"- {msg}" for msg in feedback)

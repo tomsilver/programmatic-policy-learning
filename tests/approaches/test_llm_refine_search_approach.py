@@ -4,7 +4,7 @@ What we are testing:
   1) Refinement loop reprompts after a failing and succeeds on a later attempt.
   2) The resulting policy produces valid actions.
 
-We include a "fake LLM" test and a real-LLM test 
+We include a "fake LLM" test and a real-LLM test
 """
 
 from __future__ import annotations
