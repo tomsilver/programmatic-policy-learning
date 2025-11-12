@@ -148,7 +148,6 @@ def _generate_with_ablated_grid_v1(
     removed_primitive = program_generation["removed_primitive"]
     dsl = make_ablated_dsl(removed_primitive)
     dsl_dict = get_dsl_functions_dict(removed_primitive)
-
     program_generator = GrammarBasedProgramGenerator(
         cast(
             Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
@@ -157,6 +156,7 @@ def _generate_with_ablated_grid_v1(
         dsl,
         env_spec=env_specs if env_specs is not None else {},
         start_symbol=start_symbol,
+        removed_primitive=removed_primitive,
     )
     return program_generator, dsl_dict
 
@@ -180,10 +180,9 @@ def _generate_with_dsl_generator(
         prompt = file.read()
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
-    _, updated_get_dsl_callable, dsl = generator.generate_and_process_grammar(
+    _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
-    new_dsl_dict = updated_get_dsl_callable()
 
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
@@ -204,8 +203,7 @@ def _generate_with_offline_loader(
     run_id = program_generation["offline_loader_run_id"]
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(None, removed_primitive)
-    _, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
-    dsl = new_dsl_object
+    _, new_dsl_dict, dsl = generator.offline_loader(run_id)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,

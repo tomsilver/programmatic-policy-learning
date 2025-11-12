@@ -1,5 +1,6 @@
 """Grid DSL primitives and evaluation."""
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, MutableMapping
 
@@ -147,7 +148,9 @@ def make_ablated_dsl(removed_primitive: str) -> DSL[LocalProgram, GridInput, Any
 START, CONDITION, LOCAL_PROGRAM, DIRECTION, POSITIVE_NUM, NEGATIVE_NUM, VALUE = range(7)
 
 
-def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
+def create_grammar(
+    env_spec: dict[str, Any], removed_primitive: str | None = None
+) -> Grammar[str, int, int]:
     """Create a grammar for grid programs, using env_spec for VALUE types."""
     object_types = env_spec["object_types"]
     grammar: Grammar[str, int, int] = Grammar(
@@ -214,6 +217,32 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
             ),
         }
     )
+
+    # === Remove specified primitive if requested ===
+    if removed_primitive is not None:
+        for nonterminal, (productions, probs) in list(grammar.rules.items()):
+            new_productions, new_probs = [], []
+
+            for prod, p in zip(productions, probs):
+                # Convert production (which can be a list or str)
+                # to string for substring search
+                prod_str = (
+                    " ".join(map(str, prod)) if isinstance(prod, list) else str(prod)
+                )
+                if removed_primitive not in prod_str:
+                    new_productions.append(prod)
+                    new_probs.append(p)
+
+            # Renormalize probabilities if something was removed
+            if len(new_probs) > 0 and len(new_probs) < len(probs):
+                total = sum(new_probs)
+                new_probs = [p / total for p in new_probs]
+                grammar.rules[nonterminal] = (new_productions, new_probs)
+
+        logging.info(
+            f"Removed primitive '{removed_primitive}' and renormalized probabilities."
+        )
+
     return grammar
 
 

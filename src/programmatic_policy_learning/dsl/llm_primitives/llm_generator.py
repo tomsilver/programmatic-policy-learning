@@ -25,7 +25,6 @@ from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
     SemanticJSONVerifierReprompt,
     SemanticsPyStubRepromptCheck,
-    create_function_from_stub,
 )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
@@ -180,7 +179,7 @@ class LLMPrimitivesGenerator:
         self, prompt_text: str, object_types: list[Any]
     ) -> tuple[
         Grammar[str, int, int],
-        Callable[[], dict[str, Any]],
+        dict[str, Any],
         DSL[
             Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
             GridInput,
@@ -194,16 +193,19 @@ class LLMPrimitivesGenerator:
 
         new_primitive_name = llm_response["proposal"]["name"]
         python_str = llm_response["proposal"]["semantics_py_stub"]
-        python_file = create_function_from_stub(python_str, new_primitive_name)
+        # python_file = create_function_from_stub(python_str, new_primitive_name)
         self.write_python_file(new_primitive_name, python_str)
-        new_dsl_object = self.make_dsl(new_primitive_name, python_file)
-        new_get_dsl_functions_dict = self.add_primitive_to_dsl(
-            new_primitive_name, python_file
+        implementation = self.load_function_from_file(
+            str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
+        )
+        new_dsl_object = self.make_dsl(new_primitive_name, implementation)
+        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
+            new_primitive_name, implementation
         )
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
-        logging.info(python_str)
         logging.info(self.grammar)
-        return self.grammar, new_get_dsl_functions_dict, new_dsl_object
+        logging.info(python_str)
+        return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
