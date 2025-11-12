@@ -9,6 +9,6 @@ start_symbol: 0
 program_generation:
   strategy: "dsl_generator"  # Options: "fixed_grid_v1", "dsl_generator", "offline_loader" grid_v1_ablated
   offline_loader_run_id:  2025-11-11_17-43-02 #2025-11-11_16-33-48 #2025-11-08_12-36-16 #2025-11-07_17-48-18 #2025-11-07_12-36-59 #2025-11-07_11-56-33 #"2025-11-06_18-17-17" #"2025-11-05_12-02-35" #"2025-11-03_13-49-16" # "2025-11-03_13-31-21" "2025-10-30_13-39-03" "2025-11-05_13-10-56" # Only used for "offline_loader"
-  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_shifted.txt"
+  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/2_missing.txt" #one_missing_prompt_shifted
   removed_primitive: "shifted"
   

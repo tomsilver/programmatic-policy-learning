@@ -14,7 +14,7 @@ env_name: ${hydra:runtime.choices.env}
 expert_policy: ${hydra:runtime.choices.expert}
 
 eval:
-  mode: 0
+  mode: 1
   seeds: [0, 1, 2, 3, 4, 5, 6, 8, 9]
   budget: 200
   metric: sample_efficency

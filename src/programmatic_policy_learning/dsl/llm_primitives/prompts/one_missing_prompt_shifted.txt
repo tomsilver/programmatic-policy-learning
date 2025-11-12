@@ -5,7 +5,7 @@ You are an expert, designing a type-safe DSL primitive for Logical Programmatic 
 Your job is to propose **ONE** new primitive and also output the **FULL updated grammar** that results from inserting that primitive into the current grammar. Output a single STRICT JSON object only. No prose, comments, or markdown.
 In your reasoning process, internally analyze the existing DSL primitives and infer what capabilities or compositional patterns are currently under-represented. Propose a primitive that expands the DSL’s functional capabilities while also supporting efficient search.
 TRY TO BE CREATIVE in coming up with the new primitive. We want a useful function.
-Do not come up with functions that are "and" or "or"s of a few expressions in the dsl. We have and/or combination in our algorithm later.
+Do not propose functions that are simple "and" or "or"s of a few expressions in the dsl. We have and/or combination in our algorithm later.
 
 ## USER:
 
@@ -34,11 +34,12 @@ PROGRAM        := Bool
 LOCAL_PROGRAM  := (Cell, Obs) -> Bool
 CONDITION      := (Cell, Obs) -> Bool
 DIRECTION      := (Int, Int)
-VALUE          := Int
+VALUE          := ObjectType
 CELL           := (Int, Int)
 OBS            := Observation
 ACTION         := DiscreteAction
 STATE          := Observation
+ObjectType     := {OBJECT_TYPES}
 
 ### Current Grammar
 
@@ -58,7 +59,7 @@ CONDITION
 
 CONDITION ->
 lambda cell,obs: cell_is_value(VALUE, cell, obs)
-| lambda cell,obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs)
+| lambda cell, obs: scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs)
 
 DIRECTION -> (1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)
 
@@ -240,7 +241,7 @@ followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or und
 - The "args" field lists logical parameters of the primitive.
 - Each "type" must be one of: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
 - In the production string, arguments are replaced by their nonterminal names, not variable names.
-- If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | 4 | 5".
+- If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | ... (as many as needed)".
 - Do not use literal names like `max_steps`, `threshold`, etc, inside the grammar.
 
 4. Updated Grammar Structure
