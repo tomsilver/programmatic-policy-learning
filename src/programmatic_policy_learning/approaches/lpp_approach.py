@@ -184,6 +184,10 @@ def _generate_with_dsl_generator(
         prompt, env_specs["object_types"]  # type: ignore
     )
 
+    # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_more_than_one(
+    #     prompt, env_specs["object_types"]  # type: ignore
+    # )
+
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,

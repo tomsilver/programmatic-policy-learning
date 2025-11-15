@@ -62,6 +62,7 @@ class LLMPrimitivesGenerator:
         base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_path = base_dir / output_dir / self.run_id
+
         if llm_client is not None:
             self.output_path.mkdir(parents=True, exist_ok=True)
         self.grammar: Grammar[str, int, int] | None = None
@@ -109,9 +110,17 @@ class LLMPrimitivesGenerator:
         - If productions['VALUE'] contains '{OBJECT_TYPES}',
         it's expanded using object_types.
         """
+
         rules = llm_output["updated_grammar"]
+        terminals: list[str] = rules.get("terminals", [])
         nonterminals: list[str] = rules["nonterminals"]
         productions: dict[str, str] = rules["productions"]
+
+        missing_terms = [t for t in terminals if t not in str(productions)]
+        if missing_terms:
+            logging.warning(
+                f"Some terminals not referenced in productions: {missing_terms}"
+            )
 
         # Map nonterminal name -> index
         nt_to_id: dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
@@ -174,6 +183,65 @@ class LLMPrimitivesGenerator:
 
         self.write_json("grammar.json", grammar_rules)
         return Grammar(rules=grammar_rules)
+
+    def generate_and_process_grammar_more_than_one(
+        self, prompt_text: str, object_types: list[Any]
+    ) -> tuple[
+        Grammar[str, int, int],
+        dict[str, Any],
+        DSL[
+            Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
+            GridInput,
+            Any,
+        ],
+    ]:
+        """Generate a Grammar object by querying the LLM and processing its
+        response.
+
+        Supports multiple new primitives returned in the LLM JSON
+        output.
+        """
+
+        # 1. Query the LLM
+        llm_response = self.query_llm(prompt_text)
+        self.write_json("metadata.json", llm_response)
+
+        proposals = llm_response.get("proposal", [])
+        if not isinstance(proposals, list):
+            raise ValueError("Expected 'proposal' to be a list of primitives.")
+
+        # 2. Collect implementations
+        new_primitives: dict[str, Callable[..., Any]] = {}
+
+        for primitive in proposals:
+            new_primitive_name = primitive["name"]
+            python_str = primitive["semantics_py_stub"]
+
+            # Write each primitive to its own .py file
+            self.write_python_file(new_primitive_name, python_str)
+
+            # Load the implementation dynamically
+            implementation = self.load_function_from_file(
+                str(self.output_path / f"{new_primitive_name}.py"),
+                new_primitive_name,
+            )
+
+            # Accumulate for DSL update later
+            new_primitives[new_primitive_name] = implementation
+
+            logging.info(f"Added primitive: {new_primitive_name}")
+            logging.info(python_str)
+
+        new_dsl_object = DSL(
+            id="grid_v1_generated",
+            primitives=new_primitives,
+            evaluate_fn=_eval,
+        )
+        # 5. Create Grammar from response
+        self.grammar = self.create_grammar_from_response(llm_response, object_types)
+
+        logging.info(self.grammar)
+        return self.grammar, new_primitives, new_dsl_object
 
     def generate_and_process_grammar(
         self, prompt_text: str, object_types: list[Any]
@@ -268,6 +336,7 @@ class LLMPrimitivesGenerator:
         """Write Python code (str) to a file in the output directory."""
         code = code.replace("\\n", "\n")
         python_file_path = self.output_path / f"{primitive_name}.py"
+
         try:
             # Format the code using black
             formatted_code = black.format_str(code, mode=black.FileMode())

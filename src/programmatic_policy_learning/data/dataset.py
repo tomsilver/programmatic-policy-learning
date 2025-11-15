@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import logging
 import multiprocessing
+import os
 from importlib import import_module
 from typing import Any
 
@@ -19,6 +20,16 @@ from programmatic_policy_learning.dsl.state_action_program import (
 )
 
 # from programmatic_policy_learning.utils.cache_utils import manage_cache
+
+
+def allowed_cpus() -> int:
+    """Determine the number of CPUs available for use."""
+    # Use SLURM allocation if available
+    slurm_cpus = os.getenv("SLURM_CPUS_PER_TASK")
+    if slurm_cpus is not None:
+        return int(slurm_cpus)
+    # Otherwise fall back to system count
+    return multiprocessing.cpu_count()
 
 
 def extract_examples_from_demonstration_item(
@@ -266,7 +277,7 @@ def run_all_programs_on_single_demonstration(
             multiprocessing.get_context()
         )  # macOS/Windows fallback (spawn)
 
-    num_workers = max(1, multiprocessing.cpu_count())
+    num_workers = allowed_cpus()
 
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)

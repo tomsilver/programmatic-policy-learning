@@ -241,7 +241,7 @@ followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or und
 - The "args" field lists logical parameters of the primitive.
 - Each "type" must be one of: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
 - In the production string, arguments are replaced by their nonterminal names, not variable names.
-- If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | ... (as many as needed)".
+- If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | ...".
 - Do not use literal names like `max_steps`, `threshold`, etc, inside the grammar.
 
 4. Updated Grammar Structure
