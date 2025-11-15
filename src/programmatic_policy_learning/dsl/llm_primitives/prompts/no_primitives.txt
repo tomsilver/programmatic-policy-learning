@@ -1,36 +1,60 @@
 ## SYSTEM
 
-You are designing a minimal yet expressive set of **terminal primitives** for a type-safe Domain-Specific Language (DSL) used in Logical Programmatic Policies for Generalization Grid Games.
+You are an expert language designer.
+Your job is to invent an entire set of five type-safe DSL primitives for Logical Programmatic Policies in Generalization Grid Games (GGG).
 
-Your task:
-- Propose **exactly 5 new terminal functions** (Python primitives).
-- Each primitive should be executable, deterministic, and compatible with the DSL’s type system.
-- Together, they should form a cohesive minimal base capable of expressing common reasoning patterns (movement, scanning, condition checking, etc.).
-- Output a single **strict JSON object only** — no prose, comments, or markdown.
+Each primitive should be a terminal function that operates over grid-based environments and composes naturally within a typed grammar.
+The goal is to create a useful and expressive base DSL that can describe policies mapping from observations (grid states) to logical conditions.
 
-Each primitive must be described with:
-- A **short rationale** (≤20 words)
-- A **unique name** in snake_case
-- **Arguments** with type names drawn from the DSL type system
-- A **Python semantics stub** (self-contained)
-- A **grammar insertion** showing how it appears in the grammar (using `lambda cell, obs: ...` form)
-- Type safety and composability with the rest of the DSL
+Output a single STRICT JSON object only.
+No prose, comments, or markdown.
+The JSON must be parsable by json.loads.
+
+You should:
+
+- Infer what kinds of spatial, relational, or logical reasoning are needed in grid-based games (movement, adjacency, matching, scanning, counting, etc.).
+- Propose 5 distinct, type-safe primitives with (Cell, Obs) -> Bool type.
+- Return both the list of primitives and the full grammar that integrates them.
+
+Design a new type-safe DSL for logical reasoning in grid-based environments without any existing primitives.
+You must:
+- Invent exactly five new primitives.
+- Each must have a unique name, type signature, and Python semantics stub.
+- Each should serve a distinct compositional purpose.
+- Each must be deterministic, executable, and side-effect-free.
 
 ---
 
 ### DSL Type System
 
-PROGRAM        := Bool  
-LOCAL_PROGRAM  := (Cell, Obs) -> Bool  
-CONDITION      := (Cell, Obs) -> Bool  
-DIRECTION      := (Int, Int)  
-VALUE          := Int  
-CELL           := (Int, Int)  
-OBS            := Observation  
-ACTION         := DiscreteAction  
-STATE          := Observation  
+PROGRAM        := Bool
+LOCAL_PROGRAM  := (Cell, Obs) -> Bool
+CONDITION      := (Cell, Obs) -> Bool
+DIRECTION      := (Int, Int)
+VALUE          := ObjectType
+CELL           := (Int, Int)
+OBS            := Observation
+ACTION         := DiscreteAction
+STATE          := Observation
+ObjectType     := {OBJECT_TYPES}
+
 
 ---
+
+### Environment Description
+
+- Generalization Grid Games are discrete 2-D environments where:
+- Each cell contains a symbolic value (e.g., token, wall, agent, empty).
+- Each action corresponds to selecting a single grid cell (“click-a-cell”).
+- **Example games: (All follow deterministic transitions defined by each game’s rule)** 
+    - **TwoPileNim:** Each cell may hold a token (like: tpn.EMPTY, tpn.TOKEN, or None). Clicking a cell removes a token from that location, following the rules of a simplified spatial Nim game.
+    - **Chase:** The agent moves toward a target while avoiding walls.
+    - **CheckmateTactic:** Move a piece to put the opponent’s king in checkmate within a limited number of turns.
+    - **StopTheFall:** Place supports to prevent falling blocks from reaching the bottom of the grid.
+    - **ReachForTheStar:** Navigate the agent to collect the star while avoiding obstacles.
+    - **FenceIn:** Build barriers to surround or trap a moving target inside a bounded region.
+---
+
 
 ### Grammar Skeleton (placeholders)
 
@@ -42,78 +66,76 @@ Terminals:
 
 Productions:
 START ->
-    <INSERT_RULE_1> | <INSERT_RULE_2> | <INSERT_RULE_3>
+    <INSERT_RULE> | <INSERT_RULE> 
 
 LOCAL_PROGRAM ->
-    CONDITION | <INSERT_RULE_4>
+    CONDITION | <INSERT_RULE>
 
 CONDITION ->
-    <INSERT_RULE_5> | <INSERT_RULE_6> | <INSERT_RULE_7>
+    <INSERT_RULE> | <INSERT_RULE>
 
 DIRECTION ->
     (1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)
 
 VALUE ->
     {OBJECT_TYPES}
-
 ---
-
-### Environment Description
-
-Generalization Grid Games are grid-worlds where:
-- Each cell holds a discrete value (e.g., EMPTY, TOKEN, WALL).
-- The observation (Obs) is a full grid.
-- An action selects a grid cell (“click”).
-- Transitions are deterministic and vary by game (e.g., Chase, Nim, CheckmateTactic, etc.).
-
-The DSL defines **Boolean programs** that express logical spatial conditions and can generalize across tasks.
-
----
-
 ### Output Format (STRICT JSON)
 
 {
-  "terminals": [
+  "proposal": [
     {
-      "rationale_short": "STRING (≤20 words)",
-      "name": "snake_case_name",
-      "type_signature": "Bool",
-      "args": [{"name": "arg_name", "type": "TYPE"}],
-      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef name(ARG1, ARG2, ..., cell, obs):\\n    ...",
+      "rationale_short": "<=20 words on why this primitive improves reasoning.",
+      "name": "string_name",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [{"name": "...", "type": "..."}],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef NAME(ARG1, ARG2, ..., cell, obs):\n    ...",
       "pcfg_insertion": {
-        "nonterminal": "START|LOCAL_PROGRAM|CONDITION",
-        "production": "lambda cell, obs: name(ARG1, ARG2, ..., cell, obs)"
+        "nonterminal": "CONDITION",
+        "production": "lambda cell, obs: NAME(ARG1, ARG2, ..., cell, obs)"
       }
     },
-    ...  // exactly 5 entries
+    "... five total entries ..."
   ],
   "updated_grammar": {
-    "nonterminals": ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"],
-    "terminals": ["<NAMES_OF_ALL_FIVE_FUNCTIONS>"],
+    "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
+    "terminals": ["NAME_1","NAME_2","NAME_3","NAME_4","NAME_5"],
     "productions": {
-      "START": "<INSERT_RULES_USING_NEW_TERMINALS>",
-      "LOCAL_PROGRAM": "<INSERT_RULES_USING_NEW_TERMINALS>",
-      "CONDITION": "<INSERT_RULES_USING_NEW_TERMINALS>",
-      "DIRECTION": "(1,0)|(0,1)|(-1,0)|(0,-1)|(1,1)|(-1,1)|(1,-1)|(-1,-1)",
+      "START": "at_action_cell(LOCAL_PROGRAM, a, s)",
+      "LOCAL_PROGRAM": "CONDITION",
+      "CONDITION": "lambda cell, obs: NAME_1(ARGs, cell, obs) | lambda cell, obs: NAME_2(ARGs, cell, obs) | lambda cell, obs: NAME_3(ARGs, cell, obs) | lambda cell, obs: NAME_4(ARGs, cell, obs) | lambda cell, obs: NAME_5(ARGs, cell, obs)",
+      "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}"
     }
   }
 }
 
----
-
-### Safety and Syntax Rules
-
-- No external imports beyond the provided `import *`.
-- All functions must be pure and side-effect-free.
-- No undefined names, constants, or undeclared variables.
-- Each `production` must reference only valid nonterminals (CONDITION, DIRECTION, VALUE, LOCAL_PROGRAM) and variables (cell, obs, a, s).
-- Arguments in the `semantics_py_stub` must match those in the `production`.
-- Output **only one JSON object**.
-- The functions together should form a coherent, compositional DSL.
 
 ---
+Rules and Constraints
 
-### Goal
+1. Primitive Definition
+- Must have type (Cell, Obs) → Bool.
+- Must be deterministic, terminating, and side-effect-free.
+- May use only literals, arithmetic/boolean operators, bounded loops, no helper functions.
+- The Python stub must begin exactly with: `from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *` followed `by def NAME(ARG1, …, cell, obs):` ...
 
-Design 5 complementary DSL primitives that replace all existing terminals — forming a compact, expressive foundation for building logical policies over grid worlds.
+
+2. Grammar Integration
+- Each primitive is inserted under any of the "CONDITION", "LOCAL_PROGRAM", or "START".
+- Each production must be valid Python: `lambda cell, obs: NAME(ARG_NONTERMINALS..., cell, obs)`
+- Allowed argument types: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
+= Only cell and obs may appear literally inside the lambda.
+- Each primitive name appears once in the grammar.
+
+3. Argument Specification
+- "args" lists logical parameters of each primitive.
+- Each "type" ∈ { "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int" }.
+- If "Int" is used, include a nonterminal: "VALUE_INT": "1 | 2 | 3 | ...".
+
+4. Output Formatting
+- Return exactly one JSON object with top-level keys "primitives" and "updated_grammar".
+- JSON must be parsable by json.loads, use double quotes, and contain no extra text.
+
+## Goal
+Invent five new primitives that together form a minimal yet expressive base DSL for describing relationships between elements in structured environments.

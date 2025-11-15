@@ -8,26 +8,28 @@ hydra:
 seed: 0
 num_eval_episodes: 1
 max_eval_steps: 1000
+dsl_name: null
 
 approach_name: ${hydra:runtime.choices.approach}
 env_name: ${hydra:runtime.choices.env}
 expert_policy: ${hydra:runtime.choices.expert}
 
+name_of_removed_func: "shifted" 
 eval:
   mode: 1
-  seeds: [0, 1, 2, 3, 4, 5, 6, 8, 9]
+  seeds: ${range:0,20}
   budget: 200
   metric: sample_efficency
   dsl_variants:
-    # base:
-    #   strategy: "fixed_grid_v1"
     base_prime:
       strategy: "grid_v1_ablated"
-      removed_primitive: "shifted"
+      removed_primitive: ${name_of_removed_func}
     llm:
       strategy: "dsl_generator"
       dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_shifted.txt"
-      removed_primitive: "shifted"
+      removed_primitive: ${name_of_removed_func}
+    # base:
+    #   strategy: "fixed_grid_v1"
 
   
 defaults:
