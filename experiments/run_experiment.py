@@ -9,6 +9,8 @@ import pandas as pd
 from gymnasium.core import Env
 from omegaconf import DictConfig
 from prpl_utils.utils import sample_seed_from_rng
+from prpl_llm_utils.code import synthesize_python_function_with_llm, SyntaxRepromptCheck, FunctionOutputRepromptCheck
+from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.envs.registry import EnvRegistry
@@ -58,13 +60,60 @@ def instantiate_approach(
     # Handle residual learning.
     if cfg.approach_name == "residual":
 
-        expert = hydra.utils.instantiate(
-            cfg.expert,
-            cfg.env.description,
-            env.observation_space,
-            env.action_space,
-            cfg.seed,
-        )
+        use_llm_expert = getattr(cfg, "use_llm_expert", False)
+
+        if use_llm_expert:
+            function_name = cfg.llm_expert.function_name  # e.g., "expert_policy"
+            prompt_template = cfg.llm_expert.prompt_template
+
+            # Instantiate the LLM (OpenAIModel via Hydra)
+            llm = hydra.utils.instantiate(cfg.llm)
+
+            action_space = env.action_space
+            example_observation, _ = env.reset(seed=cfg.seed)
+            example_observation = np.asarray(example_observation, dtype=np.float32)
+
+            prompt_text = (
+                prompt_template
+                + "\n\nEnvironment description:\n"
+                + str(cfg.env.description)
+                + "\nObservation space:\n"
+                + str(env.observation_space)
+                + "\nAction space:\n"
+                + str(env.action_space)
+            )
+
+            # Wrap the prompt string in a Query object (IMPORTANT)
+            query = Query(prompt_text)
+
+            reprompt_checks = [
+                SyntaxRepromptCheck(),
+                FunctionOutputRepromptCheck(
+                    function_name,
+                    [(example_observation,)],
+                    [action_space.contains],
+                ),
+            ]
+
+            # Call the prpl_llm_utils version, just like your friend
+            expert_fn = synthesize_python_function_with_llm(
+                function_name,
+                llm,
+                query,
+                reprompt_checks=reprompt_checks,
+            )
+
+            # expert_fn is the callable policy function
+            expert = expert_fn
+            
+        else:
+            expert = hydra.utils.instantiate(
+                cfg.expert,
+                cfg.env.description,
+                env.observation_space,
+                env.action_space,
+                cfg.seed,
+            )
 
         return hydra.utils.instantiate(
             cfg.approach,

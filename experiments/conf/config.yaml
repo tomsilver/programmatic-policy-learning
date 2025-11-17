@@ -19,3 +19,17 @@ defaults:
   - env: ggg_two_pile_nim
   - llm: openai
   - expert: ggg_expert
+
+# ---- LLM expert options ----
+use_llm_expert: false
+
+llm_expert:
+  function_name: "expert_policy"
+  prompt_template: |
+    You are writing a Python policy function that chooses an action
+    based on the observation. The function should be deterministic,
+    syntactically valid Python, and use only the observation and
+    simple arithmetic. The function signature is:
+
+    def expert_policy(obs):
+        # return an action
