@@ -1,11 +1,11 @@
 """Experts for maze environments."""
 
-from typing import Any, Callable, Iterator, Tuple
+from typing import Any, Callable, Iterator
 
 import numpy as np
 from prpl_utils.search import run_astar
 
-Obs = Tuple[int, int]
+Obs = tuple[int, int]
 Act = int
 
 
@@ -128,7 +128,7 @@ class ExpertMazeWithOuterWorldPolicy:
 
         def get_successors(
             state: Obs,
-        ) -> Iterator[Tuple[Act, Obs, float]]:
+        ) -> Iterator[tuple[Act, Obs, float]]:
             for action in self.get_actions():
                 next_state = self.get_next_state(state, action)
                 if not np.array_equal(next_state, state):  # Valid transition
