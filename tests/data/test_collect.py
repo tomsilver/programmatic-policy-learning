@@ -91,7 +91,7 @@ def test_collect_demo_with_real_env() -> None:
         cfg, instance_num=instance_num
     )
     env: Any = env_factory(env_num)  # type: ignore
-    expert = RandomActionsApproach(
+    expert = RandomActionsApproach(  # type: ignore
         "TEST", env.observation_space, env.action_space, seed=1
     )
     traj: Trajectory = collect_demo(
