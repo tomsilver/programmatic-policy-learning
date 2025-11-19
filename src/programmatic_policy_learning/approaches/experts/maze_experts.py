@@ -17,6 +17,8 @@ class ExpertMazeWithOuterWorldPolicy:
         grid: np.ndarray,
         goal: Obs,
         get_actions: Callable[[], list[Act]],
+        inner_h: int,
+        inner_w: int,
         get_next_state: Callable[[Obs, Act], Obs],
         get_cost: Callable[[], float],
         check_goal: Callable[[Obs, Any], bool],
@@ -30,6 +32,8 @@ class ExpertMazeWithOuterWorldPolicy:
         self.inner_h, self.inner_w = grid.shape
         self.entrance: Obs = (-1, 0)
         self.goal: Obs = goal
+        self.inner_h = inner_h
+        self.inner_w = inner_w
 
         # Plan is maintained as part of the class.
         self.plan: list[Act] = []
@@ -162,6 +166,8 @@ class ExpertMazeWithOuterWorldPolicy:
 def create_expert_maze_with_outer_world_policy(
     grid: np.ndarray,
     goal: Obs,
+    inner_h: int,
+    inner_w: int,
     get_actions: Callable[[], list[Act]],
     get_next_state: Callable[[Obs, Act], Obs],
     get_cost: Callable[[], float],
@@ -171,6 +177,8 @@ def create_expert_maze_with_outer_world_policy(
     expert = ExpertMazeWithOuterWorldPolicy(
         grid=grid,
         goal=goal,
+        inner_h=inner_h,
+        inner_w=inner_w,
         get_actions=get_actions,
         get_next_state=get_next_state,
         get_cost=get_cost,

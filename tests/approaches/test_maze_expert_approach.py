@@ -45,6 +45,8 @@ def test_maze_expert_approach() -> None:
     expert_policy = create_expert_maze_with_outer_world_policy(
         grid=env.grid.copy(),
         goal=env.goal_pos,
+        inner_h=env.inner_h,
+        inner_w=env.inner_w,
         get_actions=env.get_actions,
         get_next_state=env.get_next_state,
         get_cost=env.get_cost,
