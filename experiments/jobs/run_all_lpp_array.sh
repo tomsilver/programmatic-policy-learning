@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 #SBATCH --time=6:00:00
-#SBATCH --output=logs/array_%A_%a.out
-#SBATCH --error=logs/array_%A_%a.err
+#SBATCH --output=slurm/array_%A_%a.out
+#SBATCH --error=slurm/array_%A_%a.err
 
 module load StdEnv/2023
 module load python/3.11
@@ -30,11 +30,26 @@ fi
 
 echo "Task $SLURM_ARRAY_TASK_ID running DSL=$DSL_NAME seed=$SEED"
 
-#############################################
-# Run the Python evaluation
-#############################################
+#############################
+# List of envs for this experiment
+#############################
 
-python -u experiments/run_experiment.py \
-    dsl_name=${DSL_NAME} \
-    seed=${SEED} \
-    hydra.run.dir=outputs/${DSL_NAME}_${SEED}
+ENVS=("ggg_nim" "ggg_chase")   # change here if you add/remove envs
+
+#############################
+# Run each env sequentially, with its own dir
+#############################
+for ENV in "${ENVS[@]}"; do
+    RUN_DIR="${ROOT_DIR}/logs/${EXPERIMENT_TS}/${ENV}/${DSL_NAME}_${SEED}"
+    mkdir -p "$RUN_DIR"
+
+    echo "Running env=${ENV} into ${RUN_DIR}"
+
+    python -u experiments/run_experiment.py \
+        env=${ENV} \
+        approach=lpp \
+        dsl_name=${DSL_NAME} \
+        seed=${SEED} \
+	hydra.run.dir=${RUN_DIR}
+done
+

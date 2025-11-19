@@ -19,9 +19,6 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
-
-
 def allowed_cpus() -> int:
     """Determine the number of CPUs available for use."""
     # Use SLURM allocation if available
@@ -185,7 +182,6 @@ def worker_init(
     Loads the DSL, reimports modules, and compiles the given program
     batch. Runs only once per process before handling any examples.
     """
-
     base = cloudpickle.loads(dsl_blob)
     for name, modpath in module_map.items():
         base[name] = import_module(modpath)
@@ -201,7 +197,13 @@ def worker_init(
     _WORKER_PROGRAMS = [
         eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
     ]
-
+    #for i, prog in enumerate(program_batch):
+     #   try:
+      #      compiled = eval("lambda s, a: " + prog, DSL_FUNCTIONS)
+       #     _WORKER_PROGRAMS[i] = compiled
+        #except Exception as e:
+         #   logging.error(f"[compile_error] Program #{i} failed to compile: {e}")
+          #  _WORKER_PROGRAMS[i] = None
 
 def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
     """Run all precompiled programs on one (state, action) example.
@@ -219,6 +221,8 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     results = []
     for f in _WORKER_PROGRAMS:
         try:
+        #    out = safe_eval_with_timeout(f, s, a)
+        #    results.append(out)
             results.append(f(s, a))
         except Exception:  # pylint: disable=broad-exception-caught
             results.append(None)
@@ -256,6 +260,7 @@ def run_all_programs_on_single_demonstration(
         cloudpickle.loads(dsl_blob)  # Test deserialization
     except (ValueError, TypeError) as e:
         raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
+    
 
     # Extract program strings (don’t pickle heavy objects repeatedly)
     program_strs = [
@@ -269,29 +274,33 @@ def run_all_programs_on_single_demonstration(
 
     # Combine the context initialization into a single block to avoid redefinition
     try:
-        ctx: multiprocessing.context.ForkContext = multiprocessing.get_context(
-            "fork"
+        ctx = multiprocessing.get_context(
+        "spawn"
         )  # linux
     except (ValueError, RuntimeError):
-        ctx: multiprocessing.context.DefaultContext = (  # type: ignore[no-redef]
+        ctx = (  # type: ignore[no-redef]
             multiprocessing.get_context()
         )  # macOS/Windows fallback (spawn)
 
     num_workers = allowed_cpus()
+    num_workers = max(1, min(num_workers, len(fn_inputs)))
 
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
-
+        # Convert to numpy and assign into big matrix
         with ctx.Pool(
             processes=num_workers,
             initializer=worker_init,
             initargs=(dsl_blob, module_map, program_batch),
+            maxtasksperchild=100,
         ) as pool:
-            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=128)
-            batch_rows = np.array(list(results_iter), dtype=bool)
-            X[:, p_start:p_end] = batch_rows
-
+            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
+            #batch_rows = np.array(list(results_iter), dtype=bool)
+            #X[:, p_start:p_end] = batch_rows
+            batch_rows_list = list(results_iter)
+        batch_matrix = np.array(batch_rows_list, dtype=bool)
+        X[:, p_start:p_end] = batch_matrix
     return X.tocsr(), np.array(y, dtype=np.uint8)
 
 
