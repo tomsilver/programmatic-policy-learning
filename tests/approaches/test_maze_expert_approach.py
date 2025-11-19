@@ -36,7 +36,7 @@ def test_maze_expert_approach() -> None:
         dtype=np.int8,
     )
     outer_margin = 10
-    enable_render = True
+    enable_render = False
     env = MazeEnv(
         inner_maze=inner_maze, outer_margin=outer_margin, enable_render=enable_render
     )

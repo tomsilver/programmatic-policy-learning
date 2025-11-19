@@ -5,9 +5,6 @@ from typing import Any, Callable, Iterator, Tuple
 import numpy as np
 from prpl_utils.search import run_astar
 
-from programmatic_policy_learning.approaches.base_approach import _ActType
-
-_State = Tuple[int, int]
 Obs = Tuple[int, int]
 Act = int
 
@@ -136,7 +133,7 @@ class ExpertMazeWithOuterWorldPolicy:
                     yield (action, next_state, cost)
 
         _, search_plan = run_astar(
-            initial_state=tuple(start),
+            initial_state=start,
             check_goal=lambda state: self.check_goal(state, goal),
             get_successors=get_successors,
             heuristic=lambda s: abs(s[0] - goal[0]) + abs(s[1] - goal[1]),
@@ -154,7 +151,8 @@ class ExpertMazeWithOuterWorldPolicy:
                 # We are in the outer world and not at the entrance yet.
                 self.plan = self._plan_to_entrance(obs)
             else:
-                # We are in the maze (or at the entrance), so generate a plan to the goal.
+                # We are in the maze (or at the entrance), so
+                # generate a plan to the goal.
                 self.plan = self._generate_plan(obs, self.goal)
 
         # Follow the plan one action at a time.
