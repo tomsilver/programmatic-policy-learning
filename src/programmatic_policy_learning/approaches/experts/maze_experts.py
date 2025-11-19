@@ -29,7 +29,6 @@ class ExpertMazeWithOuterWorldPolicy:
         self.get_cost = get_cost
         self.check_goal = check_goal
 
-        self.inner_h, self.inner_w = grid.shape
         self.entrance: Obs = (-1, 0)
         self.goal: Obs = goal
         self.inner_h = inner_h
