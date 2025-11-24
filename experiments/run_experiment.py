@@ -184,9 +184,17 @@ def evaluate_all(cfg: DictConfig) -> None:
             ]
         )
 
+        # out_path = (
+        #     Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
+        # )
         out_path = (
-            Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
+            f"logs/{cfg.name_of_removed_func}/{env_name}/"
+            f"{cfg.approach.program_generation_step_size}_"
+            f"{cfg.approach.num_programs}_{len(cfg.approach.demo_numbers)}/"
+            f"{dsl_name}_{seed}_result.csv"
         )
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
         out.to_csv(out_path, index=False)
         logging.info(f"Wrote error marker to {out_path}")
         return  # <- IMPORTANT: don't continue evaluating anything else
@@ -204,7 +212,15 @@ def evaluate_all(cfg: DictConfig) -> None:
         ]
     )
 
-    out_path = Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
+    # out_path = Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
+    # out_path = f"logs/{env_name}/{dsl_name}_{seed}/result.csv"
+    out_path = (
+        f"logs/{cfg.name_of_removed_func}/{env_name}/"
+        f"{cfg.approach.program_generation_step_size}_{cfg.approach.num_programs}_"
+        f"{len(cfg.approach.demo_numbers)}/{dsl_name}_{seed}_result.csv"
+    )
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
     out.to_csv(out_path, index=False)
     logging.info(f"Saved result to {out_path}")
 
