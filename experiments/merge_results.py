@@ -1,55 +1,57 @@
 import os
-import sys
 from pathlib import Path
 import pandas as pd
 
 def main():
-    ts = os.environ.get("EXPERIMENT_TS")
-    if ts is None:
-        print("ERROR: EXPERIMENT_TS not set.", file=sys.stderr)
-        sys.exit(1)
 
-    base_dir = Path("logs") / ts
-    print(f"Merging results under experiment directory: {base_dir}")
+    # Hardcode "shifted"
+    base_dir = Path("logs") / "shifted"
+    print(f"Merging under: {base_dir.resolve()}")
 
     if not base_dir.exists():
-        print(f"ERROR: Directory does not exist: {base_dir}", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: logs/shifted does not exist.")
+        return
 
-    # Iterate through each environment directory
+    # Loop over env folders (TwoPileNim, Chase, etc.)
     for env_dir in base_dir.iterdir():
         if not env_dir.is_dir():
             continue
 
-        print(f"\nProcessing environment folder: {env_dir.name}")
+        print(f"\n→ Environment: {env_dir.name}")
 
-        result_files = list(env_dir.rglob("result.csv"))
+        # Loop over spec folders (5_30_3, 10_40_3, ...)
+        for spec_dir in env_dir.iterdir():
+            if not spec_dir.is_dir():
+                continue
 
-        if not result_files:
-            print(f"No result.csv files found inside {env_dir}")
-            continue
+            print(f"   → Spec: {spec_dir.name}")
 
-        rows = []
-        for file in result_files:
-            try:
-                df = pd.read_csv(file)
-                rows.append(df)
-            except Exception as e:
-                print(f"Failed to read {file}: {e}")
+            # Collect all *_result.csv inside this spec directory
+            csv_files = list(spec_dir.glob("*_result.csv"))
 
-        if not rows:
-            print(f"No readable result.csv files inside {env_dir}")
-            continue
+            if not csv_files:
+                print(f"      No result CSVs found in {spec_dir}")
+                continue
 
-        # Merge results for this ENV only
-        merged = pd.concat(rows, ignore_index=True)
+            dfs = []
+            for csv_file in csv_files:
+                try:
+                    df = pd.read_csv(csv_file)
+                    df["source"] = csv_file.name  # optional
+                    dfs.append(df)
+                except Exception as e:
+                    print(f"      Failed to read {csv_file}: {e}")
 
-        # Save per-environment merged CSV
-        final_path = env_dir / "final_results.csv"
-        merged.to_csv(final_path, index=False)
+            if not dfs:
+                print(f"      No readable CSVs in {spec_dir}")
+                continue
 
-        print(f"Saved merged CSV for {env_dir.name} → {final_path}")
+            merged_df = pd.concat(dfs, ignore_index=True)
+
+            final_path = spec_dir / "final_results.csv"
+            merged_df.to_csv(final_path, index=False)
+
+            print(f"      Saved merged results → {final_path}")
 
 if __name__ == "__main__":
     main()
-

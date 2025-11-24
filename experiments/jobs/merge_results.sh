@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=01:00:00
-#SBATCH --output=${ROOT_DIR}/logs/${EXPERIMENT_TS}/merge/merge_%j.out
-#SBATCH --error=${ROOT_DIR}/logs/${EXPERIMENT_TS}/merge/merge_%j.err
+#SBATCH --output=merge/merge_%j.out
+#SBATCH --error=merge/merge_%j.err
 
 module load StdEnv/2023
 module load python/3.11

@@ -12,7 +12,7 @@
 module load StdEnv/2023
 module load python/3.11
 
-export OPENAI_API_KEY="REMOVED_SECRET"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
 
 # --- Activate your virtual environment ---
 source ~/projects/aip-krallen/zahrab98/programmatic-policy-learning/.venv/bin/activate

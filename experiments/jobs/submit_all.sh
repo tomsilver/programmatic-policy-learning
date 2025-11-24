@@ -8,7 +8,7 @@ export ROOT_DIR=/home/zahrab98/projects/aip-krallen/zahrab98/programmatic-policy
 # -------------------------------------------------------
 # 1. Export OpenAI key for all child jobs
 # -------------------------------------------------------
-export OPENAI_API_KEY="REMOVED_SECRET"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
 
 # -------------------------------------------------------
 # 2. Generate experiment timestamp (shared by all jobs)

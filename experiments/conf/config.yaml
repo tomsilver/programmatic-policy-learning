@@ -27,7 +27,7 @@ eval:
       removed_primitive: ${name_of_removed_func}
     llm:
       strategy: "dsl_generator"
-      dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_shifted.txt"
+      dsl_generator_prompt: src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_${name_of_removed_func}.txt
       removed_primitive: ${name_of_removed_func}
     # base:
     #   strategy: "fixed_grid_v1"
@@ -39,3 +39,9 @@ defaults:
   - env: ggg_nim
   - llm: openai
   - expert: ggg_expert
+
+  # run:
+  #   dir: ./logs/${env_name}/${dsl_name}_${seed}
+  # sweep:
+  #   dir: ./logs/${env_name}/${dsl_name}_${seed}
+  #   subdir: ${hydra.job.num}
