@@ -12,7 +12,7 @@ The JSON must be parsable by json.loads.
 
 You should:
 
-- Infer what kinds of spatial, relational, or logical reasoning are needed in grid-based games (movement, adjacency, matching, scanning, counting, etc.).
+- Infer what kinds of spatial, relational, or logical reasoning are needed in grid-based games.
 - Propose 5 distinct, type-safe primitives with (Cell, Obs) -> Bool type.
 - Return both the list of primitives and the full grammar that integrates them.
 
@@ -54,7 +54,7 @@ ObjectType     := {OBJECT_TYPES}
     - **ReachForTheStar:** Navigate the agent to collect the star while avoiding obstacles.
     - **FenceIn:** Build barriers to surround or trap a moving target inside a bounded region.
 ---
-
+:
 
 ### Grammar Skeleton (placeholders)
 
@@ -86,7 +86,7 @@ VALUE ->
   "proposal": [
     {
       "rationale_short": "<=20 words on why this primitive improves reasoning.",
-      "name": "string_name",
+      "name": "NAME_1",
       "type_signature": "(Cell, Obs) -> Bool",
       "args": [{"name": "...", "type": "..."}],
       "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef NAME(ARG1, ARG2, ..., cell, obs):\n    ...",
@@ -101,9 +101,9 @@ VALUE ->
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
     "terminals": ["NAME_1","NAME_2","NAME_3","NAME_4","NAME_5"],
     "productions": {
-      "START": "at_action_cell(LOCAL_PROGRAM, a, s)",
-      "LOCAL_PROGRAM": "CONDITION",
-      "CONDITION": "lambda cell, obs: NAME_1(ARGs, cell, obs) | lambda cell, obs: NAME_2(ARGs, cell, obs) | lambda cell, obs: NAME_3(ARGs, cell, obs) | lambda cell, obs: NAME_4(ARGs, cell, obs) | lambda cell, obs: NAME_5(ARGs, cell, obs)",
+      "START": "NAME_1", #this is an example, anything can be here.
+      "LOCAL_PROGRAM": "CONDITION | NAME_2",
+      "CONDITION": "lambda cell, obs: NAME_3(ARGs, cell, obs) | lambda cell, obs: NAME_4(ARGs, cell, obs) | lambda cell, obs: NAME_5(ARGs, cell, obs)",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}"
     }

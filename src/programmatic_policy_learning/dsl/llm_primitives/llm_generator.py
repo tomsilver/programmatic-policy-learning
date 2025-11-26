@@ -184,65 +184,6 @@ class LLMPrimitivesGenerator:
         self.write_json("grammar.json", grammar_rules)
         return Grammar(rules=grammar_rules)
 
-    def generate_and_process_grammar_more_than_one(
-        self, prompt_text: str, object_types: list[Any]
-    ) -> tuple[
-        Grammar[str, int, int],
-        dict[str, Any],
-        DSL[
-            Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
-            GridInput,
-            Any,
-        ],
-    ]:
-        """Generate a Grammar object by querying the LLM and processing its
-        response.
-
-        Supports multiple new primitives returned in the LLM JSON
-        output.
-        """
-
-        # 1. Query the LLM
-        llm_response = self.query_llm(prompt_text)
-        self.write_json("metadata.json", llm_response)
-
-        proposals = llm_response.get("proposal", [])
-        if not isinstance(proposals, list):
-            raise ValueError("Expected 'proposal' to be a list of primitives.")
-
-        # 2. Collect implementations
-        new_primitives: dict[str, Callable[..., Any]] = {}
-
-        for primitive in proposals:
-            new_primitive_name = primitive["name"]
-            python_str = primitive["semantics_py_stub"]
-
-            # Write each primitive to its own .py file
-            self.write_python_file(new_primitive_name, python_str)
-
-            # Load the implementation dynamically
-            implementation = self.load_function_from_file(
-                str(self.output_path / f"{new_primitive_name}.py"),
-                new_primitive_name,
-            )
-
-            # Accumulate for DSL update later
-            new_primitives[new_primitive_name] = implementation
-
-            logging.info(f"Added primitive: {new_primitive_name}")
-            logging.info(python_str)
-
-        new_dsl_object = DSL(
-            id="grid_v1_generated",
-            primitives=new_primitives,
-            evaluate_fn=_eval,
-        )
-        # 5. Create Grammar from response
-        self.grammar = self.create_grammar_from_response(llm_response, object_types)
-
-        logging.info(self.grammar)
-        return self.grammar, new_primitives, new_dsl_object
-
     def generate_and_process_grammar(
         self, prompt_text: str, object_types: list[Any]
     ) -> tuple[
@@ -268,11 +209,71 @@ class LLMPrimitivesGenerator:
         )
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
-            new_primitive_name, implementation
+            [new_primitive_name], [implementation]
         )
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
         logging.info(self.grammar)
         logging.info(python_str)
+        return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
+
+    def generate_and_process_grammar_full_version(
+        self, prompt_text: str, object_types: list[Any]
+    ) -> tuple[
+        Grammar[str, int, int],
+        dict[str, Any],
+        DSL[
+            Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
+            GridInput,
+            Any,
+        ],
+    ]:
+        """Generate a Grammar object by querying the LLM and processing its
+        response."""
+        llm_response = self.query_llm(prompt_text)
+        self.write_json("metadata.json", llm_response)
+
+        list_of_proposals = llm_response.get("proposal", [])
+        if not isinstance(list_of_proposals, list):
+            raise ValueError("Expected 'proposal' to be a list of primitives.")
+
+        # Collect implementations
+        new_primitives: dict[str, Callable[..., Any]] = {}
+
+        for primitive in list_of_proposals:
+            new_primitive_name = primitive["name"]
+            python_str = primitive["semantics_py_stub"]
+
+            # Write each primitive to its own .py file
+            self.write_python_file(new_primitive_name, python_str)
+
+            # Load the implementation dynamically
+            implementation = self.load_function_from_file(
+                str(self.output_path / f"{new_primitive_name}.py"),
+                new_primitive_name,
+            )
+
+            # Accumulate for DSL update later
+            new_primitives[new_primitive_name] = implementation
+
+            logging.info(f"Added primitive: {new_primitive_name}")
+            logging.info(python_str)
+
+        new_dsl_object = DSL(
+            id="grid_v1_generated",
+            primitives=new_primitives,
+            evaluate_fn=_eval,
+        )
+        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
+            list(new_primitives.keys()), list(new_primitives.values())
+        )
+
+        # 5. Create Grammar from response
+        self.grammar = self.create_grammar_from_response(llm_response, object_types)
+
+        logging.info(self.grammar)
+        # print(new_get_dsl_functions_fn())
+        # print(new_dsl_object)
+        # input()
         return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def create_grammar(
@@ -300,7 +301,9 @@ class LLMPrimitivesGenerator:
         )
 
     def add_primitive_to_dsl(
-        self, name: str, implementation: Callable[..., Any]
+        self,
+        names: list[str],
+        implementations: list[Callable[..., Any]],
     ) -> Callable[[], dict[str, Any]]:
         """Add a new primitive to the DSL functions dictionary.
 
@@ -314,11 +317,10 @@ class LLMPrimitivesGenerator:
         # Get the base DSL functions
         base_dsl_functions = get_dsl_functions_dict()
 
-        if name in base_dsl_functions:
-            raise ValueError(f"Primitive '{name}' already exists in the DSL.")
-
-        # Add the new primitive
-        base_dsl_functions[name] = implementation
+        for each_name, each_fn in zip(names, implementations):
+            # if each_name in base_dsl_functions:
+            #     raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            base_dsl_functions[each_name] = each_fn
 
         # Return a new function that includes the updated DSL
         def updated_get_dsl_functions_dict() -> dict[str, Any]:
@@ -393,7 +395,8 @@ class LLMPrimitivesGenerator:
         """
         base_dir = Path(__file__).parent
         output_path = base_dir / "outputs" / run_id
-
+        self.output_path = output_path
+        self.run_id = run_id
         # Load the grammar
         grammar_path = output_path / "grammar.json"
         with open(grammar_path, "r", encoding="utf-8") as grammar_file:
@@ -420,9 +423,84 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(file_path), new_primitive_name
         )
-        updated_dsl_fn = self.add_primitive_to_dsl(new_primitive_name, implementation)
+        updated_dsl_fn = self.add_primitive_to_dsl(
+            [new_primitive_name], [implementation]
+        )
 
         # Create the DSL object
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
+
+        return self.grammar, updated_dsl_fn(), new_dsl_object
+
+    def offline_loader_full_version(self, run_id: str) -> tuple[
+        Grammar[str, int, int],
+        dict[str, Any],
+        DSL[LocalProgram, GridInput, Any],
+    ]:
+        """Load the grammar, DSL functions, and DSL object from a previous run
+        with multiple proposals.
+
+        Args:
+            run_id (str): The run ID of the previous generation.
+
+        Returns:
+            tuple: A tuple containing the Grammar, updated DSL functions, and DSL object.
+        """
+        base_dir = Path(__file__).parent
+        output_path = base_dir / "outputs" / run_id
+        self.output_path = output_path
+        self.run_id = run_id
+
+        # Load the grammar
+        grammar_path = output_path / "grammar.json"
+        with open(grammar_path, "r", encoding="utf-8") as grammar_file:
+            grammar_data = json.load(
+                grammar_file, object_hook=lambda d: {int(k): v for k, v in d.items()}
+            )
+        self.grammar = Grammar(rules=grammar_data)
+
+        # Load the metadata
+        metadata_path = output_path / "metadata.json"
+        with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+            metadata = json.load(metadata_file)
+
+        # Extract the proposals
+        proposals = metadata["proposal"]
+        if not isinstance(proposals, list):
+            raise ValueError("Expected 'proposal' to be a list of primitives.")
+
+        # Dynamically construct the file path using run_id
+        output_dir = Path(__file__).parent / "outputs" / run_id
+        python_files = list(output_dir.glob("*.py"))
+        if not python_files:
+            raise FileNotFoundError(f"No Python files found in {output_dir}")
+
+        # Collect implementations
+        new_primitives: dict[str, Callable[..., Any]] = {}
+        for primitive in proposals:
+            new_primitive_name = primitive["name"]
+            python_str = primitive["semantics_py_stub"]
+
+            # Write each primitive to its own .py file
+            self.write_python_file(new_primitive_name, python_str)
+
+            # Load the implementation dynamically
+            implementation = self.load_function_from_file(
+                str(output_dir / f"{new_primitive_name}.py"), new_primitive_name
+            )
+
+            # Accumulate for DSL update later
+            new_primitives[new_primitive_name] = implementation
+
+        updated_dsl_fn = self.add_primitive_to_dsl(
+            list(new_primitives.keys()), list(new_primitives.values())
+        )
+
+        # Create the DSL object
+        new_dsl_object = DSL(
+            id="grid_v1_full_version",
+            primitives=new_primitives,
+            evaluate_fn=_eval,
+        )
 
         return self.grammar, updated_dsl_fn(), new_dsl_object

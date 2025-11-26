@@ -1,9 +1,13 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-import tempfile
+import signal
+from contextlib import contextmanager
+
+# import tempfile
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar, cast
+from types import FrameType
+from typing import Any, Callable, Generator, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -43,7 +47,44 @@ _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
 
 
-def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
+class CustomTimeoutError(Exception):
+    """Custom exception raised when a time limit is exceeded.
+
+    This exception is used to indicate that a block of code has exceeded
+    the allowed time limit set by the `time_limit` context manager.
+    """
+
+
+@contextmanager
+def time_limit(seconds: int) -> Generator[None, None, None]:
+    """Context manager to enforce a time limit on a block of code.
+
+    Args:
+        seconds (int): The maximum number of seconds to allow the block to run.
+
+    Raises:
+        CustomTimeoutError: If the time limit is exceeded.
+    """
+
+    def handler(signum: int, frame: FrameType | None) -> None:
+        """Signal handler to raise a CustomTimeoutError when the alarm is
+        triggered.
+
+        Args:
+            signum (int): The signal number.
+            frame (FrameType | None): The current stack frame (unused).
+        """
+        raise CustomTimeoutError(f"Timed out after {seconds} seconds")
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
+
+def key_fn_for_train_policy(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     """Build a compact run id from training-related attributes on `self`."""
     self_obj = args[0] if len(args) > 0 else kwargs.get("self")
     if self_obj is None:
@@ -62,7 +103,7 @@ def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
     return "-".join([p for p in parts if p != ""])
 
 
-def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
+def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     """Return cache run id, excluding 'env_specs' which is too long."""
     # join all positional args except index 2 and all kwargs except
     # 'env_specs'.
@@ -168,7 +209,8 @@ def _generate_with_dsl_generator(
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     # TODOOO
-    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache_path = Path("llm_db.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -184,7 +226,7 @@ def _generate_with_dsl_generator(
         prompt, env_specs["object_types"]  # type: ignore
     )
 
-    # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_more_than_one(
+    # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
     #     prompt, env_specs["object_types"]  # type: ignore
     # )
 
@@ -208,6 +250,7 @@ def _generate_with_offline_loader(
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(None, removed_primitive)
     _, new_dsl_dict, dsl = generator.offline_loader(run_id)
+    # _, new_dsl_dict, dsl = generator.offline_loader_full_version(run_id)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
@@ -226,6 +269,7 @@ def _generate_programs(
     program_prior_log_probs = []
     gen = program_generator.generate_programs()
     for _ in range(num_programs):
+
         program, prior = next(gen)
         programs.append(program)
         program_prior_log_probs.append(prior)
@@ -278,15 +322,28 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     # @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        programs, program_prior_log_probs, dsl_functions = get_program_set(
-            self.num_programs,
-            self.base_class_name,
-            env_specs=self.env_specs,
-            start_symbol=self.start_symbol,
-            program_generation=self.program_generation,
-        )
-        logging.info("Programs Generation is Done.")
+        try:
+            with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
+                programs, program_prior_log_probs, dsl_functions = get_program_set(
+                    self.num_programs,
+                    self.base_class_name,
+                    env_specs=self.env_specs,
+                    start_symbol=self.start_symbol,
+                    program_generation=self.program_generation,
+                )
+        except CustomTimeoutError:
+            print(
+                "❌ Program generation timed out, primitive too slow. Reprompting LLM..."
+            )
+            programs, program_prior_log_probs, dsl_functions = get_program_set(
+                self.num_programs,
+                self.base_class_name,
+                env_specs=self.env_specs,
+                start_symbol=self.start_symbol,
+                program_generation=self.program_generation,
+            )
 
+        logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]

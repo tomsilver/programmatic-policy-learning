@@ -137,7 +137,7 @@ def test_add_primitive_to_dsl() -> None:
 
     # Add the new primitive to the DSL
     updated_get_dsl_functions_dict = generator.add_primitive_to_dsl(
-        "new_primitive", new_primitive
+        ["new_primitive"], [new_primitive]
     )
 
     # Retrieve the updated DSL functions
