@@ -18,7 +18,7 @@ import numpy as np
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
-
+from omegaconf import DictConfig
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
@@ -36,7 +36,9 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     scanning,
     shifted,
 )
-
+from programmatic_policy_learning.dsl.llm_primitives.evaluator import (
+    evaluate_primitive,
+)
 Cell = tuple[int, int] | None
 LocalProgram = Callable[[Cell, np.ndarray], Any]  # LocalProgram - (cell, obs) -> *
 Sym = Union[str, int]  # terminal = str, nonterminal = int
@@ -185,7 +187,7 @@ class LLMPrimitivesGenerator:
         return Grammar(rules=grammar_rules)
 
     def generate_and_process_grammar(
-        self, prompt_text: str, object_types: list[Any]
+        self, prompt_text: str, object_types: list[Any], env_factory,
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],
@@ -207,6 +209,23 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
         )
+        # ---------------------------------------------------------
+        #  Evaluate primitive before adding to DSL
+        # ---------------------------------------------------------
+        eval_result = evaluate_primitive(
+            implementation,
+            existing_primitives=get_dsl_functions_dict(self.removed_primitive),
+            object_types=object_types,
+            env_factory = env_factory,
+        )
+
+        if not eval_result["keep"]:
+            logging.info(
+                f"Rejected LLM primitive '{new_primitive_name}': {eval_result['reason']}"
+            )
+            # DO NOT add to DSL
+            return self.grammar, {}, None
+        
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation]
