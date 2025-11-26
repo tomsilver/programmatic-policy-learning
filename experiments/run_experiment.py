@@ -22,10 +22,10 @@ def instantiate_approach(
 
     Handles specific parameters required for certain approaches like `lpp`.
     """
+
+    env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+
     if cfg.approach_name == "lpp":
-        env_factory = lambda instance_num: registry.load(
-            cfg.env, instance_num=instance_num
-        )
 
         if not hasattr(env, "get_object_types"):
             raise AttributeError(
@@ -56,6 +56,27 @@ def instantiate_approach(
             env_specs=env_specs,
         )
 
+    # Handle residual learning.
+    if cfg.approach_name == "residual":
+
+        expert = hydra.utils.instantiate(
+            cfg.expert,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+        )
+
+        return hydra.utils.instantiate(
+            cfg.approach,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+            expert,
+            env_factory,
+        )
+
     # Default instantiation for other approaches.
     return hydra.utils.instantiate(
         cfg.approach,
@@ -63,6 +84,7 @@ def instantiate_approach(
         env.observation_space,
         env.action_space,
         cfg.seed,
+        env_factory,
     )
 
 
@@ -301,4 +323,7 @@ def _run_single_episode_evaluation(
 
 
 if __name__ == "__main__":
-    _main()  # pylint: disable=no-value-for-parameter
+    try:
+        _main()  # pylint: disable=no-value-for-parameter
+    except BaseException as e:  # pylint: disable=broad-exception-caught
+        logging.error(str(e))

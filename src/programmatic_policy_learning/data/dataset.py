@@ -196,7 +196,6 @@ def worker_init(
 
     global _WORKER_DSL, _WORKER_PROGRAMS  # pylint: disable=global-statement
     _WORKER_DSL = DSL_FUNCTIONS
-
     _WORKER_PROGRAMS = [
         eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
     ]
@@ -234,7 +233,6 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             #     f"Error type: {type(e).__name__}\n"
             #     f"Error message: {e}"
             # )
-
     return results
 
 
@@ -262,6 +260,7 @@ def run_all_programs_on_single_demonstration(
         cloudpickle.loads(dsl_blob)  # Test deserialization
     except (ValueError, TypeError) as e:
         raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
+
     # Extract program strings (don’t pickle heavy objects repeatedly)
     program_strs = [
         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in programs

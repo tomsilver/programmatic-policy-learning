@@ -10,11 +10,9 @@ def test_maze_env_creation() -> None:
     """Test Maze environment creation and basic API."""
     cfg: DictConfig = OmegaConf.create(
         {
-            "make_kwargs": {
-                "outer_margin": 2,
-                "enable_render": False,
-                "inner_maze_path": "data/mazes/maze_10x10.npy",
-            }
+            "outer_margin": 2,
+            "enable_render": False,
+            "inner_maze_path": "data/mazes/maze1_10x10.npy",
         }
     )
 
@@ -25,7 +23,7 @@ def test_maze_env_creation() -> None:
     # Reset environment and check observation
     obs, info = env.reset()
     assert obs is not None, "Observation after reset should not be None"
-    assert isinstance(obs, np.ndarray), "Observation should be a numpy array"
+    assert isinstance(obs, tuple), "Observation should be a numpy array"
 
     # Verify action space exists and sample an action
     assert env.action_space is not None, "Action space must be defined"

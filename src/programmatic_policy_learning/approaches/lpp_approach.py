@@ -225,7 +225,6 @@ def _generate_with_dsl_generator(
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
-
     # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
     #     prompt, env_specs["object_types"]  # type: ignore
     # )
