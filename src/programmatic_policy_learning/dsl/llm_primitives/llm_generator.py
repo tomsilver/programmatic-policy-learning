@@ -271,9 +271,6 @@ class LLMPrimitivesGenerator:
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
 
         logging.info(self.grammar)
-        # print(new_get_dsl_functions_fn())
-        # print(new_dsl_object)
-        # input()
         return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def create_grammar(

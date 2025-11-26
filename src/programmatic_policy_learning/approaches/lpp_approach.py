@@ -332,7 +332,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     program_generation=self.program_generation,
                 )
         except CustomTimeoutError:
-            print(
+            logging.error(
                 "❌ Program generation timed out, primitive too slow. Reprompting LLM..."
             )
             programs, program_prior_log_probs, dsl_functions = get_program_set(
