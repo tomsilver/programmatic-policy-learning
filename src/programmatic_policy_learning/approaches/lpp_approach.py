@@ -3,7 +3,7 @@
 import logging
 import signal
 from contextlib import contextmanager
-
+from omegaconf import DictConfig
 # import tempfile
 from pathlib import Path
 from types import FrameType
@@ -119,6 +119,7 @@ def get_program_set(
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
+    env_factory = None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -131,14 +132,13 @@ def get_program_set(
         raise ValueError(
             "program_generation configuration is required for LPP approach."
         )
-
     strategy = program_generation["strategy"]
 
     # Define strategies as a dictionary
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
-            program_generation, env_specs, start_symbol
+            program_generation, env_specs, start_symbol, env_factory
         ),
         "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
@@ -206,6 +206,7 @@ def _generate_with_dsl_generator(
     program_generation: dict[str, Any],
     env_specs: dict[str, Any] | None,
     start_symbol: int,
+    env_factory,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     # TODOOO
@@ -223,7 +224,8 @@ def _generate_with_dsl_generator(
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
-        prompt, env_specs["object_types"]  # type: ignore
+        prompt, env_specs["object_types"], env_factory  # type: ignore
+        
     )
     # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
     #     prompt, env_specs["object_types"]  # type: ignore
@@ -329,6 +331,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     env_specs=self.env_specs,
                     start_symbol=self.start_symbol,
                     program_generation=self.program_generation,
+                    env_factory=self.env_factory,
                 )
         except CustomTimeoutError:
             logging.error(
@@ -340,6 +343,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 env_specs=self.env_specs,
                 start_symbol=self.start_symbol,
                 program_generation=self.program_generation,
+                env_factory=self.env_factory,
             )
 
         logging.info("Programs Generation is Done.")
