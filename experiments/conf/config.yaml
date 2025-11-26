@@ -15,7 +15,7 @@ expert_policy: ${hydra:runtime.choices.expert}
 name_of_removed_func: "shifted" 
 eval:
   mode: 0
-  seeds: ${range:0,20}
+  seeds: 0,1,2
   budget: 200
   metric: sample_efficency
   dsl_variants:

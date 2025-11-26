@@ -276,6 +276,7 @@ def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, An
         del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS
 
+
 def get_core_boolean_primitives():
     return [
         cell_is_value,

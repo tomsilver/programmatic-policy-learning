@@ -8,6 +8,6 @@ make_kwargs:
 
 # provider tells the factory how to build
 provider: ggg
-env_id: ${make_kwargs.id}
+env_id: ${env.make_kwargs.id}
 description: "Generalization Grid Games"
 instance_num: 0

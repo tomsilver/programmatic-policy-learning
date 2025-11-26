@@ -3,7 +3,7 @@
 import logging
 import signal
 from contextlib import contextmanager
-from omegaconf import DictConfig
+
 # import tempfile
 from pathlib import Path
 from types import FrameType
@@ -11,6 +11,7 @@ from typing import Any, Callable, Generator, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
+from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
@@ -119,7 +120,7 @@ def get_program_set(
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
-    env_factory = None,
+    env_factory=None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -225,7 +226,6 @@ def _generate_with_dsl_generator(
     generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"], env_factory  # type: ignore
-        
     )
     # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
     #     prompt, env_specs["object_types"]  # type: ignore
@@ -335,7 +335,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 )
         except CustomTimeoutError:
             logging.error(
-                "❌ Program generation timed out, primitive too slow. Reprompting LLM..."
+                "Program generation timed out, primitive too slow. Reprompting LLM..."
             )
             programs, program_prior_log_probs, dsl_functions = get_program_set(
                 self.num_programs,

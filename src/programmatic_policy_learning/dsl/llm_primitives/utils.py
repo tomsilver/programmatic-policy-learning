@@ -529,3 +529,6 @@ def create_function_from_stub(stub: str, function_name: str) -> Callable[..., An
     local_namespace: dict[str, Any] = {}
     exec(stub, {}, local_namespace)  # pylint: disable=exec-used
     return local_namespace[function_name]
+
+
+# src/programmatic_policy_learning/dsl/llm_primitives/utils.py
