@@ -202,7 +202,6 @@ class LLMPrimitivesGenerator:
 
         new_primitive_name = llm_response["proposal"]["name"]
         python_str = llm_response["proposal"]["semantics_py_stub"]
-        # python_file = create_function_from_stub(python_str, new_primitive_name)
         self.write_python_file(new_primitive_name, python_str)
         implementation = self.load_function_from_file(
             str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
@@ -258,8 +257,8 @@ class LLMPrimitivesGenerator:
         base_dsl_functions = get_dsl_functions_dict()
 
         for each_name, each_fn in zip(names, implementations):
-            # if each_name in base_dsl_functions:
-            #     raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            if each_name in base_dsl_functions:
+                raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
             base_dsl_functions[each_name] = each_fn
 
         # Return a new function that includes the updated DSL
