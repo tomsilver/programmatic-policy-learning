@@ -13,7 +13,7 @@ from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.envs.registry import EnvRegistry
-
+from programmatic_policy_learning.dsl.llm_primitives.baseline_vlam import run_baseline
 
 def instantiate_approach(
     cfg: DictConfig, env: Any, registry: EnvRegistry
@@ -249,7 +249,11 @@ def evaluate_all(cfg: DictConfig) -> None:
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
+    registry = EnvRegistry()
 
+    env = registry.load(cfg.env)
+    run_baseline(env, episodes=20)
+    return
     if cfg.eval.mode == 1:
         evaluate_all(cfg)
     else:

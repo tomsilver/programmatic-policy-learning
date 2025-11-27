@@ -1,4 +1,5 @@
 """Partial Evaluator for DSLs."""
+
 import random
 from typing import Any, Callable
 
