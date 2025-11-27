@@ -40,8 +40,6 @@ from programmatic_policy_learning.learning.particles_utils import select_particl
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
-
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
@@ -84,35 +82,6 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         signal.alarm(0)
 
 
-def key_fn_for_train_policy(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """Build a compact run id from training-related attributes on `self`."""
-    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
-    if self_obj is None:
-        return ""
-    demo_numbers = getattr(self_obj, "demo_numbers", ())
-    demo_part = "-".join(str(x) for x in demo_numbers)
-    parts = [
-        str(getattr(self_obj, "base_class_name", "")),
-        demo_part,
-        str(getattr(self_obj, "program_generation_step_size", "")),
-        str(getattr(self_obj, "num_programs", "")),
-        str(getattr(self_obj, "num_dts", "")),
-        str(getattr(self_obj, "max_num_particles", "")),
-    ]
-    # filter empty pieces and join
-    return "-".join([p for p in parts if p != ""])
-
-
-def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """Return cache run id, excluding 'env_specs' which is too long."""
-    # join all positional args except index 2 and all kwargs except
-    # 'env_specs'.
-    parts = [str(a) for i, a in enumerate(args) if i != 2]
-    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
-    return "-".join(parts)
-
-
-# @manage_cache("cache", [".pkl", ".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -208,9 +177,7 @@ def _generate_with_dsl_generator(
     start_symbol: int,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    # TODOOO
-    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
-    cache_path = Path("llm_db.db")
+    cache_path = Path("llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -225,9 +192,6 @@ def _generate_with_dsl_generator(
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
-    # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
-    #     prompt, env_specs["object_types"]  # type: ignore
-    # )
 
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
@@ -249,7 +213,6 @@ def _generate_with_offline_loader(
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(None, removed_primitive)
     _, new_dsl_dict, dsl = generator.offline_loader(run_id)
-    # _, new_dsl_dict, dsl = generator.offline_loader_full_version(run_id)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
@@ -318,7 +281,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
-    # @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
         try:
@@ -332,7 +294,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 )
         except CustomTimeoutError:
             logging.error(
-                "❌ Program generation timed out, primitive too slow. Reprompting LLM..."
+                "Program generation timed out, primitive too slow. Reprompting LLM..."
             )
             programs, program_prior_log_probs, dsl_functions = get_program_set(
                 self.num_programs,

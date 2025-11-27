@@ -206,9 +206,6 @@ def evaluate_all(cfg: DictConfig) -> None:
             ]
         )
 
-        # out_path = (
-        #     Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
-        # )
         out_path = (
             f"logs/{cfg.name_of_removed_func}/{env_name}/"
             f"{cfg.approach.program_generation_step_size}_"
@@ -233,9 +230,6 @@ def evaluate_all(cfg: DictConfig) -> None:
             }
         ]
     )
-
-    # out_path = Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
-    # out_path = f"logs/{env_name}/{dsl_name}_{seed}/result.csv"
     out_path = (
         f"logs/{cfg.name_of_removed_func}/{env_name}/"
         f"{cfg.approach.program_generation_step_size}_{cfg.approach.num_programs}_"

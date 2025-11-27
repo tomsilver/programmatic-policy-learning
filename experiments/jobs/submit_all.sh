@@ -1,16 +1,5 @@
 #!/bin/bash
 
-<<<<<<< HEAD
-# Submit array job (0-20)
-ARRAY_JOBID=$(sbatch run_all_lpp_array.sh | awk '{print $4}')
-
-echo "Submitted array job with ID: $ARRAY_JOBID"
-
-# Submit merge job, only AFTER array completes
-sbatch --dependency=afterok:${ARRAY_JOBID} merge_results.sh
-
-echo "Submitted merge job dependent on array job $ARRAY_JOBID"
-=======
 # -------------------------------------------------------
 # 0. Define root directory of your project (ABSOLUTE PATH)
 # -------------------------------------------------------
@@ -56,4 +45,3 @@ sbatch \
 
 echo "Submitted merge job with dependency on array job $ARRAY_JOBID"
 
->>>>>>> ac1ec793bd6d9b94e702c87970e3a866a4231e5b
