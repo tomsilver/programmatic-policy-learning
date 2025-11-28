@@ -11,7 +11,8 @@ from typing import Any, Callable, Generator, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
-from omegaconf import DictConfig
+
+# from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
@@ -40,8 +41,6 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -113,14 +112,13 @@ def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any])
     return "-".join(parts)
 
 
-# @manage_cache("cache", [".pkl", ".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
+    env_factory: EnvFactory,
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
-    env_factory=None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -207,7 +205,7 @@ def _generate_with_dsl_generator(
     program_generation: dict[str, Any],
     env_specs: dict[str, Any] | None,
     start_symbol: int,
-    env_factory,
+    env_factory: EnvFactory,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     # TODOOO
@@ -320,7 +318,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
-    # @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
         try:
@@ -328,10 +325,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 programs, program_prior_log_probs, dsl_functions = get_program_set(
                     self.num_programs,
                     self.base_class_name,
+                    self.env_factory,
                     env_specs=self.env_specs,
                     start_symbol=self.start_symbol,
                     program_generation=self.program_generation,
-                    env_factory=self.env_factory,
                 )
         except CustomTimeoutError:
             logging.error(
@@ -340,10 +337,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs, program_prior_log_probs, dsl_functions = get_program_set(
                 self.num_programs,
                 self.base_class_name,
+                self.env_factory,
                 env_specs=self.env_specs,
                 start_symbol=self.start_symbol,
                 program_generation=self.program_generation,
-                env_factory=self.env_factory,
             )
 
         logging.info("Programs Generation is Done.")

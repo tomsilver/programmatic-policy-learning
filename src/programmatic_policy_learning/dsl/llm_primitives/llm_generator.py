@@ -15,7 +15,6 @@ from typing import Any, Callable, MutableMapping, Union, cast
 
 import black
 import numpy as np
-from omegaconf import DictConfig
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
@@ -104,7 +103,7 @@ class LLMPrimitivesGenerator:
     def create_grammar_from_response(
         self,
         llm_output: dict[str, Any],
-        object_types: list[Any],
+        object_types: tuple[Any],
     ) -> Grammar[str, int, int]:
         """Convert a JSON-like grammar spec (with strings for productions) into
         a Grammar where nonterminals are numbered 0..N-1 and RHS alternatives
@@ -191,8 +190,8 @@ class LLMPrimitivesGenerator:
     def generate_and_process_grammar(
         self,
         prompt_text: str,
-        object_types: list[Any],
-        env_factory,
+        object_types: tuple[Any],
+        env_factory: Callable[[], Any],
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],
@@ -206,7 +205,6 @@ class LLMPrimitivesGenerator:
         response."""
         llm_response = self.query_llm(prompt_text)
         self.write_json("metadata.json", llm_response)
-
         new_primitive_name = llm_response["proposal"]["name"]
         python_str = llm_response["proposal"]["semantics_py_stub"]
         # python_file = create_function_from_stub(python_str, new_primitive_name)
@@ -214,6 +212,7 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
         )
+
         # ---------------------------------------------------------
         #  Evaluate primitive before adding to DSL
         # ---------------------------------------------------------
@@ -229,7 +228,7 @@ class LLMPrimitivesGenerator:
                 f"Rejected LLM primitive '{new_primitive_name}': {eval_result['reason']}"
             )
             # DO NOT add to DSL
-            return self.grammar, {}, None
+            return self.grammar, {}, None  # type: ignore[return-value]
 
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
@@ -241,7 +240,7 @@ class LLMPrimitivesGenerator:
         return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def generate_and_process_grammar_full_version(
-        self, prompt_text: str, object_types: list[Any]
+        self, prompt_text: str, object_types: tuple[Any]
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],

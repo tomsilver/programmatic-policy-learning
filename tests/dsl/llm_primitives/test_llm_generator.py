@@ -62,9 +62,11 @@ def test_create_grammar() -> None:
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     llm_output_dict = json.loads(llm_output)
-    object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
+    object_types = ("tpn.EMPTY", "tpn.TOKEN", "None")
     generator = LLMPrimitivesGenerator(llm_client, None)
-    new_grammar = generator.create_grammar_from_response(llm_output_dict, object_types)
+    new_grammar = generator.create_grammar_from_response(
+        llm_output_dict, object_types  # type: ignore[arg-type]
+    )
 
     # Assertions to validate the grammar
     assert isinstance(new_grammar, Grammar)
@@ -106,7 +108,9 @@ def test_generate_grammar_with_real_llm() -> None:
 
     generator = LLMPrimitivesGenerator(llm_client, "shifted")
 
-    grammar, _, _ = generator.generate_and_process_grammar(prompt, object_types)
+    grammar, _, _ = generator.generate_and_process_grammar(
+        prompt, object_types, env_factory=None  # type: ignore
+    )
     logging.info(grammar)
 
     assert isinstance(grammar, Grammar)

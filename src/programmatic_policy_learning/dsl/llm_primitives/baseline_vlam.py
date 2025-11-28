@@ -1,19 +1,28 @@
-from openai import OpenAI
-import numpy as np
-from PIL import Image
-import io
+"""VLM BASELINE."""
+
 import base64
+import io
+from typing import Any
+
+import numpy as np
+from openai import OpenAI
+from PIL import Image
 
 client = OpenAI()
 
 ##############################
-# 1. Render grid → image
+# Render grid → image
 ##############################
 
-def grid_to_image(grid):
-    """
-    grid: np.array of shape (H, W), with small ints (e.g. EMPTY=0, TOKEN=1, AGENT=2)
-    converts grid to a simple PNG image
+
+def grid_to_image(grid: np.ndarray) -> Image.Image:
+    """Convert a grid to a simple PNG image.
+
+    Args:
+        grid (np.ndarray): A 2D array representing the grid.
+
+    Returns:
+        Image.Image: The generated image.
     """
     H, W = grid.shape
     scale = 40
@@ -21,31 +30,38 @@ def grid_to_image(grid):
     pixels = img.load()
 
     colors = {
-        0: (255,255,255),   # empty
-        1: (0,0,0),         # token
-        2: (200,0,0),       # agent
-        3: (0,0,200),       # enemy
+        0: (255, 255, 255),  # empty
+        1: (0, 0, 0),  # token
+        2: (200, 0, 0),  # agent
+        3: (0, 0, 200),  # enemy
     }
 
     for i in range(H):
         for j in range(W):
-            c = colors.get(grid[i, j], (128,128,128))
-            for x in range(scale):
-                for y in range(scale):
-                    pixels[j*scale + x, i*scale + y] = c
+            c = colors.get(grid[i, j], (128, 128, 128))
+            if pixels is not None:
+                for x in range(scale):
+                    for y in range(scale):
+                        pixels[j * scale + x, i * scale + y] = c
 
     return img
 
 
 ##############################
-# 2. VLAM query
+# VLM query
 ##############################
 
-import base64
-import io
 
-def query_vlam(img, task_description):
-    # Convert PIL image → base64 PNG string
+def query_vlam(img: Image.Image, task_description: str) -> tuple[int, int] | None:
+    """Query the VLAM model with an image and task description.
+
+    Args:
+        img (Image.Image): The input image.
+        task_description (str): The task description.
+
+    Returns:
+        tuple[int, int] | None: The parsed action as (x, y) or None if parsing fails.
+    """
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -55,7 +71,7 @@ def query_vlam(img, task_description):
         messages=[
             {
                 "role": "system",
-                "content": "You choose an action in a grid environment."
+                "content": "You choose an action in a grid environment.",
             },
             {
                 "role": "user",
@@ -63,31 +79,36 @@ def query_vlam(img, task_description):
                     {"type": "text", "text": task_description},
                     {
                         "type": "image_url",
-                        "image_url": { "url": f"data:image/png;base64,{img_b64}" }
+                        "image_url": {"url": f"data:image/png;base64,{img_b64}"},
                     },
-                    {"type": "text", "text": "Return ONLY 'x,y'."}
+                    {"type": "text", "text": "Return ONLY 'x,y'."},
                 ],
-            }
-        ]
+            },
+        ],
     )
 
-    # ✔ FIX: message is an object, not a dict
-    txt = r.choices[0].message.content.strip()
-    return parse_action(txt)
+    txt = r.choices[0].message.content.strip() if r.choices[0].message.content else None
+    return parse_action(txt) if txt else None
 
 
 ##############################
 # 3. Parse action
 ##############################
 
-def parse_action(txt):
-    """
-    Expect output like: '3,1'
+
+def parse_action(txt: str) -> tuple[int, int] | None:
+    """Parse an action from a string.
+
+    Args:
+        txt (str): The input string, e.g., '3,1'.
+
+    Returns:
+        tuple[int, int] | None: The parsed action as (x, y) or None if parsing fails.
     """
     try:
         x, y = txt.split(",")
         return int(x), int(y)
-    except:
+    except ValueError:
         return None
 
 
@@ -95,7 +116,17 @@ def parse_action(txt):
 # 4. One-step evaluation
 ##############################
 
-def evaluate_once(env, task_description):
+
+def evaluate_once(env: Any, task_description: str) -> bool:
+    """Evaluate a single episode in the environment.
+
+    Args:
+        env (Any): The environment to evaluate.
+        task_description (str): The task description.
+
+    Returns:
+        bool: True if the evaluation is successful, False otherwise.
+    """
     state, _ = env.reset()
     img = grid_to_image(state)
 
@@ -103,7 +134,7 @@ def evaluate_once(env, task_description):
     if action is None:
         return False
 
-    next_state, reward, done, info, _ = env.step(action)
+    _, reward, done, _, _ = env.step(action)
     return done and reward > 0
 
 
@@ -111,12 +142,23 @@ def evaluate_once(env, task_description):
 # 5. Run evaluation
 ##############################
 
-def run_baseline(env, episodes=10):
+
+def run_baseline(env: Any, episodes: int = 10) -> None:
+    """Run the baseline evaluation for a number of episodes.
+
+    Args:
+        env (Any): The environment to evaluate.
+        episodes (int): The number of episodes to run.
+    """
     successes = 0
-    for ep in range(episodes):
-        task_desc = "You are playing the game Nim. The grid shows piles of tokens.On your turn, you must click on exactly one cell containing tokens to remove a token from that pile.Your goal is to make the winning move. Choose the grid cell to click.Return the action as 'x,y'."
+    for _ in range(episodes):
+        task_desc = (
+            "You are playing the game Nim. The grid shows piles of tokens."
+            "On your turn, you must click on exactly one cell containing tokens "
+            "to remove a token from that pile. Your goal is to make the winning move. "
+            "Choose the grid cell to click. Return the action as 'x,y'."
+        )
         if evaluate_once(env, task_desc):
             successes += 1
 
     print(f"VLAM success rate: {successes}/{episodes}")
-

@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from programmatic_policy_learning.approaches.random_actions import RandomActionsApproach
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     get_core_boolean_primitives,
 )
@@ -16,14 +17,76 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
 DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)]
 
 
+def normalize_object_types(object_types: tuple[str, ...]) -> tuple[str, ...]:
+    """
+    Convert object types like "ec.WALL" or "tpn.EMPTY" or "None"
+    into normalized lowercase names: "wall", "empty", "none".
+    """
+    normalized = []
+
+    for obj in object_types:
+        if obj == "None":
+            normalized.append("None")
+            continue
+
+        # Split prefix (e.g., "ec.") and take the last component
+        # e.g., "ec.AGENT"  →  "AGENT"
+        if "." in obj:
+            name = obj.split(".")[-1]
+        else:
+            name = obj
+
+        normalized.append(name.lower())
+
+    return tuple(normalized)
+
+
+def sample_random_state_action(
+    env: Any, max_steps: int = 20, seed: int = 123
+) -> tuple[np.ndarray, Any]:
+    """Roll out the environment using RandomActionsApproach to generate a
+    diverse state."""
+    # 1) Initialize approach
+    approach: RandomActionsApproach[np.ndarray, np.ndarray] = RandomActionsApproach(
+        "N/A",
+        env.observation_space,
+        env.action_space,
+        seed=seed,
+    )
+
+    # 2) Reset env + approach
+    obs, info = env.reset()
+    obs = np.asarray(obs)
+    approach.reset(obs, info)
+
+    # 3) Pick random rollout depth
+    k = random.randint(0, max_steps)
+
+    for _ in range(k):
+        # structured random action
+        action = approach.step()
+
+        # env step
+        try:
+            obs, reward, terminated, truncated, info = env.step(action)
+        except Exception:  # pylint: disable=broad-exception-caught
+            break
+
+        obs = np.asarray(obs)
+
+        # update approach (not strictly needed but cleaner)
+        approach.update(obs, float(reward), terminated, info)
+
+        if terminated or truncated:
+            break
+    if k == 0:
+        action = approach.step()
+    return obs, action
+
+
 def sample_direction() -> tuple[int, int]:
     """Randomly sample a direction from predefined directions."""
     return random.choice(DIRECTIONS)
-
-
-def sample_value() -> Any:
-    """Randomly sample a value from predefined values."""
-    return random.choice(VALUES)
 
 
 def sample_local_program(existing_programs: list[Callable]) -> Callable:
@@ -36,29 +99,12 @@ def sample_condition(existing_programs: list[Callable]) -> Callable:
     return sample_local_program(existing_programs)  # simplest version
 
 
-def sample_value_from_env(object_types: list[Any]) -> Any:
+def sample_value_from_env(object_types: tuple[str, ...]) -> Any:
     """Sample a value from the environment's object_types list.
 
     This ensures correctness across Chase, Nim, RFTS, STF, PRBench...
     """
-    return random.choice(object_types)  # TODO: make it more general
-
-
-def sample_obs_and_cell(env: Any) -> tuple[np.ndarray, tuple[int, int]]:
-    """Sample a real observation and a valid action-cell from the environment.
-
-    Returns:
-        obs: np.ndarray     (H×W grid or possibly multi-channel)
-        cell: (row, col)    random valid coordinate
-    """
-    obs, _ = env.reset()
-    obs = np.asarray(obs)
-
-    H, W = obs.shape[0], obs.shape[1]
-
-    cell = (random.randint(0, H - 1), random.randint(0, W - 1))
-
-    return obs, cell
+    return random.choice(object_types)
 
 
 def sample_argument(
@@ -66,7 +112,7 @@ def sample_argument(
     obs: np.ndarray,
     cell: tuple[int, int],
     existing_programs: list[Callable],
-    object_types: list[Any],
+    object_types: tuple[str, ...],
 ) -> Any:
     """Sample an argument based on its name."""
     if name == "obs":
@@ -85,7 +131,6 @@ def sample_argument(
         "program",
     ):
         return random.choice(existing_programs)
-
     return random.choice([None, 0, 1])
 
 
@@ -93,11 +138,12 @@ def sample_argument(
 # EVALUATE SINGLE FUNCTION ON SAMPLE
 # ---------------------------------------------------------
 # CHECK IF OBS IS VALID AND THE CELL IS VALID
-# check if the coverage is enough - at least 80% valid and also invalid becuase they are meaningful
+# check if the coverage is enough -
+# at least 80% valid and also invalid becuase they are meaningful
 def eval_on_random_inputs(
     fn: Callable,
-    object_types: list[Any],
-    env_factory: Callable[[int], Any],
+    object_types: tuple[str, ...],
+    env_factory: Callable[[], Any],
     num_samples: int = 200,
 ) -> list[Any]:
     """Evaluate a function on random inputs."""
@@ -106,8 +152,8 @@ def eval_on_random_inputs(
     for i in range(num_samples):
         # inspect fn signature
         params = list(fn.__code__.co_varnames[: fn.__code__.co_argcount])
-        env = env_factory(int(i / 20))
-        obs, cell = sample_obs_and_cell(env)  # TODO: sample not just initial state
+        env = env_factory(int(i % 20))  # type: ignore[call-arg]
+        obs, cell = sample_random_state_action(env)
         args = {
             p: sample_argument(
                 p,
@@ -123,7 +169,7 @@ def eval_on_random_inputs(
         # input()
         try:
             out = fn(**args)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             out = None  # treat crashes as non-usable
 
         outputs.append(out)
@@ -164,8 +210,8 @@ def equivalence_score(outputs_new: list[Any], outputs_old: list[Any]) -> float:
 def evaluate_primitive(
     new_primitive_fn: Callable,
     existing_primitives: dict[str, Callable],
-    object_types: list[Any],
-    env_factory: Callable[[int], Any],
+    object_types: tuple[Any],
+    env_factory: Callable[[], Any],
     num_samples: int = 200,
     degeneracy_threshold: float = 0.95,
     equivalence_threshold: float = 0.95,
@@ -178,7 +224,8 @@ def evaluate_primitive(
         new_primitive_fn, object_types, env_factory, num_samples
     )
     print("OUT", outputs_new)
-    input()
+    print(len(outputs_new))
+    input("DONE")
     # -----------------------------------------------------
     # Level 1: Degenerate check
     # -----------------------------------------------------

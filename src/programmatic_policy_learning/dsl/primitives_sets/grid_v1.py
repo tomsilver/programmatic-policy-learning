@@ -277,7 +277,8 @@ def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, An
     return DSL_FUNCTIONS
 
 
-def get_core_boolean_primitives():
+def get_core_boolean_primitives() -> list[Callable]:
+    """Return a list of core boolean primitives."""
     return [
         cell_is_value,
         shifted,
