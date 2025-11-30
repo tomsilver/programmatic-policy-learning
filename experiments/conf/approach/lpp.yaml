@@ -9,5 +9,5 @@ start_symbol: 0
 program_generation:
   strategy: "fixed_grid_v1"  # Options: "fixed_grid_v1", "dsl_generator", "offline_loader" grid_v1_ablated
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
-  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_cell_is_value.txt" #one_missing_prompt_shifted
-  removed_primitive: "cell_is_value"
+  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_shifted.txt"
+  removed_primitive: "shifted"

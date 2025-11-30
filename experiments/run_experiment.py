@@ -97,7 +97,7 @@ def evaluate_single(
     registry = EnvRegistry()
     env = registry.load(env_cfg)
 
-    # Merge DSL into approach with additional fields if they exist
+    # dynamically update cfg with the specific settings for approach
     run_cfg = OmegaConf.merge(
         cfg,
         OmegaConf.create(
@@ -164,7 +164,7 @@ def evaluate_single(
 
     map_posterior = (
         # pylint: disable=protected-access
-        approach._policy.map_posterior  # type: ignore[attr-defined, protected-access]
+        approach._policy.map_posterior  # type: ignore[attr-defined]
     )
     return (
         score,
@@ -216,7 +216,7 @@ def evaluate_all(cfg: DictConfig) -> None:
 
         out.to_csv(out_path, index=False)
         logging.info(f"Wrote error marker to {out_path}")
-        return  # <- IMPORTANT: don't continue evaluating anything else
+        return  # don't continue evaluating anything else
 
     # If no errors:
     out = pd.DataFrame(

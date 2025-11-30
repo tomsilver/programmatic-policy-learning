@@ -112,7 +112,7 @@ class LLMPrimitivesGenerator:
         """
 
         rules = llm_output["updated_grammar"]
-        terminals: list[str] = rules.get("terminals", [])
+        terminals: list[str] = rules["terminals"]
         nonterminals: list[str] = rules["nonterminals"]
         productions: dict[str, str] = rules["productions"]
 
