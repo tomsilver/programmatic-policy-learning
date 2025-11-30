@@ -19,7 +19,6 @@ import numpy as np
 from programmatic_policy_learning.approaches.random_actions import RandomActionsApproach
 
 
-# pylint: disable=cell-var-from-loop
 # ---------------------------------------------------------
 # RANDOM SAMPLERS FOR ARGUMENT TYPES
 # ---------------------------------------------------------
@@ -371,6 +370,34 @@ def equivalence_score(outputs_new: list[Any], outputs_old: list[Any]) -> float:
     return agree / len(outputs_new)
 
 
+def _instantiate_primitive(
+    fn: Callable,
+    arg_order: list[str],
+    arg_types: list[str],
+    sample_for_type: Callable[[str, list[Callable]], Any],
+    pool: list[Callable],
+) -> Callable:
+    """Build one closed instance of a primitive."""
+
+    # Take snapshot per instantiation
+    pool_snapshot = pool.copy()
+
+    sampled_args = [sample_for_type(typ, pool_snapshot) for typ in arg_types]
+    arg_dict = dict(zip(arg_order, sampled_args))
+
+    # Freeze these sampled args
+    partial_fn = partial(fn, **arg_dict)
+
+    def wrapped(
+        cell: tuple[int, int] | None,
+        obs: np.ndarray,
+        fn: Callable[..., Any] = partial_fn,
+    ) -> Any:
+        return fn(cell=cell, obs=obs)
+
+    return wrapped
+
+
 def make_closed_program_pool(
     normalized_object_types: tuple[str, ...],
     existing_primitives: dict[str, Callable],
@@ -410,47 +437,25 @@ def make_closed_program_pool(
     for _, fn in existing_primitives.items():
         sig = inspect.signature(fn)
 
-        # Extract the DSL-type arguments (skip implicit cell,obs)
-        arg_order = []
-        arg_types = []
+        arg_order: list[str] = []
+        arg_types: list[str] = []
+
         for arg_name, _ in sig.parameters.items():
             if arg_name in ("cell", "obs"):
                 continue
-            arg_type = ARG_TYPE_MAP.get(arg_name, None)
+            arg_type = ARG_TYPE_MAP.get(arg_name)
             if arg_type is None:
-                # unknown/unsupported → skip this primitive safely
                 break
             arg_order.append(arg_name)
             arg_types.append(arg_type)
 
         else:
-            # Only executed if loop didn't break -> we have a supported primitive
-            def make_wrapper(fn: Callable, arg_types: list[str]) -> Callable:
-                """Capture fully-instantiated primitive with closed args."""
-
-                # Capture args now, not at call-time
-                pool_snapshot = pool.copy()
-                sampled_args = [
-                    sample_for_type(typ, pool_snapshot) for typ in arg_types
-                ]
-                arg_order_copy = arg_order.copy()  # Avoid late-binding bug
-                arg_dict = dict(zip(arg_order_copy, sampled_args))
-
-                partial_fn = partial(fn, **arg_dict)
-
-                def wrapped(
-                    cell: tuple[int, int] | None,
-                    obs: np.ndarray,
-                    fn: Callable[..., Any] = partial_fn,
-                ) -> Any:
-                    """Wrap around (cell, obs)."""
-                    return fn(cell=cell, obs=obs)
-
-                return wrapped
-
-            # Add many instantiations (loop a few times for diversity)
-            for _ in range(20):  # hyperparameter: #instantiations per primitive
-                pool.append(make_wrapper(fn, arg_types))
+            # valid primitive
+            for _ in range(20):
+                instance = _instantiate_primitive(
+                    fn, arg_order.copy(), arg_types.copy(), sample_for_type, pool
+                )
+                pool.append(instance)
 
     return pool
 
