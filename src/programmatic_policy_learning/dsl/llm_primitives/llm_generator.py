@@ -231,14 +231,14 @@ class LLMPrimitivesGenerator:
             degeneracy_threshold=0.1,
             equivalence_threshold=0.95,
         )
-
+        logging.info(f"Evaluation results: {eval_result}")
         if not eval_result["keep"]:
             logging.info(
                 f"Rejected LLM primitive '{new_primitive_name}': {eval_result['reason']}"
             )
             # DO NOT add to DSL
             return self.grammar, {}, None  # type: ignore[return-value]
-        print("SUCCESSFULLY ADDED")
+        logging.info("Function successfully added to the DSL set!")
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation]

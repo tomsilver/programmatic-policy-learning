@@ -2,6 +2,7 @@
 
 import base64
 import io
+import logging
 from typing import Any
 
 import numpy as np
@@ -161,4 +162,4 @@ def run_baseline(env: Any, episodes: int = 10) -> None:
         if evaluate_once(env, task_desc):
             successes += 1
 
-    print(f"VLAM success rate: {successes}/{episodes}")
+    logging.info(f"VLAM success rate: {successes}/{episodes}")

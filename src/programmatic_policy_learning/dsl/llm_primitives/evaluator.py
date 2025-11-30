@@ -192,12 +192,12 @@ def semantic_similarity_filter(
             return {
                 "keep": False,
                 "reason": f"Semantic overlap with {name}, score={score:.3f}",
-                "score": similar,
+                "sim_scores": similar,
             }
 
     return {
         "keep": True,
-        "score": similar,
+        "sim_scores": similar,
     }
 
 
@@ -300,7 +300,6 @@ def eval_on_random_inputs(
     """Evaluate a function on random inputs."""
 
     sig_dict = dict(proposal_signature)
-    print(sig_dict)
     params = list(fn.__code__.co_varnames[: fn.__code__.co_argcount])
 
     outputs = []
@@ -357,7 +356,7 @@ def degeneracy_score(outputs: list[Any]) -> float:
     counter = Counter(outputs)
     probs = [c / len(outputs) for c in counter.values()]
     entropy = -sum(p * math.log(p) for p in probs)
-    max_entropy = math.log(len(counter))
+    max_entropy = math.log(3)  # 3 possible output: True/False/None
     return entropy / max_entropy
 
 
@@ -477,12 +476,14 @@ def evaluate_primitive(
     equivalence_threshold: float = 0.9,
 ) -> dict[str, Any]:
     """Evaluate a new primitive for degeneracy and redundancy."""
+    result = {}
     seed_all(seed)
     normalized_object_types = normalize_object_types(object_types)
+
     # -----------------------------------------------------
-    # Step 1: Compute outputs of new primitive
+    # Level 1: Degenerate check
     # -----------------------------------------------------
-    outputs_new = eval_on_random_inputs(
+    outputs_new = eval_on_random_inputs(  # Compute outputs of new primitive
         new_primitive_fn,
         normalized_object_types,
         env_factory,
@@ -492,13 +493,11 @@ def evaluate_primitive(
         max_steps,
         num_samples,
     )
-    print("OUT", outputs_new)
-    # -----------------------------------------------------
-    # Level 1: Degenerate check
-    # -----------------------------------------------------
-    deg = degeneracy_score(outputs_new)
-    if deg <= degeneracy_threshold:
-        return {"keep": False, "reason": "degenerate", "score": deg}
+    logging.info(f"Outputs on sampled args: {outputs_new}")
+    deg_score = degeneracy_score(outputs_new)
+    if deg_score <= degeneracy_threshold:
+        return {"keep": False, "reason": "degenerate", "deg_score": deg_score}
+
     # -----------------------------------------------------
     # Level 2: Semantic similarity
     # -----------------------------------------------------
@@ -514,5 +513,5 @@ def evaluate_primitive(
         num_samples,
         equivalence_threshold,
     )
-    logging.info(result)
+    result["deg_score"] = deg_score
     return result
