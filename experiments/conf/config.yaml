@@ -26,8 +26,6 @@ eval:
       strategy: "dsl_generator"
       dsl_generator_prompt: src/programmatic_policy_learning/dsl/llm_primitives/prompts/one_missing_prompt_${name_of_removed_func}.txt
       removed_primitive: ${name_of_removed_func}
-    # base:
-    #   strategy: "fixed_grid_v1"
 
   
 defaults:

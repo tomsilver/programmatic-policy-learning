@@ -76,49 +76,57 @@ def test_shifted_directions() -> None:
 def test_at_cell_with_value_basic() -> None:
     """Basic at_cell_with_value test."""
     obs = np.array([[1, 2], [3, 4]])
+    cell = (0, 1)
 
     def get_coordinates_program(
         cell: tuple[int, int] | None, obs: np.ndarray  # pylint: disable=unused-argument
     ) -> tuple[int, int] | None:
         return cell
 
-    assert np.array_equal(at_cell_with_value(4, get_coordinates_program, obs), [1, 1])
+    assert np.array_equal(
+        at_cell_with_value(4, get_coordinates_program, cell, obs), [1, 1]
+    )
 
 
 def test_at_cell_with_value_not_found() -> None:
     """Not found returns False."""
     obs = np.array([[1, 2], [3, 4]])
+    cell = (0, 1)
 
     def check_cell_program(
         cell: tuple[int, int] | None, obs: np.ndarray  # pylint: disable=unused-argument
     ) -> bool:
         return cell is not None
 
-    assert not at_cell_with_value(99, check_cell_program, obs)
+    assert not at_cell_with_value(99, check_cell_program, cell, obs)
 
 
 def test_at_cell_with_value_multiple_occurrences() -> None:
     """Finds first occurrence."""
     obs = np.array([[1, 2, 1], [3, 1, 4]])
+    cell = (0, 1)
 
     def get_coordinates_program(
         cell: tuple[int, int] | None, obs: np.ndarray  # pylint: disable=unused-argument
     ) -> tuple[int, int] | None:
         return cell
 
-    assert np.array_equal(at_cell_with_value(1, get_coordinates_program, obs), [0, 0])
+    assert np.array_equal(
+        at_cell_with_value(1, get_coordinates_program, cell, obs), [0, 0]
+    )
 
 
 def test_at_cell_with_value_with_logic() -> None:
     """Logic on found cell."""
     obs = np.array([[5, 2], [3, 8]])
+    cell = (0, 1)
 
     def check_neighbors_program(
         cell: tuple[int, int] | None, obs: np.ndarray  # pylint: disable=unused-argument
     ) -> bool:
         return cell is not None and obs[cell[0], cell[1]] < 5
 
-    assert at_cell_with_value(3, check_neighbors_program, obs)
+    assert at_cell_with_value(3, check_neighbors_program, cell, obs)
 
 
 def test_at_action_cell_basic() -> None:

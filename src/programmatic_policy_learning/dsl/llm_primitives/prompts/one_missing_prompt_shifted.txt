@@ -37,7 +37,6 @@ DIRECTION      := (Int, Int)
 VALUE          := ObjectType
 CELL           := (Int, Int)
 OBS            := Observation
-ACTION         := DiscreteAction
 STATE          := Observation
 ObjectType     := {OBJECT_TYPES}
 

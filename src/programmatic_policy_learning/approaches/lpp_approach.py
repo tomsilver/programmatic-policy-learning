@@ -320,28 +320,36 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        try:
-            with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
-                programs, program_prior_log_probs, dsl_functions = get_program_set(
-                    self.num_programs,
-                    self.base_class_name,
-                    self.env_factory,
-                    env_specs=self.env_specs,
-                    start_symbol=self.start_symbol,
-                    program_generation=self.program_generation,
-                )
-        except CustomTimeoutError:
-            logging.error(
-                "Program generation timed out, primitive too slow. Reprompting LLM..."
-            )
-            programs, program_prior_log_probs, dsl_functions = get_program_set(
-                self.num_programs,
-                self.base_class_name,
-                self.env_factory,
-                env_specs=self.env_specs,
-                start_symbol=self.start_symbol,
-                program_generation=self.program_generation,
-            )
+        programs, program_prior_log_probs, dsl_functions = get_program_set(
+            self.num_programs,
+            self.base_class_name,
+            self.env_factory,
+            env_specs=self.env_specs,
+            start_symbol=self.start_symbol,
+            program_generation=self.program_generation,
+        )
+        # try:
+        #     with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
+        #         programs, program_prior_log_probs, dsl_functions = get_program_set(
+        #             self.num_programs,
+        #             self.base_class_name,
+        #             self.env_factory,
+        #             env_specs=self.env_specs,
+        #             start_symbol=self.start_symbol,
+        #             program_generation=self.program_generation,
+        #         )
+        # except CustomTimeoutError:
+        #     logging.error(
+        #         "Program generation timed out, primitive too slow. Reprompting LLM..."
+        #     )
+        #     programs, program_prior_log_probs, dsl_functions = get_program_set(
+        #         self.num_programs,
+        #         self.base_class_name,
+        #         self.env_factory,
+        #         env_specs=self.env_specs,
+        #         start_symbol=self.start_symbol,
+        #         program_generation=self.program_generation,
+        #     )
 
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [

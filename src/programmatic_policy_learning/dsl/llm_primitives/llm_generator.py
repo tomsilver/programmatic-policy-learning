@@ -35,6 +35,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     at_action_cell,
     at_cell_with_value,
     cell_is_value,
+    get_core_boolean_primitives,
     get_dsl_functions_dict,
     scanning,
     shifted,
@@ -191,7 +192,7 @@ class LLMPrimitivesGenerator:
         self,
         prompt_text: str,
         object_types: tuple[Any],
-        env_factory: Callable[[], Any],
+        env_factory: Callable[[], Any],  # type: ignore[arg-type]
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],
@@ -205,22 +206,30 @@ class LLMPrimitivesGenerator:
         response."""
         llm_response = self.query_llm(prompt_text)
         self.write_json("metadata.json", llm_response)
-        new_primitive_name = llm_response["proposal"]["name"]
-        python_str = llm_response["proposal"]["semantics_py_stub"]
-        # python_file = create_function_from_stub(python_str, new_primitive_name)
+        proposal_dict = llm_response["proposal"]
+        new_primitive_name = proposal_dict["name"]
+        python_str = proposal_dict["semantics_py_stub"]
+        raw_pairs = [(arg["name"], arg["type"]) for arg in proposal_dict["args"]]
+        proposal_signature = tuple(sorted(raw_pairs))
+
         self.write_python_file(new_primitive_name, python_str)
         implementation = self.load_function_from_file(
             str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
         )
-
-        # ---------------------------------------------------------
+        # ----------------------------------------------------x-----
         #  Evaluate primitive before adding to DSL
         # ---------------------------------------------------------
         eval_result = evaluate_primitive(
             implementation,
-            existing_primitives=get_dsl_functions_dict(self.removed_primitive),
+            existing_primitives=get_core_boolean_primitives(self.removed_primitive),
             object_types=object_types,
-            env_factory=env_factory,
+            env_factory=env_factory,  # type: ignore
+            proposal_signature=proposal_signature,
+            seed=1,
+            max_steps=20,
+            num_samples=200,
+            degeneracy_threshold=0.1,
+            equivalence_threshold=0.95,
         )
 
         if not eval_result["keep"]:
@@ -229,7 +238,7 @@ class LLMPrimitivesGenerator:
             )
             # DO NOT add to DSL
             return self.grammar, {}, None  # type: ignore[return-value]
-
+        print("SUCCESSFULLY ADDED")
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation]
