@@ -5,7 +5,9 @@ from typing import Any
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
-from programmatic_policy_learning.dsl.llm_primitives.evaluator import evaluate_primitive
+from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
+    evaluate_primitive,
+)
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     get_core_boolean_primitives,
     out_of_bounds,

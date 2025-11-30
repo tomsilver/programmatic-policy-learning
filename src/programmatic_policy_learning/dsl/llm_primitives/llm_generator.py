@@ -21,7 +21,7 @@ from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
-from programmatic_policy_learning.dsl.llm_primitives.evaluator import (
+from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
     evaluate_primitive,
 )
 from programmatic_policy_learning.dsl.llm_primitives.utils import (

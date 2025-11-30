@@ -69,7 +69,7 @@ ARG_TYPE_MAP = {
     "true_condition": "CONDITION",
     "false_condition": "CONDITION",
     "max_timeout": "Int",
-}
+}  # This should later be a dynamic list for the full pipeline
 
 IMPLICIT_ARGS = {"cell", "obs"}
 
@@ -385,10 +385,8 @@ def make_closed_program_pool(
         lambda cell, obs: False,
     ]
 
+    # Later deeper programs will get added here.
     pool = base_programs.copy()
-
-    # Need VALUE sampling helper
-    norm_values = normalized_object_types
 
     def sample_for_type(type_name: str, pool_snapshot: list[Callable]) -> Any:
         """Sample a closed argument based on DSL TYPE."""
@@ -396,19 +394,18 @@ def make_closed_program_pool(
             return random.choice(DIRECTIONS)
 
         if type_name == "VALUE":
-            return random.choice(norm_values)
+            return random.choice(normalized_object_types)
 
         if type_name in {"VALUE_INT", "Int"}:
             return random.randint(1, 3)
 
         if type_name in ("LOCAL_PROGRAM", "CONDITION"):
-            #  pick from pool_snapshot (not existing_primitives!)
             return random.choice(pool_snapshot)
 
         raise ValueError(f"Unknown argument type: {type_name}")
 
     # --------------------------------------------------------
-    # Build deeper programs by INSTANTIATING each primitive
+    # Build deeper programs by instantiating each primitive
     # --------------------------------------------------------
     for _, fn in existing_primitives.items():
         sig = inspect.signature(fn)
@@ -427,16 +424,16 @@ def make_closed_program_pool(
             arg_types.append(arg_type)
 
         else:
-            # Only executed if loop didn't break → we have a supported primitive
+            # Only executed if loop didn't break -> we have a supported primitive
             def make_wrapper(fn: Callable, arg_types: list[str]) -> Callable:
                 """Capture fully-instantiated primitive with closed args."""
 
-                # Capture args NOW, not at call-time
+                # Capture args now, not at call-time
                 pool_snapshot = pool.copy()
                 sampled_args = [
                     sample_for_type(typ, pool_snapshot) for typ in arg_types
                 ]
-                arg_order_copy = arg_order.copy()  # Avoid cell variable issue
+                arg_order_copy = arg_order.copy()  # Avoid late-binding bug
                 arg_dict = dict(zip(arg_order_copy, sampled_args))
 
                 partial_fn = partial(fn, **arg_dict)
