@@ -204,41 +204,68 @@ class LLMPrimitivesGenerator:
     ]:
         """Generate a Grammar object by querying the LLM and processing its
         response."""
-        llm_response = self.query_llm(prompt_text)
-        self.write_json("metadata.json", llm_response)
-        proposal_dict = llm_response["proposal"]
-        new_primitive_name = proposal_dict["name"]
-        python_str = proposal_dict["semantics_py_stub"]
-        raw_pairs = [(arg["name"], arg["type"]) for arg in proposal_dict["args"]]
-        proposal_signature = tuple(sorted(raw_pairs))
 
-        self.write_python_file(new_primitive_name, python_str)
-        implementation = self.load_function_from_file(
-            str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
-        )
-        # ----------------------------------------------------x-----
-        #  Evaluate primitive before adding to DSL
-        # ---------------------------------------------------------
-        eval_result = evaluate_primitive(
-            implementation,
-            existing_primitives=get_core_boolean_primitives(self.removed_primitive),
-            object_types=object_types,
-            env_factory=env_factory,  # type: ignore
-            proposal_signature=proposal_signature,
-            seed=1,
-            max_steps=20,
-            num_samples=200,
-            degeneracy_threshold=0.1,
-            equivalence_threshold=0.95,
-        )
-        logging.info(f"Evaluation results: {eval_result}")
-        if not eval_result["keep"]:
-            logging.info(
-                f"Rejected LLM primitive '{new_primitive_name}': {eval_result['reason']}"
+        MAX_PRIMITIVE_ATTEMPTS = 5
+        attempt = 0
+        feedback = None
+
+        while attempt < MAX_PRIMITIVE_ATTEMPTS:
+            attempt += 1
+            if feedback:  # if a primitive was rejected at least once
+                prompt_text_with_feedback = (
+                    prompt_text
+                    + "\n\nThe previous primitive was rejected for the following reason:\n"
+                    + f"'{feedback}'.\n"
+                    + "Please propose a NEW primitive that avoids this issue."
+                )
+            else:
+                prompt_text_with_feedback = prompt_text
+
+            llm_response = self.query_llm(prompt_text_with_feedback)
+            self.write_json("metadata.json", llm_response)
+            proposal_dict = llm_response["proposal"]
+            new_primitive_name = proposal_dict["name"]
+            python_str = proposal_dict["semantics_py_stub"]
+            raw_pairs = [(arg["name"], arg["type"]) for arg in proposal_dict["args"]]
+            proposal_signature = tuple(sorted(raw_pairs))
+
+            self.write_python_file(new_primitive_name, python_str)
+            implementation = self.load_function_from_file(
+                str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
             )
-            # DO NOT add to DSL
+            # ----------------------------------------------------x-----
+            #  Evaluate primitive before adding to DSL
+            # ---------------------------------------------------------
+            eval_result = evaluate_primitive(
+                implementation,
+                existing_primitives=get_core_boolean_primitives(self.removed_primitive),
+                object_types=object_types,
+                env_factory=env_factory,  # type: ignore
+                proposal_signature=proposal_signature,
+                seed=1,
+                max_steps=20,
+                num_samples=200,
+                degeneracy_threshold=0.1,
+                equivalence_threshold=0.95,
+            )
+            logging.info(f"Evaluation results: {eval_result}")
+            if eval_result["keep"]:
+                logging.info("Function successfully added to the DSL set!")
+                break
+
+            # Failure -> save reason + reprompt
+            feedback = eval_result["reason"]
+            logging.info(
+                f"Rejected primitive (attempt {attempt}/{MAX_PRIMITIVE_ATTEMPTS}): {feedback}"
+            )
+
+        else:
+            # If the loop ends without breaking -> all attempts failed
+            logging.error(
+                "LLM failed to produce a valid primitive after multiple attempts."
+            )
             return self.grammar, {}, None  # type: ignore[return-value]
-        logging.info("Function successfully added to the DSL set!")
+
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation]
