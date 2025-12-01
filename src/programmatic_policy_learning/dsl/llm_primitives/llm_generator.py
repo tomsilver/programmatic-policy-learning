@@ -193,6 +193,7 @@ class LLMPrimitivesGenerator:
         prompt_text: str,
         object_types: tuple[Any],
         env_factory: Callable[[], Any],  # type: ignore[arg-type]
+        outer_feedback: str | None,
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],
@@ -214,12 +215,18 @@ class LLMPrimitivesGenerator:
             if feedback:  # if a primitive was rejected at least once
                 prompt_text_with_feedback = (
                     prompt_text
-                    + "\n\nThe previous primitive was rejected for the following reason:\n"
-                    + f"'{feedback}'.\n"
+                    + "\n\nThe previous primitive was rejected for the following reason:"
+                    + f"'\n{feedback}'.\n"
                     + "Please propose a NEW primitive that avoids this issue."
                 )
+                logging.info("Reprompting due to unsucessful dsl evaluation.")
             else:
-                prompt_text_with_feedback = prompt_text
+                if outer_feedback:
+                    prompt_text_with_feedback = prompt_text + f"\n\n{outer_feedback}.\n"
+                    logging.info("Reprpmpting when time out happened!")
+                else:
+                    prompt_text_with_feedback = prompt_text
+                    logging.info("First normal prompt.")
 
             llm_response = self.query_llm(prompt_text_with_feedback)
             self.write_json("metadata.json", llm_response)
@@ -256,7 +263,8 @@ class LLMPrimitivesGenerator:
             # Failure -> save reason + reprompt
             feedback = eval_result["reason"]
             logging.info(
-                f"Rejected primitive (attempt {attempt}/{MAX_PRIMITIVE_ATTEMPTS}): {feedback}"
+                f"Rejected primitive (attempt {attempt}/{MAX_PRIMITIVE_ATTEMPTS}):\
+                {feedback}"
             )
 
         else:

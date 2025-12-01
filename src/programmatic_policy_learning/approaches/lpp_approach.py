@@ -119,6 +119,7 @@ def get_program_set(
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
+    outer_feedback: str | None = None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -137,7 +138,7 @@ def get_program_set(
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
-            program_generation, env_specs, start_symbol, env_factory
+            program_generation, env_specs, start_symbol, env_factory, outer_feedback
         ),
         "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
@@ -206,6 +207,7 @@ def _generate_with_dsl_generator(
     env_specs: dict[str, Any] | None,
     start_symbol: int,
     env_factory: EnvFactory,
+    outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     # TODOOO
@@ -222,8 +224,13 @@ def _generate_with_dsl_generator(
         prompt = file.read()
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
+    if env_specs is None:
+        raise ValueError("env_specs cannot be None when indexing.")
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
-        prompt, env_specs["object_types"], env_factory  # type: ignore
+        prompt,
+        env_specs["object_types"],
+        env_factory,  # type: ignore
+        outer_feedback,
     )
     # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
     #     prompt, env_specs["object_types"]  # type: ignore
@@ -320,36 +327,48 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        programs, program_prior_log_probs, dsl_functions = get_program_set(
-            self.num_programs,
-            self.base_class_name,
-            self.env_factory,
-            env_specs=self.env_specs,
-            start_symbol=self.start_symbol,
-            program_generation=self.program_generation,
-        )
-        # try:
-        #     with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
-        #         programs, program_prior_log_probs, dsl_functions = get_program_set(
-        #             self.num_programs,
-        #             self.base_class_name,
-        #             self.env_factory,
-        #             env_specs=self.env_specs,
-        #             start_symbol=self.start_symbol,
-        #             program_generation=self.program_generation,
-        #         )
-        # except CustomTimeoutError:
-        #     logging.error(
-        #         "Program generation timed out, primitive too slow. Reprompting LLM..."
-        #     )
-        #     programs, program_prior_log_probs, dsl_functions = get_program_set(
-        #         self.num_programs,
-        #         self.base_class_name,
-        #         self.env_factory,
-        #         env_specs=self.env_specs,
-        #         start_symbol=self.start_symbol,
-        #         program_generation=self.program_generation,
-        #     )
+
+        MAX_OUTER_ATTEMPTS = 5
+        outer_attempt = 0
+        outer_feedback = None
+
+        while outer_attempt < MAX_OUTER_ATTEMPTS:
+            outer_attempt += 1
+
+            try:
+                with time_limit(self.num_programs):  # e.g., 1 second per program
+                    programs, program_prior_log_probs, dsl_functions = get_program_set(
+                        self.num_programs,
+                        self.base_class_name,
+                        self.env_factory,
+                        env_specs=self.env_specs,
+                        start_symbol=self.start_symbol,
+                        program_generation=self.program_generation,
+                        outer_feedback=outer_feedback,  # <-- feed into grammar generator
+                    )
+
+                # success → exit loop
+                break
+
+            except CustomTimeoutError:
+                logging.error(
+                    f"[Outer {outer_attempt}] Program generation timed out — "
+                    "primitive likely creates infinite loops or huge branching."
+                )
+
+                # build feedback to send to LLM in next outer attempt
+                outer_feedback = (
+                    "The last primitive caused program generation to TIME OUT. "
+                    "This means the primitive leads to infinite loops or too many "
+                    "program branches. Propose a simpler, terminating primitive."
+                )
+
+        else:
+            # loop exhausted without success
+            raise RuntimeError(
+                "Failed to generate a valid DSL primitive"
+                "that allows program enumeration."
+            )
 
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
