@@ -193,7 +193,7 @@ class LLMPrimitivesGenerator:
         prompt_text: str,
         object_types: tuple[Any],
         env_factory: Callable[[], Any],  # type: ignore[arg-type]
-        outer_feedback: str | None,
+        outer_feedback: str | None = None,
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],
