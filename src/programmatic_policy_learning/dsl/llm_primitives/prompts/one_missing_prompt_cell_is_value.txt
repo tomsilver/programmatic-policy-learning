@@ -51,7 +51,11 @@ at_cell_with_value, at_action_cell, scanning, shifted
 
 Productions:
 START ->
+<<<<<<< HEAD
 at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s)
+=======
+at_cell_with_value(VALUE, LOCAL_PROGRAM, s)
+>>>>>>> bac7b027c59e600e49614729b779b82decebcce8
 | at_action_cell(LOCAL_PROGRAM, a, s) # s =state, a=action
 
 LOCAL_PROGRAM ->

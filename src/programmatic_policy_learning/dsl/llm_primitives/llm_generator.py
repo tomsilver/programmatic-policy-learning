@@ -117,7 +117,7 @@ class LLMPrimitivesGenerator:
 
         rules = llm_output["updated_grammar"]
         logging.info(rules)
-        terminals: list[str] = rules.get("terminals", [])
+        terminals: list[str] = rules["terminals"]
         nonterminals: list[str] = rules["nonterminals"]
         productions: dict[str, str] = rules["productions"]
 
@@ -421,6 +421,30 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
+    def create_grammar(
+        self, env_spec: dict[str, Any] | None
+    ) -> Grammar[
+        Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any], GridInput, Any
+    ]:
+        """Replace the object types of grammar with the given ones."""
+        if env_spec is None:
+            raise ValueError("env_spec cannot be None")
+        if self.grammar is None:
+            raise ValueError("Grammar is not initialized")
+        object_types = env_spec["object_types"]
+        self.grammar.rules[4] = (
+            [[str(v)] for v in object_types],
+            [1.0 / len(object_types) for _ in object_types],
+        )
+        return cast(
+            Grammar[
+                Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
+                GridInput,
+                Any,
+            ],
+            self.grammar,
+        )
+
     def add_primitive_to_dsl(
         self,
         names: list[str],
@@ -439,8 +463,8 @@ class LLMPrimitivesGenerator:
         base_dsl_functions = get_dsl_functions_dict()
 
         for each_name, each_fn in zip(names, implementations):
-            # if each_name in base_dsl_functions:
-            #     raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            if each_name in base_dsl_functions:
+                raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
             base_dsl_functions[each_name] = each_fn
 
         # Return a new function that includes the updated DSL
@@ -506,14 +530,8 @@ class LLMPrimitivesGenerator:
         dict[str, Any],
         DSL[LocalProgram, GridInput, Any],
     ]:
-        """Load the grammar, DSL functions, and DSL object from a previous run.
-
-        Args:
-            run_id (str): The run ID of the previous generation.
-
-        Returns:
-            tuple: A tuple containing the Grammar, updated DSL functions, and DSL object.
-        """
+        """Load the grammar, DSL functions, and DSL object from a previous
+        run."""
         base_dir = Path(__file__).parent
         output_path = base_dir / "outputs" / run_id
         self.output_path = output_path

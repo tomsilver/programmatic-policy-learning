@@ -99,7 +99,7 @@ def evaluate_single(
     registry = EnvRegistry()
     env = registry.load(env_cfg)
 
-    # Merge DSL into approach with additional fields if they exist
+    # dynamically update cfg with the specific settings for approach
     run_cfg = OmegaConf.merge(
         cfg,
         OmegaConf.create(
@@ -166,7 +166,7 @@ def evaluate_single(
 
     map_posterior = (
         # pylint: disable=protected-access
-        approach._policy.map_posterior  # type: ignore[attr-defined, protected-access]
+        approach._policy.map_posterior  # type: ignore[attr-defined]
     )
     return (
         score,
@@ -208,9 +208,6 @@ def evaluate_all(cfg: DictConfig) -> None:
             ]
         )
 
-        # out_path = (
-        #     Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
-        # )
         out_path = (
             f"logs/{cfg.name_of_removed_func}/{env_name}/"
             f"{cfg.approach.program_generation_step_size}_"
@@ -221,7 +218,7 @@ def evaluate_all(cfg: DictConfig) -> None:
 
         out.to_csv(out_path, index=False)
         logging.info(f"Wrote error marker to {out_path}")
-        return  # <- IMPORTANT: don't continue evaluating anything else
+        return  # don't continue evaluating anything else
 
     # If no errors:
     out = pd.DataFrame(
@@ -235,9 +232,6 @@ def evaluate_all(cfg: DictConfig) -> None:
             }
         ]
     )
-
-    # out_path = Path(hydra.core.hydra_config.HydraConfig.get().run.dir) / "result.csv"
-    # out_path = f"logs/{env_name}/{dsl_name}_{seed}/result.csv"
     out_path = (
         f"logs/{cfg.name_of_removed_func}/{env_name}/"
         f"{cfg.approach.program_generation_step_size}_{cfg.approach.num_programs}_"
@@ -251,11 +245,7 @@ def evaluate_all(cfg: DictConfig) -> None:
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
-    # registry = EnvRegistry()
 
-    # env = registry.load(cfg.env)
-    # run_baseline(env, episodes=20)
-    # return
     if cfg.eval.mode == 1:
         evaluate_all(cfg)
     else:

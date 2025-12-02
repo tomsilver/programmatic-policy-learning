@@ -210,7 +210,7 @@ def _generate_with_dsl_generator(
     outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    cache_path = Path("llm_db.db")
+    cache_path = Path("llm_cache.db")
     # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)

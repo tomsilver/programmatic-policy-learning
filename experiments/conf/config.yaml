@@ -13,11 +13,9 @@ env_name: ${hydra:runtime.choices.env}
 expert_policy: ${hydra:runtime.choices.expert}
 
 name_of_removed_func: "shifted" 
-eval:
+eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   mode: 0
-  seeds: 0,1,2
-  budget: 200
-  metric: sample_efficency
+  seeds: ${range:0,20}
   dsl_variants:
     base_prime:
       strategy: "grid_v1_ablated"

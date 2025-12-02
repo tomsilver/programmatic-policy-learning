@@ -3,17 +3,11 @@
 #SBATCH --account=aip-krallen
 #SBATCH --array=0-20
 #SBATCH --cpus-per-task=4
-<<<<<<< HEAD
-#SBATCH --mem=8G
-#SBATCH --time=6:00:00
-#SBATCH --output=logs/array_%A_%a.out
-#SBATCH --error=logs/array_%A_%a.err
-=======
 #SBATCH --mem=16G
 #SBATCH --time=23:00:00
 #SBATCH --output=slurm/array_%A_%a.out
 #SBATCH --error=slurm/array_%A_%a.err
->>>>>>> ac1ec793bd6d9b94e702c87970e3a866a4231e5b
+
 
 module load StdEnv/2023
 module load python/3.11
@@ -37,7 +31,7 @@ fi
 
 echo "Task $SLURM_ARRAY_TASK_ID running DSL=$DSL_NAME seed=$SEED"
 
-<<<<<<< HEAD
+
 #############################################
 # Run the Python evaluation
 #############################################
@@ -47,11 +41,12 @@ python -u experiments/run_experiment.py \
     seed=${SEED} \
     hydra.run.dir=outputs/${DSL_NAME}_${SEED}
 =======
+=======
 #############################
 # List of envs for this experiment
 #############################
 
-# ENVS=("ggg_nim" "ggg_chase")   # change here if you add/remove envs
+ENVS=("ggg_nim" "ggg_chase")   # change here if you add/remove envs
 
 #############################
 # Run each env sequentially, with its own dir
@@ -78,4 +73,16 @@ for ENV in "${ENVS[@]}"; do
 	hydra.run.dir=${RUN_DIR}
 done
 
->>>>>>> ac1ec793bd6d9b94e702c87970e3a866a4231e5b
+=======
+
+
+#############################
+# Alternative multirun
+#############################
+
+# python -u experiments/run_experiment.py -m\
+#     env=ggg_nim,ggg_chase,ggg_checkmate,ggg_rfts,ggg_stf \
+#     approach=lpp \
+#     dsl_name=${DSL_NAME} \
+#     seed=${SEED} \
+#     approach.demo_numbers='[0,1,2,3,4,5,6,7,8,9,10]','[0,1,2,3,4,5]'
