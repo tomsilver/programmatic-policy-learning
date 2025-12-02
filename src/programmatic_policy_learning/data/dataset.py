@@ -4,6 +4,7 @@ learning."""
 import inspect
 import logging
 import multiprocessing
+import os
 from importlib import import_module
 from typing import Any
 
@@ -17,7 +18,15 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
+
+def allowed_cpus() -> int:
+    """Determine the number of CPUs available for use."""
+    # Use SLURM allocation if available
+    slurm_cpus = os.getenv("SLURM_CPUS_PER_TASK")
+    if slurm_cpus is not None:
+        return int(slurm_cpus)
+    # Otherwise fall back to system count
+    return multiprocessing.cpu_count()
 
 
 def extract_examples_from_demonstration_item(
@@ -88,20 +97,6 @@ def extract_examples_from_demonstration(
     return positive_examples, negative_examples
 
 
-def key_fn_for_all_p_one_demo(args: tuple, kwargs: dict) -> str:
-    """Short id for caching: keep values but skip `programs` and `demo_traj`."""
-    # args: base_class_name, demo_number, programs, demo_traj, program_interval
-    parts = [str(a) for i, a in enumerate(args) if i not in (2, 3)]
-
-    # include programs length
-    try:
-        parts.append(str(len(args[2])))
-    except Exception as exc:
-        raise TypeError("programs argument must be a sized list") from exc
-    parts += [str(v) for k, v in kwargs.items() if k not in ("programs", "demo_traj")]
-    return "-".join(parts)
-
-
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Return (base, module_map).
 
@@ -143,7 +138,6 @@ def worker_init(
     Loads the DSL, reimports modules, and compiles the given program
     batch. Runs only once per process before handling any examples.
     """
-
     base = cloudpickle.loads(dsl_blob)
     for name, modpath in module_map.items():
         base[name] = import_module(modpath)
@@ -177,12 +171,17 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     for f in _WORKER_PROGRAMS:
         try:
             results.append(f(s, a))
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.warning(
+                f"Program source: {f}\n"
+                f"Error type: {type(e).__name__}\n"
+                f"Error message: {e}"
+            )
             results.append(None)
+
     return results
 
 
-# @manage_cache("cache", [".npz", ".pkl"], key_fn=key_fn_for_all_p_one_demo)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
@@ -214,33 +213,33 @@ def run_all_programs_on_single_demonstration(
 
     num_data = len(fn_inputs)
     num_programs = len(program_strs)
+
     X = lil_matrix((num_data, num_programs), dtype=bool)
 
     # Combine the context initialization into a single block to avoid redefinition
     try:
-        ctx: multiprocessing.context.ForkContext = multiprocessing.get_context(
-            "fork"
-        )  # linux
+        ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
+        # linux
     except (ValueError, RuntimeError):
-        ctx: multiprocessing.context.DefaultContext = (  # type: ignore[no-redef]
-            multiprocessing.get_context()
-        )  # macOS/Windows fallback (spawn)
+        ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
+        # macOS/Windows fallback (spawn)
 
-    num_workers = max(1, multiprocessing.cpu_count())
+    num_workers = allowed_cpus()
+    num_workers = max(1, min(num_workers, len(fn_inputs)))
 
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
-
         with ctx.Pool(
             processes=num_workers,
             initializer=worker_init,
             initargs=(dsl_blob, module_map, program_batch),
+            maxtasksperchild=100,
         ) as pool:
-            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=128)
-            batch_rows = np.array(list(results_iter), dtype=bool)
-            X[:, p_start:p_end] = batch_rows
-
+            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
+            batch_rows_list = list(results_iter)
+        batch_matrix = np.array(batch_rows_list, dtype=bool)
+        X[:, p_start:p_end] = batch_matrix
     return X.tocsr(), np.array(y, dtype=np.uint8)
 
 

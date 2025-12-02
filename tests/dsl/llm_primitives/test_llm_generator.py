@@ -21,6 +21,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
 runllms = pytest.mark.skipif("not config.getoption('runllms')")
 
 
+@runllms
 def test_create_grammar() -> None:
     """Test the create_grammar_from_response function to ensure it correctly
     constructs a Grammar object from the LLM's JSON output.
@@ -57,10 +58,12 @@ def test_create_grammar() -> None:
         }
     }
     """
-
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache = SQLite3PretrainedLargeModelCache(cache_path)
+    llm_client = OpenAIModel("gpt-4o-mini", cache)
     llm_output_dict = json.loads(llm_output)
     object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
-    generator = LLMPrimitivesGenerator(None)
+    generator = LLMPrimitivesGenerator(llm_client, None)
     new_grammar = generator.create_grammar_from_response(llm_output_dict, object_types)
 
     # Assertions to validate the grammar
@@ -93,7 +96,7 @@ def test_generate_grammar_with_real_llm() -> None:
 
     with open(
         "src/programmatic_policy_learning/dsl/llm_primitives/prompts/"
-        + "one_missing_prompt.txt",
+        + "one_missing_prompt_shifted.txt",
         "r",
         encoding="utf-8",
     ) as file:
@@ -101,7 +104,7 @@ def test_generate_grammar_with_real_llm() -> None:
 
     object_types = ["tpn.EMPTY", "tpn.TOKEN", "None"]
 
-    generator = LLMPrimitivesGenerator(llm_client)
+    generator = LLMPrimitivesGenerator(llm_client, "shifted")
 
     grammar, _, _ = generator.generate_and_process_grammar(prompt, object_types)
     logging.info(grammar)
@@ -130,11 +133,11 @@ def test_add_primitive_to_dsl() -> None:
         """Example of a new primitive."""
         return cell is not None and obs[cell[0]][cell[1]] == 42
 
-    generator = LLMPrimitivesGenerator(None)
+    generator = LLMPrimitivesGenerator(None, None)
 
     # Add the new primitive to the DSL
     updated_get_dsl_functions_dict = generator.add_primitive_to_dsl(
-        "new_primitive", new_primitive
+        ["new_primitive"], [new_primitive]
     )
 
     # Retrieve the updated DSL functions
