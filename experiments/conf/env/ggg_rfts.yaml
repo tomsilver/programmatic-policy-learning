@@ -1,0 +1,13 @@
+# GGG → Gym env id (see repo README for naming pattern)
+make_kwargs:
+  base_name: "ReachForTheStar"
+  id: "ReachForTheStar${instance_num}-v0"
+  render: human # null | human | rgb_array (mapped to render_mode if supported)
+  seed: 0
+  max_episode_steps: 200
+
+# provider tells the factory how to build
+provider: ggg
+env_id: ${make_kwargs.id}
+description: "Generalization Grid Games"
+instance_num: 0

@@ -1,9 +1,13 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-import tempfile
+import signal
+from contextlib import contextmanager
+
+# import tempfile
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar, cast
+from types import FrameType
+from typing import Any, Callable, Generator, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -27,6 +31,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     LocalProgram,
     create_grammar,
     get_dsl_functions_dict,
+    make_ablated_dsl,
     make_dsl,
 )
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
@@ -35,42 +40,48 @@ from programmatic_policy_learning.learning.particles_utils import select_particl
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
-# from programmatic_policy_learning.utils.cache_utils import manage_cache
-
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
 
 
-def key_fn_for_train_policy(args: tuple, kwargs: dict) -> str:
-    """Build a compact run id from training-related attributes on `self`."""
-    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
-    if self_obj is None:
-        return ""
-    demo_numbers = getattr(self_obj, "demo_numbers", ())
-    demo_part = "-".join(str(x) for x in demo_numbers)
-    parts = [
-        str(getattr(self_obj, "base_class_name", "")),
-        demo_part,
-        str(getattr(self_obj, "program_generation_step_size", "")),
-        str(getattr(self_obj, "num_programs", "")),
-        str(getattr(self_obj, "num_dts", "")),
-        str(getattr(self_obj, "max_num_particles", "")),
-    ]
-    # filter empty pieces and join
-    return "-".join([p for p in parts if p != ""])
+class CustomTimeoutError(Exception):
+    """Custom exception raised when a time limit is exceeded.
+
+    This exception is used to indicate that a block of code has exceeded
+    the allowed time limit set by the `time_limit` context manager.
+    """
 
 
-def key_fn_for_program_generation(args: tuple, kwargs: dict) -> str:
-    """Return cache run id, excluding 'env_specs' which is too long."""
-    # join all positional args except index 2 and all kwargs except
-    # 'env_specs'.
-    parts = [str(a) for i, a in enumerate(args) if i != 2]
-    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
-    return "-".join(parts)
+@contextmanager
+def time_limit(seconds: int) -> Generator[None, None, None]:
+    """Context manager to enforce a time limit on a block of code.
+
+    Args:
+        seconds (int): The maximum number of seconds to allow the block to run.
+
+    Raises:
+        CustomTimeoutError: If the time limit is exceeded.
+    """
+
+    def handler(signum: int, frame: FrameType | None) -> None:
+        """Signal handler to raise a CustomTimeoutError when the alarm is
+        triggered.
+
+        Args:
+            signum (int): The signal number.
+            frame (FrameType | None): The current stack frame (unused).
+        """
+        raise CustomTimeoutError(f"Timed out after {seconds} seconds")
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
 
 
-# @manage_cache("cache", [".pkl", ".pkl", ".pkl"], key_fn=key_fn_for_program_generation)
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -90,12 +101,15 @@ def get_program_set(
             "program_generation configuration is required for LPP approach."
         )
 
-    strategy = program_generation.get("strategy", "fixed_grid_v1")
+    strategy = program_generation["strategy"]
 
     # Define strategies as a dictionary
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
+            program_generation, env_specs, start_symbol
+        ),
+        "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
         ),
         "offline_loader": lambda: _generate_with_offline_loader(
@@ -135,30 +149,50 @@ def _generate_with_fixed_grid_v1(
     return program_generator, dsl_dict
 
 
+def _generate_with_ablated_grid_v1(
+    program_generation: dict[str, Any],
+    env_specs: dict[str, Any] | None,
+    start_symbol: int,
+) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
+    """Generate programs using the ablated grid_v1 DSL."""
+    removed_primitive = program_generation["removed_primitive"]
+    dsl = make_ablated_dsl(removed_primitive)
+    dsl_dict = get_dsl_functions_dict(removed_primitive)
+    program_generator = GrammarBasedProgramGenerator(
+        cast(
+            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
+            create_grammar,
+        ),
+        dsl,
+        env_spec=env_specs if env_specs is not None else {},
+        start_symbol=start_symbol,
+        removed_primitive=removed_primitive,
+    )
+    return program_generator, dsl_dict
+
+
 def _generate_with_dsl_generator(
     program_generation: dict[str, Any],
     env_specs: dict[str, Any] | None,
     start_symbol: int,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-
-    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache_path = Path("llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
-    prompt_path = program_generation.get("dsl_generator_prompt", "")
+    prompt_path = program_generation["dsl_generator_prompt"]
     with open(
         prompt_path,
         "r",
         encoding="utf-8",
     ) as file:
         prompt = file.read()
-
-    generator = LLMPrimitivesGenerator(llm_client)
-    _, updated_get_dsl_callable, dsl = generator.generate_and_process_grammar(
+    removed_primitive = program_generation["removed_primitive"]
+    generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
+    _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
         prompt, env_specs["object_types"]  # type: ignore
     )
 
-    new_dsl_dict = updated_get_dsl_callable()
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
@@ -175,12 +209,10 @@ def _generate_with_offline_loader(
     start_symbol: int,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the offline loader."""
-    run_id = program_generation.get("offline_loader_run_id", "")
-    generator = LLMPrimitivesGenerator(None)
-    _, new_dsl_dict, new_dsl_object = generator.offline_loader(run_id)
-
-    dsl = new_dsl_object
-
+    run_id = program_generation["offline_loader_run_id"]
+    removed_primitive = program_generation["removed_primitive"]
+    generator = LLMPrimitivesGenerator(None, removed_primitive)
+    _, new_dsl_dict, dsl = generator.offline_loader(run_id)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
@@ -199,6 +231,7 @@ def _generate_programs(
     program_prior_log_probs = []
     gen = program_generator.generate_programs()
     for _ in range(num_programs):
+
         program, prior = next(gen)
         programs.append(program)
         program_prior_log_probs.append(prior)
@@ -248,18 +281,30 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self._policy = self._train_policy()
         self._timestep = 0
 
-    # @manage_cache("cache", ".pkl", key_fn=key_fn_for_train_policy)
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        programs, program_prior_log_probs, dsl_functions = get_program_set(
-            self.num_programs,
-            self.base_class_name,
-            env_specs=self.env_specs,
-            start_symbol=self.start_symbol,
-            program_generation=self.program_generation,
-        )
-        logging.info("Programs Generation is Done.")
+        try:
+            with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
+                programs, program_prior_log_probs, dsl_functions = get_program_set(
+                    self.num_programs,
+                    self.base_class_name,
+                    env_specs=self.env_specs,
+                    start_symbol=self.start_symbol,
+                    program_generation=self.program_generation,
+                )
+        except CustomTimeoutError:
+            logging.error(
+                "Program generation timed out, primitive too slow. Reprompting LLM..."
+            )
+            programs, program_prior_log_probs, dsl_functions = get_program_set(
+                self.num_programs,
+                self.base_class_name,
+                env_specs=self.env_specs,
+                start_symbol=self.start_symbol,
+                program_generation=self.program_generation,
+            )
 
+        logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
@@ -315,6 +360,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             top_particle_probs = np.exp(top_particle_log_probs)
             logging.info("top_particle_probs: %s", top_particle_probs)
             policy = LPPPolicy(top_particles, top_particle_probs)
+            policy.map_program = str(particles[map_idx])
+            policy.map_posterior = particle_log_probs[map_idx]
         else:
             logging.info("no nontrivial particles found")
             policy = LPPPolicy([StateActionProgram("False")], [1.0])

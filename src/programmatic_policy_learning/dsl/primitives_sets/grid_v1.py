@@ -1,7 +1,8 @@
 """Grid DSL primitives and evaluation."""
 
+import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, MutableMapping
 
 import numpy as np
 from generalization_grid_games.envs import chase as ec
@@ -64,6 +65,7 @@ def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> 
 def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
     """Execute a local program at the first cell containing a specific
     value."""
+
     matches = np.argwhere(obs == value)
     if len(matches) == 0:
         cell = None
@@ -126,11 +128,29 @@ def make_dsl() -> DSL[LocalProgram, GridInput, Any]:
     return DSL(id="grid_v1", primitives=prims, evaluate_fn=_eval)
 
 
+def make_ablated_dsl(removed_primitive: str) -> DSL[LocalProgram, GridInput, Any]:
+    """Construct the grid DSL object."""
+    prims: MutableMapping[str, Callable[..., Any]] = {
+        "cell_is_value": cell_is_value,
+        "shifted": shifted,
+        "at_cell_with_value": at_cell_with_value,
+        "at_action_cell": at_action_cell,
+        "scanning": scanning,
+    }
+    if removed_primitive is not None:
+        del prims[removed_primitive]
+    return DSL(
+        id=f"grid_v1_no_{removed_primitive}", primitives=prims, evaluate_fn=_eval
+    )
+
+
 # Grammar symbol constants
 START, CONDITION, LOCAL_PROGRAM, DIRECTION, POSITIVE_NUM, NEGATIVE_NUM, VALUE = range(7)
 
 
-def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
+def create_grammar(
+    env_spec: dict[str, Any], removed_primitive: str | None = None
+) -> Grammar[str, int, int]:
     """Create a grammar for grid programs, using env_spec for VALUE types."""
     object_types = env_spec["object_types"]
     grammar: Grammar[str, int, int] = Grammar(
@@ -197,11 +217,40 @@ def create_grammar(env_spec: dict[str, Any]) -> Grammar[str, int, int]:
             ),
         }
     )
+
+    # === Remove specified primitive if requested ===
+    if removed_primitive is not None:
+        for nonterminal, (productions, probs) in list(grammar.rules.items()):
+            new_productions, new_probs = [], []
+
+            for prod, p in zip(productions, probs):
+                # Convert production (which can be a list or str)
+                # to string for substring search
+                prod_str = (
+                    " ".join(map(str, prod)) if isinstance(prod, list) else str(prod)
+                )
+                if removed_primitive not in prod_str:
+                    new_productions.append(prod)
+                    new_probs.append(p)
+
+            # Renormalize probabilities if something was removed
+            if len(new_probs) > 0 and len(new_probs) < len(probs):
+                total = sum(new_probs)
+                new_probs = [p / total for p in new_probs]
+                grammar.rules[nonterminal] = (new_productions, new_probs)
+
+        logging.info(
+            f"Removed primitive '{removed_primitive}' and renormalized probabilities."
+        )
+
     return grammar
 
 
-def get_dsl_functions_dict() -> dict[str, Any]:
-    """Return all grid_v1 DSL primitives as a dictionary."""
+def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, Any]:
+    """Return all grid_v1 DSL primitives as a dictionary.
+
+    If there is a removed_primitive, remove it and then return it.
+    """
 
     DSL_FUNCTIONS = {
         "cell_is_value": cell_is_value,
@@ -223,6 +272,8 @@ def get_dsl_functions_dict() -> dict[str, Any]:
         "stf": stf,
         "tpn": tpn,
     }
+    if removed_primitive:
+        del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS
 
 

@@ -11,7 +11,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping, Union, cast
+from typing import Any, Callable, MutableMapping, Union, cast
 
 import black
 import numpy as np
@@ -23,10 +23,10 @@ from programmatic_policy_learning.dsl.core import DSL
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import Grammar
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
+    SemanticJSONVerifierReprompt,
     SemanticsPyStubRepromptCheck,
-    create_function_from_stub,
 )
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (  # shifted,
+from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,
     at_action_cell,
@@ -34,6 +34,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (  # shifte
     cell_is_value,
     get_dsl_functions_dict,
     scanning,
+    shifted,
 )
 
 Cell = tuple[int, int] | None
@@ -46,7 +47,10 @@ class LLMPrimitivesGenerator:
     Grammar object."""
 
     def __init__(
-        self, llm_client: PretrainedLargeModel | None, output_dir: str = "outputs/"
+        self,
+        llm_client: PretrainedLargeModel | None,
+        removed_primitive: str | None,
+        output_dir: str = "outputs/",
     ) -> None:
         """Initialize the generator with an LLM client.
 
@@ -58,8 +62,11 @@ class LLMPrimitivesGenerator:
         base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_path = base_dir / output_dir / self.run_id
-        self.output_path.mkdir(parents=True, exist_ok=True)
+
+        if llm_client is not None:
+            self.output_path.mkdir(parents=True, exist_ok=True)
         self.grammar: Grammar[str, int, int] | None = None
+        self.removed_primitive = removed_primitive
 
     def query_llm(self, prompt: str) -> dict:
         """Send a query to the LLM and return the parsed JSON response.
@@ -74,7 +81,12 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         query = Query(prompt)
-        reprompt_checks = [JSONStructureRepromptCheck(), SemanticsPyStubRepromptCheck()]
+        reprompt_checks = [
+            JSONStructureRepromptCheck(),
+            SemanticJSONVerifierReprompt(),
+            SemanticsPyStubRepromptCheck(),
+        ]
+
         response = query_with_reprompts(
             self.llm_client,
             query,
@@ -98,9 +110,17 @@ class LLMPrimitivesGenerator:
         - If productions['VALUE'] contains '{OBJECT_TYPES}',
         it's expanded using object_types.
         """
+
         rules = llm_output["updated_grammar"]
+        terminals: list[str] = rules["terminals"]
         nonterminals: list[str] = rules["nonterminals"]
         productions: dict[str, str] = rules["productions"]
+
+        missing_terms = [t for t in terminals if t not in str(productions)]
+        if missing_terms:
+            logging.warning(
+                f"Some terminals not referenced in productions: {missing_terms}"
+            )
 
         # Map nonterminal name -> index
         nt_to_id: dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
@@ -153,6 +173,14 @@ class LLMPrimitivesGenerator:
             probs = [p] * len(alts_tokens)
             grammar_rules[nt_id] = (alts_tokens, probs)
 
+        for nt_id, (alts, _) in grammar_rules.items():
+            if not alts:
+                raise ValueError(f"No RHS for nonterminal {nt_id}")
+            for alt in alts:
+                for sym in alt:
+                    if not isinstance(sym, (int, str)):
+                        raise TypeError(f"Bad symbol {sym!r} in {nt_id}")
+
         self.write_json("grammar.json", grammar_rules)
         return Grammar(rules=grammar_rules)
 
@@ -160,7 +188,7 @@ class LLMPrimitivesGenerator:
         self, prompt_text: str, object_types: list[Any]
     ) -> tuple[
         Grammar[str, int, int],
-        Callable[[], dict[str, Any]],
+        dict[str, Any],
         DSL[
             Callable[[tuple[int, int] | None, np.ndarray[Any, Any]], Any],
             GridInput,
@@ -174,15 +202,18 @@ class LLMPrimitivesGenerator:
 
         new_primitive_name = llm_response["proposal"]["name"]
         python_str = llm_response["proposal"]["semantics_py_stub"]
-        python_file = create_function_from_stub(python_str, new_primitive_name)
         self.write_python_file(new_primitive_name, python_str)
-        new_dsl_object = self.make_dsl(new_primitive_name, python_file)
-        new_get_dsl_functions_dict = self.add_primitive_to_dsl(
-            new_primitive_name, python_file
+        implementation = self.load_function_from_file(
+            str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
+        )
+        new_dsl_object = self.make_dsl(new_primitive_name, implementation)
+        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
+            [new_primitive_name], [implementation]
         )
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
         logging.info(self.grammar)
-        return self.grammar, new_get_dsl_functions_dict, new_dsl_object
+        logging.info(python_str)
+        return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
@@ -209,7 +240,9 @@ class LLMPrimitivesGenerator:
         )
 
     def add_primitive_to_dsl(
-        self, name: str, implementation: Callable[..., Any]
+        self,
+        names: list[str],
+        implementations: list[Callable[..., Any]],
     ) -> Callable[[], dict[str, Any]]:
         """Add a new primitive to the DSL functions dictionary.
 
@@ -223,11 +256,10 @@ class LLMPrimitivesGenerator:
         # Get the base DSL functions
         base_dsl_functions = get_dsl_functions_dict()
 
-        if name in base_dsl_functions:
-            raise ValueError(f"Primitive '{name}' already exists in the DSL.")
-
-        # Add the new primitive
-        base_dsl_functions[name] = implementation
+        for each_name, each_fn in zip(names, implementations):
+            if each_name in base_dsl_functions:
+                raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            base_dsl_functions[each_name] = each_fn
 
         # Return a new function that includes the updated DSL
         def updated_get_dsl_functions_dict() -> dict[str, Any]:
@@ -245,6 +277,7 @@ class LLMPrimitivesGenerator:
         """Write Python code (str) to a file in the output directory."""
         code = code.replace("\\n", "\n")
         python_file_path = self.output_path / f"{primitive_name}.py"
+
         try:
             # Format the code using black
             formatted_code = black.format_str(code, mode=black.FileMode())
@@ -274,14 +307,16 @@ class LLMPrimitivesGenerator:
         self, added_name: str, added_python_fn: Callable[..., Any]
     ) -> DSL[LocalProgram, GridInput, Any]:
         """Construct the grid DSL object with the added primitive."""
-        prims: Mapping[str, Callable[..., Any]] = {
+        prims: MutableMapping[str, Callable[..., Any]] = {
             "cell_is_value": cell_is_value,
-            # "shifted": shifted, #TODOO: later automate the removal
+            "shifted": shifted,
             "at_cell_with_value": at_cell_with_value,
             "at_action_cell": at_action_cell,
             "scanning": scanning,
             added_name: added_python_fn,
         }
+        if self.removed_primitive is not None:
+            del prims[self.removed_primitive]
         return DSL(id="grid_v1_augmented", primitives=prims, evaluate_fn=_eval)
 
     def offline_loader(self, run_id: str) -> tuple[
@@ -289,17 +324,12 @@ class LLMPrimitivesGenerator:
         dict[str, Any],
         DSL[LocalProgram, GridInput, Any],
     ]:
-        """Load the grammar, DSL functions, and DSL object from a previous run.
-
-        Args:
-            run_id (str): The run ID of the previous generation.
-
-        Returns:
-            tuple: A tuple containing the Grammar, updated DSL functions, and DSL object.
-        """
+        """Load the grammar, DSL functions, and DSL object from a previous
+        run."""
         base_dir = Path(__file__).parent
         output_path = base_dir / "outputs" / run_id
-
+        self.output_path = output_path
+        self.run_id = run_id
         # Load the grammar
         grammar_path = output_path / "grammar.json"
         with open(grammar_path, "r", encoding="utf-8") as grammar_file:
@@ -326,7 +356,9 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(file_path), new_primitive_name
         )
-        updated_dsl_fn = self.add_primitive_to_dsl(new_primitive_name, implementation)
+        updated_dsl_fn = self.add_primitive_to_dsl(
+            [new_primitive_name], [implementation]
+        )
 
         # Create the DSL object
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)

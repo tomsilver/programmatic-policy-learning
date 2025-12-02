@@ -39,6 +39,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self.map_choices = map_choices
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
+        self.map_program = ""
+        self.map_posterior = 0.0
 
     def __call__(self, obs: _ObsType) -> _ActType:
         """Select an action given an observation.
@@ -159,3 +161,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
                     suggestions.append(action)  # type: ignore[arg-type]
 
         return cast(List[_ActType], suggestions)  # cast to match the return type
+
+    def set_map_program(self, program: str, posterior: float) -> None:
+        """Set the MAP program and its posterior value after it's found."""
+        self.map_program = program
+        self.map_posterior = posterior

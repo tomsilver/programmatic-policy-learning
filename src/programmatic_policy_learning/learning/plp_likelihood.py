@@ -18,7 +18,10 @@ from programmatic_policy_learning.dsl.state_action_program import (
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Return (base, module_map) — base is pickleable; module_map is
-    name→import_path."""
+    name→import_path.
+
+    Ensure `out_of_bounds` is included in the DSL.
+    """
     base, module_map = {}, {}
     for k, v in dsl.items():
         if inspect.ismodule(v):
@@ -26,6 +29,7 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
         else:
             base[k] = v
     base.pop("__builtins__", None)
+
     return base, module_map
 
 
@@ -95,7 +99,6 @@ def compute_likelihood_plps(
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
     dsl_blob = cloudpickle.dumps(base_dsl)
-
     plp_strs = [
         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in plps
     ]
