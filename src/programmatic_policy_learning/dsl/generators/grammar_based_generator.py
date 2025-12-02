@@ -38,8 +38,12 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
         dsl: DSL[ProgT, InT, OutT],
         env_spec: EnvSpec,
         start_symbol: int = 0,
+        removed_primitive: str | None = None,
     ) -> None:
-        self._grammar = create_grammar(env_spec)
+        if removed_primitive:
+            self._grammar = create_grammar(env_spec, removed_primitive)  # type: ignore
+        else:
+            self._grammar = create_grammar(env_spec)
         self._start_symbol = start_symbol
         super().__init__(dsl, env_spec)
 

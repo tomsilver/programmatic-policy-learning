@@ -4,6 +4,7 @@ import ast
 import builtins
 import json
 import logging
+import re
 from typing import Any, Callable
 
 from prpl_llm_utils.reprompting import RepromptCheck, create_reprompt_from_error_message
@@ -32,6 +33,151 @@ class JSONStructureRepromptCheck(RepromptCheck):
             error_msg = f"The response JSON is missing required fields:\
                 {', '.join(missing_fields)}"
             return create_reprompt_from_error_message(query, response, error_msg)
+
+        return None
+
+
+class SemanticJSONVerifierReprompt(RepromptCheck):
+    """Checks semantic and structural validity of an LLM-generated grammar
+    JSON."""
+
+    VALID_NONTERMINALS = {"START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"}
+
+    def get_reprompt(self, query: Query, response: Response) -> Query | None:
+        # I assume it's been checked before to be a valid json file
+        llm_output = json.loads(response.text)
+
+        proposal = llm_output.get("proposal", {})
+        grammar = llm_output.get("updated_grammar", {})
+
+        # 1. Nonterminal validity
+        nonterm = proposal.get("pcfg_insertion", {}).get("nonterminal")
+        if not isinstance(nonterm, str) or "|" in nonterm:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                "The pcfg_insertion->'nonterminal'\
+                must be a single valid name (no '|').",
+            )
+        if nonterm not in self.VALID_NONTERMINALS:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                f"Invalid nonterminal '{nonterm}'.\
+                    Must be one of {sorted(self.VALID_NONTERMINALS)}.",
+            )
+
+        # 2. Variable naming consistency
+        stub = proposal.get("semantics_py_stub", "")
+        if re.search(r"\blambda\s+cell\s*,\s*o\b", stub) or " o:" in stub:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                "Use 'cell, obs' (not 'o') in all lambdas and function definitions.",
+            )
+
+        # 3. Trailing commas or syntax typos
+        prod = proposal.get("pcfg_insertion", {}).get("production", "")
+
+        if re.search(r",\s*\|", prod) or prod.strip().endswith(","):
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                "Production contains stray commas or misplaced '|'. Clean up syntax.",
+            )
+
+        # 4. Infinite recursion detection
+        # e.g., CONDITION -> conditional_action(CONDITION, ...)
+        prods = grammar.get("productions", {})
+        for nt, rule in prods.items():
+            if f"{nt}(" in rule:
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    f"Rule for '{nt}' calls itself directly;\
+                        avoid recursive definitions.",
+                )
+
+        # 5. Missing terminals consistency
+        terminals = grammar.get("terminals", [])
+        if proposal.get("name") not in terminals:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                f"New terminal '{proposal.get('name')}' not added to 'terminals' list.",
+            )
+
+        # 6. Argument consistency across stub, args, and production ---
+        func_name = proposal.get("name", "")
+
+        # Extract argument list from stub
+        func_match = re.search(rf"def\s+{re.escape(func_name)}\s*\(([^)]*)\):", stub)
+        if func_match:
+            func_args = [a.strip() for a in func_match.group(1).split(",") if a.strip()]
+        else:
+            func_args = []
+
+        # Extract argument list from first call in production
+        prod_match = re.search(rf"{re.escape(func_name)}\s*\(([^)]*)\)", prod)
+        if prod_match:
+            prod_args = [a.strip() for a in prod_match.group(1).split(",") if a.strip()]
+        else:
+            prod_args = []
+
+        # Compare argument counts (ignore lambda params)
+        if func_args and prod_args and len(func_args) != len(prod_args):
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                f"The primitive '{func_name}' defines {len(func_args)}\
+                arguments in its stub, but is called with {len(prod_args)}\
+                    in production. Ensure the counts match.",
+            )
+
+        # 7. Ensure primitive is inserted only once across the grammar
+        count = 0
+        for nt, rhs in prods.items():
+            # look for the primitive name followed by "("
+            if re.search(rf"\b{re.escape(func_name)}\s*\(", rhs):
+                count += 1
+
+        if count > 1:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                f"The primitive '{func_name}' appears in {count}\
+                different grammar rules. It must be inserted in\
+                exactly one nonterminal, as specified in\
+                    'pcfg_insertion.nonterminal'.",
+            )
+
+        # 8: Nonterminal + variable scope validation
+        ALLOWED_RUNTIME_VARS = {"cell", "obs", "s", "a"}
+        ALLOWED_KEYWORDS = {"lambda", "True", "False", "None"}
+        declared_nts = set(grammar.get("nonterminals", []))
+        declared_terms = terminals
+        # Extract all Python-like identifiers
+        tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", prod)
+
+        invalid = []
+        for tok in tokens:
+            # allow lambda & bound runtime vars
+            if tok in ALLOWED_RUNTIME_VARS or tok in ALLOWED_KEYWORDS:
+                continue
+            # allow declared grammar symbols (NTs or terminals)
+            if tok in declared_nts or tok in declared_terms:
+                continue
+            # everything else is invalid
+            invalid.append(tok)
+
+        if invalid:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                f"Production contains undefined or disallowed symbols: \
+                {', '.join(sorted(set(invalid)))}. Use only declared\
+                nonterminals, terminals, or bound variables (cell, obs, s, a).",
+            )
 
         return None
 
