@@ -1,0 +1,17 @@
+hydra:
+  run:
+    dir: ./experiments/maze_experiments/logs/outer_margin/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+# Experiment settings
+seed: 123
+max_steps: 1000
+
+# Maze settings
+maze_dir: "data/mazes"
+enable_render: false
+
+# Outer margins to test
+outer_margins: [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+# Output settings
+output_file: "experiments/maze_experiments/outer_margin_results.txt"

@@ -1,0 +1,15 @@
+hydra:
+  run:
+    dir: ./experiments/maze_experiments/logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+# Experiment settings
+seed: 123
+max_steps: 1000
+
+# Maze settings
+maze_dir: "data/mazes"
+outer_margin: 10
+enable_render: false
+
+# Output settings
+output_file: "experiments/maze_experiments/comparison_results.txt"

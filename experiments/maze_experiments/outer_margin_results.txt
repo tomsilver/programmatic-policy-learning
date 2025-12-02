@@ -1,0 +1,337 @@
+====================================================================================================
+OUTER MARGIN COMPARISON RESULTS
+====================================================================================================
+
+Outer Margin    Approach             Goal Rate       Avg Evals            Avg Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      100.0%          94.7                 90.5                
+                Oracle Approach      100.0%          75.9                 71.5                
+
+5               Search Approach      100.0%          318.7                292.8               
+                Oracle Approach      100.0%          191.9                172.6               
+
+10              Search Approach      100.0%          607.7                567.9               
+                Oracle Approach      100.0%          266.5                230.4               
+
+20              Search Approach      100.0%          917.9                841.4               
+                Oracle Approach      100.0%          276.0                233.6               
+
+30              Search Approach      100.0%          1396.1               1287.1              
+                Oracle Approach      100.0%          276.0                233.6               
+
+40              Search Approach      100.0%          2125.5               1978.0              
+                Oracle Approach      100.0%          276.0                233.6               
+
+50              Search Approach      100.0%          2379.0               2235.1              
+                Oracle Approach      100.0%          276.0                233.6               
+
+60              Search Approach      100.0%          3895.5               3710.6              
+                Oracle Approach      100.0%          276.0                233.6               
+
+70              Search Approach      100.0%          2689.2               2506.5              
+                Oracle Approach      100.0%          276.0                233.6               
+
+80              Search Approach      100.0%          3918.9               3698.9              
+                Oracle Approach      100.0%          276.0                233.6               
+
+90              Search Approach      100.0%          7590.4               7336.8              
+                Oracle Approach      100.0%          276.0                233.6               
+
+100             Search Approach      100.0%          5812.3               5566.1              
+                Oracle Approach      100.0%          276.0                233.6               
+
+====================================================================================================
+
+DETAILED RESULTS BY MAZE
+====================================================================================================
+
+Maze: maze1_10x10
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            66                   61                  
+                Oracle Approach      True            41                   36                  
+5               Search Approach      True            236                  199                 
+                Oracle Approach      True            63                   46                  
+10              Search Approach      True            315                  242                 
+                Oracle Approach      True            63                   46                  
+20              Search Approach      True            1030                 963                 
+                Oracle Approach      True            63                   46                  
+30              Search Approach      True            439                  354                 
+                Oracle Approach      True            63                   46                  
+40              Search Approach      True            1471                 1318                
+                Oracle Approach      True            63                   46                  
+50              Search Approach      True            2350                 2163                
+                Oracle Approach      True            63                   46                  
+60              Search Approach      True            2988                 2801                
+                Oracle Approach      True            63                   46                  
+70              Search Approach      True            1764                 1625                
+                Oracle Approach      True            63                   46                  
+80              Search Approach      True            1847                 1669                
+                Oracle Approach      True            63                   46                  
+90              Search Approach      True            1975                 1758                
+                Oracle Approach      True            63                   46                  
+100             Search Approach      True            12181                11850               
+                Oracle Approach      True            63                   46                  
+
+Maze: maze1_15x15
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            84                   77                  
+                Oracle Approach      True            36                   29                  
+5               Search Approach      True            166                  123                 
+                Oracle Approach      True            36                   29                  
+10              Search Approach      True            549                  509                 
+                Oracle Approach      True            36                   29                  
+20              Search Approach      True            422                  355                 
+                Oracle Approach      True            36                   29                  
+30              Search Approach      True            549                  469                 
+                Oracle Approach      True            36                   29                  
+40              Search Approach      True            1978                 1843                
+                Oracle Approach      True            36                   29                  
+50              Search Approach      True            3571                 3419                
+                Oracle Approach      True            36                   29                  
+60              Search Approach      True            1605                 1465                
+                Oracle Approach      True            36                   29                  
+70              Search Approach      True            3965                 3763                
+                Oracle Approach      True            36                   29                  
+80              Search Approach      True            584                  502                 
+                Oracle Approach      True            36                   29                  
+90              Search Approach      True            2751                 2563                
+                Oracle Approach      True            36                   29                  
+100             Search Approach      True            2429                 2251                
+                Oracle Approach      True            36                   29                  
+
+Maze: maze2_10x10
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            95                   92                  
+                Oracle Approach      True            95                   92                  
+5               Search Approach      True            371                  362                 
+                Oracle Approach      True            329                  296                 
+10              Search Approach      True            731                  695                 
+                Oracle Approach      True            389                  318                 
+20              Search Approach      True            1110                 1014                
+                Oracle Approach      True            389                  318                 
+30              Search Approach      True            2057                 1899                
+                Oracle Approach      True            389                  318                 
+40              Search Approach      True            1680                 1548                
+                Oracle Approach      True            389                  318                 
+50              Search Approach      True            2184                 2020                
+                Oracle Approach      True            389                  318                 
+60              Search Approach      True            1924                 1756                
+                Oracle Approach      True            389                  318                 
+70              Search Approach      True            2304                 2108                
+                Oracle Approach      True            389                  318                 
+80              Search Approach      True            4179                 3945                
+                Oracle Approach      True            389                  318                 
+90              Search Approach      True            11727                11516               
+                Oracle Approach      True            389                  318                 
+100             Search Approach      True            3990                 3768                
+                Oracle Approach      True            389                  318                 
+
+Maze: maze2_15x15
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            157                  153                 
+                Oracle Approach      True            157                  153                 
+5               Search Approach      True            525                  521                 
+                Oracle Approach      True            525                  519                 
+10              Search Approach      True            1088                 1047                
+                Oracle Approach      True            966                  907                 
+20              Search Approach      True            2279                 2219                
+                Oracle Approach      True            1051                 939                 
+30              Search Approach      True            2498                 2348                
+                Oracle Approach      True            1051                 939                 
+40              Search Approach      True            3167                 2996                
+                Oracle Approach      True            1051                 939                 
+50              Search Approach      True            2481                 2312                
+                Oracle Approach      True            1051                 939                 
+60              Search Approach      True            7077                 6840                
+                Oracle Approach      True            1051                 939                 
+70              Search Approach      True            2707                 2535                
+                Oracle Approach      True            1051                 939                 
+80              Search Approach      True            6103                 5858                
+                Oracle Approach      True            1051                 939                 
+90              Search Approach      True            15188                14961               
+                Oracle Approach      True            1051                 939                 
+100             Search Approach      True            14663                14258               
+                Oracle Approach      True            1051                 939                 
+
+Maze: maze3_10x10
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            47                   44                  
+                Oracle Approach      True            22                   19                  
+5               Search Approach      True            165                  138                 
+                Oracle Approach      True            22                   19                  
+10              Search Approach      True            195                  161                 
+                Oracle Approach      True            22                   19                  
+20              Search Approach      True            194                  150                 
+                Oracle Approach      True            22                   19                  
+30              Search Approach      True            1578                 1457                
+                Oracle Approach      True            22                   19                  
+40              Search Approach      True            2196                 2049                
+                Oracle Approach      True            22                   19                  
+50              Search Approach      True            1110                 1011                
+                Oracle Approach      True            22                   19                  
+60              Search Approach      True            1818                 1681                
+                Oracle Approach      True            22                   19                  
+70              Search Approach      True            5118                 4856                
+                Oracle Approach      True            22                   19                  
+80              Search Approach      True            4458                 4217                
+                Oracle Approach      True            22                   19                  
+90              Search Approach      True            5790                 5508                
+                Oracle Approach      True            22                   19                  
+100             Search Approach      True            7170                 6854                
+                Oracle Approach      True            22                   19                  
+
+Maze: maze3_15x15
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            156                  151                 
+                Oracle Approach      True            157                  151                 
+5               Search Approach      True            439                  366                 
+                Oracle Approach      True            364                  293                 
+10              Search Approach      True            868                  826                 
+                Oracle Approach      True            379                  293                 
+20              Search Approach      True            1043                 937                 
+                Oracle Approach      True            379                  293                 
+30              Search Approach      True            2255                 2128                
+                Oracle Approach      True            379                  293                 
+40              Search Approach      True            3071                 2862                
+                Oracle Approach      True            379                  293                 
+50              Search Approach      True            5696                 5554                
+                Oracle Approach      True            379                  293                 
+60              Search Approach      True            7415                 7253                
+                Oracle Approach      True            379                  293                 
+70              Search Approach      True            1974                 1789                
+                Oracle Approach      True            379                  293                 
+80              Search Approach      True            5465                 5210                
+                Oracle Approach      True            379                  293                 
+90              Search Approach      True            9251                 8920                
+                Oracle Approach      True            379                  293                 
+100             Search Approach      True            3911                 3674                
+                Oracle Approach      True            379                  293                 
+
+Maze: maze4_10x10
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            94                   93                  
+                Oracle Approach      True            95                   93                  
+5               Search Approach      True            382                  378                 
+                Oracle Approach      True            377                  367                 
+10              Search Approach      True            846                  812                 
+                Oracle Approach      True            607                  535                 
+20              Search Approach      True            893                  795                 
+                Oracle Approach      True            617                  535                 
+30              Search Approach      True            1299                 1182                
+                Oracle Approach      True            617                  535                 
+40              Search Approach      True            3414                 3253                
+                Oracle Approach      True            617                  535                 
+50              Search Approach      True            2880                 2725                
+                Oracle Approach      True            617                  535                 
+60              Search Approach      True            5928                 5725                
+                Oracle Approach      True            617                  535                 
+70              Search Approach      True            2586                 2431                
+                Oracle Approach      True            617                  535                 
+80              Search Approach      True            5246                 4987                
+                Oracle Approach      True            617                  535                 
+90              Search Approach      True            7676                 7404                
+                Oracle Approach      True            617                  535                 
+100             Search Approach      True            1914                 1783                
+                Oracle Approach      True            617                  535                 
+
+Maze: maze4_15x15
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            79                   73                  
+                Oracle Approach      True            59                   53                  
+5               Search Approach      True            321                  307                 
+                Oracle Approach      True            74                   53                  
+10              Search Approach      True            615                  579                 
+                Oracle Approach      True            74                   53                  
+20              Search Approach      True            369                  306                 
+                Oracle Approach      True            74                   53                  
+30              Search Approach      True            957                  850                 
+                Oracle Approach      True            74                   53                  
+40              Search Approach      True            1851                 1706                
+                Oracle Approach      True            74                   53                  
+50              Search Approach      True            931                  826                 
+                Oracle Approach      True            74                   53                  
+60              Search Approach      True            1949                 1798                
+                Oracle Approach      True            74                   53                  
+70              Search Approach      True            699                  606                 
+                Oracle Approach      True            74                   53                  
+80              Search Approach      True            2989                 2788                
+                Oracle Approach      True            74                   53                  
+90              Search Approach      True            8379                 8046                
+                Oracle Approach      True            74                   53                  
+100             Search Approach      True            6918                 6643                
+                Oracle Approach      True            74                   53                  
+
+Maze: maze5_10x10
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            57                   54                  
+                Oracle Approach      True            23                   20                  
+5               Search Approach      True            199                  181                 
+                Oracle Approach      True            23                   20                  
+10              Search Approach      True            107                  85                  
+                Oracle Approach      True            23                   20                  
+20              Search Approach      True            1125                 1074                
+                Oracle Approach      True            23                   20                  
+30              Search Approach      True            1944                 1873                
+                Oracle Approach      True            23                   20                  
+40              Search Approach      True            1069                 970                 
+                Oracle Approach      True            23                   20                  
+50              Search Approach      True            1451                 1322                
+                Oracle Approach      True            23                   20                  
+60              Search Approach      True            5059                 4820                
+                Oracle Approach      True            23                   20                  
+70              Search Approach      True            1846                 1674                
+                Oracle Approach      True            23                   20                  
+80              Search Approach      True            1660                 1476                
+                Oracle Approach      True            23                   20                  
+90              Search Approach      True            10681                10403               
+                Oracle Approach      True            23                   20                  
+100             Search Approach      True            955                  845                 
+                Oracle Approach      True            23                   20                  
+
+Maze: maze5_15x15
+----------------------------------------------------------------------------------------------------
+Outer Margin    Approach             Goal Reached    Num Evals            Num Expansions      
+----------------------------------------------------------------------------------------------------
+1               Search Approach      True            112                  107                 
+                Oracle Approach      True            74                   69                  
+5               Search Approach      True            383                  353                 
+                Oracle Approach      True            106                  84                  
+10              Search Approach      True            763                  723                 
+                Oracle Approach      True            106                  84                  
+20              Search Approach      True            714                  601                 
+                Oracle Approach      True            106                  84                  
+30              Search Approach      True            385                  311                 
+                Oracle Approach      True            106                  84                  
+40              Search Approach      True            1358                 1235                
+                Oracle Approach      True            106                  84                  
+50              Search Approach      True            1136                 999                 
+                Oracle Approach      True            106                  84                  
+60              Search Approach      True            3192                 2967                
+                Oracle Approach      True            106                  84                  
+70              Search Approach      True            3929                 3678                
+                Oracle Approach      True            106                  84                  
+80              Search Approach      True            6658                 6337                
+                Oracle Approach      True            106                  84                  
+90              Search Approach      True            2486                 2289                
+                Oracle Approach      True            106                  84                  
+100             Search Approach      True            3992                 3735                
+                Oracle Approach      True            106                  84                  
+
