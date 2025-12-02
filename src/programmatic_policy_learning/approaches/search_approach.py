@@ -4,7 +4,7 @@ from typing import Any, Callable, Iterator, List, Tuple
 
 import numpy as np
 from gymnasium.spaces import Space
-from prpl_utils.search import run_astar
+from prpl_utils.search import SearchMetrics, run_astar
 
 from programmatic_policy_learning.approaches.base_approach import (
     BaseApproach,
@@ -35,6 +35,7 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         self._get_cost = get_cost
         self._check_goal = check_goal
         self._plan: list[_ActType] = []
+        self.metrics: SearchMetrics = SearchMetrics()
 
     def _get_action(self) -> _ActType:
         """Return the next action from the plan."""
@@ -47,9 +48,13 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
         # Fetch the goal directly from the environment
         super().reset(obs, info)
         goal = info["goal"]  # Assuming `self.env` is the environment instance
-        self._plan = self._generate_plan(np.array(obs), goal)
+        plan, metrics = self._generate_plan(np.array(obs), goal)
+        self._plan = plan
+        self.metrics = metrics
 
-    def _generate_plan(self, start: np.ndarray, goal: np.ndarray) -> list[_ActType]:
+    def _generate_plan(
+        self, start: np.ndarray, goal: np.ndarray
+    ) -> tuple[list[_ActType], SearchMetrics]:
         """Generate a plan using A* search."""
 
         def get_successors(
@@ -62,10 +67,10 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
                     cost = self._get_cost()
                     yield (action, next_state, cost)
 
-        _, plan = run_astar(
+        _, plan, search_metrics = run_astar(
             initial_state=tuple(start),
             check_goal=lambda state: self._check_goal(state, goal),
             get_successors=get_successors,
             heuristic=lambda s: abs(s[0] - goal[0]) + abs(s[1] - goal[1]),
         )
-        return plan
+        return (plan, search_metrics)
