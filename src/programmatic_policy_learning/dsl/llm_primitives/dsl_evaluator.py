@@ -108,43 +108,48 @@ def compare_semantics(
     """Compare the semantics of two functions based on their outputs."""
     matches = 0
     total = 0
+    # Extract only the ordered types from the signature, ignoring names
+    # Example: signature=(("v","VALUE"),) -> ["VALUE"]
+    ordered_types = [type_name for (_, type_name) in signature]
+
     for i in range(num_samples):
         env = env_factory(i % 20)
         obs, cell = sample_random_state_action(env, seed, max_steps)
-
-        # Build shared arguments
-        args: dict[str, Any] = {}
-
-        for arg_name, type_name in signature:
-
-            # implicit runtime args
-            if arg_name == "cell":
-                args[arg_name] = cell
-                continue
-            if arg_name == "obs":
-                args[arg_name] = obs
-                continue
-
-            # explicit typed args
-            args[arg_name] = sample_argument(
-                type_name=type_name,
+        # ------------------------------------------------------
+        # Sample positional DSL arguments by TYPE
+        # ------------------------------------------------------
+        sampled_dsl_args = []
+        for t in ordered_types:
+            arg_val = sample_argument(
+                type_name=t,
                 normalized_object_types=normalized_object_types,
                 existing_primitives=existing_primitives,
             )
-        args["cell"] = cell
-        args["obs"] = obs
+            sampled_dsl_args.append(arg_val)
+
+        # ------------------------------------------------------
+        # Append implicit (cell, obs)
+        # ------------------------------------------------------
+        final_args = sampled_dsl_args + [cell, obs]
+
+        # ------------------------------------------------------
+        # Execute both functions POSITIONALLY
+        # ------------------------------------------------------
         try:
-            out_new = fn_new(**args)
+            out_new = fn_new(*final_args)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logging.info(f"Exception occurred: {e}")
+            logging.info(f"[fn_new] Exception: {e}")
             out_new = None
 
         try:
-            out_existing = fn_existing(**args)
+            out_existing = fn_existing(*final_args)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logging.info(f"Exception occurred: {e}")
+            logging.info(f"[fn_existing] Exception: {e}")
             out_existing = None
 
+        # ------------------------------------------------------
+        # Compare results
+        # ------------------------------------------------------
         total += 1
         if out_new == out_existing:
             matches += 1
@@ -168,7 +173,7 @@ def semantic_similarity_filter(
 
     for name, fn_existing in existing_primitives.items():
         sig_existing = extract_signature_from_python_fn(fn_existing)
-        logging.info(f"Checking for: {name}")
+        print(f"Checking for: {name}")
         if signature_matches(proposal_signature, sig_existing):
             logging.info("Equal signature detected")
             score = compare_semantics(
@@ -182,7 +187,7 @@ def semantic_similarity_filter(
                 max_steps,
                 num_samples,
             )
-            logging.info(f"Score: {score}")
+            print(f"Score: {score}")
             similar.append((name, score))
 
     # If ANY existing primitive is too similar → reject
@@ -519,5 +524,5 @@ def evaluate_primitive(
         equivalence_threshold,
     )
     result["deg_score"] = deg_score
-    logging.info(f"Result: {result}")
+    print(f"Result: {result}")
     return result
