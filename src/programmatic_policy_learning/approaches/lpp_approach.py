@@ -253,7 +253,6 @@ def _generate_with_offline_loader(
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(None, removed_primitive)
     _, new_dsl_dict, dsl = generator.offline_loader(run_id)
-    # _, new_dsl_dict, dsl = generator.offline_loader_full_version(run_id)
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
         dsl,
