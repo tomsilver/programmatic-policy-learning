@@ -108,7 +108,6 @@ def compare_semantics(
     """Compare the semantics of two functions based on their outputs."""
     matches = 0
     total = 0
-
     for i in range(num_samples):
         env = env_factory(i % 20)
         obs, cell = sample_random_state_action(env, seed, max_steps)
@@ -132,7 +131,8 @@ def compare_semantics(
                 normalized_object_types=normalized_object_types,
                 existing_primitives=existing_primitives,
             )
-
+        args["cell"] = cell
+        args["obs"] = obs
         try:
             out_new = fn_new(**args)
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -168,7 +168,7 @@ def semantic_similarity_filter(
 
     for name, fn_existing in existing_primitives.items():
         sig_existing = extract_signature_from_python_fn(fn_existing)
-        logging.info(f"CHECKING FOR: {name}")
+        logging.info(f"Checking for: {name}")
         if signature_matches(proposal_signature, sig_existing):
             logging.info("Equal signature detected")
             score = compare_semantics(
@@ -182,7 +182,7 @@ def semantic_similarity_filter(
                 max_steps,
                 num_samples,
             )
-            logging.info(f"SCORE: {score}")
+            logging.info(f"Score: {score}")
             similar.append((name, score))
 
     # If ANY existing primitive is too similar → reject
@@ -322,8 +322,8 @@ def eval_on_random_inputs(
             # remaining args must be typed by DSL
             if p not in sig_dict:
                 logging.info(sig_dict)
+                logging.info(params)
                 raise ValueError(f"Argument '{p}' missing from DSL signature")
-
             type_name = sig_dict[p]
             args[p] = sample_argument(
                 type_name=type_name,
@@ -497,7 +497,9 @@ def evaluate_primitive(
         num_samples,
     )
     logging.info(f"Outputs on sampled args: {outputs_new}")
+
     deg_score = degeneracy_score(outputs_new)
+    logging.info(deg_score)
     if deg_score <= degeneracy_threshold:
         return {"keep": False, "reason": "degenerate", "deg_score": deg_score}
 
@@ -517,4 +519,5 @@ def evaluate_primitive(
         equivalence_threshold,
     )
     result["deg_score"] = deg_score
+    logging.info(f"Result: {result}")
     return result

@@ -2,9 +2,9 @@
 
 import logging
 import signal
-from contextlib import contextmanager
 
 # import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
 from typing import Any, Callable, Generator, Sequence, TypeVar, cast
@@ -211,6 +211,7 @@ def _generate_with_dsl_generator(
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     cache_path = Path("llm_db.db")
+    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -228,11 +229,9 @@ def _generate_with_dsl_generator(
         prompt,
         env_specs["object_types"],
         env_factory,  # type: ignore
+        "full",
         outer_feedback,
     )
-    # _, new_dsl_dict, dsl = generator.generate_and_process_grammar_full_version(
-    #     prompt, env_specs["object_types"]  # type: ignore
-    # )
 
     program_generator = GrammarBasedProgramGenerator(
         generator.create_grammar,
@@ -326,47 +325,47 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
 
-        MAX_OUTER_ATTEMPTS = 5
-        outer_attempt = 0
+        # MAX_OUTER_ATTEMPTS = 5
+        # outer_attempt = 0
         outer_feedback = None
 
-        while outer_attempt < MAX_OUTER_ATTEMPTS:
-            outer_attempt += 1
+        # while outer_attempt < MAX_OUTER_ATTEMPTS:
+        #     outer_attempt += 1
 
-            try:
-                with time_limit(self.num_programs):  # e.g., 1 second per program
-                    programs, program_prior_log_probs, dsl_functions = get_program_set(
-                        self.num_programs,
-                        self.base_class_name,
-                        self.env_factory,
-                        env_specs=self.env_specs,
-                        start_symbol=self.start_symbol,
-                        program_generation=self.program_generation,
-                        outer_feedback=outer_feedback,  # <-- feed into grammar generator
-                    )
+        # try:
+        #     with time_limit(self.num_programs*10):  # 1 second per program
+        programs, program_prior_log_probs, dsl_functions = get_program_set(
+            self.num_programs,
+            self.base_class_name,
+            self.env_factory,
+            env_specs=self.env_specs,
+            start_symbol=self.start_symbol,
+            program_generation=self.program_generation,
+            outer_feedback=outer_feedback,  # <-- feed into grammar generator
+        )
 
-                # success → exit loop
-                break
+        # success → exit loop
+        # break
 
-            except CustomTimeoutError:
-                logging.error(
-                    f"[Outer {outer_attempt}] Program generation timed out — "
-                    "primitive likely creates infinite loops or huge branching."
-                )
+        # except CustomTimeoutError:
+        #     logging.error(
+        #         f"[Outer {outer_attempt}] Program generation timed out — "
+        #         "primitive likely creates infinite loops or huge branching."
+        #     )
 
-                # build feedback to send to LLM in next outer attempt
-                outer_feedback = (
-                    "The last primitive caused program generation to TIME OUT. "
-                    "This means the primitive leads to infinite loops or too many "
-                    "program branches. Propose a simpler, terminating primitive."
-                )
+        #     # build feedback to send to LLM in next outer attempt
+        #     outer_feedback = (
+        #         "The last primitive caused program generation to TIME OUT. "
+        #         "This means the primitive leads to infinite loops or too many "
+        #         "program branches. Propose a simpler, terminating primitive."
+        # )
 
-        else:
-            # loop exhausted without success
-            raise RuntimeError(
-                "Failed to generate a valid DSL primitive"
-                "that allows program enumeration."
-            )
+        # else:
+        #     # loop exhausted without success
+        #     raise RuntimeError(
+        #         "Failed to generate a valid DSL primitive"
+        #         "that allows program enumeration."
+        #     )
 
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [

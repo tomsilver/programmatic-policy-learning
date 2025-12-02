@@ -138,6 +138,10 @@ def worker_init(
     Loads the DSL, reimports modules, and compiles the given program
     batch. Runs only once per process before handling any examples.
     """
+    # print("\n=== WORKER INIT ===", flush=True)
+    # print("Loaded DSL_FUNCTIONS keys:", list(DSL_FUNCTIONS.keys()), flush=True)
+    # print("Program batch:", program_batch, flush=True)
+
     base = cloudpickle.loads(dsl_blob)
     for name, modpath in module_map.items():
         base[name] = import_module(modpath)
@@ -161,6 +165,42 @@ def worker_init(
     #  _WORKER_PROGRAMS[i] = None
 
 
+# def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
+#     s, a = fn_input
+
+#     print("\n===== WORKER EVAL EXAMPLE =====", flush=True)
+#     print("STATE shape:", s.shape, "dtype:", s.dtype, flush=True)
+#     print("ACTION (cell):", a, "type:", type(a), flush=True)
+
+#     if _WORKER_PROGRAMS is None:
+#         raise RuntimeError("_WORKER_PROGRAMS not initialized")
+
+#     results = []
+
+#     for idx, f in enumerate(_WORKER_PROGRAMS):
+#         print(f"\n--- Program #{idx} ---", flush=True)
+#         print("Program source:", f, flush=True)
+
+#         try:
+#             raw_out = f(s, a)
+#             print("RAW OUTPUT:", raw_out, "type:", type(raw_out), flush=True)
+
+#             # What will fill the X matrix later
+#             try:
+#                 bool_out = bool(raw_out)
+#             except Exception as e:
+#                 print("ERROR converting to bool:", e, flush=True)
+#                 bool_out = False
+
+#             print("FINAL BOOL:", bool_out, flush=True)
+#             results.append(bool_out)
+
+#         except Exception as e:
+#             print("PROGRAM EXECUTION ERROR:", e, flush=True)
+#             results.append(False)
+
+
+#     return results
 def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
     """Run all precompiled programs on one (state, action) example.
 
@@ -178,14 +218,14 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     for f in _WORKER_PROGRAMS:
         try:
             results.append(f(s, a))
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            # logging.warning(
-            #     f"[worker_eval_example] Error executing program #{i}:\n"
-            #     f"Program source: {f}\n"
-            #     f"Error type: {type(e).__name__}\n"
-            #     f"Error message: {e}"
-            # )
+            logging.info(
+                # f"[worker_eval_example] Error executing program #{i}:\n"
+                # f"Program source: {f}\n"
+                f"Error type: {type(e).__name__}\n"
+                f"Error message: {e}"
+            )
     return results
 
 
@@ -244,8 +284,6 @@ def run_all_programs_on_single_demonstration(
             maxtasksperchild=100,
         ) as pool:
             results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
-            # batch_rows = np.array(list(results_iter), dtype=bool)
-            # X[:, p_start:p_end] = batch_rows
             batch_rows_list = list(results_iter)
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix

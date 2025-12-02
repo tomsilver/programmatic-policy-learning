@@ -49,7 +49,7 @@ def test_create_grammar() -> None:
             "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
             "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","scanning","step"],
             "productions": {
-                "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, STATE) | at_action_cell(LOCAL_PROGRAM, ACTION, STATE)",
+                "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, ACTION, STATE) | at_action_cell(LOCAL_PROGRAM, ACTION, STATE)",
                 "LOCAL_PROGRAM": "CONDITION",
                 "CONDITION": "cell_is_value(VALUE, cell, obs) | scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs) | step(DIRECTION, LOCAL_PROGRAM, cell, obs)",
                 "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",

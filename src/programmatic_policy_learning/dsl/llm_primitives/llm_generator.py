@@ -11,12 +11,12 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, MutableMapping, Union, cast
+from typing import Any, Callable, Literal, MutableMapping, Union, cast
 
 import black
 import numpy as np
 from prpl_llm_utils.models import PretrainedLargeModel
-from prpl_llm_utils.reprompting import query_with_reprompts
+from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.dsl.core import DSL
@@ -24,11 +24,11 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
     evaluate_primitive,
 )
-from programmatic_policy_learning.dsl.llm_primitives.utils import (
-    JSONStructureRepromptCheck,
-    SemanticJSONVerifierReprompt,
-    SemanticsPyStubRepromptCheck,
-)
+
+# SemanticJSONVerifierReprompt,; SemanticsPyStubRepromptCheck,
+# from programmatic_policy_learning.dsl.llm_primitives.utils import (
+#     JSONStructureRepromptCheck,
+# )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,
@@ -85,10 +85,10 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         query = Query(prompt)
-        reprompt_checks = [
-            JSONStructureRepromptCheck(),
-            SemanticJSONVerifierReprompt(),
-            SemanticsPyStubRepromptCheck(),
+        reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
+            # JSONStructureRepromptCheck(),
+            # SemanticJSONVerifierReprompt(),
+            # SemanticsPyStubRepromptCheck(),
         ]
 
         response = query_with_reprompts(
@@ -116,6 +116,7 @@ class LLMPrimitivesGenerator:
         """
 
         rules = llm_output["updated_grammar"]
+        logging.info(rules)
         terminals: list[str] = rules.get("terminals", [])
         nonterminals: list[str] = rules["nonterminals"]
         productions: dict[str, str] = rules["productions"]
@@ -153,6 +154,26 @@ class LLMPrimitivesGenerator:
             out = [tok for tok in out if not (isinstance(tok, str) and tok == "")]
             return out
 
+        # # Tokenize identifiers (A-Z0-9_) and punctuation separately
+        # # Avoids if the name contains NTs by accident
+        # token_pattern = re.compile(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
+
+        # def split_replace_nts(s: str) -> list[Sym]:
+        #     """
+        #     Tokenize s and replace tokens that are EXACTLY equal to a
+        #     nonterminal name with its int id.
+
+        #     Prevents accidental NT matches inside longer identifiers like:
+        #     AT_CELL_WITH_VALUE  → stays whole and untouched.
+        #     """
+        #     out: list[Sym] = []
+        #     for tok in token_pattern.findall(s):
+        #         if tok in nt_to_id:      # match FULL TOKEN ONLY
+        #             out.append(nt_to_id[tok])
+        #         else:
+        #             out.append(tok)
+        #     return out
+        # ---------------
         def parse_alternatives(prod_str: str, nt_name: str) -> list[list[Sym]]:
             """Split a production 'a | b | c' into RHS lists with NT
             replacement."""
@@ -192,7 +213,8 @@ class LLMPrimitivesGenerator:
         self,
         prompt_text: str,
         object_types: tuple[Any],
-        env_factory: Callable[[], Any],  # type: ignore[arg-type]
+        env_factory: Callable[[int], Any],  # type: ignore[arg-type]
+        mode: Literal["single", "full"] = "single",
         outer_feedback: str | None = None,
     ) -> tuple[
         Grammar[str, int, int],
@@ -204,83 +226,199 @@ class LLMPrimitivesGenerator:
         ],
     ]:
         """Generate a Grammar object by querying the LLM and processing its
-        response."""
+        response, supporting two modes:
 
-        MAX_PRIMITIVE_ATTEMPTS = 5
-        attempt = 0
-        feedback = None
+        mode = "single"
+            - Query for ONE primitive.
+            - Apply evaluation+retry only if the DSL already has ≥1 primitive.
+            - If DSL is empty, accept the first primitive without evaluation.
 
-        while attempt < MAX_PRIMITIVE_ATTEMPTS:
-            attempt += 1
-            if feedback:  # if a primitive was rejected at least once
-                prompt_text_with_feedback = (
-                    prompt_text
-                    + "\n\nThe previous primitive was rejected for the following reason:"
-                    + f"'\n{feedback}'.\n"
-                    + "Please propose a NEW primitive that avoids this issue."
-                )
-                logging.info("Reprompting due to unsucessful dsl evaluation.")
-            else:
-                if outer_feedback:
-                    prompt_text_with_feedback = prompt_text + f"\n\n{outer_feedback}.\n"
-                    logging.info("Reprpmpting when time out happened!")
-                else:
-                    prompt_text_with_feedback = prompt_text
-                    logging.info("First normal prompt.")
+        mode = "full"
+            - Query for a LIST of primitives.
+            - Accept the first primitive (bootstrap).
+            - Evaluate each subsequent primitive and retry on failure.
+        """
 
-            llm_response = self.query_llm(prompt_text_with_feedback)
-            self.write_json("metadata.json", llm_response)
-            proposal_dict = llm_response["proposal"]
-            new_primitive_name = proposal_dict["name"]
-            python_str = proposal_dict["semantics_py_stub"]
-            raw_pairs = [(arg["name"], arg["type"]) for arg in proposal_dict["args"]]
-            proposal_signature = tuple(sorted(raw_pairs))
+        # ----------------------------------------------------------------------
+        # 1. Build prompt (optional outer feedback from Timeout error)
+        # ----------------------------------------------------------------------
+        base_prompt = prompt_text
+        if outer_feedback:
+            prompt_text = prompt_text + f"\n\n{outer_feedback}\n"
 
-            self.write_python_file(new_primitive_name, python_str)
-            implementation = self.load_function_from_file(
-                str(self.output_path / f"{new_primitive_name}.py"), new_primitive_name
-            )
-            # ----------------------------------------------------x-----
-            #  Evaluate primitive before adding to DSL
-            # ---------------------------------------------------------
-            eval_result = evaluate_primitive(
-                implementation,
-                existing_primitives=get_core_boolean_primitives(self.removed_primitive),
-                object_types=object_types,
-                env_factory=env_factory,  # type: ignore
-                proposal_signature=proposal_signature,
-                seed=1,
-                max_steps=20,
-                num_samples=200,
-                degeneracy_threshold=0.1,
-                equivalence_threshold=0.95,
-            )
-            logging.info(f"Evaluation results: {eval_result}")
-            if eval_result["keep"]:
-                logging.info("Function successfully added to the DSL set!")
-                break
+        # ----------------------------------------------------------------------
+        # 2. Query the LLM
+        # ----------------------------------------------------------------------
+        llm_response = self.query_llm(prompt_text)
+        self.write_json("metadata.json", llm_response)
+        # ----------------------------------------------------------------------
+        # 3. Extract proposals uniformly
+        # ----------------------------------------------------------------------
+        raw_proposal = llm_response.get("proposal", None)
 
-            # Failure -> save reason + reprompt
-            feedback = eval_result["reason"]
-            logging.info(
-                f"Rejected primitive (attempt {attempt}/{MAX_PRIMITIVE_ATTEMPTS}):\
-                {feedback}"
-            )
+        if mode == "single":
+            if not isinstance(raw_proposal, dict):
+                raise ValueError("In single mode, expected 'proposal' to be a dict.")
+            proposals = [raw_proposal]  # force list for unified processing
+
+        elif mode == "full":
+            if not isinstance(raw_proposal, list):
+                raise ValueError("In full mode, expected 'proposal' to be a list.")
+            proposals = raw_proposal
 
         else:
-            # If the loop ends without breaking -> all attempts failed
-            logging.error(
-                "LLM failed to produce a valid primitive after multiple attempts."
-            )
-            return self.grammar, {}, None  # type: ignore[return-value]
+            raise ValueError(f"Unknown mode: {mode}")
 
-        new_dsl_object = self.make_dsl(new_primitive_name, implementation)
-        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
-            [new_primitive_name], [implementation]
+        # ----------------------------------------------------------------------
+        # 4. Prepare DSL extension step
+        # ----------------------------------------------------------------------
+        accepted_primitives: dict[str, Callable[..., Any]] = {}
+
+        # Function for writing+loading the implementation
+        def load_impl(proposal_dict: dict[str, Any]) -> Callable:
+            name = proposal_dict["name"]
+            py_stub = proposal_dict["semantics_py_stub"]
+            self.write_python_file(name, py_stub)
+            return self.load_function_from_file(
+                str(self.output_path / f"{name}.py"), name
+            )
+
+        # Evaluation helper
+        def evaluate_and_retry(
+            proposal_dict: dict[str, Any],
+            existing_prims: dict[str, Callable[..., Any]],
+            object_types: tuple[Any],
+            env_factory: Callable[[int], Any],
+            llm_response: dict[str, Any],
+        ) -> tuple[Callable, dict[str, Any]]:
+            """Evaluate a proposed primitive and retry if it fails."""
+            MAX_ATTEMPTS = 5
+            feedback = None
+            signature = tuple(
+                sorted((arg["name"], arg["type"]) for arg in proposal_dict["args"])
+            )
+            rep = llm_response
+            for attempt in range(MAX_ATTEMPTS):
+                impl = load_impl(proposal_dict)
+
+                eval_result = evaluate_primitive(
+                    impl,
+                    existing_primitives=existing_prims,
+                    object_types=object_types,
+                    env_factory=env_factory,
+                    proposal_signature=signature,
+                    seed=1,
+                    max_steps=20,
+                    num_samples=200,
+                    degeneracy_threshold=0.1,
+                    equivalence_threshold=0.95,
+                )
+
+                if eval_result["keep"]:
+                    return impl, rep
+
+                # primitive rejected → reprompt with feedback
+                feedback = eval_result["reason"]
+                logging.info(
+                    f"Rejected primitive (attempt {attempt+1}/{MAX_ATTEMPTS}):\
+                        {feedback}"
+                )
+                new_prompt = ""
+                # Reconstruct prompt with reject reason
+                if mode == "single":
+                    new_prompt = (
+                        base_prompt
+                        + "\n\nThe previous primitive was rejected:\n"
+                        + feedback
+                        + "\n\nPlease propose a NEW primitive that avoids this issue."
+                    )
+                if mode == "full":
+                    new_prompt = (
+                        base_prompt
+                        + "\n\nThe previous primitive you suggusted was rejected because"
+                        f"{feedback}."
+                        "Propose a replacement primitive only."
+                        "Same signature: (args…)."
+                        "Only return: { 'proposal': { 'name': ..., 'semantics_py_stub':\
+                        ..., 'args': ... } }"
+                        "DO NOT regenerate the full DSL."
+                    )
+
+                rep = self.query_llm(new_prompt)
+                self.write_json("metadataa2.json", rep)
+                proposal_dict = rep["proposal"]
+                logging.info(proposal_dict)
+
+            # If every attempt failed:
+            raise RuntimeError("Failed to generate a valid primitive after retries.")
+
+        # ----------------------------------------------------------------------
+        # 5. Process each proposed primitive
+        # ----------------------------------------------------------------------
+        count = 0
+        for _, proposal_dict in enumerate(proposals):
+            count += 1
+            name = proposal_dict["name"]
+
+            # Determine DSL primitives present BEFORE adding this one
+            if mode == "single":
+                # Core + LLM-accepted primitives
+                existing_primitives = {
+                    **get_core_boolean_primitives(self.removed_primitive),
+                }
+            else:  # mode == "full"
+                # Only primitives generated and accepted so far
+                existing_primitives = {**accepted_primitives}
+
+            is_bootstrap = len(existing_primitives) == 0
+
+            # FIRST PRIMITIVE: accept immediately with no evaluation
+            if is_bootstrap:
+                logging.info(f"Bootstrap-accept primitive: {name}")
+                impl = load_impl(proposal_dict)
+
+            else:
+                # SECOND+ PRIMITIVE: evaluate + retry if needed
+                logging.info(f"Evaluating primitive: {name}")
+                impl, llm_response = evaluate_and_retry(
+                    proposal_dict,
+                    existing_primitives,
+                    object_types,
+                    env_factory,
+                    llm_response,
+                )
+
+            accepted_primitives[name] = impl
+
+        # ----------------------------------------------------------------------
+        # 6. Build DSL with all accepted primitives
+        # ----------------------------------------------------------------------
+
+        all_fns = {**accepted_primitives, **existing_primitives}
+        logging.info(all_fns)
+        new_dsl_object = DSL(
+            id="grid_v1_generated",
+            primitives=all_fns,
+            evaluate_fn=_eval,
         )
+
+        # Add to DSL set
+        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
+            list(accepted_primitives.keys()),
+            list(accepted_primitives.values()),
+        )
+        if mode == "full":
+            # llm_response = #build it
+            pass
+        # ----------------------------------------------------------------------
+        # 7. Write metadata + Build Grammar
+        # ----------------------------------------------------------------------
+        # self.write_json("metadata.json", llm_response)
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
-        logging.info(self.grammar)
-        logging.info(python_str)
+
+        # ----------------------------------------------------------------------
+        # 8. Return the results
+        # ----------------------------------------------------------------------
         return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
 
     def generate_and_process_grammar_full_version(

@@ -1,7 +1,7 @@
 ## SYSTEM
 
 You are an expert language designer.
-Your job is to invent an entire set of five type-safe DSL primitives for Logical Programmatic Policies in Generalization Grid Games (GGG).
+Your job is to invent an entire set of two type-safe DSL primitives for Logical Programmatic Policies in Generalization Grid Games (GGG).
 
 Each primitive should be a terminal function that operates over grid-based environments and composes naturally within a typed grammar.
 The goal is to create a useful and expressive base DSL that can describe policies mapping from observations (grid states) to logical conditions.
@@ -13,12 +13,12 @@ The JSON must be parsable by json.loads.
 You should:
 
 - Infer what kinds of spatial, relational, or logical reasoning are needed in grid-based games.
-- Propose 5 distinct, type-safe primitives with (Cell, Obs) -> Bool type.
+- Propose 2 distinct, type-safe primitives with (Cell, Obs) -> Bool type.
 - Return both the list of primitives and the full grammar that integrates them.
 
 Design a new type-safe DSL for logical reasoning in grid-based environments without any existing primitives.
 You must:
-- Invent exactly five new primitives.
+- Invent exactly two new primitives.
 - Each must have a unique name, type signature, and Python semantics stub.
 - Each should serve a distinct compositional purpose.
 - Each must be deterministic, executable, and side-effect-free.
@@ -66,13 +66,13 @@ Terminals:
 
 Productions:
 START ->
-    <INSERT_RULE> | <INSERT_RULE> 
+    <INSERT_RULE>
 
 LOCAL_PROGRAM ->
-    CONDITION | <INSERT_RULE>
+    CONDITION
 
 CONDITION ->
-    <INSERT_RULE> | <INSERT_RULE>
+    <INSERT_RULE>
 
 DIRECTION ->
     (1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)
@@ -92,18 +92,18 @@ VALUE ->
       "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef NAME(ARG1, ARG2, ..., cell, obs):\n    ...",
       "pcfg_insertion": {
         "nonterminal": "CONDITION",
-        "production": "lambda cell, obs: NAME(ARG1, ARG2, ..., cell, obs)"
+        "production": "lambda cell, obs: NAME_x(ARG1, ARG2, ..., cell, obs)" #ARGs being type/Nonterminals!
       }
     },
-    "... five total entries ..."
+    "... two total entries ..."
   ],
   "updated_grammar": {
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
-    "terminals": ["NAME_1","NAME_2","NAME_3","NAME_4","NAME_5"],
+    "terminals": ["NAME_1","NAME_2"],
     "productions": {
-      "START": "NAME_1", #this is an example, anything can be here.
-      "LOCAL_PROGRAM": "CONDITION | NAME_2",
-      "CONDITION": "lambda cell, obs: NAME_3(ARGs, cell, obs) | lambda cell, obs: NAME_4(ARGs, cell, obs) | lambda cell, obs: NAME_5(ARGs, cell, obs)",
+      "START": "NAME_1(ARG1, ARG2, ..., a, s)", #ARGs should be nonterminals/types
+      "LOCAL_PROGRAM": "CONDITION",
+      "CONDITION": "lambda cell, obs: NAME_2(ARG1, ARG2, ..., cell, obs)",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}"
     }
@@ -119,14 +119,46 @@ Rules and Constraints
 - Must be deterministic, terminating, and side-effect-free.
 - May use only literals, arithmetic/boolean operators, bounded loops, no helper functions.
 - The Python stub must begin exactly with: `from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *` followed `by def NAME(ARG1, …, cell, obs):` ...
-
+- Do not assume any variable having any attributes. Only use the provided info in the args.
+- Don't forget to implement the body of the functions. Don't leave it incomplete.
+- be careful to check if the cell is Not None to avoid getting unbounded and index exceptions.
+- The observation `obs` MUST be treated strictly as a raw NumPy array.
+- Allowed operations on `obs`:
+  * Boolean comparisons such as `obs[r, c] == value`
+  * Indexing: `obs[r, c]`
+- Forbidden operations on `obs`:
+  * ANY attribute access: `obs.width`, `obs.height`, `obs.grid`, etc.
+  * ANY method call: `obs.get(...)`, `obs.item(...)`, etc.
+  * ANY custom field or object-style property.
+- You MUST NOT assume that `obs` has fields, attributes, or methods.
+- You may only treat `obs` as a 2-D array of values.
 
 2. Grammar Integration
+- The START production MUST use EXACTLY the following format: "START": "FUNCTION(TYPE_1, TYPE_2, ..., a, s)"
+  - where TYPE_i ∈ { VALUE, CONDITION, LOCAL_PROGRAM, DIRECTION, Int }.
+- The final two arguments MUST be exactly: a, s
+  - and MUST NOT be replaced by cell, obs, value, direction, target, or any other name.
+- No lambda may appear in START, and no variable names other than the literal "a" and "s" may appear after the type arguments.
+
 - Each primitive is inserted under any of the "CONDITION", "LOCAL_PROGRAM", or "START".
+- Every occurrence of a primitive in "productions" MUST appear inside a lambda of the form:
+  `lambda cell, obs: NAME(ARG_NONTERMINALS..., cell, obs)`
+- You MUST NOT use a bare primitive name on the right-hand side, e.g. `START: "NAME_1"` or `"CONDITION | NAME_2"` is forbidden.
+- Allowed argument types are EXACTLY: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
+- You MUST NOT use "CELL" or "OBS" or any other name as type name.
+- "CELL" and "OBS" are NOT valid argument types and may only appear as (cell, obs) in the Python function signature.
 - Each production must be valid Python: `lambda cell, obs: NAME(ARG_NONTERMINALS..., cell, obs)`
-- Allowed argument types: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
 = Only cell and obs may appear literally inside the lambda.
-- Each primitive name appears once in the grammar.
+- Each primitive name appears ONCE in the grammar. So, use one as 
+- Inside grammar productions, ALL primitive arguments MUST be DSL nonterminal names, not variable names. For example:
+  - lambda cell, obs: NAME(VALUE, DIRECTION, CONDITION, LOCAL_PROGRAM, Int, cell, obs) is valid.
+- The following are FORBIDDEN:
+  - NAME(value, ...)
+  - NAME(object_type, ...)
+  - NAME(direction, ...)
+  - NAME(prog, ...)
+- Only DSL nonterminal names (VALUE, CONDITION, DIRECTION, LOCAL_PROGRAM, Int)may appear as primitive arguments inside grammar productions.
+
 
 3. Argument Specification
 - "args" lists logical parameters of each primitive.
@@ -138,4 +170,4 @@ Rules and Constraints
 - JSON must be parsable by json.loads, use double quotes, and contain no extra text.
 
 ## Goal
-Invent five new primitives that together form a minimal yet expressive base DSL for describing relationships between elements in structured environments.
+Invent two new primitives that together form a minimal yet expressive base DSL for describing relationships between elements in structured environments.
