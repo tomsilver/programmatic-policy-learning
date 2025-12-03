@@ -130,32 +130,7 @@ class LLMPrimitivesGenerator:
         # Map nonterminal name -> index
         nt_to_id: dict[str, int] = {nt: i for i, nt in enumerate(nonterminals)}
 
-        # Find any NT name in a string. Match longest first to avoid partial overlaps.
-        # Literal match so NTs inside text are also caught.
-        # sorted_nts = sorted(nonterminals, key=len, reverse=True)
-        # nt_pattern = re.compile("|".join(re.escape(nt) for nt in sorted_nts))
-
-        # def split_replace_nts(s: str) -> list[Sym]:
-        #     """Split s around any NT occurrences, returning
-        #     [str/int/str/...]."""
-        #     out: list[Sym] = []
-        #     pos = 0
-        #     for m in nt_pattern.finditer(s):
-        #         if m.start() > pos:
-        #             out.append(s[pos : m.start()])
-        #         out.append(nt_to_id[m.group(0)])
-        #         pos = m.end()
-        #     if pos < len(s):
-        #         out.append(s[pos:])
-        #     # If no NTs found, keep the whole string as a single terminal
-        #     if not out:
-        #         out.append(s)
-        #     # Drop empty-string terminals (purely cosmetic)
-        #     out = [tok for tok in out if not (isinstance(tok, str) and tok == "")]
-        #     return out
-
-        # # Tokenize identifiers (A-Z0-9_) and punctuation separately
-        # # Avoids if the name contains NTs by accident
+        # Avoids if the name contains NTs by accident
         token_pattern = re.compile(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
 
         def split_replace_nts(s: str) -> list[Sym]:
@@ -173,7 +148,6 @@ class LLMPrimitivesGenerator:
                     out.append(tok)
             return out
 
-        # ---------------
         def parse_alternatives(prod_str: str, nt_name: str) -> list[list[Sym]]:
             """Split a production 'a | b | c' into RHS lists with NT
             replacement."""
