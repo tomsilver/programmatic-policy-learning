@@ -343,7 +343,7 @@ class LLMPrimitivesGenerator:
                         f": {feedback}. This is the full dict information of that"
                         f"primitive: {proposal_dict}. Try to repair this primitive based"
                         "on the feedback that you got, or propose a new one that"
-                        "contains the same arg types and pcfg insertaion location, but"
+                        "contains the same arg types and pcfg insertion location, but"
                         "can have a different logic. Here are the existing primitives"
                         f"added to the language so far: {existing_prims}; avoid similar"
                         "names or functionalities.\n"
