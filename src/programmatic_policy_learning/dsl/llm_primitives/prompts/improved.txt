@@ -7,7 +7,26 @@ Output ONLY a single valid JSON object. No prose, comments, or markdown.
 
 ## OUTPUT FORMAT - CRITICAL
 
-**Your response must be ONLY the JSON object. Nothing else.**
+1. **No trailing commas**: 
+   ✓ CORRECT: `{"key": "value"}`
+   ✗ WRONG: `{"key": "value",}`
+
+2. **Escape quotes in strings**:
+   ✓ CORRECT: `"semantics": "def foo():\n    return \"hello\""`
+   ✗ WRONG: `"semantics": "def foo():\n    return "hello""`
+
+3. **Use \n for newlines in Python code**:
+   ✓ CORRECT: `"semantics_py_stub": "def foo():\n    pass"`
+   ✗ WRONG: Actual newlines in string values
+
+4. **Complete the entire JSON**:
+   - Don't stop mid-response
+   - Ensure all brackets/braces are closed
+   - End with proper `}`
+
+5. **No comments in JSON**:
+   ✗ WRONG: `{"key": "value"} // this is a comment`
+
 
 - NO markdown code blocks (no ```json or ```)
 - NO explanatory text before or after
@@ -44,6 +63,13 @@ CONDITION      := (Cell, Obs) -> Bool
 DIRECTION      := (Int, Int)
 VALUE          := ObjectType
 ObjectType     := {OBJECT_TYPES}
+ 
+
+**Note on Integer Arguments:**
+- If your primitives need integer parameters (e.g., distance, radius, count), use type "Int"
+- You must then define a nonterminal "VALUE_INT" in your grammar with concrete integer values
+- Example: "VALUE_INT": "1 | 2 | 3"
+
 ---
 
 ## Task
@@ -119,6 +145,13 @@ Your grammar MUST satisfy ALL of these structural constraints:
 - No helper functions, no recursion in implementation
 - Must be complete and executable (no placeholders like `...` or `# TODO`)
 
+### CRITICAL: Do NOT hardcode or assume obs values
+
+**You do NOT know what values are in obs.**
+- obs values come from {OBJECT_TYPES} which vary by game
+- NEVER hardcode strings like "empty", "wall", "token", "agent", etc.
+- ONLY compare obs values against the function arguments passed in
+
 ---
 
 ## Grammar Production Rules
@@ -138,16 +171,38 @@ Your grammar MUST satisfy ALL of these structural constraints:
 - Use `|` to separate multiple alternatives (for branching)
 - Each primitive should appear in at least one reachable production
 
+#### Valid Argument Types in Productions
+  In grammar productions (START, CONDITION, LOCAL_PROGRAM), the ONLY valid nonterminal references are:
+  - VALUE ✓
+  - CONDITION ✓
+  - LOCAL_PROGRAM ✓
+  - DIRECTION ✓
+  - VALUE_INT ✓ (if using Int type in args)
+
+  **FORBIDDEN in productions:**
+  - Int ❌ (use VALUE_INT instead)
+  - Cell ❌
+  - Obs ❌
+  - Any lowercase type names ❌
+
+
 ### Nonterminal Definitions
 - `DIRECTION`: Must include all 8 directions: `(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)`
 - `VALUE`: `{OBJECT_TYPES}` (expands to game-specific object types)
 - `LOCAL_PROGRAM`: Must be defined (typically: `CONDITION` or more complex)
-- If using `Int` type, define: `"Int": "1 | 2 | 3"` (or similar range)
+
+#### Integer Type Handling
+- If ANY primitive uses `Int` as an argument type:
+  1. Add "VALUE_INT" to the `nonterminals` list
+  2. Define the production: `"VALUE_INT": "1 | 2 | 3"` (or appropriate range)
+  3. Use `VALUE_INT` (not `Int`) in all grammar productions
+- Example primitive with Int: `{"name": "arg", "type": "Int"}`
+- Example grammar production: `lambda cell, obs: my_func(VALUE_INT, cell, obs)`
 
 ---
 
 ## Output Format
-```json
+```
 {
   "proposal": [
     {
@@ -155,43 +210,28 @@ Your grammar MUST satisfy ALL of these structural constraints:
       "name": "FUNCTION_NAME_1",
       "type_signature": "(Cell, Obs) -> Bool",
       "args": [
-        {"name": "arg1_name", "type": "VALUE"},
-        {"name": "arg2_name", "type": "DIRECTION"}
+        {"name": "descriptive_arg_name", "type": "TYPE_1"},
+        {"name": "descriptive_arg_name", "type": "TYPE_2"}
       ],
-      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNCTION_NAME_1(arg1, arg2, cell, obs):\n    if cell is None:\n        return False\n    # complete implementation\n    ...",
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNCTION_NAME_1(arg1, arg2, ..., cell, obs):\n    if cell is None:\n        return False\n    # Complete implementation here\n    return True",
       "pcfg_insertion": {
-        "nonterminal": "CONDITION",
-        "production": "lambda cell, obs: FUNCTION_NAME_1(VALUE, DIRECTION, cell, obs)"
-      }
-    },
-    {
-      "rationale_short": "Brief explanation (≤20 words) of primitive's purpose",
-      "name": "FUNCTION_NAME_2",
-      "type_signature": "(Cell, Obs) -> Bool",
-      "args": [
-        {"name": "arg1_name", "type": "CONDITION"},
-        {"name": "arg2_name", "type": "Int"}
-      ],
-      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNCTION_NAME_2(condition, distance, cell, obs):\n    if cell is None:\n        return False\n    # complete implementation\n    ...",
-      "pcfg_insertion": {
-        "nonterminal": "CONDITION",
-        "production": "lambda cell, obs: FUNCTION_NAME_2(CONDITION, Int, cell, obs)"
+        "nonterminal": "CHOSEN_NONTERMINAL",
+        "production": "lambda cell, obs: FUNCTION_NAME_1(arg1, arg2, ..., cell, obs)"
       }
     }
-    ,
-    {#rest of functions}
+    // ... repeat for FUNCTION_NAME_2 through FUNCTION_NAME_5
   ],
   "updated_grammar": {
-    "nonterminals": ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "Int"],
+    "nonterminals": ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "VALUE_INT"], //VALUE_INT is optional
     "terminals": ["FUNCTION_NAME_1", "FUNCTION_NAME_2", "FUNCTION_NAME_3", "FUNCTION_NAME_4", "FUNCTION_NAME_5"],
     "productions": {
-        "START": "FUNCTION_NAME_1(VALUE, DIRECTION, a, s)",
-        "LOCAL_PROGRAM": "CONDITION",
-        "CONDITION": "lambda cell, obs: FUNCTION_NAME_1(VALUE, DIRECTION, cell, obs) | lambda cell, obs: FUNCTION_NAME_2(CONDITION, Int, cell, obs) | lambda cell, obs: FUNCTION_NAME_3(VALUE, cell, obs) | lambda cell, obs: FUNCTION_NAME_4(CONDITION, CONDITION, cell, obs)",
-        "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
-        "VALUE": "{OBJECT_TYPES}",
-        "Int": "1 | 2 | 3"
-        }
+      "START": "FUNCTION_NAME_X(arg1, arg2, ..., a, s)",
+      "LOCAL_PROGRAM": "lambda cell, obs: FUNCTION_NAME_Y(arg1, arg2, ..., cell, obs) | ...",
+      "CONDITION": "lambda cell, obs: FUNCTION_NAME_Z(arg1, arg2, ..., cell, obs) | lambda cell, obs: FUNCTION_NAME_W(arg1, arg2, ..., cell, obs) | ...",
+      "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
+      "VALUE": "{OBJECT_TYPES}",
+      "VALUE_INT": "1 | 2 | 3", //optional
+    }
   }
 }
 ```
@@ -219,6 +259,8 @@ Before submitting, verify:
 - [ ] No `obs.attribute` or `obs.method()` in Python stubs
 - [ ] Python stubs are complete (no `...` placeholders)
 - [ ] Grammar can generate ≥100 programs from START
+- [ ] If any primitive uses Int type, "VALUE_INT" is in nonterminals and productions
+- [ ] All grammar productions use VALUE_INT (not Int) as the nonterminal reference
 
 ---
 

@@ -43,18 +43,6 @@ def learn_plps(
     plp_priors : [ float ]
         Log probabilities.
     """
-    # print("X sum:", X.sum(), "shape:", X.shape)
-    # print("y:", set(y))
-    # print(y)
-    # Nonzero columns?
-    # col_sums = np.array(X.sum(axis=0)).ravel()
-    # print("Column sums:", col_sums, flush=True)
-
-    # for j, (prog_str, col_sum) in enumerate(zip(programs, col_sums)):
-    #     if col_sum == 0:
-    #         print(f"[ZERO COLUMN] j={j}, col_sum={col_sum},
-    # program={prog_str}", flush=True)
-
     plps = []
     plp_priors = []
 
@@ -93,10 +81,6 @@ def learn_single_batch_decision_trees(
         clf = DecisionTreeClassifier(random_state=seed)
         clf.fit(X_i, y)
         clfs.append(clf)
-        # print("DT value shape:", clf.tree_.value.shape)
-        # print("Unique leaves:", clf.tree_.n_leaves)
-        # print("Any scalar leaves?", any(v.size == 1 for v in clf.tree_.value))
-
     return clfs
 
 
@@ -190,9 +174,6 @@ def extract_plp_from_dt(
     true_leaves = []
     while len(stack) > 0:
         node_id = stack.pop()
-        # print("node_id:", node_id, "value[node_id]:",
-        # value[node_id], type(value[node_id]))
-
         if children_left[node_id] != children_right[node_id]:
             assert 0 < threshold[node_id] < 1
             stack.append(children_left[node_id])

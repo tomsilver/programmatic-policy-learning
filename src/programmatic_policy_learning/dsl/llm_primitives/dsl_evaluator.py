@@ -120,7 +120,7 @@ def compare_semantics(
         # ------------------------------------------------------
         sampled_dsl_args = []
         for t in ordered_types:
-            arg_val = sample_argument(
+            arg_val, _, _ = sample_argument(  # TODOO: manage error here as well
                 type_name=t,
                 normalized_object_types=normalized_object_types,
                 existing_primitives=existing_primitives,
@@ -173,7 +173,7 @@ def semantic_similarity_filter(
 
     for name, fn_existing in existing_primitives.items():
         sig_existing = extract_signature_from_python_fn(fn_existing)
-        print(f"Checking for: {name}")
+        logging.info(f"Checking for: {name}")
         if signature_matches(proposal_signature, sig_existing):
             logging.info("Equal signature detected")
             score = compare_semantics(
@@ -187,7 +187,7 @@ def semantic_similarity_filter(
                 max_steps,
                 num_samples,
             )
-            print(f"Score: {score}")
+            logging.info(f"Score: {score}")
             similar.append((name, score))
 
     # If ANY existing primitive is too similar → reject
@@ -267,25 +267,35 @@ def sample_argument(
     type_name: str,
     normalized_object_types: tuple[str, ...],
     existing_primitives: dict[str, Callable],
-) -> Any:
+) -> tuple[Any, bool, str]:
     """Sample an argument based on its type."""
 
+    error = False
+    error_msg = ""
+
     if type_name == "DIRECTION":
-        return sample_direction()
+        return sample_direction(), error, error_msg
 
     if type_name == "VALUE":
-        return sample_value_from_env(normalized_object_types)
+        return sample_value_from_env(normalized_object_types), error, error_msg
 
     if type_name in {"VALUE_INT", "Int"}:
-        return random.randint(0, 3)
+        return random.randint(0, 3), error, error_msg
 
     if type_name in ("LOCAL_PROGRAM", "CONDITION"):
-        return random.choice(
-            make_closed_program_pool(normalized_object_types, existing_primitives)
+        return (
+            random.choice(
+                make_closed_program_pool(normalized_object_types, existing_primitives)
+            ),
+            error,
+            error_msg,
         )
 
     # fallback
-    raise ValueError(f"Unknown DSL type: {type_name}")
+    # raise ValueError(f"Unknown DSL type: {type_name}")
+    error = True
+    error_msg = f"Unknown DSL type: {type_name}"
+    return None, error, error_msg
 
 
 # ---------------------------------------------------------
@@ -300,14 +310,15 @@ def eval_on_random_inputs(
     seed: int,
     max_steps: int,
     num_samples: int = 200,
-) -> list[Any]:
+) -> tuple[list[Any], bool, str]:
     """Evaluate a function on random inputs."""
 
     sig_dict = dict(proposal_signature)
     params = list(fn.__code__.co_varnames[: fn.__code__.co_argcount])
 
     outputs = []
-
+    error_flag = False
+    error_message = ""
     for i in range(num_samples):
 
         env = env_factory(int(i % 20))  # type: ignore[call-arg]
@@ -330,7 +341,7 @@ def eval_on_random_inputs(
                 logging.info(params)
                 raise ValueError(f"Argument '{p}' missing from DSL signature")
             type_name = sig_dict[p]
-            args[p] = sample_argument(
+            args[p], error_flag, error_message = sample_argument(
                 type_name=type_name,
                 normalized_object_types=normalized_object_types,
                 existing_primitives=existing_primitives,
@@ -341,10 +352,12 @@ def eval_on_random_inputs(
         except Exception as e:  # pylint: disable=broad-exception-caught
             logging.info(f"Exception occurred: {e}")
             out = None  # treat crashes as non-usable
+            error_flag = True
+            error_message = str(e)
 
         outputs.append(out)
 
-    return outputs
+    return outputs, error_flag, error_message
 
 
 # ---------------------------------------------------------
@@ -491,17 +504,27 @@ def evaluate_primitive(
     # -----------------------------------------------------
     # Level 1: Degenerate check
     # -----------------------------------------------------
-    outputs_new = eval_on_random_inputs(  # Compute outputs of new primitive
-        new_primitive_fn,
-        normalized_object_types,
-        env_factory,
-        proposal_signature,
-        existing_primitives,
-        seed,
-        max_steps,
-        num_samples,
+    outputs_new, error_flag, error_message = (
+        eval_on_random_inputs(  # Compute outputs of new primitive
+            new_primitive_fn,
+            normalized_object_types,
+            env_factory,
+            proposal_signature,
+            existing_primitives,
+            seed,
+            max_steps,
+            num_samples,
+        )
     )
-    logging.info(f"Outputs on sampled args: {outputs_new}")
+    if error_flag:
+        return {
+            "keep": False,
+            "reason": "ERROR in execution of function itself. Exact error message: "
+            f"{error_message}",
+            "deg_score": "NA",
+        }
+
+    # logging.info(f"Outputs on sampled args: {outputs_new}")
 
     deg_score = degeneracy_score(outputs_new)
     logging.info(deg_score)
@@ -524,5 +547,5 @@ def evaluate_primitive(
         equivalence_threshold,
     )
     result["deg_score"] = deg_score
-    print(f"Result: {result}")
+    logging.info(f"Result: {result}")
     return result

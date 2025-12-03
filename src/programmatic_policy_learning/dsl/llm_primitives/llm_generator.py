@@ -132,47 +132,47 @@ class LLMPrimitivesGenerator:
 
         # Find any NT name in a string. Match longest first to avoid partial overlaps.
         # Literal match so NTs inside text are also caught.
-        sorted_nts = sorted(nonterminals, key=len, reverse=True)
-        nt_pattern = re.compile("|".join(re.escape(nt) for nt in sorted_nts))
+        # sorted_nts = sorted(nonterminals, key=len, reverse=True)
+        # nt_pattern = re.compile("|".join(re.escape(nt) for nt in sorted_nts))
 
-        def split_replace_nts(s: str) -> list[Sym]:
-            """Split s around any NT occurrences, returning
-            [str/int/str/...]."""
-            out: list[Sym] = []
-            pos = 0
-            for m in nt_pattern.finditer(s):
-                if m.start() > pos:
-                    out.append(s[pos : m.start()])
-                out.append(nt_to_id[m.group(0)])
-                pos = m.end()
-            if pos < len(s):
-                out.append(s[pos:])
-            # If no NTs found, keep the whole string as a single terminal
-            if not out:
-                out.append(s)
-            # Drop empty-string terminals (purely cosmetic)
-            out = [tok for tok in out if not (isinstance(tok, str) and tok == "")]
-            return out
+        # def split_replace_nts(s: str) -> list[Sym]:
+        #     """Split s around any NT occurrences, returning
+        #     [str/int/str/...]."""
+        #     out: list[Sym] = []
+        #     pos = 0
+        #     for m in nt_pattern.finditer(s):
+        #         if m.start() > pos:
+        #             out.append(s[pos : m.start()])
+        #         out.append(nt_to_id[m.group(0)])
+        #         pos = m.end()
+        #     if pos < len(s):
+        #         out.append(s[pos:])
+        #     # If no NTs found, keep the whole string as a single terminal
+        #     if not out:
+        #         out.append(s)
+        #     # Drop empty-string terminals (purely cosmetic)
+        #     out = [tok for tok in out if not (isinstance(tok, str) and tok == "")]
+        #     return out
 
         # # Tokenize identifiers (A-Z0-9_) and punctuation separately
         # # Avoids if the name contains NTs by accident
-        # token_pattern = re.compile(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
+        token_pattern = re.compile(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
 
-        # def split_replace_nts(s: str) -> list[Sym]:
-        #     """
-        #     Tokenize s and replace tokens that are EXACTLY equal to a
-        #     nonterminal name with its int id.
+        def split_replace_nts(s: str) -> list[Sym]:
+            """Tokenize s and replace tokens that are EXACTLY equal to a
+            nonterminal name with its int id.
 
-        #     Prevents accidental NT matches inside longer identifiers like:
-        #     AT_CELL_WITH_VALUE  → stays whole and untouched.
-        #     """
-        #     out: list[Sym] = []
-        #     for tok in token_pattern.findall(s):
-        #         if tok in nt_to_id:      # match FULL TOKEN ONLY
-        #             out.append(nt_to_id[tok])
-        #         else:
-        #             out.append(tok)
-        #     return out
+            Prevents accidental NT matches inside longer identifiers like:
+            AT_CELL_WITH_VALUE  → stays whole and untouched.
+            """
+            out: list[Sym] = []
+            for tok in token_pattern.findall(s):
+                if tok in nt_to_id:  # match FULL TOKEN ONLY
+                    out.append(nt_to_id[tok])
+                else:
+                    out.append(tok)
+            return out
+
         # ---------------
         def parse_alternatives(prod_str: str, nt_name: str) -> list[list[Sym]]:
             """Split a production 'a | b | c' into RHS lists with NT
@@ -290,17 +290,18 @@ class LLMPrimitivesGenerator:
             object_types: tuple[Any],
             env_factory: Callable[[int], Any],
             llm_response: dict[str, Any],
-        ) -> tuple[Callable, dict[str, Any]]:
+        ) -> tuple[Callable, str, dict[str, Any], bool]:
             """Evaluate a proposed primitive and retry if it fails."""
             MAX_ATTEMPTS = 5
             feedback = None
-            signature = tuple(
-                sorted((arg["name"], arg["type"]) for arg in proposal_dict["args"])
-            )
             rep = llm_response
             for attempt in range(MAX_ATTEMPTS):
                 impl = load_impl(proposal_dict)
-
+                signature = tuple(
+                    sorted((arg["name"], arg["type"]) for arg in proposal_dict["args"])
+                )
+                logging.info(existing_primitives)
+                input("EXISTING ONES")
                 eval_result = evaluate_primitive(
                     impl,
                     existing_primitives=existing_prims,
@@ -315,7 +316,9 @@ class LLMPrimitivesGenerator:
                 )
 
                 if eval_result["keep"]:
-                    return impl, rep
+                    # 4th one: returning the boolean that:
+                    # if it has been replaced (return True)
+                    return impl, proposal_dict["name"], rep, attempt != 0
 
                 # primitive rejected → reprompt with feedback
                 feedback = eval_result["reason"]
@@ -333,33 +336,89 @@ class LLMPrimitivesGenerator:
                         + "\n\nPlease propose a NEW primitive that avoids this issue."
                     )
                 if mode == "full":
-                    new_prompt = (
-                        base_prompt
-                        + "\n\nThe previous primitive you suggusted was rejected because"
-                        f"{feedback}."
-                        "Propose a replacement primitive only."
-                        "Same signature: (args…)."
-                        "Only return: { 'proposal': { 'name': ..., 'semantics_py_stub':\
-                        ..., 'args': ... } }"
-                        "DO NOT regenerate the full DSL."
+
+                    addition_prompt = (
+                        f"\n\nThe previous primitive called {proposal_dict['name']}"
+                        " you suggested was rejected because of the following reason"
+                        f": {feedback}.This is the full dict information of that"
+                        f"primitive: {proposal_dict}.Try to repair this primitive based"
+                        "on the feedback that you got, or propose a new one that"
+                        "contains the same arg types and pcfg insertaion location, but"
+                        "can have a different logic. Here are the existing primitives"
+                        f"added to the language so far: {existing_prims}; avoid similar"
+                        "names or functionalities.\n"
+                        "- Propose one replacement primitive only. "
+                        "Same signature: (args…). Only return: "
+                        "{{'proposal':"
+                        "[{{'name': ..., 'semantics_py_stub': ..., 'args': ...}}]}}.\n"
+                        "- DO NOT regenerate the full DSL.\n"
                     )
+                    new_prompt = base_prompt + addition_prompt
+                    logging.info(addition_prompt)
+                    input("PROPOSING A NEW ONE BASED ON FEEDBACK")
 
                 rep = self.query_llm(new_prompt)
-                self.write_json("metadataa2.json", rep)
-                proposal_dict = rep["proposal"]
+
+                # can later enforce to not be a list
+                proposal_dict = rep["proposal"][0]
                 logging.info(proposal_dict)
+                input("THIS IS THE NEW ONE")
 
             # If every attempt failed:
             raise RuntimeError("Failed to generate a valid primitive after retries.")
+
+        def patch_llm_response(
+            llm_response: dict,
+            old_name: str,
+            new_proposal: dict,
+        ) -> dict[str, Any]:
+            """
+            Mutates llm_response in-place:
+            - Replaces primitive 'old_name' with 'new_name'
+                                            everywhere in updated_grammar.
+            - Updates the 'proposal' list entry (name, semantics, args).
+            """
+
+            new_name = new_proposal["name"]
+
+            # ------------------------------------------------------------------
+            # 1. Update the "proposal" list entry
+            # ------------------------------------------------------------------
+            for i, p in enumerate(llm_response.get("proposal", [])):
+                if p.get("name") == old_name:
+                    llm_response["proposal"][i]["name"] = new_name
+                    llm_response["proposal"][i]["semantics_py_stub"] = new_proposal[
+                        "semantics_py_stub"
+                    ]
+                    llm_response["proposal"][i]["args"] = new_proposal["args"]
+                    # Keep pcfg_insertion the same (same NT + same types)
+                    break
+
+            # ------------------------------------------------------------------
+            # 2. Update "terminals" list in updated_grammar
+            # ------------------------------------------------------------------
+            ug = llm_response["updated_grammar"]
+            terminals = ug.get("terminals", [])
+            ug["terminals"] = [new_name if t == old_name else t for t in terminals]
+
+            # ------------------------------------------------------------------
+            # 3. Replace occurrences in production strings
+            # ------------------------------------------------------------------
+            for nt, production in ug["productions"].items():
+                if old_name in production:
+                    ug["productions"][nt] = production.replace(old_name, new_name)
+
+            return llm_response
 
         # ----------------------------------------------------------------------
         # 5. Process each proposed primitive
         # ----------------------------------------------------------------------
         count = 0
+        added_responses: list[Any] = []
         for _, proposal_dict in enumerate(proposals):
             count += 1
             name = proposal_dict["name"]
-
+            logging.info(f"ORIGINAL: {name}")
             # Determine DSL primitives present BEFORE adding this one
             if mode == "single":
                 # Core + LLM-accepted primitives
@@ -380,13 +439,24 @@ class LLMPrimitivesGenerator:
             else:
                 # SECOND+ PRIMITIVE: evaluate + retry if needed
                 logging.info(f"Evaluating primitive: {name}")
-                impl, llm_response = evaluate_and_retry(
+                impl, name, new_llm_proposal, retried = evaluate_and_retry(
                     proposal_dict,
                     existing_primitives,
                     object_types,
                     env_factory,
                     llm_response,
                 )
+
+                if retried:
+                    # call the function that reconstructs the grammar and metadata.
+                    llm_response = patch_llm_response(
+                        llm_response=llm_response,
+                        old_name=proposal_dict["name"],
+                        new_proposal=new_llm_proposal["proposal"][0],
+                    )
+                    logging.info(llm_response)
+                    added_responses.append(llm_response)
+                    input("CHECKKKK @!!!!!!!")
 
             accepted_primitives[name] = impl
 
@@ -397,19 +467,20 @@ class LLMPrimitivesGenerator:
         all_fns = {**accepted_primitives, **existing_primitives}
         logging.info(all_fns)
         new_dsl_object = DSL(
-            id="grid_v1_generated",
+            id=f"grid_v1_{mode}_generated",
             primitives=all_fns,
             evaluate_fn=_eval,
         )
+        logging.info(new_dsl_object)
+        input(all_fns)
 
         # Add to DSL set
-        new_get_dsl_functions_fn = self.add_primitive_to_dsl(
+        new_get_dsl_functions_fn = self.add_primitive_to_dsl(  # fix this
             list(accepted_primitives.keys()),
             list(accepted_primitives.values()),
         )
-        if mode == "full":
-            # llm_response = #build it
-            pass
+        self.write_json("new_metadata.json", llm_response)
+
         # ----------------------------------------------------------------------
         # 7. Write metadata + Build Grammar
         # ----------------------------------------------------------------------
@@ -577,14 +648,7 @@ class LLMPrimitivesGenerator:
         DSL[LocalProgram, GridInput, Any],
     ]:
         """Load the grammar, DSL functions, and DSL object from a previous run
-        with multiple proposals.
-
-        Args:
-            run_id (str): The run ID of the previous generation.
-
-        Returns:
-            tuple: A tuple containing the Grammar, updated DSL functions, and DSL object.
-        """
+        with multiple proposals."""
         base_dir = Path(__file__).parent
         output_path = base_dir / "outputs" / run_id
         self.output_path = output_path

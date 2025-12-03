@@ -57,7 +57,6 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
         hq.heappush(
             queue, (0, 0, next(counter), cast(DPType, [self._start_symbol]))
         )  # we initially have list[int] but later we can have list[any] or ProgT
-        print(queue)
         while True:
             priority, production_neg_log_prob, _, program = hq.heappop(queue)
             for (
