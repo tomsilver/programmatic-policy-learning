@@ -62,7 +62,9 @@ def cell_is_value(value: Any, cell: tuple[int, int] | None, obs: np.ndarray) -> 
     return focus == value
 
 
-def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
+def at_cell_with_value(
+    value: Any, local_program: Callable, cell: tuple[int, int] | None, obs: np.ndarray
+) -> bool:
     """Execute a local program at the first cell containing a specific
     value."""
 
@@ -275,6 +277,27 @@ def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, An
     if removed_primitive:
         del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS
+
+
+def get_core_boolean_primitives(
+    removed_primitive: str | None = None,
+) -> dict[str, Callable]:
+    """Return a dictionary of core boolean primitives with their names as
+    keys."""
+    list_of_fns = {
+        "cell_is_value": cell_is_value,
+        "shifted": shifted,
+        "at_cell_with_value": at_cell_with_value,
+        "at_action_cell": at_action_cell,
+        "scanning": scanning,
+    }
+
+    if removed_primitive:
+        list_of_fns = {
+            name: fn for name, fn in list_of_fns.items() if name != removed_primitive
+        }
+
+    return list_of_fns  # type: ignore
 
 
 __all__ = [

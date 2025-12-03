@@ -51,7 +51,7 @@ at_cell_with_value, at_action_cell, cell_is_value, shifted
 
 Productions:
 START ->
-at_cell_with_value(VALUE, LOCAL_PROGRAM, s)
+at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s)
 | at_action_cell(LOCAL_PROGRAM, a, s) # s =state, a=action
 
 LOCAL_PROGRAM ->
@@ -67,10 +67,10 @@ VALUE ->
 
 ### Existing Primitive Summaries (Terminals)
 
-at_cell_with_value(v, prog, s): Executes a local program at the first cell with value v.
+at_cell_with_value(v, prog, a, s): Executes a local program at the first cell with value v.
 
 ```python
-def at_cell_with_value(value: Any, local_program: Callable, obs: np.ndarray) -> bool:
+def at_cell_with_value(value: Any, local_program: Callable, cell: tuple[int, int] | None, obs: np.ndarray) -> bool:
     """Execute a local program at the first cell containing a specific
     value."""
     matches = np.argwhere(obs == value)
@@ -164,9 +164,9 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
 
 ### Example DSL Programs
 
-1. at_cell_with_value(1, lambda c,o: cell_is_value(1,c,o), s): Checks whether there exists a cell in state `s` whose grid value is `1` and (redundantly) confirms that same cell’s value is `1`.
+1. at_cell_with_value(1, lambda c,o: cell_is_value(1,c,o), a, s): Checks whether there exists a cell in state `s` whose grid value is `1` and (redundantly) confirms that same cell’s value is `1`.
 2. at_action_cell(lambda c,o: cell_is_value(2,c,o), a, s): Checks whether the cell on which the current action `a` operates in state `s` has the grid value 2.
-3. at_cell_with_value(3, lambda c,o: shifted((1,0), P1, c, o), s): Looks for a cell of value 3 in state s such that the cell immediately to its right satisfies predicate P1.
+3. at_cell_with_value(3, lambda c,o: shifted((1,0), P1, c, o), a, s): Looks for a cell of value 3 in state s such that the cell immediately to its right satisfies predicate P1.
 
 
 ### Output Format (STRICT JSON)
@@ -188,7 +188,7 @@ Each game is played on a discrete 2-D grid and shares a unified state-action str
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
     "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","shifted","NAME"],
     "productions": {
-      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
       "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs) | <INSERTED_RULE>",
       "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | <INSERTED_RULE>",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
@@ -258,7 +258,7 @@ followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or und
     "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
     "terminals": ["at_cell_with_value","at_action_cell","cell_is_value","shifted","not_condition"],
     "productions": {
-      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
+      "START": "at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) | at_action_cell(LOCAL_PROGRAM, a, s)",
       "LOCAL_PROGRAM": "CONDITION | lambda cell, obs : shifted(DIRECTION, CONDITION, cell, obs)",
       "CONDITION": "lambda cell, obs: cell_is_value(VALUE, cell, obs) | lambda cell, obs: not_condition(CONDITION, cell, obs)",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",

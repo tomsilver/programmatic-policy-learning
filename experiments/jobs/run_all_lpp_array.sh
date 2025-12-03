@@ -8,6 +8,7 @@
 #SBATCH --output=slurm/array_%A_%a.out
 #SBATCH --error=slurm/array_%A_%a.err
 
+
 module load StdEnv/2023
 module load python/3.11
 
@@ -30,6 +31,17 @@ fi
 
 echo "Task $SLURM_ARRAY_TASK_ID running DSL=$DSL_NAME seed=$SEED"
 
+
+#############################################
+# Run the Python evaluation
+#############################################
+
+python -u experiments/run_experiment.py \
+    dsl_name=${DSL_NAME} \
+    seed=${SEED} \
+    hydra.run.dir=outputs/${DSL_NAME}_${SEED}
+=======
+=======
 #############################
 # List of envs for this experiment
 #############################
@@ -40,6 +52,13 @@ ENVS=("ggg_nim" "ggg_chase")   # change here if you add/remove envs
 # Run each env sequentially, with its own dir
 #############################
 
+# python -u experiments/run_experiment.py -m\
+#     env=ggg_nim,ggg_chase,ggg_checkmate,ggg_rfts,ggg_stf \
+#     approach=lpp \
+#     dsl_name=${DSL_NAME} \
+#     seed=${SEED} \
+#     approach.demo_numbers='[0,1,2,3,4,5,6,7,8,9,10]','[0,1,2,3,4,5]'
+    # hydra.run.dir=${RUN_DIR}
 for ENV in "${ENVS[@]}"; do
     RUN_DIR="${ROOT_DIR}/logs/${EXPERIMENT_TS}/${ENV}/${DSL_NAME}_${SEED}"
     mkdir -p "$RUN_DIR"
@@ -54,6 +73,7 @@ for ENV in "${ENVS[@]}"; do
 	hydra.run.dir=${RUN_DIR}
 done
 
+=======
 
 
 #############################
