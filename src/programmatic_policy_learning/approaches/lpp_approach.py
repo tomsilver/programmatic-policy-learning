@@ -329,15 +329,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
 
-        # MAX_OUTER_ATTEMPTS = 5
-        # outer_attempt = 0
         outer_feedback = None
-
-        # while outer_attempt < MAX_OUTER_ATTEMPTS:
-        #     outer_attempt += 1
-
-        # try:
-        #     with time_limit(self.num_programs*10):  # 1 second per program
         programs, program_prior_log_probs, dsl_functions = get_program_set(
             self.num_programs,
             self.base_class_name,
@@ -347,29 +339,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation=self.program_generation,
             outer_feedback=outer_feedback,  # <-- feed into grammar generator
         )
-
-        # success → exit loop
-        # break
-
-        # except CustomTimeoutError:
-        #     logging.error(
-        #         f"[Outer {outer_attempt}] Program generation timed out — "
-        #         "primitive likely creates infinite loops or huge branching."
-        #     )
-
-        #     # build feedback to send to LLM in next outer attempt
-        #     outer_feedback = (
-        #         "The last primitive caused program generation to TIME OUT. "
-        #         "This means the primitive leads to infinite loops or too many "
-        #         "program branches. Propose a simpler, terminating primitive."
-        # )
-
-        # else:
-        #     # loop exhausted without success
-        #     raise RuntimeError(
-        #         "Failed to generate a valid DSL primitive"
-        #         "that allows program enumeration."
-        #     )
 
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
