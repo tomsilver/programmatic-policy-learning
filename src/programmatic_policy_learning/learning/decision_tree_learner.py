@@ -74,13 +74,13 @@ def learn_single_batch_decision_trees(
     -------
     clfs : [ DecisionTreeClassifier ]
     """
+
     clfs = []
 
     for seed in range(num_dts):
         clf = DecisionTreeClassifier(random_state=seed)
         clf.fit(X_i, y)
         clfs.append(clf)
-
     return clfs
 
 

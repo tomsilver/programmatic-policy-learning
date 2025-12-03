@@ -2,15 +2,16 @@
 
 import logging
 import signal
+import tempfile
 from contextlib import contextmanager
-
-# import tempfile
 from pathlib import Path
 from types import FrameType
 from typing import Any, Callable, Generator, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
+
+# from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
@@ -82,12 +83,42 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         signal.alarm(0)
 
 
+def key_fn_for_train_policy(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    """Build a compact run id from training-related attributes on `self`."""
+    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
+    if self_obj is None:
+        return ""
+    demo_numbers = getattr(self_obj, "demo_numbers", ())
+    demo_part = "-".join(str(x) for x in demo_numbers)
+    parts = [
+        str(getattr(self_obj, "base_class_name", "")),
+        demo_part,
+        str(getattr(self_obj, "program_generation_step_size", "")),
+        str(getattr(self_obj, "num_programs", "")),
+        str(getattr(self_obj, "num_dts", "")),
+        str(getattr(self_obj, "max_num_particles", "")),
+    ]
+    # filter empty pieces and join
+    return "-".join([p for p in parts if p != ""])
+
+
+def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    """Return cache run id, excluding 'env_specs' which is too long."""
+    # join all positional args except index 2 and all kwargs except
+    # 'env_specs'.
+    parts = [str(a) for i, a in enumerate(args) if i != 2]
+    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
+    return "-".join(parts)
+
+
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
+    env_factory: EnvFactory,
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
+    outer_feedback: str | None = None,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -100,14 +131,13 @@ def get_program_set(
         raise ValueError(
             "program_generation configuration is required for LPP approach."
         )
-
     strategy = program_generation["strategy"]
 
     # Define strategies as a dictionary
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
-            program_generation, env_specs, start_symbol
+            program_generation, env_specs, start_symbol, env_factory, outer_feedback
         ),
         "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
@@ -175,9 +205,12 @@ def _generate_with_dsl_generator(
     program_generation: dict[str, Any],
     env_specs: dict[str, Any] | None,
     start_symbol: int,
+    env_factory: EnvFactory,
+    outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    cache_path = Path("llm_cache.db")
+    # cache_path = Path("llm_cache.db")
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -189,8 +222,14 @@ def _generate_with_dsl_generator(
         prompt = file.read()
     removed_primitive = program_generation["removed_primitive"]
     generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
+    if env_specs is None:
+        raise ValueError("env_specs cannot be None when indexing.")
     _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
-        prompt, env_specs["object_types"]  # type: ignore
+        prompt,
+        env_specs["object_types"],
+        env_factory,  # type: ignore
+        "full",
+        outer_feedback,
     )
 
     program_generator = GrammarBasedProgramGenerator(
@@ -227,12 +266,18 @@ def _generate_programs(
 ) -> tuple[list[Any], list[float]]:
     """Shared logic for generating programs."""
     logging.info(f"Generating {num_programs} programs")
-    programs = []
+
+    programs: list[Any] = []
     program_prior_log_probs = []
     gen = program_generator.generate_programs()
     for _ in range(num_programs):
-
-        program, prior = next(gen)
+        try:
+            program, prior = next(gen)
+        except StopIteration:
+            logging.info(
+                f"Generator exhausted early — only produced {len(programs)} programs."
+            )
+            break
         programs.append(program)
         program_prior_log_probs.append(prior)
     return programs, program_prior_log_probs
@@ -283,26 +328,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-        try:
-            with time_limit(self.num_programs):  # e.g., 60 seconds for 10k programs
-                programs, program_prior_log_probs, dsl_functions = get_program_set(
-                    self.num_programs,
-                    self.base_class_name,
-                    env_specs=self.env_specs,
-                    start_symbol=self.start_symbol,
-                    program_generation=self.program_generation,
-                )
-        except CustomTimeoutError:
-            logging.error(
-                "Program generation timed out, primitive too slow. Reprompting LLM..."
-            )
-            programs, program_prior_log_probs, dsl_functions = get_program_set(
-                self.num_programs,
-                self.base_class_name,
-                env_specs=self.env_specs,
-                start_symbol=self.start_symbol,
-                program_generation=self.program_generation,
-            )
+
+        outer_feedback = None
+        programs, program_prior_log_probs, dsl_functions = get_program_set(
+            self.num_programs,
+            self.base_class_name,
+            self.env_factory,
+            env_specs=self.env_specs,
+            start_symbol=self.start_symbol,
+            program_generation=self.program_generation,
+            outer_feedback=outer_feedback,  # <-- feed into grammar generator
+        )
 
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [

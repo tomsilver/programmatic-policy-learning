@@ -12,6 +12,8 @@ from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+
+# from programmatic_policy_learning.dsl.llm_primitives.baseline_vlam import run_baseline
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
