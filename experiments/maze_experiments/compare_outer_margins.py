@@ -1,4 +1,5 @@
-"""Hydra-compatible script to compare approaches across different outer margins."""
+"""Hydra-compatible script to compare approaches across different outer
+margins."""
 
 import glob
 import logging
@@ -36,8 +37,8 @@ def run_approach_on_maze(
             break
 
     # Get metrics
-    if hasattr(approach, "_metrics"):
-        metrics = approach._metrics
+    if hasattr(approach, "metrics"):
+        metrics = approach.metrics
     elif hasattr(approach, "metrics"):
         metrics = approach.metrics
     else:
@@ -205,9 +206,7 @@ def main(cfg: DictConfig) -> None:
         f.write("DETAILED RESULTS BY MAZE\n")
         f.write("=" * 100 + "\n\n")
 
-        for maze_name in sorted(
-            results_by_margin[cfg.outer_margins[0]].keys()
-        ):
+        for maze_name in sorted(results_by_margin[cfg.outer_margins[0]].keys()):
             f.write(f"Maze: {maze_name}\n")
             f.write("-" * 100 + "\n")
             f.write(

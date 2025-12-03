@@ -232,7 +232,11 @@ def main(cfg: DictConfig) -> None:
     ]
 
     bars1 = ax.bar(
-        x - width / 2, search_expansions, width, label="Search Approach", color="steelblue"
+        x - width / 2,
+        search_expansions,
+        width,
+        label="Search Approach",
+        color="steelblue",
     )
     bars2 = ax.bar(
         x + width / 2, oracle_expansions, width, label="Oracle Approach", color="coral"
@@ -314,7 +318,11 @@ def main(cfg: DictConfig) -> None:
 
     # Expansions
     bars1 = ax1.bar(
-        x - width / 2, search_expansions, width, label="Search Approach", color="steelblue"
+        x - width / 2,
+        search_expansions,
+        width,
+        label="Search Approach",
+        color="steelblue",
     )
     bars2 = ax1.bar(
         x + width / 2, oracle_expansions, width, label="Oracle Approach", color="coral"
