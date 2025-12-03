@@ -340,8 +340,8 @@ class LLMPrimitivesGenerator:
                     addition_prompt = (
                         f"\n\nThe previous primitive called {proposal_dict['name']}"
                         " you suggested was rejected because of the following reason"
-                        f": {feedback}.This is the full dict information of that"
-                        f"primitive: {proposal_dict}.Try to repair this primitive based"
+                        f": {feedback}. This is the full dict information of that"
+                        f"primitive: {proposal_dict}. Try to repair this primitive based"
                         "on the feedback that you got, or propose a new one that"
                         "contains the same arg types and pcfg insertaion location, but"
                         "can have a different logic. Here are the existing primitives"
