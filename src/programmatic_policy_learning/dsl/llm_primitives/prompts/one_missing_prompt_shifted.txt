@@ -237,7 +237,7 @@ followed by `def NAME(ARG1, …, cell, obs):` (no other imports, globals, or und
 - The primitive name must appear in exactly one production rule.
 
 3. Argument Specification
-- The "args" field lists logical parameters of the primitive. The 'name' field in 'args' should be EXCACTLY the same as the names in python stub.
+- The "args" field lists logical parameters of the primitive. The 'name' field in 'args' should be EXACTLY the same as the names in python stub.
 - Each "type" must be one of: "CONDITION", "LOCAL_PROGRAM", "DIRECTION", "VALUE", "Int".
 - In the production string, arguments are replaced by their nonterminal names, not variable names.
 - If "Int" is used, include a new nonterminal: "VALUE_INT": "1 | 2 | 3 | ...".
