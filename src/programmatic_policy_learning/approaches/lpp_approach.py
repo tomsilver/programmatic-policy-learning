@@ -2,8 +2,7 @@
 
 import logging
 import signal
-
-# import tempfile
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -210,8 +209,8 @@ def _generate_with_dsl_generator(
     outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    cache_path = Path("llm_cache.db")
-    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    # cache_path = Path("llm_cache.db")
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4o-mini", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -267,12 +266,18 @@ def _generate_programs(
 ) -> tuple[list[Any], list[float]]:
     """Shared logic for generating programs."""
     logging.info(f"Generating {num_programs} programs")
-    programs = []
+
+    programs: list[Any] = []
     program_prior_log_probs = []
     gen = program_generator.generate_programs()
     for _ in range(num_programs):
-
-        program, prior = next(gen)
+        try:
+            program, prior = next(gen)
+        except StopIteration:
+            logging.info(
+                f"Generator exhausted early — only produced {len(programs)} programs."
+            )
+            break
         programs.append(program)
         program_prior_log_probs.append(prior)
     return programs, program_prior_log_probs

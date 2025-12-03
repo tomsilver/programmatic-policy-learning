@@ -113,22 +113,6 @@ Your grammar MUST satisfy ALL of these structural constraints:
    - The grammar must generate ≥100 distinct programs from START
    - Avoid grammars where START has only one path with finite expansions
 
-### Invalid Grammar Example (DO NOT DO THIS)
-```json
-{
-  "START": "is_target(VALUE, a, s)",  // ❌ Only expands VALUE (3 programs total)
-  "CONDITION": "lambda cell, obs: is_empty(cell, obs)"  // ❌ Not reachable from START
-}
-```
-
-### Valid Grammar Example (DO THIS)
-```json
-{
-  "START": "has_neighbor(VALUE, DIRECTION, a, s)",  // ✓ Uses VALUE, DIRECTION
-  "CONDITION": "lambda cell, obs: has_neighbor(VALUE, DIRECTION, cell, obs) | lambda cell, obs: check_pattern(CONDITION, DIRECTION, cell, obs)",  // ✓ Recursive, branching
-  "LOCAL_PROGRAM": "CONDITION"  // ✓ Reachable
-}
-```
 
 ---
 
@@ -152,6 +136,36 @@ Your grammar MUST satisfy ALL of these structural constraints:
 - NEVER hardcode strings like "empty", "wall", "token", "agent", etc.
 - ONLY compare obs values against the function arguments passed in
 
+### CRITICAL: Array Bounds Checking
+**ALL array accesses to `obs` MUST be bounds-checked.**
+
+Before ANY indexing operation `obs[r, c]`, you MUST verify:
+1. `r >= 0 and r < obs.shape[0]`
+2. `c >= 0 and c < obs.shape[1]`
+
+**WRONG implementations:**
+```python
+❌ neighbor_r, neighbor_c = r + dr, c + dc
+❌ return obs[neighbor_r, neighbor_c] == target_type  # No bounds check!
+
+❌ for i in range(distance):
+❌     if obs[r + i, c] == value:  # No bounds check!
+```
+
+**CORRECT implementations:**
+```python
+✓ neighbor_r, neighbor_c = r + dr, c + dc
+✓ if 0 <= neighbor_r < obs.shape[0] and 0 <= neighbor_c < obs.shape[1]:
+✓     return obs[neighbor_r, neighbor_c] == target_type
+✓ return False  # Safe default when out of bounds
+
+✓ for i in range(1, distance + 1):
+✓     new_r, new_c = r + i * dr, c + i * dc
+✓     if not (0 <= new_r < obs.shape[0] and 0 <= new_c < obs.shape[1]):
+✓         return False  # Stop if we go out of bounds
+✓     if obs[new_r, new_c] == value:
+✓         return True
+```
 ---
 
 ## Grammar Production Rules

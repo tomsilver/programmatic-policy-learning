@@ -2,6 +2,7 @@
 
 import heapq as hq
 import itertools
+import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, Iterator, TypeAlias, TypeVar, cast
@@ -58,7 +59,14 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
             queue, (0, 0, next(counter), cast(DPType, [self._start_symbol]))
         )  # we initially have list[int] but later we can have list[any] or ProgT
         while True:
-            priority, production_neg_log_prob, _, program = hq.heappop(queue)
+            try:
+                priority, production_neg_log_prob, _, program = hq.heappop(queue)
+            except IndexError:
+                logging.info(
+                    "Grammar exhausted: queue empty, stopping program generation."
+                )
+                # No more programs reachable — stop the generator
+                return
             for (
                 child_program,
                 child_production_prob,

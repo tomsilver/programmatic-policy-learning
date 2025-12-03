@@ -301,7 +301,7 @@ class LLMPrimitivesGenerator:
                     sorted((arg["name"], arg["type"]) for arg in proposal_dict["args"])
                 )
                 logging.info(existing_primitives)
-                input("EXISTING ONES")
+                # input("EXISTING ONES")
                 eval_result = evaluate_primitive(
                     impl,
                     existing_primitives=existing_prims,
@@ -355,14 +355,14 @@ class LLMPrimitivesGenerator:
                     )
                     new_prompt = base_prompt + addition_prompt
                     logging.info(addition_prompt)
-                    input("PROPOSING A NEW ONE BASED ON FEEDBACK")
+                    # input("PROPOSING A NEW ONE BASED ON FEEDBACK")
 
                 rep = self.query_llm(new_prompt)
 
                 # can later enforce to not be a list
                 proposal_dict = rep["proposal"][0]
                 logging.info(proposal_dict)
-                input("THIS IS THE NEW ONE")
+                # input("THIS IS THE NEW ONE")
 
             # If every attempt failed:
             raise RuntimeError("Failed to generate a valid primitive after retries.")
@@ -456,7 +456,7 @@ class LLMPrimitivesGenerator:
                     )
                     logging.info(llm_response)
                     added_responses.append(llm_response)
-                    input("CHECKKKK @!!!!!!!")
+                    # input("CHECKKKK @!!!!!!!")
 
             accepted_primitives[name] = impl
 
@@ -472,7 +472,7 @@ class LLMPrimitivesGenerator:
             evaluate_fn=_eval,
         )
         logging.info(new_dsl_object)
-        input(all_fns)
+        # input(all_fns)
 
         # Add to DSL set
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(  # fix this
