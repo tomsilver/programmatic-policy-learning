@@ -132,12 +132,18 @@ def get_program_set(
             "program_generation configuration is required for LPP approach."
         )
     strategy = program_generation["strategy"]
+    mode = program_generation["mode"]
 
     # Define strategies as a dictionary
     strategies = {
         "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
         "dsl_generator": lambda: _generate_with_dsl_generator(
-            program_generation, env_specs, start_symbol, env_factory, outer_feedback
+            program_generation,
+            env_specs,
+            start_symbol,
+            env_factory,
+            outer_feedback,
+            mode,
         ),
         "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
             program_generation, env_specs, start_symbol
@@ -207,6 +213,7 @@ def _generate_with_dsl_generator(
     start_symbol: int,
     env_factory: EnvFactory,
     outer_feedback: str | None,
+    mode: str = "full",
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     # cache_path = Path("llm_cache.db")
@@ -228,8 +235,8 @@ def _generate_with_dsl_generator(
         prompt,
         env_specs["object_types"],
         env_factory,  # type: ignore
-        "full",
         outer_feedback,
+        mode,
     )
 
     program_generator = GrammarBasedProgramGenerator(

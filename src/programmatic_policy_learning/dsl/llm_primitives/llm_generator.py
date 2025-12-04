@@ -11,7 +11,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Literal, MutableMapping, Union, cast
+from typing import Any, Callable, MutableMapping, Union, cast
 
 import black
 import numpy as np
@@ -188,8 +188,8 @@ class LLMPrimitivesGenerator:
         prompt_text: str,
         object_types: tuple[Any],
         env_factory: Callable[[int], Any],  # type: ignore[arg-type]
-        mode: Literal["single", "full"] = "single",
         outer_feedback: str | None = None,
+        mode: str = "full",
     ) -> tuple[
         Grammar[str, int, int],
         dict[str, Any],

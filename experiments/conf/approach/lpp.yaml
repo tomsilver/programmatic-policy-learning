@@ -11,3 +11,4 @@ program_generation:
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/shorter.txt" #proof_of_concept_full one_missing_prompt_shifted
   removed_primitive: ""
+  mode: "full" # Options: single/full
