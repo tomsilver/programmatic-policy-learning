@@ -75,3 +75,9 @@ def test_maze_expert_approach() -> None:
             break
     else:
         assert False, "Goal was not reached!"
+
+    print("Search Metrics:")
+    print("Num_evals: ", approach.metrics.num_evals)
+    print("Num_expansions: ", approach.metrics.num_expansions)
+    assert approach.metrics.num_evals > 0
+    assert approach.metrics.num_expansions > 0
