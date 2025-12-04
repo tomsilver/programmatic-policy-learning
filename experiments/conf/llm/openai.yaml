@@ -1,5 +1,5 @@
 _target_: "prpl_llm_utils.models.OpenAIModel"
-model_name: "gpt-4o-mini"
+model_name: "gpt-4.1"
 cache:
   _target_: "prpl_llm_utils.cache.SQLite3PretrainedLargeModelCache"
   database_path:

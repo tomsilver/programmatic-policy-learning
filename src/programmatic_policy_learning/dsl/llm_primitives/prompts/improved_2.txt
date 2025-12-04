@@ -83,35 +83,61 @@ Design exactly FIVE new primitive functions that:
 Then provide a COMPLETE GRAMMAR that integrates these primitives.
 
 ---
-
 ## CRITICAL Grammar Requirements
 
-### Reachability & Program Space
-Your grammar MUST satisfy ALL of these structural constraints:
+### START Production Requirements
 
-1. **START must reach CONDITION or LOCAL_PROGRAM**
-   - START cannot expand only to VALUE or DIRECTION
-   - START must reference at least one primitive that uses CONDITION or LOCAL_PROGRAM
+**START must enable deep recursive expansion through multiple paths.**
 
-2. **Recursion is MANDATORY**
-   - At least the START nonterminal must have recursive structure
-   - Valid patterns:
-     * `CONDITION → ... CONDITION ...`
-     * `LOCAL_PROGRAM → ... LOCAL_PROGRAM ...`
-     * `CONDITION → ... LOCAL_PROGRAM → ... CONDITION`
-   - This ensures unbounded program space
+1. **START must have ≥2 alternative productions** (separated by `|`)
+   - Each alternative should use a different primitive
+   - This creates immediate branching at the top level
 
-3. **Branching is MANDATORY**
-   - CONDITION must have ≥2 alternative productions (use `|` separator)
-   - At least one production must use a different primitive or composition
+2. **Each START alternative MUST include CONDITION or LOCAL_PROGRAM**
+   - ✓ CORRECT: `"START": "func1(LOCAL_PROGRAM, VALUE, a, s) | func2(CONDITION, DIRECTION, a, s)"`
+   - ✗ WRONG: `"START": "func1(VALUE, DIRECTION, a, s)"` (only terminals, finite space)
+   - ✗ WRONG: `"START": "func1(LOCAL_PROGRAM, a, s)"` (only one alternative, low branching)
 
-4. **All nonterminals must be reachable from START**
+3. **Priority: Design primitives that take CONDITION/LOCAL_PROGRAM as arguments**
+   - At least 3 out of 5 primitives should accept CONDITION or LOCAL_PROGRAM
+   - These enable the recursive structure needed for large program spaces
+
+**Example of GOOD START (creates large program space):**
+```json
+"START": "check_pattern(LOCAL_PROGRAM, DIRECTION, a, s) | evaluate_region(CONDITION, VALUE_INT, a, s)"
+```
+This works because:
+- 2 alternatives in START
+- Both use recursive nonterminals (LOCAL_PROGRAM, CONDITION)
+- Can generate thousands of programs through deep nesting
+
+**Example of BAD START (creates small program space):**
+```json
+"START": "is_adjacent(VALUE, DIRECTION, a, s)"
+```
+This fails because:
+- Only 1 alternative
+- Only expands VALUE (3 options) × DIRECTION (8 options) = 24 total programs
+- Cannot reach CONDITION or LOCAL_PROGRAM meaningfully
+
+### Reachability & Recursion Requirements
+
+1. **LOCAL_PROGRAM must be recursive or expand to CONDITION**
+   - ✓ Good: `"LOCAL_PROGRAM": "CONDITION | lambda cell, obs: transform(DIRECTION, CONDITION, cell, obs)"`
+   - ✗ Bad: `"LOCAL_PROGRAM": "CONDITION"` (no branching, no recursion at this level)
+
+2. **CONDITION must have ≥3 alternative productions**
+   - At least 2 alternatives should be recursive (use CONDITION or LOCAL_PROGRAM)
+   - At least 1 alternative should be a base case (simple check)
+   - ✓ Good: `"CONDITION": "lambda cell, obs: base_check(VALUE, cell, obs) | lambda cell, obs: recursive_check(CONDITION, VALUE_INT, cell, obs) | lambda cell, obs: combine(CONDITION, CONDITION, cell, obs)"`
+
+3. **All nonterminals must be reachable from START**
+   - VALUE and DIRECTION must appear in reachable productions
    - No isolated or dead nonterminals
 
-5. **Program space must be sufficiently large**
-   - The grammar must generate ≥100 distinct programs from START
-   - Avoid grammars where START has only one path with finite expansions
-
+4. **Program space must be sufficiently large**
+   - The grammar must generate ≥1000 distinct programs from START
+   - Deep nesting through CONDITION/LOCAL_PROGRAM ensures this
 
 ---
 
@@ -170,12 +196,18 @@ Before ANY indexing operation `obs[r, c]`, you MUST verify:
 ## Grammar Production Rules
 
 ### START Production
-- **EXACT FORMAT**: `"START": "FUNCTION_NAME_x(TYPE_1, TYPE_2, ..., a, s) | FUNCTION_NAME_y(TYPE_1, TYPE_2, ..., a, s)"`
+- **EXACT FORMAT**: `"START": "FUNCTION_NAME_1(TYPES..., a, s) | FUNCTION_NAME_2(TYPES..., a, s) | ..."`
+- **MANDATORY**: Must have ≥2 alternatives (use `|` separator)
+- **MANDATORY**: Each alternative must include CONDITION or LOCAL_PROGRAM in its arguments
 - Final two arguments MUST be literally `a, s` (not cell, obs, or any other name)
-- TYPE_i ∈ {VALUE, CONDITION, LOCAL_PROGRAM, DIRECTION, VALUE_INT}
+- TYPE_i ∈ {LOCAL_PROGRAM, DIRECTION, VALUE, CONDITION, VALUE_INT}
 - No lambda in START
-- Must use at least one primitive that creates program diversity
-- Should have at least 1 function but can have more too. 
+
+**Pattern that creates large program spaces:**
+Each START alternative should:
+1. Take CONDITION or LOCAL_PROGRAM as an argument (for recursion)
+2. Optionally take VALUE/DIRECTION/VALUE_INT (for variety)
+3. Use different primitives for each alternative
 
 ### CONDITION/LOCAL_PROGRAM Productions
 - **EXACT FORMAT**: `lambda cell, obs: FUNCTION_NAME(NONTERMINAL_1, NONTERMINAL_2, ..., cell, obs)`
@@ -239,42 +271,69 @@ Before ANY indexing operation `obs[r, c]`, you MUST verify:
     "nonterminals": ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "VALUE_INT"], //VALUE_INT is optional
     "terminals": ["FUNCTION_NAME_1", "FUNCTION_NAME_2", "FUNCTION_NAME_3", "FUNCTION_NAME_4", "FUNCTION_NAME_5"],
     "productions": {
-      "START": "FUNCTION_NAME_X(arg1, arg2, ..., a, s)",
-      "LOCAL_PROGRAM": "lambda cell, obs: FUNCTION_NAME_Y(arg1, arg2, ..., cell, obs) | ...",
-      "CONDITION": "lambda cell, obs: FUNCTION_NAME_Z(arg1, arg2, ..., cell, obs) | lambda cell, obs: FUNCTION_NAME_W(arg1, arg2, ..., cell, obs) | ...",
+      "START": "FUNCTION_NAME_1(LOCAL_PROGRAM, VALUE, a, s) | FUNCTION_NAME_2(CONDITION, DIRECTION, a, s)",
+      "LOCAL_PROGRAM": "CONDITION | lambda cell, obs: FUNCTION_NAME_3(DIRECTION, CONDITION, cell, obs)",
+      "CONDITION": "lambda cell, obs: FUNCTION_NAME_4(VALUE, cell, obs) | lambda cell, obs: FUNCTION_NAME_5(CONDITION, VALUE_INT, cell, obs) | lambda cell, obs: FUNCTION_NAME_1(LOCAL_PROGRAM, VALUE, cell, obs)",
       "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
       "VALUE": "{OBJECT_TYPES}",
-      "VALUE_INT": "1 | 2 | 3", //optional
+      "VALUE_INT": "1 | 2 | 3"
     }
   }
 }
 ```
-
-### Example Distribution Pattern
-The example shows 4 out of 5 primitives in CONDITION. You may:
-- Place primitives across multiple nonterminals (CONDITION, LOCAL_PROGRAM, or even START)
-- Use different argument patterns to create diversity
-- Ensure at least 2-3 primitives provide recursive or compositional structure
-- Have some primitives serve as base cases (simpler, non-recursive)
-- The key is ensuring reachability and sufficient program space, not using all primitives in one place
-
 
 ---
 
 ## Validation Checklist
 
 Before submitting, verify:
-- [ ] START references a primitive (not just VALUE)
+- [ ] START references a primitive
 - [ ] At least one recursive production exists
 - [ ] CONDITION has ≥2 alternatives (uses `|`)
 - [ ] All nonterminals in `nonterminals` list appear in `productions`
-- [ ] VALUE and DIRECTION are used in reachable productions
 - [ ] Both primitives appear in the grammar
 - [ ] No `obs.attribute` or `obs.method()` in Python stubs
 - [ ] Python stubs are complete (no `...` placeholders)
 - [ ] Grammar can generate ≥100 programs from START
 - [ ] If any primitive uses Int type, "VALUE_INT" is in nonterminals and productions
 - [ ] All grammar productions use VALUE_INT (not Int) as the nonterminal reference
+- [ ] START has ≥2 alternatives (uses `|`)
+- [ ] EVERY START alternative includes CONDITION or LOCAL_PROGRAM
+- [ ] At least 3 primitives accept CONDITION or LOCAL_PROGRAM as arguments
+- [ ] CONDITION has ≥3 alternatives with at least 2 being recursive
+- [ ] LOCAL_PROGRAM has branching (not just "CONDITION")
+- [ ] Grammar can generate ≥1000 programs from START (not just 100)
+
+---
+## Design Strategy for Large Program Spaces
+
+To ensure your DSL generates ≥1000 programs:
+
+1. **Design primitives with recursion in mind:**
+   - Create at least 3 primitives that take CONDITION as an argument
+   - Create at least 2 primitives that take LOCAL_PROGRAM as an argument
+   - These will be your "combinators" that enable deep nesting
+
+2. **Use both primitives in START:**
+   - Choose 2 different primitives that take CONDITION/LOCAL_PROGRAM
+   - Put both in START with `|` separator
+
+3. **Create recursive chains:**
+   - CONDITION should include primitives that reference CONDITION again
+   - LOCAL_PROGRAM should reference CONDITION, which references back
+   - This creates: START → LOCAL_PROGRAM → CONDITION → CONDITION → ...
+
+4. **Add base cases:**
+   - Include 1-2 simpler primitives that only take VALUE/DIRECTION
+   - These terminate the recursion
+   - Put them in CONDITION alternatives
+
+**Mental model:** Think of your DSL as a tree that grows exponentially:
+- START: 2 branches
+- Each branch: leads to LOCAL_PROGRAM or CONDITION
+- Each CONDITION: 3+ branches, most recursive
+- Depth: 3-5 levels deep
+- Result: 2 × 3 × 3 × 3 = 54+ paths, each with VALUE/DIRECTION combinations = thousands of programs
 
 ---
 
