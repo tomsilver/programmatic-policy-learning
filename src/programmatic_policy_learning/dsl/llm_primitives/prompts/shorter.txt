@@ -118,6 +118,7 @@ Design **5 primitives** with signature `(Cell, Obs) -> Bool` that:
 -  No hardcoded values, obs values come from {OBJECT_TYPES} which vary by game.
    - NEVER hardcode strings like "empty", "wall", "token", "agent", etc.
    - Only compare: `obs[r, c] == value` where `value` is a function argument
+- All Python code must be syntactically valid. NEVER break an if condition across lines unless the entire condition is wrapped in parentheses.
 ---
 ## CRITICAL CONSISTENCY REQUIREMENTS
 
