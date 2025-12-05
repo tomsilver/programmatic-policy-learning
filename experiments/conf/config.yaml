@@ -12,7 +12,7 @@ approach_name: ${hydra:runtime.choices.approach}
 env_name: ${hydra:runtime.choices.env}
 expert_policy: ${hydra:runtime.choices.expert}
 
-name_of_removed_func: "shifted" 
+name_of_removed_func:
 eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   mode: 0
   seeds: ${range:0,20}

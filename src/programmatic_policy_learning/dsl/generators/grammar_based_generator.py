@@ -46,6 +46,7 @@ class GrammarBasedProgramGenerator(ProgramGenerator[ProgT, InT, OutT]):
         else:
             self._grammar = create_grammar(env_spec)
         self._start_symbol = start_symbol
+
         super().__init__(dsl, env_spec)
 
     def generate_programs(

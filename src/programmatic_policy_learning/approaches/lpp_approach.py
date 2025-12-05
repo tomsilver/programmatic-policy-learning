@@ -172,7 +172,6 @@ def _generate_with_fixed_grid_v1(
 
     dsl = make_dsl()
     dsl_dict = get_dsl_functions_dict()
-
     program_generator = GrammarBasedProgramGenerator(
         cast(
             Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
