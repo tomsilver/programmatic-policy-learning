@@ -159,7 +159,7 @@ def create_grammar(
         rules={
             START: (
                 [
-                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", s)"],
+                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", a, s)"],
                     ["at_action_cell(", LOCAL_PROGRAM, ", a, s)"],
                 ],
                 [0.5, 0.5],
@@ -219,31 +219,30 @@ def create_grammar(
             ),
         }
     )
+    # # === Remove specified primitive if requested ===
+    # if removed_primitive is not None:
+    #     for nonterminal, (productions, probs) in list(grammar.rules.items()):
+    #         new_productions, new_probs = [], []
 
-    # === Remove specified primitive if requested ===
-    if removed_primitive is not None:
-        for nonterminal, (productions, probs) in list(grammar.rules.items()):
-            new_productions, new_probs = [], []
+    #         for prod, p in zip(productions, probs):
+    #             # Convert production (which can be a list or str)
+    #             # to string for substring search
+    #             prod_str = (
+    #                 " ".join(map(str, prod)) if isinstance(prod, list) else str(prod)
+    #             )
+    #             if removed_primitive not in prod_str:
+    #                 new_productions.append(prod)
+    #                 new_probs.append(p)
 
-            for prod, p in zip(productions, probs):
-                # Convert production (which can be a list or str)
-                # to string for substring search
-                prod_str = (
-                    " ".join(map(str, prod)) if isinstance(prod, list) else str(prod)
-                )
-                if removed_primitive not in prod_str:
-                    new_productions.append(prod)
-                    new_probs.append(p)
+    #         # Renormalize probabilities if something was removed
+    #         if len(new_probs) > 0 and len(new_probs) < len(probs):
+    #             total = sum(new_probs)
+    #             new_probs = [p / total for p in new_probs]
+    #             grammar.rules[nonterminal] = (new_productions, new_probs)
 
-            # Renormalize probabilities if something was removed
-            if len(new_probs) > 0 and len(new_probs) < len(probs):
-                total = sum(new_probs)
-                new_probs = [p / total for p in new_probs]
-                grammar.rules[nonterminal] = (new_productions, new_probs)
-
-        logging.info(
-            f"Removed primitive '{removed_primitive}' and renormalized probabilities."
-        )
+    #     logging.info(
+    #         f"Removed primitive '{removed_primitive}' and renormalized probabilities."
+    #     )
 
     return grammar
 
@@ -274,8 +273,8 @@ def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, An
         "stf": stf,
         "tpn": tpn,
     }
-    if removed_primitive:
-        del DSL_FUNCTIONS[removed_primitive]
+    # if removed_primitive:
+    #     del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS
 
 
