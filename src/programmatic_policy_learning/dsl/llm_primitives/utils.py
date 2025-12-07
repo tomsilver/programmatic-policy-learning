@@ -178,7 +178,7 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
             #     return create_reprompt_from_error_message(
             #         query,
             #         response,
-            #         f"Primitive '{name}' appears {count} times in grammar productions. "
+            #         f"Primitive '{name}' appears {count} times in grammar productions."
             #         "It must appear exactly once at its pcfg_insertion.nonterminal.",
             #     )
 

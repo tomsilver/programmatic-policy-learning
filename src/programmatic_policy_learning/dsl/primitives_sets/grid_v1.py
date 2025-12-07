@@ -159,7 +159,7 @@ def create_grammar(
         rules={
             START: (
                 [
-                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", s)"],
+                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", a, s)"],
                     ["at_action_cell(", LOCAL_PROGRAM, ", a, s)"],
                 ],
                 [0.5, 0.5],

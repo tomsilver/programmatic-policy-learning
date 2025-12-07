@@ -114,17 +114,6 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     return base, module_map
 
 
-def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None:
-    """Evaluate a program on a state-action pair."""
-    try:
-        result = eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
-        return result
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
-        return None
-
-
 # Global worker states
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
@@ -173,7 +162,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            logging.info(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
+            logging.error(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
     return results
 
 
