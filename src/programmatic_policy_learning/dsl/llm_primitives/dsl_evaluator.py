@@ -524,7 +524,7 @@ def evaluate_primitive(
             "deg_score": "NA",
         }
 
-    # logging.info(f"Outputs on sampled args: {outputs_new}")
+    logging.info(f"Outputs on sampled args: {outputs_new}")
 
     deg_score = degeneracy_score(outputs_new)
     logging.info(deg_score)
@@ -534,7 +534,6 @@ def evaluate_primitive(
     # -----------------------------------------------------
     # Level 2: Semantic similarity
     # -----------------------------------------------------
-
     result = semantic_similarity_filter(
         new_primitive_fn,
         proposal_signature,

@@ -2,13 +2,13 @@ _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammati
 
 demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # Use a list, Hydra will convert to tuple if needed
 program_generation_step_size: 1
-num_programs: 30
+num_programs: 50
 num_dts: 5
 max_num_particles: 25
 start_symbol: 0
 program_generation:
-  strategy: "fixed_grid_v1"  # Options: "fixed_grid_v1", "dsl_generator", "offline_loader" "grid_v1_ablated"
-  # offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
-  # dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/shorter.txt" #proof_of_concept_full one_missing_prompt_shifted
-  # removed_primitive: ""
+  strategy: "dsl_generator"  # Options: "fixed_grid_v1", "dsl_generator", "offline_loader" "grid_v1_ablated"
+  offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
+  dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/shorter.txt" #proof_of_concept_full one_missing_prompt_shifted
+  removed_primitive: ""
   mode: "full" # Options: single/full

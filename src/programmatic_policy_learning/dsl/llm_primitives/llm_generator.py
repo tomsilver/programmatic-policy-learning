@@ -26,9 +26,10 @@ from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
 )
 
 # SemanticJSONVerifierReprompt,; SemanticsPyStubRepromptCheck,
-# from programmatic_policy_learning.dsl.llm_primitives.utils import (
-#     JSONStructureRepromptCheck,
-# )
+from programmatic_policy_learning.dsl.llm_primitives.utils import (
+    JSONStructureRepromptCheck,
+    SemanticJSONVerifierReprompt,
+)
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,
@@ -86,8 +87,8 @@ class LLMPrimitivesGenerator:
 
         query = Query(prompt)
         reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
-            # JSONStructureRepromptCheck(),
-            # SemanticJSONVerifierReprompt(),
+            JSONStructureRepromptCheck(),
+            SemanticJSONVerifierReprompt(),
             # SemanticsPyStubRepromptCheck(),
         ]
 
@@ -97,6 +98,7 @@ class LLMPrimitivesGenerator:
             reprompt_checks,  # type: ignore[arg-type]
             max_attempts=5,
         )
+
         logging.debug("Response from LLM:")
         logging.debug(response)
         return json.loads(response.text)
