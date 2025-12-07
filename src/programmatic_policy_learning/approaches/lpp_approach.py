@@ -132,6 +132,7 @@ def get_program_set(
             "program_generation configuration is required for LPP approach."
         )
     strategy = program_generation["strategy"]
+    print(strategy)
     mode = program_generation["mode"]
 
     # Define strategies as a dictionary

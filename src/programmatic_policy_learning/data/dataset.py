@@ -7,6 +7,7 @@ import multiprocessing
 import os
 from importlib import import_module
 from typing import Any
+from functools import partial
 
 import cloudpickle
 import numpy as np
@@ -166,66 +167,117 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     return results
 
 
+# def run_all_programs_on_single_demonstration(
+#     base_class_name: str,
+#     demo_number: int,
+#     programs: list[StateActionProgram] | list[str],
+#     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
+#     dsl_functions: dict,
+#     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
+# ) -> tuple[Any, np.ndarray]:
+#     """Run all programs on a single demonstration and return feature matrix and
+#     labels."""
+#     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
+#     positive_examples, negative_examples = extract_examples_from_demonstration(
+#         demo_traj
+#     )
+#     fn_inputs = positive_examples + negative_examples
+#     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
+#     base_dsl, module_map = _split_dsl(dsl_functions)
+
+#     try:
+#         dsl_blob = cloudpickle.dumps(base_dsl)
+#         cloudpickle.loads(dsl_blob)  # Test deserialization
+#     except (ValueError, TypeError) as e:
+#         raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
+
+#     # Extract program strings (don’t pickle heavy objects repeatedly)
+#     program_strs = [
+#         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in programs
+#     ]
+
+#     num_data = len(fn_inputs)
+#     num_programs = len(program_strs)
+
+#     X = lil_matrix((num_data, num_programs), dtype=bool)
+
+#     # Combine the context initialization into a single block to avoid redefinition
+#     try:
+#         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
+#         # linux
+#     except (ValueError, RuntimeError):
+#         ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
+#         # macOS/Windows fallback (spawn)
+
+#     num_workers = allowed_cpus()
+#     num_workers = max(1, min(num_workers, len(fn_inputs)))
+
+#     for p_start in range(0, num_programs, program_interval):
+#         p_end = min(p_start + program_interval, num_programs)
+#         program_batch = program_strs[p_start:p_end]
+#         with ctx.Pool(
+#             processes=num_workers,
+#             initializer=worker_init,
+#             initargs=(dsl_blob, module_map, program_batch),
+#             maxtasksperchild=100,
+#         ) as pool:
+#             results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
+#             batch_rows_list = list(results_iter)
+#         batch_matrix = np.array(batch_rows_list, dtype=bool)
+#         X[:, p_start:p_end] = batch_matrix
+#     return X.tocsr(), np.array(y, dtype=np.uint8)
+
+def apply_programs(programs: list, fn_input: Any) -> list[bool]:
+    """Worker function that applies a list of programs to a single given input.
+
+    Parameters
+    ----------
+    programs : [ callable ]
+    fn_input : Any
+
+    Returns
+    -------
+    results : [ bool ]
+        Program outputs in order.
+    """
+    x: list[bool] = []
+    for program in programs:
+        x_i = program(*fn_input)
+        x.append(x_i)
+    return x
+
+
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
-    programs: list[StateActionProgram] | list[str],
+    programs: list,
     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
-    dsl_functions: dict,
-    program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
+    program_interval: int = 1000,
 ) -> tuple[Any, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
-    logging.info(f"Running all programs on {base_class_name}, {demo_number}")
+
+    print(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
         demo_traj
     )
-    fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-    base_dsl, module_map = _split_dsl(dsl_functions)
-
-    try:
-        dsl_blob = cloudpickle.dumps(base_dsl)
-        cloudpickle.loads(dsl_blob)  # Test deserialization
-    except (ValueError, TypeError) as e:
-        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
-
-    # Extract program strings (don’t pickle heavy objects repeatedly)
-    program_strs = [
-        (p.program if isinstance(p, StateActionProgram) else str(p)) for p in programs
-    ]
-
-    num_data = len(fn_inputs)
-    num_programs = len(program_strs)
-
+    num_data = len(y)
+    num_programs = len(programs)
     X = lil_matrix((num_data, num_programs), dtype=bool)
-
-    # Combine the context initialization into a single block to avoid redefinition
-    try:
-        ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
-        # linux
-    except (ValueError, RuntimeError):
-        ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
-        # macOS/Windows fallback (spawn)
-
-    num_workers = allowed_cpus()
-    num_workers = max(1, min(num_workers, len(fn_inputs)))
-
-    for p_start in range(0, num_programs, program_interval):
-        p_end = min(p_start + program_interval, num_programs)
-        program_batch = program_strs[p_start:p_end]
-        with ctx.Pool(
-            processes=num_workers,
-            initializer=worker_init,
-            initargs=(dsl_blob, module_map, program_batch),
-            maxtasksperchild=100,
-        ) as pool:
-            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
-            batch_rows_list = list(results_iter)
-        batch_matrix = np.array(batch_rows_list, dtype=bool)
-        X[:, p_start:p_end] = batch_matrix
-    return X.tocsr(), np.array(y, dtype=np.uint8)
-
+    for i in range(0, num_programs, program_interval):
+        end = min(i + program_interval, num_programs)
+        print(f"Iteration {i} of {num_programs}", end="\r")
+        num_workers = multiprocessing.cpu_count()
+        pool = multiprocessing.Pool(num_workers)
+        fn = partial(apply_programs, programs[i:end])
+        fn_inputs = positive_examples + negative_examples
+        results = pool.map(fn, fn_inputs)
+        pool.close()
+        for X_idx, x in enumerate(results):
+            X[X_idx, i:end] = x
+    X = X.tocsr()
+    return X, np.array(y, dtype=np.uint8)  # y
 
 def run_all_programs_on_demonstrations(
     base_class_name: str,
@@ -242,7 +294,7 @@ def run_all_programs_on_demonstrations(
             demo_number,
             programs,
             demo_dict[demo_number],
-            dsl_functions,
+            # dsl_functions,
         )
 
         if X is None:
