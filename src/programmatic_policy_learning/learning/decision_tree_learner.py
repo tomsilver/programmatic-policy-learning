@@ -168,6 +168,12 @@ def extract_plp_from_dt(
     node_to_features = estimator.tree_.feature
     threshold = estimator.tree_.threshold
     value = estimator.tree_.value.squeeze()
+    if len(value.shape) < 2:
+        logging.info(
+            "Decision tree saw only class %s; skipping this tree",
+            estimator.classes_[0],
+        )
+        return StateActionProgram("False"), float("-inf")
 
     stack = [0]
     parents: dict[int, tuple[int, str] | None] = {0: None}

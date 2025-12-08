@@ -178,7 +178,7 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
             #     return create_reprompt_from_error_message(
             #         query,
             #         response,
-            #         f"Primitive '{name}' appears {count} times in grammar productions."
+            #         f"Primitive '{name}' appears {count} times in grammar productions. "
             #         "It must appear exactly once at its pcfg_insertion.nonterminal.",
             #     )
 
@@ -210,6 +210,105 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
                 )
 
         # If all proposals are valid:
+        return None
+
+
+class SmallProposalVerifier(RepromptCheck):
+    """Minimal verifier for proposal-only reprompt outputs.
+
+    Ensures:
+      - Valid JSON
+      - Contains exactly one proposal
+      - Proposal has required fields:
+            name: str
+            args: list
+            semantics_py_stub: str
+            pcfg_insertion: { nonterminal: str, production: str }
+    No DSL-wide validation is performed.
+    """
+
+    def get_reprompt(self, query: Query, response: Response) -> Query | None:
+        # ---------------------------------------------
+        # 1. JSON must parse
+        # ---------------------------------------------
+        try:
+            data = json.loads(response.text)
+        except JSONDecodeError:
+            return create_reprompt_from_error_message(
+                query, response, "Your output must be valid JSON."
+            )
+
+        # ---------------------------------------------
+        # 2. Must contain 'proposal'
+        # ---------------------------------------------
+        if "proposal" not in data:
+            return create_reprompt_from_error_message(
+                query, response, "Your output must contain a 'proposal' field."
+            )
+
+        proposals = data["proposal"]
+
+        # ---------------------------------------------
+        # 3. proposal must be a list of length 1
+        # ---------------------------------------------
+        if not isinstance(proposals, list) or len(proposals) != 1:
+            return create_reprompt_from_error_message(
+                query,
+                response,
+                "Your output must contain EXACTLY one primitive inside 'proposal'.",
+            )
+
+        proposal = proposals[0]
+
+        # ---------------------------------------------
+        # 4. Validate required fields inside the primitive
+        # ---------------------------------------------
+        # name
+        name = proposal.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return create_reprompt_from_error_message(
+                query, response, "Primitive must contain a valid 'name' string."
+            )
+
+        # args
+        args = proposal.get("args")
+        if not isinstance(args, list):
+            return create_reprompt_from_error_message(
+                query, response, "'args' must be a list."
+            )
+
+        # semantics_py_stub
+        stub = proposal.get("semantics_py_stub")
+        if not isinstance(stub, str) or not stub.strip():
+            return create_reprompt_from_error_message(
+                query, response, "'semantics_py_stub' must be a non-empty string."
+            )
+
+        # ---------------------------------------------
+        # 5. Validate pcfg_insertion structure
+        # ---------------------------------------------
+        pcfg = proposal.get("pcfg_insertion")
+        if not isinstance(pcfg, dict):
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion' must be a dictionary."
+            )
+
+        nonterm = pcfg.get("nonterminal")
+        prod = pcfg.get("production")
+
+        if not isinstance(nonterm, str) or not nonterm.strip():
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion.nonterminal' must be a valid string."
+            )
+
+        if not isinstance(prod, str) or not prod.strip():
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion.production' must be a valid string."
+            )
+
+        # ---------------------------------------------
+        # Everything OK
+        # ---------------------------------------------
         return None
 
 

@@ -366,6 +366,36 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "X is None. Ensure the program execution results are valid."
             )
 
+        if self.program_generation.post_filter:
+            # DATASET AWARE POST FILTER - Degeneracy test on demo data!!
+            # Sum each feature column and mark columns that are all False or all True
+            # across the demos. Log and drop those constant programs from X,
+            # programs_sa, and program_prior_log_probs.
+            num_rows = X.shape[0]
+            col_true_counts = np.asarray(X.sum(axis=0)).ravel()
+            keep_mask = (col_true_counts > 0) & (col_true_counts < num_rows)
+            if not np.all(keep_mask):
+                removed = int((~keep_mask).sum())
+                if removed == len(keep_mask):
+                    msg = (
+                        "ERROR: All generated programs evaluated to constants on the"
+                        " dataset. This means no program had variation across"
+                        " demonstrations.\nTerminating..."
+                    )
+                    logging.info(msg)
+                    raise SystemExit(0)
+
+                logging.info(
+                    "Dropping %d degenerate programs that were constant on demos.",
+                    removed,
+                )
+                keep_indices = np.where(keep_mask)[0]
+                X = X[:, keep_indices]
+                programs_sa = [programs_sa[idx] for idx in keep_indices]
+                program_prior_log_probs = [
+                    program_prior_log_probs[idx] for idx in keep_indices
+                ]
+
         # Convert y to list[bool] - short term fix
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
         # Convert programs to list[StateActionProgram] - short term fix

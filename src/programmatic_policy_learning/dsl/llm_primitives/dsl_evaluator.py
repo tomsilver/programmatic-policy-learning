@@ -339,7 +339,10 @@ def eval_on_random_inputs(
             if p not in sig_dict:
                 logging.info(sig_dict)
                 logging.info(params)
-                raise ValueError(f"Argument '{p}' missing from DSL signature")
+                error_message = f"Argument '{p}' missing from DSL signature."
+                error_flag = 1
+                logging.info(error_message)
+                return outputs, error_flag, error_message
             type_name = sig_dict[p]
             args[p], error_flag, error_message = sample_argument(
                 type_name=type_name,
@@ -500,7 +503,7 @@ def evaluate_primitive(
     result = {}
     seed_all(seed)
     normalized_object_types = normalize_object_types(object_types)
-
+    input(existing_primitives)
     # -----------------------------------------------------
     # Level 1: Degenerate check
     # -----------------------------------------------------
@@ -534,17 +537,23 @@ def evaluate_primitive(
     # -----------------------------------------------------
     # Level 2: Semantic similarity
     # -----------------------------------------------------
-    result = semantic_similarity_filter(
-        new_primitive_fn,
-        proposal_signature,
-        existing_primitives,
-        normalized_object_types,
-        env_factory,
-        seed,
-        max_steps,
-        num_samples,
-        equivalence_threshold,
-    )
+    if len(existing_primitives) != 0:
+        print("INJAAA")
+        result = semantic_similarity_filter(
+            new_primitive_fn,
+            proposal_signature,
+            existing_primitives,
+            normalized_object_types,
+            env_factory,
+            seed,
+            max_steps,
+            num_samples,
+            equivalence_threshold,
+        )
+    else:
+        print("AFFARIN")
+        input()
+        result["keep"] = True
     result["deg_score"] = deg_score
-    logging.info(f"Result: {result}")
+    logging.info(f"Result: {result}\n")
     return result
