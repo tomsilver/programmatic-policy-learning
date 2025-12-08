@@ -92,7 +92,7 @@ class LLMPrimitivesGenerator:
                 SmallProposalVerifier(),
             ]
         else:
-            reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
+            reprompt_checks = [  # TODOO: Add for full version
                 JSONStructureRepromptCheck(),
                 SemanticJSONVerifierReprompt(),  # remove duplicates with first one
                 # SemanticsPyStubRepromptCheck(),
@@ -282,7 +282,6 @@ class LLMPrimitivesGenerator:
                     sorted((arg["name"], arg["type"]) for arg in proposal_dict["args"])
                 )
                 logging.info(existing_primitives)
-                # input("EXISTING ONES")
                 eval_result = evaluate_primitive(
                     impl,
                     existing_primitives=existing_prims,
@@ -331,21 +330,20 @@ class LLMPrimitivesGenerator:
                         "- Propose one replacement primitive only. "
                         " Same signature: (args…). Only return: "
                         "{{'proposal':"
-                        "[{{'name': ..., 'semantics_py_stub': ..., 'args': [...], 'pcfg_insertion': ['nonterminal':.., 'production':...], 'rationale_short':...}}]}}.\n"
+                        "[{{'name': ..., 'semantics_py_stub': ..., 'args': [...], "
+                        "'pcfg_insertion': ['nonterminal':.., 'production':...], "
+                        " 'rationale_short':...}}]}}.\n "
                         "- DO NOT regenerate the full DSL.\n"
                     )
 
                     new_prompt = base_prompt + addition_prompt
                     logging.info(addition_prompt)
-                    # input("PROPOSING A NEW ONE BASED ON FEEDBACK")
                 enable_partial_verifier = True
                 rep = self.query_llm(new_prompt, enable_partial_verifier)
-                print(rep)
 
                 # can later enforce to not be a list
                 proposal_dict = rep["proposal"][0]
                 logging.info(proposal_dict)
-                print("****\n")
 
             # If every attempt failed:
             raise RuntimeError("Failed to generate a valid primitive after retries.")
@@ -431,7 +429,6 @@ class LLMPrimitivesGenerator:
                 )
                 logging.info(llm_response)
                 added_responses.append(llm_response)
-                # input("CHECKKKK @!!!!!!!")
 
             accepted_primitives[name] = impl
 
@@ -447,10 +444,9 @@ class LLMPrimitivesGenerator:
             evaluate_fn=_eval,
         )
         logging.info(new_dsl_object)
-        # input(all_fns)
 
         # Add to DSL set
-        new_get_dsl_functions_fn = self.add_primitive_to_dsl(  # fix this
+        updated_dsl_dict = self.add_primitive_to_dsl(  # fix this
             list(accepted_primitives.keys()), list(accepted_primitives.values()), mode
         )
         self.write_json("new_metadata.json", llm_response)
@@ -464,7 +460,7 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         # 8. Return the results
         # ----------------------------------------------------------------------
-        return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
@@ -495,7 +491,7 @@ class LLMPrimitivesGenerator:
         names: list[str],
         implementations: list[Callable[..., Any]],
         mode: str,
-    ) -> Callable[[], dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Add a new primitive to the DSL functions dictionary.
 
         Args:
@@ -507,20 +503,18 @@ class LLMPrimitivesGenerator:
         """
         # Get the base DSL functions
         if mode == "single":
-            base_dsl_functions = get_dsl_functions_dict()
+            base_dsl_functions = get_dsl_functions_dict()  # add removed_prims as input
         elif mode == "full":
             base_dsl_functions = {}
+        else:
+            raise ValueError("Mode should be set to either single or full.")
 
         for each_name, each_fn in zip(names, implementations):
             if each_name in base_dsl_functions:
                 raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
             base_dsl_functions[each_name] = each_fn
 
-        # Return a new function that includes the updated DSL
-        def updated_get_dsl_functions_dict() -> dict[str, Any]:
-            return base_dsl_functions
-
-        return updated_get_dsl_functions_dict
+        return base_dsl_functions
 
     def write_json(self, filename: str, data: dict) -> None:
         """Write JSON data to a file in the output directory."""
@@ -611,14 +605,14 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(file_path), new_primitive_name
         )
-        updated_dsl_fn = self.add_primitive_to_dsl(
+        updated_dsl_dict = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation], ""
         )
 
         # Create the DSL object
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
 
-        return self.grammar, updated_dsl_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object
 
     def offline_loader_full_version(self, run_id: str) -> tuple[
         Grammar[str, int, int],
@@ -673,7 +667,7 @@ class LLMPrimitivesGenerator:
             # Accumulate for DSL update later
             new_primitives[new_primitive_name] = implementation
 
-        updated_dsl_fn = self.add_primitive_to_dsl(
+        updated_dsl_dict = self.add_primitive_to_dsl(
             list(new_primitives.keys()), list(new_primitives.values()), ""
         )
 
@@ -684,4 +678,4 @@ class LLMPrimitivesGenerator:
             evaluate_fn=_eval,
         )
 
-        return self.grammar, updated_dsl_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object

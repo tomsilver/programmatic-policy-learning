@@ -229,59 +229,6 @@ def run_all_programs_on_single_demonstration(
     return X.tocsr(), np.array(y, dtype=np.uint8)
 
 
-# def apply_programs(programs: list, fn_input: Any) -> list[bool]:
-#     """Worker function that applies a list of programs to a single given input.
-
-#     Parameters
-#     ----------
-#     programs : [ callable ]
-#     fn_input : Any
-
-#     Returns
-#     -------
-#     results : [ bool ]
-#         Program outputs in order.
-#     """
-#     x: list[bool] = []
-#     for program in programs:
-#         x_i = program(*fn_input)
-#         x.append(x_i)
-#     return x
-
-
-# def run_all_programs_on_single_demonstration(
-#     base_class_name: str,
-#     demo_number: int,
-#     programs: list,
-#     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
-#     program_interval: int = 1000,
-# ) -> tuple[Any, np.ndarray]:
-#     """Run all programs on a single demonstration and return feature matrix and
-#     labels."""
-
-#     print(f"Running all programs on {base_class_name}, {demo_number}")
-#     positive_examples, negative_examples = extract_examples_from_demonstration(
-#         demo_traj
-#     )
-#     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
-#     num_data = len(y)
-#     num_programs = len(programs)
-#     X = lil_matrix((num_data, num_programs), dtype=bool)
-#     for i in range(0, num_programs, program_interval):
-#         end = min(i + program_interval, num_programs)
-#         print(f"Iteration {i} of {num_programs}", end="\r")
-#         num_workers = multiprocessing.cpu_count()
-#         pool = multiprocessing.Pool(num_workers)
-#         fn = partial(apply_programs, programs[i:end])
-#         fn_inputs = positive_examples + negative_examples
-#         results = pool.map(fn, fn_inputs)
-#         pool.close()
-#         for X_idx, x in enumerate(results):
-#             X[X_idx, i:end] = x
-#     X = X.tocsr()
-#     return X, np.array(y, dtype=np.uint8)  # y
-
-
 def run_all_programs_on_demonstrations(
     base_class_name: str,
     demo_numbers: tuple[int, ...],

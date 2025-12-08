@@ -325,7 +325,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.max_demo_length = max_demo_length
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
-        self.program_generation = program_generation
+        if program_generation is None:
+            raise ValueError(
+                "program_generation configuration is required for LPP approach."
+            )
+        self.program_generation: dict[str, Any] = program_generation
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -366,7 +370,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "X is None. Ensure the program execution results are valid."
             )
 
-        if self.program_generation.post_filter:
+        if self.program_generation["post_filter"]:
             # DATASET AWARE POST FILTER - Degeneracy test on demo data!!
             # Sum each feature column and mark columns that are all False or all True
             # across the demos. Log and drop those constant programs from X,

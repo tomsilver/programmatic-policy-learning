@@ -178,7 +178,7 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
             #     return create_reprompt_from_error_message(
             #         query,
             #         response,
-            #         f"Primitive '{name}' appears {count} times in grammar productions. "
+            #         f"Primitive '{name}' appears{count} times in grammar productions."
             #         "It must appear exactly once at its pcfg_insertion.nonterminal.",
             #     )
 
@@ -233,7 +233,7 @@ class SmallProposalVerifier(RepromptCheck):
         # ---------------------------------------------
         try:
             data = json.loads(response.text)
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             return create_reprompt_from_error_message(
                 query, response, "Your output must be valid JSON."
             )

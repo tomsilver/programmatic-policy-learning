@@ -316,7 +316,7 @@ def eval_on_random_inputs(
     sig_dict = dict(proposal_signature)
     params = list(fn.__code__.co_varnames[: fn.__code__.co_argcount])
 
-    outputs = []
+    outputs: list[Any] = []
     error_flag = False
     error_message = ""
     for i in range(num_samples):
@@ -340,7 +340,7 @@ def eval_on_random_inputs(
                 logging.info(sig_dict)
                 logging.info(params)
                 error_message = f"Argument '{p}' missing from DSL signature."
-                error_flag = 1
+                error_flag = True
                 logging.info(error_message)
                 return outputs, error_flag, error_message
             type_name = sig_dict[p]
@@ -503,7 +503,6 @@ def evaluate_primitive(
     result = {}
     seed_all(seed)
     normalized_object_types = normalize_object_types(object_types)
-    input(existing_primitives)
     # -----------------------------------------------------
     # Level 1: Degenerate check
     # -----------------------------------------------------
@@ -538,7 +537,6 @@ def evaluate_primitive(
     # Level 2: Semantic similarity
     # -----------------------------------------------------
     if len(existing_primitives) != 0:
-        print("INJAAA")
         result = semantic_similarity_filter(
             new_primitive_fn,
             proposal_signature,
@@ -551,8 +549,6 @@ def evaluate_primitive(
             equivalence_threshold,
         )
     else:
-        print("AFFARIN")
-        input()
         result["keep"] = True
     result["deg_score"] = deg_score
     logging.info(f"Result: {result}\n")
