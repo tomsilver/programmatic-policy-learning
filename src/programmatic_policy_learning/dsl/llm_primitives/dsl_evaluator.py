@@ -351,6 +351,8 @@ def eval_on_random_inputs(
             out = fn(**args)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logging.info(f"Exception occurred: {e}")
+            print(fn)
+            print(args)
             out = None  # treat crashes as non-usable
             error_flag = True
             error_message = str(e)
