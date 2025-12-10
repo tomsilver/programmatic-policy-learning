@@ -614,14 +614,14 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(file_path), new_primitive_name
         )
-        updated_dsl_fn = self.add_primitive_to_dsl(
+        updated_dsl_dict = self.add_primitive_to_dsl(
             [new_primitive_name], [implementation], ""
         )
 
         # Create the DSL object
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
 
-        return self.grammar, updated_dsl_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object
 
     def offline_loader_full_version(self, run_id: str) -> tuple[
         Grammar[str, int, int],
@@ -676,7 +676,7 @@ class LLMPrimitivesGenerator:
             # Accumulate for DSL update later
             new_primitives[new_primitive_name] = implementation
 
-        updated_dsl_fn = self.add_primitive_to_dsl(
+        updated_dsl_dict = self.add_primitive_to_dsl(
             list(new_primitives.keys()), list(new_primitives.values()), ""
         )
 
@@ -687,4 +687,4 @@ class LLMPrimitivesGenerator:
             evaluate_fn=_eval,
         )
 
-        return self.grammar, updated_dsl_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object

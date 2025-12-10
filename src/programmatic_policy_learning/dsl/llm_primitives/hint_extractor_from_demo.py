@@ -157,7 +157,7 @@ def describe_five_videos(
             content.append(
                 {
                     "type": "input_image",
-                    "image_url": {"url": url},
+                    "image_url": url,
                 }
             )
 
@@ -180,7 +180,7 @@ def describe_five_videos(
 
 
 if __name__ == "__main__":
-    env_name = "CheckmateTactic"
+    env_name = "TwoPileNim"
     paths = [f"videos/expert_demonstration_{env_name}_{i}.mp4" for i in range(11)]
 
     text = describe_five_videos(
