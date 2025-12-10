@@ -172,5 +172,8 @@ cache/
 slurm/
 outputs/
 
+# ignore the expert demo videos directory
+videos/
+
 # ignore job files
 .slurm
