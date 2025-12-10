@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=check_50k_1k_dt20_par100      # Job name
+#SBATCH --job-name=debug      # Job name
 #SBATCH --account=aip-krallen       # Your advisor's account
 #SBATCH --time=36:00:00              # Walltime (hh:mm:ss)
 #SBATCH --mem=16G                    # Memory

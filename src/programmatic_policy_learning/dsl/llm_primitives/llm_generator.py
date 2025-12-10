@@ -456,7 +456,7 @@ class LLMPrimitivesGenerator:
         logging.info(new_dsl_object)
 
         # Add to DSL set
-        new_get_dsl_functions_fn = self.add_primitive_to_dsl(  # fix this
+        updated_dsl_dict = self.add_primitive_to_dsl(  # fix this
             list(accepted_primitives.keys()), list(accepted_primitives.values()), mode
         )
         self.write_json("new_metadata.json", llm_response)
@@ -470,7 +470,7 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         # 8. Return the results
         # ----------------------------------------------------------------------
-        return self.grammar, new_get_dsl_functions_fn(), new_dsl_object
+        return self.grammar, updated_dsl_dict, new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
