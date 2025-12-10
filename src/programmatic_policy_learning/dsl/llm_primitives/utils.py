@@ -41,144 +41,274 @@ class SemanticJSONVerifierReprompt(RepromptCheck):
     """Checks semantic and structural validity of an LLM-generated grammar
     JSON."""
 
-    VALID_NONTERMINALS = {"START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"}
+    ALLOWED_RUNTIME_VARS = {"cell", "obs", "s", "a"}
+    ALLOWED_KEYWORDS = {"lambda", "True", "False", "None"}
 
     def get_reprompt(self, query: Query, response: Response) -> Query | None:
-        # I assume it's been checked before to be a valid json file
-        llm_output = json.loads(response.text)
+        # ---------------------------------------------------------
+        # Parse JSON
+        # ---------------------------------------------------------
+        try:
+            llm_output = json.loads(response.text)
+        except json.JSONDecodeError:
+            return create_reprompt_from_error_message(
+                query, response, "Your output must be valid JSON."
+            )
 
-        proposal = llm_output.get("proposal", {})
+        proposals = llm_output.get("proposal", [])
         grammar = llm_output.get("updated_grammar", {})
 
-        # 1. Nonterminal validity
-        nonterm = proposal.get("pcfg_insertion", {}).get("nonterminal")
-        if not isinstance(nonterm, str) or "|" in nonterm:
+        if not isinstance(proposals, list):
             return create_reprompt_from_error_message(
-                query,
-                response,
-                "The pcfg_insertion->'nonterminal'\
-                must be a single valid name (no '|').",
-            )
-        if nonterm not in self.VALID_NONTERMINALS:
-            return create_reprompt_from_error_message(
-                query,
-                response,
-                f"Invalid nonterminal '{nonterm}'.\
-                    Must be one of {sorted(self.VALID_NONTERMINALS)}.",
+                query, response, "'proposal' must be a list of primitive definitions."
             )
 
-        # 2. Variable naming consistency
-        stub = proposal.get("semantics_py_stub", "")
-        if re.search(r"\blambda\s+cell\s*,\s*o\b", stub) or " o:" in stub:
-            return create_reprompt_from_error_message(
-                query,
-                response,
-                "Use 'cell, obs' (not 'o') in all lambdas and function definitions.",
-            )
-
-        # 3. Trailing commas or syntax typos
-        prod = proposal.get("pcfg_insertion", {}).get("production", "")
-
-        if re.search(r",\s*\|", prod) or prod.strip().endswith(","):
-            return create_reprompt_from_error_message(
-                query,
-                response,
-                "Production contains stray commas or misplaced '|'. Clean up syntax.",
-            )
-
-        # 4. Infinite recursion detection
-        # e.g., CONDITION -> conditional_action(CONDITION, ...)
+        # Extract declared grammar symbols
+        declared_nts = set(grammar.get("nonterminals", []))
+        declared_terms = set(grammar.get("terminals", []))
         prods = grammar.get("productions", {})
-        for nt, rule in prods.items():
-            if f"{nt}(" in rule:
+
+        # =========================================================
+        # VALIDATE EACH PROPOSAL
+        # =========================================================
+        for proposal in proposals:
+
+            name = proposal.get("name", "")
+            pcfg = proposal.get("pcfg_insertion", {})
+            stub = proposal.get("semantics_py_stub", "")
+            prod = pcfg.get("production", "")
+
+            # ---------------------------------------------------------
+            # 1. Validate pcfg_insertion.nonterminal
+            # ---------------------------------------------------------
+            nonterm = pcfg.get("nonterminal")
+
+            if not isinstance(nonterm, str) or "|" in nonterm:
                 return create_reprompt_from_error_message(
                     query,
                     response,
-                    f"Rule for '{nt}' calls itself directly;\
-                        avoid recursive definitions.",
+                    "pcfg_insertion.nonterminal must be a single valid nonterminal name",
                 )
 
-        # 5. Missing terminals consistency
-        terminals = grammar.get("terminals", [])
-        if proposal.get("name") not in terminals:
+            # NEW: allow any NT as long as it appears in updated_grammar.nonterminals
+            if nonterm not in declared_nts:
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    f"Invalid nonterminal '{nonterm}'. It must appear in"
+                    "updated_grammar.nonterminals.",
+                )
+
+            # ---------------------------------------------------------
+            # 2. Variable naming consistency (lambda cell, obs)
+            # ---------------------------------------------------------
+            if re.search(r"\blambda\s+cell\s*,\s*o\b", stub) or " o:" in stub:
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    "Use 'cell, obs' (not 'o') in all lambdas and stubs.",
+                )
+
+            # ---------------------------------------------------------
+            # 3. Stray commas or syntax errors
+            # ---------------------------------------------------------
+            if re.search(r",\s*\|", prod) or prod.strip().endswith(","):
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    "Your production rule has stray commas or misplaced '|'."
+                    "Clean the syntax.",
+                )
+
+            # ---------------------------------------------------------
+            # 4. Infinite recursion detection (NT calls itself)
+            # ---------------------------------------------------------
+            for nt, rule in prods.items():
+                if f"{nt}(" in rule:
+                    return create_reprompt_from_error_message(
+                        query,
+                        response,
+                        f"Production for '{nt}' calls itself. Recursive grammars are"
+                        "not allowed.",
+                    )
+
+            # ---------------------------------------------------------
+            # 5. Terminal must be listed in grammar.terminals
+            # ---------------------------------------------------------
+            if name not in declared_terms:
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    f"New terminal '{name}' must appear in 'terminals'.",
+                )
+
+            # ---------------------------------------------------------
+            # 6. Argument consistency: stub vs production call
+            # ---------------------------------------------------------
+            func_match = re.search(rf"def\s+{re.escape(name)}\s*\(([^)]*)\):", stub)
+            if func_match:
+                func_args = [a.strip() for a in func_match.group(1).split(",")]
+            else:
+                func_args = []
+
+            prod_match = re.search(rf"{re.escape(name)}\s*\(([^)]*)\)", prod)
+            if prod_match:
+                prod_args = [a.strip() for a in prod_match.group(1).split(",")]
+            else:
+                prod_args = []
+
+            # Compare (ignore missing cases)
+            if func_args and prod_args and len(func_args) != len(prod_args):
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    f"Primitive '{name}' defines {len(func_args)} args in stub, "
+                    f"but production uses {len(prod_args)} args.",
+                )
+
+            # # ---------------------------------------------------------
+            # # 7. Primitive must appear EXACTLY ONCE across all productions
+            # # ---------------------------------------------------------
+            # count = 0
+            # for nt, rhs in prods.items():
+            #     if re.search(rf"\b{re.escape(name)}\s*\(", rhs):
+            #         count += 1
+
+            # if count != 1:
+            #     return create_reprompt_from_error_message(
+            #         query,
+            #         response,
+            #         f"Primitive '{name}' appears{count} times in grammar productions."
+            #         "It must appear exactly once at its pcfg_insertion.nonterminal.",
+            #     )
+
+            # ---------------------------------------------------------
+            # 8. Production uses only allowed identifiers
+            # ---------------------------------------------------------
+            tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", prod)
+            invalid = []
+            for tok in tokens:
+                if tok in self.ALLOWED_RUNTIME_VARS:
+                    continue
+                if tok in self.ALLOWED_KEYWORDS:
+                    continue
+                if tok in declared_nts:
+                    continue
+                if tok in declared_terms:
+                    continue
+                # otherwise invalid
+                invalid.append(tok)
+
+            if invalid:
+                return create_reprompt_from_error_message(
+                    query,
+                    response,
+                    "Production contains undefined identifiers: "
+                    + ", ".join(sorted(set(invalid)))
+                    + ". Use only declared nonterminals, terminals, or variables"
+                    "(cell, obs, s, a).",
+                )
+
+        # If all proposals are valid:
+        return None
+
+
+class SmallProposalVerifier(RepromptCheck):
+    """Minimal verifier for proposal-only reprompt outputs.
+
+    Ensures:
+      - Valid JSON
+      - Contains exactly one proposal
+      - Proposal has required fields:
+            name: str
+            args: list
+            semantics_py_stub: str
+            pcfg_insertion: { nonterminal: str, production: str }
+    No DSL-wide validation is performed.
+    """
+
+    def get_reprompt(self, query: Query, response: Response) -> Query | None:
+        # ---------------------------------------------
+        # 1. JSON must parse
+        # ---------------------------------------------
+        try:
+            data = json.loads(response.text)
+        except json.JSONDecodeError:
+            return create_reprompt_from_error_message(
+                query, response, "Your output must be valid JSON."
+            )
+
+        # ---------------------------------------------
+        # 2. Must contain 'proposal'
+        # ---------------------------------------------
+        if "proposal" not in data:
+            return create_reprompt_from_error_message(
+                query, response, "Your output must contain a 'proposal' field."
+            )
+
+        proposals = data["proposal"]
+
+        # ---------------------------------------------
+        # 3. proposal must be a list of length 1
+        # ---------------------------------------------
+        if not isinstance(proposals, list) or len(proposals) != 1:
             return create_reprompt_from_error_message(
                 query,
                 response,
-                f"New terminal '{proposal.get('name')}' not added to 'terminals' list.",
+                "Your output must contain EXACTLY one primitive inside 'proposal'.",
             )
 
-        # 6. Argument consistency across stub, args, and production ---
-        func_name = proposal.get("name", "")
+        proposal = proposals[0]
 
-        # Extract argument list from stub
-        func_match = re.search(rf"def\s+{re.escape(func_name)}\s*\(([^)]*)\):", stub)
-        if func_match:
-            func_args = [a.strip() for a in func_match.group(1).split(",") if a.strip()]
-        else:
-            func_args = []
-
-        # Extract argument list from first call in production
-        prod_match = re.search(rf"{re.escape(func_name)}\s*\(([^)]*)\)", prod)
-        if prod_match:
-            prod_args = [a.strip() for a in prod_match.group(1).split(",") if a.strip()]
-        else:
-            prod_args = []
-
-        # Compare argument counts (ignore lambda params)
-        if func_args and prod_args and len(func_args) != len(prod_args):
+        # ---------------------------------------------
+        # 4. Validate required fields inside the primitive
+        # ---------------------------------------------
+        # name
+        name = proposal.get("name")
+        if not isinstance(name, str) or not name.strip():
             return create_reprompt_from_error_message(
-                query,
-                response,
-                f"The primitive '{func_name}' defines {len(func_args)}\
-                arguments in its stub, but is called with {len(prod_args)}\
-                    in production. Ensure the counts match.",
+                query, response, "Primitive must contain a valid 'name' string."
             )
 
-        # 7. Ensure primitive is inserted only once across the grammar
-        count = 0
-        for nt, rhs in prods.items():
-            # look for the primitive name followed by "("
-            if re.search(rf"\b{re.escape(func_name)}\s*\(", rhs):
-                count += 1
-
-        if count > 1:
+        # args
+        args = proposal.get("args")
+        if not isinstance(args, list):
             return create_reprompt_from_error_message(
-                query,
-                response,
-                f"The primitive '{func_name}' appears in {count}\
-                different grammar rules. It must be inserted in\
-                exactly one nonterminal, as specified in\
-                    'pcfg_insertion.nonterminal'.",
+                query, response, "'args' must be a list."
             )
 
-        # 8: Nonterminal + variable scope validation
-        ALLOWED_RUNTIME_VARS = {"cell", "obs", "s", "a"}
-        ALLOWED_KEYWORDS = {"lambda", "True", "False", "None"}
-        declared_nts = set(grammar.get("nonterminals", []))
-        declared_terms = terminals
-        # Extract all Python-like identifiers
-        tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", prod)
-
-        invalid = []
-        for tok in tokens:
-            # allow lambda & bound runtime vars
-            if tok in ALLOWED_RUNTIME_VARS or tok in ALLOWED_KEYWORDS:
-                continue
-            # allow declared grammar symbols (NTs or terminals)
-            if tok in declared_nts or tok in declared_terms:
-                continue
-            # everything else is invalid
-            invalid.append(tok)
-
-        if invalid:
+        # semantics_py_stub
+        stub = proposal.get("semantics_py_stub")
+        if not isinstance(stub, str) or not stub.strip():
             return create_reprompt_from_error_message(
-                query,
-                response,
-                f"Production contains undefined or disallowed symbols: \
-                {', '.join(sorted(set(invalid)))}. Use only declared\
-                nonterminals, terminals, or bound variables (cell, obs, s, a).",
+                query, response, "'semantics_py_stub' must be a non-empty string."
             )
 
+        # ---------------------------------------------
+        # 5. Validate pcfg_insertion structure
+        # ---------------------------------------------
+        pcfg = proposal.get("pcfg_insertion")
+        if not isinstance(pcfg, dict):
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion' must be a dictionary."
+            )
+
+        nonterm = pcfg.get("nonterminal")
+        prod = pcfg.get("production")
+
+        if not isinstance(nonterm, str) or not nonterm.strip():
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion.nonterminal' must be a valid string."
+            )
+
+        if not isinstance(prod, str) or not prod.strip():
+            return create_reprompt_from_error_message(
+                query, response, "'pcfg_insertion.production' must be a valid string."
+            )
+
+        # ---------------------------------------------
+        # Everything OK
+        # ---------------------------------------------
         return None
 
 

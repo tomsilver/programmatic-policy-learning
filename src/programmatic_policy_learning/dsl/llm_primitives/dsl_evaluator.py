@@ -339,6 +339,7 @@ def eval_on_random_inputs(
             if p not in sig_dict:
                 logging.info(sig_dict)
                 logging.info(params)
+                print()
                 raise ValueError(f"Argument '{p}' missing from DSL signature")
             type_name = sig_dict[p]
             args[p], error_flag, error_message = sample_argument(

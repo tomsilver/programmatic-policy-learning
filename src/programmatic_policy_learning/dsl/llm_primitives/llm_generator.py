@@ -508,8 +508,8 @@ class LLMPrimitivesGenerator:
         base_dsl_functions = get_dsl_functions_dict()
 
         for each_name, each_fn in zip(names, implementations):
-            if each_name in base_dsl_functions:
-                raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            # if each_name in base_dsl_functions:
+            #     raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
             base_dsl_functions[each_name] = each_fn
 
         # Return a new function that includes the updated DSL

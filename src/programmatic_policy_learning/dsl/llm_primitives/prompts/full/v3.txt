@@ -42,35 +42,36 @@ VALUE := ObjectType from {OBJECT_TYPES}
 If integer arguments appear:
 - Use `"type": "Int"`
 - Use nonterminal VALUE_INT in productions
-- Define `"VALUE_INT": "1 | 2 | 3"`
+- Define `"VALUE_INT": "1 | 2 | 3 ..."`
+- The range for VALUE_INT should be chosen automatically by the model based on the needs of the primitives. It must not default to {1,2,3} if a larger or different range is required.
 
 ---
 
 ## PRIMITIVE DESIGN RULES (CRITICAL)
 
-You must design **exactly 5 primitives**, each implementing `(Cell, Obs) -> Bool`.
-At least one primitive must capture a spatial relationship between grid values 
-(i.e., it must compute something involving the relative position or 
-arrangement of VALUEs).
+You must design **exactly 5-10 primitives**, each implementing `(Cell, Obs) -> Bool`.
+- Choose the number automatically based on the structure needed to express useful behaviors in the trajectories.
+
+### Core expressiveness requirement
+At least two primitives must explicitly capture spatial relationships between grid values (i.e., it must compute something involving the relative position or  arrangement of VALUEs).
+At least one primitive must capture a relational or logical dependency.
+Across all primitives, there must be meaningful coverage of spatial, directional, distance-based, and obstacle-aware reasoning patterns (inspired by demonstration-inferred hints).
 
 
 ### Global Uniqueness Across Nonterminals (CRITICAL)
-- All 5 primitives must have **distinct names**.
-- All 5 primitives must have **distinct argument-type signatures**.
+- All primitives must have **distinct names**.
 - Each primitive must belong to **exactly one** of the nonterminals:
   - `"START"`
   - `"LOCAL_PROGRAM"`
   - `"CONDITION"`
-- Ownership is determined by:
-
-pcfg_insertion.nonterminal ∈ {"START","LOCAL_PROGRAM","CONDITION"}
-
+- Ownership is determined by: pcfg_insertion.nonterminal ∈ {"START","LOCAL_PROGRAM","CONDITION"}
 - A primitive’s name may appear **only** in the productions of its owning nonterminal.
 - If a primitive has `"nonterminal": "CONDITION"`, it may appear *only* in the CONDITION production.
 - If `"nonterminal": "LOCAL_PROGRAM"`, it may appear *only* in LOCAL_PROGRAM.
 - If `"nonterminal": "START"`, it may appear *only* in START.
 - **No primitive may appear in more than one nonterminal.**
 - **No primitive may be repeated across START, LOCAL_PROGRAM, and CONDITION.**
+- No primitive may exist solely to combine Boolean results of other primitives.
 
 ### Distribution
 - **3–4 recursive combinators**:
@@ -85,21 +86,58 @@ pcfg_insertion.nonterminal ∈ {"START","LOCAL_PROGRAM","CONDITION"}
 
 ### Meaningful Observation Access
 - Every primitive must index into `obs` with bounds checks.
-- Every combinator must call its CONDITION/LOCAL_PROGRAM argument at most once.
 - No primitive may perform Boolean glue (`and`, `or`, `not`) on outputs of other primitives.
 
+### Prohibited trivial primitives
+- No primitive may be a Boolean combiner in disguise...
+
 ### Python Stub Requirements
-- Must begin with:
-`from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *`
 - Signature:
 `def NAME(arg1, arg2, ..., cell, obs):`
 - Must check `if cell is None: return False`
 - Only allowed:
-- indexing `obs[r, c]`
-- arithmetic, comparisons
-- bounded for-loops  
+  - indexing `obs[r, c]`
+  - arithmetic, comparisons
+  - bounded for-loops  
 - No helper functions, no recursion, no placeholders.
 - No hardcoded obs values (must compare obs[...] only to VALUE arguments).
+
+---
+
+## DEMONSTRATION-INFERRED FEATURES (HINTS)
+
+Below is a summary of patterns extracted from a set of expert trajectories.
+These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+
+### High-frequency relational patterns:
+- The agent frequently moves to reduce the Manhattan (grid) distance to the target.
+- The agent often positions itself to be on the same row or column as the target before closing in.
+- The agent tends to approach the target from the direction with the least obstacles or open space.
+- The agent avoids moving into positions where obstacles (trees) would block a direct path to the target.
+
+### Useful directional / asymmetry relations:
+- The agent often moves to align itself horizontally or vertically with the target before making the final approach.
+- When the target is near a boundary or corner, the agent approaches from the direction that minimizes the target's escape options.
+- The agent prefers to approach the target from the side with more open space, avoiding being separated by obstacles.
+- There is a tendency to approach the target from behind or from the side, rather than head-on if the target is near a wall.
+
+### Example state–action correlations:
+- When the agent is diagonally offset from the target, it chooses actions that reduce both the x and y distance, often prioritizing the axis with the greater gap.
+- If the target is adjacent to a boundary, the agent moves to block potential escape routes along the open axis.
+- When the agent is one step away (adjacent) to the target, it moves directly onto the target's cell.
+- If the agent and target are separated by an obstacle, the agent moves around the obstacle rather than attempting to move through it.
+
+### Frequently observed local spatial configurations:
+- The agent and target are often separated by a single row or column, with the agent moving to close this gap.
+- The agent frequently positions itself so that there are no obstacles between itself and the target along the approach axis.
+- When the target is in a corner, the agent approaches along the open edge, effectively trapping the target.
+- The agent avoids being diagonally adjacent to the target if a direct approach is possible.
+
+### Observed distance thresholds or step ranges:
+- The agent consistently acts to reduce the distance to the target to zero, moving stepwise closer each turn.
+- When within 2-3 steps of the target, the agent prioritizes moves that will quickly bring it adjacent to the target.
+- The agent rarely takes detours unless blocked by obstacles, indicating a preference for the shortest available path.
+- When the target is within 1 step of a boundary, the agent increases pressure by moving to cut off escape along the open axis.
 
 ---
 
@@ -109,7 +147,7 @@ Nonterminals:
 ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "VALUE_INT"]
 
 
-Terminals: the names of the 5 primitives.
+Terminals: the names of all primitives.
 
 ---
 
@@ -157,7 +195,7 @@ START alternatives must be constructed mechanically:
 ### 4. Other Nonterminals
 "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)"
 "VALUE": "{OBJECT_TYPES}"
-"VALUE_INT": "1 | 2 | 3" # optional, if needed
+"VALUE_INT": "1 | 2 | 3 ..." 
 
 
 ---
@@ -182,7 +220,6 @@ This requires:
 - START: ≥2 recursive branches
 - LOCAL_PROGRAM: ≥1 recursive branch
 - CONDITION: ≥2 recursive branches
-- Combinators with distinct signatures
 
 ---
 
@@ -203,7 +240,7 @@ This requires:
 "production": "lambda cell, obs: NAME(..., cell, obs)" // Except START, which uses no lambda
 }
 }
-// exactly 5 primitives in total
+// exactly all primitives in totall
 ],
 "updated_grammar": {
 "nonterminals": [...],
@@ -214,7 +251,7 @@ This requires:
 "CONDITION": "... | ...",
 "DIRECTION": "...",
 "VALUE": "...",
-"VALUE_INT": "1 | 2 | 3"
+"VALUE_INT": "1 | 2 | 3 ..."
 }
 }
 }
@@ -228,10 +265,10 @@ Before returning your answer, ensure:
 - No primitive repeats across START, LOCAL_PROGRAM, CONDITION.
 - START uses only its own primitives, never CONDITION/LOCAL_PROGRAM ones.
 - LOCAL_PROGRAM includes `"CONDITION"` + ≥1 recursive lambda.
+- CONDITION and LOCAL_PROGRAM have lambda expressions. NO lambda in START.
 - CONDITION includes ≥3 alternatives, ≥2 recursive, ≥1 base case.
 - At least one combinator takes CONDITION; at least one takes LOCAL_PROGRAM.
 - All stubs index obs with bounds checks.
 - ALL computed coordinates (neighbor_r, new_r, etc.) are bounds-checked before use
 - Grammar generates ≥1000 programs.
 - Python stubs are complete (no `...`)
-- No primitive is allowed to be only a Boolean combiner (e.g., just doing and, or, or not over the outputs of other primitives).

@@ -177,3 +177,11 @@ videos/
 
 # ignore job files
 .slurm
+
+
+# output files
+nim/
+checkmate_v3/
+chase/
+chase_more5/
+chase_v3/
