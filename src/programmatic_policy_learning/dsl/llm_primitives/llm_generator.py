@@ -24,7 +24,6 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
     evaluate_primitive,
 )
-
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
     SemanticJSONVerifierReprompt,
@@ -458,8 +457,7 @@ class LLMPrimitivesGenerator:
 
         # Add to DSL set
         new_get_dsl_functions_fn = self.add_primitive_to_dsl(  # fix this
-            list(accepted_primitives.keys()),
-            list(accepted_primitives.values()),
+            list(accepted_primitives.keys()), list(accepted_primitives.values()), mode
         )
         self.write_json("new_metadata.json", llm_response)
 
@@ -502,7 +500,8 @@ class LLMPrimitivesGenerator:
         self,
         names: list[str],
         implementations: list[Callable[..., Any]],
-    ) -> Callable[[], dict[str, Any]]:
+        mode: str,
+    ) -> dict[str, Any]:
         """Add a new primitive to the DSL functions dictionary.
 
         Args:
@@ -616,7 +615,7 @@ class LLMPrimitivesGenerator:
             str(file_path), new_primitive_name
         )
         updated_dsl_fn = self.add_primitive_to_dsl(
-            [new_primitive_name], [implementation]
+            [new_primitive_name], [implementation], ""
         )
 
         # Create the DSL object
@@ -678,7 +677,7 @@ class LLMPrimitivesGenerator:
             new_primitives[new_primitive_name] = implementation
 
         updated_dsl_fn = self.add_primitive_to_dsl(
-            list(new_primitives.keys()), list(new_primitives.values())
+            list(new_primitives.keys()), list(new_primitives.values()), ""
         )
 
         # Create the DSL object
