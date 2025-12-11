@@ -24,11 +24,12 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.dsl_evaluator import (
     evaluate_primitive,
 )
-from programmatic_policy_learning.dsl.llm_primitives.utils import (
-    JSONStructureRepromptCheck,
-    SemanticJSONVerifierReprompt,
-    SmallProposalVerifier,
-)
+
+# from programmatic_policy_learning.dsl.llm_primitives.utils import (
+#     JSONStructureRepromptCheck,
+#     SemanticJSONVerifierReprompt,
+#     SmallProposalVerifier,
+# )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,
@@ -523,7 +524,6 @@ class LLMPrimitivesGenerator:
             return base_dsl_functions
 
         return updated_get_dsl_functions_dict
-
 
     def write_json(self, filename: str, data: dict) -> None:
         """Write JSON data to a file in the output directory."""

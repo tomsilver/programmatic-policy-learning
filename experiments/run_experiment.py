@@ -287,7 +287,7 @@ def _main(cfg: DictConfig) -> None:
             )
             logging.info(test_accuracies)
             logging.info(df["total_rewards"].iloc[0])
-            logging.info(sum(test_accuracies)/len(test_accuracies))
+            logging.info(sum(test_accuracies) / len(test_accuracies))
         else:
             logging.warning(
                 f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
