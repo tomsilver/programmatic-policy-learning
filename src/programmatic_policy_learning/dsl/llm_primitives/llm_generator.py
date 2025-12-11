@@ -54,7 +54,7 @@ class LLMPrimitivesGenerator:
         self,
         llm_client: PretrainedLargeModel | None,
         removed_primitive: str | None,
-        output_dir: str = "outputs/",
+        output_dir: str = "new_outputs/",
     ) -> None:
         """Initialize the generator with an LLM client.
 
@@ -72,7 +72,7 @@ class LLMPrimitivesGenerator:
         self.grammar: Grammar[str, int, int] | None = None
         self.removed_primitive = removed_primitive
 
-    def query_llm(self, prompt: str, enable_partial_verifier: bool = False) -> dict:
+    def query_llm(self, prompt: str) -> dict:
         """Send a query to the LLM and return the parsed JSON response.
 
         Args:
@@ -85,21 +85,21 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         query = Query(prompt)
-        # reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
-        #     # JSONStructureRepromptCheck(),
-        #     # SemanticJSONVerifierReprompt(),
-        #     # SemanticsPyStubRepromptCheck(),
-        # ]
-        if enable_partial_verifier:
-            reprompt_checks: list[RepromptCheck] = [
-                SmallProposalVerifier(),
-            ]
-        else:
-            reprompt_checks = [  # TODOO: Add for full version
-                JSONStructureRepromptCheck(),
-                SemanticJSONVerifierReprompt(),  # remove duplicates with first one
-                # SemanticsPyStubRepromptCheck(),
-            ]
+        reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
+            # JSONStructureRepromptCheck(),
+            # SemanticJSONVerifierReprompt(),
+            # SemanticsPyStubRepromptCheck(),
+        ]
+        # if enable_partial_verifier:
+        #     reprompt_checks: list[RepromptCheck] = [
+        #         SmallProposalVerifier(),
+        #     ]
+        # else:
+        #     reprompt_checks = [  # TODOO: Add for full version
+        #         JSONStructureRepromptCheck(),
+        #         SemanticJSONVerifierReprompt(),  # remove duplicates with first one
+        #         # SemanticsPyStubRepromptCheck(),
+        #     ]
 
         response = query_with_reprompts(
             self.llm_client,
@@ -340,8 +340,8 @@ class LLMPrimitivesGenerator:
                     )
                     new_prompt = base_prompt + addition_prompt
                     logging.info(addition_prompt)
-                enable_partial_verifier = True
-                rep = self.query_llm(new_prompt, enable_partial_verifier)
+                # enable_partial_verifier = True
+                rep = self.query_llm(new_prompt)
 
                 # can later enforce to not be a list
                 proposal_dict = rep["proposal"][0]
@@ -412,33 +412,33 @@ class LLMPrimitivesGenerator:
                 # Only primitives generated and accepted so far
                 existing_primitives = {**accepted_primitives}
 
-            # is_bootstrap = len(existing_primitives) == 0
+            is_bootstrap = len(existing_primitives) == 0
 
             # FIRST PRIMITIVE: accept immediately with no evaluation
-            # if is_bootstrap:
-            #     logging.info(f"Bootstrap-accept primitive: {name}")
-            #     impl = load_impl(proposal_dict)
+            if is_bootstrap:
+                logging.info(f"Bootstrap-accept primitive: {name}")
+                impl = load_impl(proposal_dict)
 
-            # else:
-            #     # SECOND+ PRIMITIVE: evaluate + retry if needed
-            logging.info(f"Evaluating primitive: {name}")
-            impl, name, new_llm_proposal, retried = evaluate_and_retry(
-                proposal_dict,
-                existing_primitives,
-                object_types,
-                env_factory,
-                llm_response,
-            )
-
-            if retried:
-                # call the function that reconstructs the grammar and metadata.
-                llm_response = patch_llm_response(
-                    llm_response=llm_response,
-                    old_name=proposal_dict["name"],
-                    new_proposal=new_llm_proposal["proposal"][0],
+            else:
+                # SECOND+ PRIMITIVE: evaluate + retry if needed
+                logging.info(f"Evaluating primitive: {name}")
+                impl, name, new_llm_proposal, retried = evaluate_and_retry(
+                    proposal_dict,
+                    existing_primitives,
+                    object_types,
+                    env_factory,
+                    llm_response,
                 )
-                logging.info(llm_response)
-                added_responses.append(llm_response)
+
+                if retried:
+                    # call the function that reconstructs the grammar and metadata.
+                    llm_response = patch_llm_response(
+                        llm_response=llm_response,
+                        old_name=proposal_dict["name"],
+                        new_proposal=new_llm_proposal["proposal"][0],
+                    )
+                    logging.info(llm_response)
+                    added_responses.append(llm_response)
 
             accepted_primitives[name] = impl
 
@@ -456,8 +456,8 @@ class LLMPrimitivesGenerator:
         logging.info(new_dsl_object)
 
         # Add to DSL set
-        updated_dsl_dict = self.add_primitive_to_dsl(  # fix this
-            list(accepted_primitives.keys()), list(accepted_primitives.values()), mode
+        updated_dsl_fn = self.add_primitive_to_dsl(  # fix this
+            list(accepted_primitives.keys()), list(accepted_primitives.values())
         )
         self.write_json("new_metadata.json", llm_response)
 
@@ -470,7 +470,7 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         # 8. Return the results
         # ----------------------------------------------------------------------
-        return self.grammar, updated_dsl_dict, new_dsl_object
+        return self.grammar, updated_dsl_fn(), new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
@@ -500,8 +500,7 @@ class LLMPrimitivesGenerator:
         self,
         names: list[str],
         implementations: list[Callable[..., Any]],
-        mode: str,
-    ) -> dict[str, Any]:
+    ) -> Callable[[], dict[str, Any]]:
         """Add a new primitive to the DSL functions dictionary.
 
         Args:
@@ -511,19 +510,20 @@ class LLMPrimitivesGenerator:
         Returns:
             A modified `get_dsl_functions_dict` function.
         """
-        if mode == "single":
-            base_dsl_functions = get_dsl_functions_dict()  # add removed_prims as input
-        elif mode == "full":
-            base_dsl_functions = {}
-        else:
-            raise ValueError("Mode should be set to either single or full.")
+        # Get the base DSL functions
+        base_dsl_functions = get_dsl_functions_dict()
 
         for each_name, each_fn in zip(names, implementations):
-            if each_name in base_dsl_functions:
-                raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
+            # if each_name in base_dsl_functions:
+            #     raise ValueError(f"Primitive '{each_name}' already exists in the DSL.")
             base_dsl_functions[each_name] = each_fn
 
-        return base_dsl_functions
+        # Return a new function that includes the updated DSL
+        def updated_get_dsl_functions_dict() -> dict[str, Any]:
+            return base_dsl_functions
+
+        return updated_get_dsl_functions_dict
+
 
     def write_json(self, filename: str, data: dict) -> None:
         """Write JSON data to a file in the output directory."""
@@ -614,14 +614,14 @@ class LLMPrimitivesGenerator:
         implementation = self.load_function_from_file(
             str(file_path), new_primitive_name
         )
-        updated_dsl_dict = self.add_primitive_to_dsl(
-            [new_primitive_name], [implementation], ""
+        updated_dsl_fn = self.add_primitive_to_dsl(
+            [new_primitive_name], [implementation]
         )
 
         # Create the DSL object
         new_dsl_object = self.make_dsl(new_primitive_name, implementation)
 
-        return self.grammar, updated_dsl_dict, new_dsl_object
+        return self.grammar, updated_dsl_fn(), new_dsl_object
 
     def offline_loader_full_version(self, run_id: str) -> tuple[
         Grammar[str, int, int],
@@ -676,8 +676,8 @@ class LLMPrimitivesGenerator:
             # Accumulate for DSL update later
             new_primitives[new_primitive_name] = implementation
 
-        updated_dsl_dict = self.add_primitive_to_dsl(
-            list(new_primitives.keys()), list(new_primitives.values()), ""
+        updated_dsl_fn = self.add_primitive_to_dsl(
+            list(new_primitives.keys()), list(new_primitives.values())
         )
 
         # Create the DSL object
@@ -687,4 +687,4 @@ class LLMPrimitivesGenerator:
             evaluate_fn=_eval,
         )
 
-        return self.grammar, updated_dsl_dict, new_dsl_object
+        return self.grammar, updated_dsl_fn(), new_dsl_object

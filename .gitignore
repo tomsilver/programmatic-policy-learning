@@ -176,12 +176,10 @@ outputs/
 videos/
 
 # ignore job files
-.slurm
+*.slurm
+*.sh
+cc_jobs/
+bash_jobs/
 
-
-# output files
-nim/
-checkmate_v3/
-chase/
-chase_more5/
-chase_v3/
+# ignore output files
+*.out

@@ -1,25 +1,38 @@
 #!/bin/bash
-#SBATCH --job-name=debug      # Job name
-#SBATCH --account=aip-krallen       # Your advisor's account
-#SBATCH --time=36:00:00              # Walltime (hh:mm:ss)
-#SBATCH --mem=16G                    # Memory
-#SBATCH --cpus-per-task=1           # Number of CPUs
-#SBATCH --gres=gpu:0                # Request 0 GPUs; set to gpu:1 if you need a GPU
-#SBATCH --output=checkmate_v3/%x-%j.out          # Output file (%x=job name, %j=job ID)
-#SBATCH --error=checkmate_v3/%x-%j.out
+#SBATCH --job-name=rfts_sleep
+#SBATCH --account=aip-krallen
+#SBATCH --time=12:00:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:0
+#SBATCH --output=rfts_sleep/%x-%j.out
+#SBATCH --error=rfts_sleep/%x-%j.out
 
-# --- Load environment modules ---
+
 module load StdEnv/2023
 module load python/3.11
 
 export OPENAI_API_KEY="${OPENAI_API_KEY}"
 
-# --- Activate your virtual environment ---
 source ~/projects/aip-krallen/zahrab98/programmatic-policy-learning/.venv/bin/activate
-
-# --- Move to your project directory ---
 cd ~/projects/aip-krallen/zahrab98/programmatic-policy-learning
 
-# --- Run your code ---
-python -u experiments/run_experiment.py -m env=ggg_checkmate approach=lpp
+echo "Running experiment:"
+echo "  ENV_NAME = $ENV_NAME"
+echo "  SEED     = $SEED"
+echo "  PROMPT_FILE = $PROMPT_FILE"
+echo "  NUM_PROGRAMS = $NUM_PROGRAMS"
+echo "  STEP_SIZE = $STEP_SIZE"
+echo "  NUM_DTS = $NUM_DTS"
+echo "  NUM_PARTICLES = $NUM_PARTICLES"
 
+
+python -u experiments/run_experiment.py \
+    env=$ENV_NAME \
+    approach=lpp \
+    seed=$SEED \
+    approach.program_generation.dsl_generator_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/full/$PROMPT_FILE\
+    approach.num_programs=$NUM_PROGRAMS\
+    approach.program_generation_step_size=$STEP_SIZE\
+    approach.num_dts=$NUM_DTS\
+    approach.max_num_particles=$NUM_PARTICLES\
