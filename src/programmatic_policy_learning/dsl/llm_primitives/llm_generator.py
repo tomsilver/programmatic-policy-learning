@@ -506,7 +506,7 @@ class LLMPrimitivesGenerator:
         self,
         names: list[str],
         implementations: list[Callable[..., Any]],
-        mode: str | None = "full",
+        mode: str | None = "single",
     ) -> Callable[[], dict[str, Any]]:
         """Add a new primitive to the DSL functions dictionary.
 
@@ -621,7 +621,7 @@ class LLMPrimitivesGenerator:
             str(file_path), new_primitive_name
         )
         updated_dsl_fn = self.add_primitive_to_dsl(
-            [new_primitive_name], [implementation]
+            [new_primitive_name], [implementation], mode="single"
         )
 
         # Create the DSL object
@@ -683,7 +683,7 @@ class LLMPrimitivesGenerator:
             new_primitives[new_primitive_name] = implementation
 
         updated_dsl_fn = self.add_primitive_to_dsl(
-            list(new_primitives.keys()), list(new_primitives.values())
+            list(new_primitives.keys()), list(new_primitives.values()), mode="single"
         )
 
         # Create the DSL object

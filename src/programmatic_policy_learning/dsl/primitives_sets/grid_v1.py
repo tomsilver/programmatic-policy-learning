@@ -249,7 +249,7 @@ def create_grammar(
 
 
 def get_dsl_functions_dict(
-    removed_primitive: str | None = None, mode: str | None = "full"
+    removed_primitive: str | None = None, mode: str | None = "single"
 ) -> dict[str, Any]:
     """Return all grid_v1 DSL primitives as a dictionary.
 
