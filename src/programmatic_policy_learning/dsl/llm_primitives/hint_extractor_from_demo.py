@@ -6,6 +6,7 @@ data URLs, and sending them to a vision-capable model for analysis.
 """
 
 import base64
+import logging
 import os
 import time
 from typing import Any, cast
@@ -201,4 +202,4 @@ if __name__ == "__main__":
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(text)
 
-    print(f"Hints written to {output_file}")
+    logging.info(f"Hints written to {output_file}")
