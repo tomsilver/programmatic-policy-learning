@@ -71,11 +71,16 @@ Hints derived from expert demonstrations:
 
 ## Output Format Constraint
 
-Write a Python function with the following signature:
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
 
+The code must define a function with the following signature:
+
+```python
 def policy(obs):
     ...
     return action
+```
 
 Where `action` is either:
 - a tuple (row, col), or
@@ -85,6 +90,7 @@ You may define helper functions inside the code.
 Do not use external libraries.
 Do not include explanations, comments, or markdown.
 Return only executable Python code.
+Do not include any text outside the code block.
 
 --
 

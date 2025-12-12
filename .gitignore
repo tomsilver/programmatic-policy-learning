@@ -172,6 +172,10 @@ cache/
 slurm/
 outputs/
 new_outputs/
+#ignore py files
+**/baselines/outputs/* 
+
+
 
 # ignore the expert demo videos directory
 videos/
