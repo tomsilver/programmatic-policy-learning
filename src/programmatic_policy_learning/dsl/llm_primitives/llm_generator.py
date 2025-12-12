@@ -85,11 +85,11 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         query = Query(prompt)
-        reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
-            # JSONStructureRepromptCheck(),
-            # SemanticJSONVerifierReprompt(),
-            # SemanticsPyStubRepromptCheck(),
-        ]
+        # reprompt_checks: list[RepromptCheck] = [  # TODOO: Add for full version
+        #     # JSONStructureRepromptCheck(),
+        #     # SemanticJSONVerifierReprompt(),
+        #     # SemanticsPyStubRepromptCheck(),
+        # ]
         if enable_partial_verifier:
             reprompt_checks: list[RepromptCheck] = [
                 SmallProposalVerifier(),
