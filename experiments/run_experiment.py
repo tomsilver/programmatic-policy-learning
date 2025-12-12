@@ -286,6 +286,8 @@ def _main(cfg: DictConfig) -> None:
                 video_format="mp4",
             )
             logging.info(test_accuracies)
+            logging.info(df["total_rewards"].iloc[0])
+            logging.info(sum(test_accuracies) / len(test_accuracies))
         else:
             logging.warning(
                 f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."

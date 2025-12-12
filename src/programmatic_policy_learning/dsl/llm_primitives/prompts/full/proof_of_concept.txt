@@ -1,0 +1,93 @@
+Output EXACTLY the following JSON object, with no extra text before or after:
+
+{
+  "proposal": [
+    {
+      "rationale_short": "",
+      "name": "CP_CELL_IS_VALUE",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [
+        { "name": "value", "type": "VALUE" },
+        { "name": "local_program", "type": "LOCAL_PROGRAM" }
+      ],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\nimport numpy as np\ndef CP_CELL_IS_VALUE(value, local_program, cell, obs):\n    matches = np.argwhere(obs == value)\n    if len(matches) == 0:\n        cell = None\n    else:\n        cell = tuple(matches[0])\n    return local_program(cell, obs)",
+      "pcfg_insertion": {
+        "nonterminal": "START",
+        "production": "CP_CELL_IS_VALUE(VALUE, LOCAL_PROGRAM, a, s)"
+      }
+    },
+    {
+      "rationale_short": "",
+      "name": "FUNC2",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [
+        { "name": "local_program", "type": "LOCAL_PROGRAM" }
+      ],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNC2(local_program, cell, obs):\n    return local_program(cell, obs)",
+      "pcfg_insertion": {
+        "nonterminal": "START",
+        "production": "FUNC2(LOCAL_PROGRAM, a, s)"
+      }
+    },
+    {
+      "rationale_short": "",
+      "name": "FUNC5",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [
+        { "name": "value", "type": "VALUE" }
+      ],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNC5(value, cell, obs):\n    if cell is None or value is None or out_of_bounds(cell[0], cell[1], obs.shape):\n        return False\n    return obs[cell[0], cell[1]] == value",
+      "pcfg_insertion": {
+        "nonterminal": "CONDITION",
+        "production": "lambda cell, obs: FUNC5(VALUE, cell, obs)"
+      }
+    },
+    {
+      "rationale_short": "",
+      "name": "FUNC3",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [
+        { "name": "direction", "type": "DIRECTION" },
+        { "name": "true_condition", "type": "CONDITION" },
+        { "name": "false_condition", "type": "CONDITION" }
+      ],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNC3(direction, true_condition, false_condition, cell, obs):\n    if cell is None:\n        return False\n    current_cell = cell\n    for _ in range(50):\n        current_cell = (current_cell[0] + direction[0], current_cell[1] + direction[1])\n        if true_condition(current_cell, obs):\n            return True\n        if false_condition(current_cell, obs):\n            return False\n        if out_of_bounds(current_cell[0], current_cell[1], obs.shape):\n            return False\n    return False",
+      "pcfg_insertion": {
+        "nonterminal": "CONDITION",
+        "production": "lambda cell, obs: FUNC3(DIRECTION, CONDITION, CONDITION, cell, obs)"
+      }
+    },
+    {
+      "rationale_short": "",
+      "name": "FUNC4",
+      "type_signature": "(Cell, Obs) -> Bool",
+      "args": [
+        { "name": "direction", "type": "DIRECTION" },
+        { "name": "local_program", "type": "LOCAL_PROGRAM" }
+      ],
+      "semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef FUNC4(direction, local_program, cell, obs):\n    if cell is None:\n        new_cell = None\n    else:\n        new_cell = (cell[0] + direction[0], cell[1] + direction[1])\n    return local_program(new_cell, obs)",
+      "pcfg_insertion": {
+        "nonterminal": "LOCAL_PROGRAM",
+        "production": "lambda cell, obs: FUNC4(DIRECTION, LOCAL_PROGRAM, cell, obs)"
+      }
+    }
+  ],
+
+  "updated_grammar": {
+    "nonterminals": ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"],
+    "terminals": [
+      "CP_CELL_IS_VALUE",
+      "FUNC2",
+      "FUNC3",
+      "FUNC4",
+      "FUNC5"
+    ],
+    "productions": {
+      "START": "CP_CELL_IS_VALUE(VALUE, LOCAL_PROGRAM, a, s) | FUNC2(LOCAL_PROGRAM, a, s)",
+      "LOCAL_PROGRAM": "CONDITION | lambda cell, obs: FUNC4(DIRECTION, CONDITION, cell, obs)",
+      "CONDITION": "lambda cell, obs: FUNC5(VALUE, cell, obs) | lambda cell, obs: FUNC3(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, cell, obs)",
+      "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)",
+      "VALUE": "{OBJECT_TYPES}"
+    }
+  }
+}

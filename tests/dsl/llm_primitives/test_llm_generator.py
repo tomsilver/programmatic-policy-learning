@@ -140,23 +140,29 @@ def test_add_primitive_to_dsl() -> None:
     generator = LLMPrimitivesGenerator(None, None)
 
     # Add the new primitive to the DSL
-    updated_get_dsl_functions_dict = generator.add_primitive_to_dsl(
-        ["new_primitive"], [new_primitive]
+    updated_dsl_functions = generator.add_primitive_to_dsl(
+        ["new_primitive"], [new_primitive], mode="single"
     )
 
     # Retrieve the updated DSL functions
-    updated_dsl_functions = updated_get_dsl_functions_dict()
-
+    updated_get_dsl_functions_dict = updated_dsl_functions()
+    print(updated_get_dsl_functions_dict)
     # Assertions
-    assert "new_primitive" in updated_dsl_functions
-    assert updated_dsl_functions["new_primitive"] is new_primitive
+    assert "new_primitive" in updated_get_dsl_functions_dict
+    assert updated_get_dsl_functions_dict["new_primitive"] is new_primitive
 
     # Ensure the original DSL functions are still present
     base_dsl_functions = get_dsl_functions_dict()
     for key, value in base_dsl_functions.items():
-        assert key in updated_dsl_functions
-        assert updated_dsl_functions[key] == value
+        assert key in updated_get_dsl_functions_dict
+        assert updated_get_dsl_functions_dict[key] == value
 
     # Test the new primitive
-    assert updated_dsl_functions["new_primitive"]((1, 1), [[0, 0], [0, 42]]) is True
-    assert updated_dsl_functions["new_primitive"]((0, 0), [[0, 0], [0, 42]]) is False
+    assert (
+        updated_get_dsl_functions_dict["new_primitive"]((1, 1), [[0, 0], [0, 42]])
+        is True
+    )
+    assert (
+        updated_get_dsl_functions_dict["new_primitive"]((0, 0), [[0, 0], [0, 42]])
+        is False
+    )

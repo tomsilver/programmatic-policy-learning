@@ -351,6 +351,8 @@ def eval_on_random_inputs(
             out = fn(**args)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logging.info(f"Exception occurred: {e}")
+            logging.info(fn)
+            logging.info(args)
             out = None  # treat crashes as non-usable
             error_flag = True
             error_message = str(e)
@@ -529,7 +531,12 @@ def evaluate_primitive(
     deg_score = degeneracy_score(outputs_new)
     logging.info(deg_score)
     if deg_score <= degeneracy_threshold:
-        return {"keep": False, "reason": "degenerate", "deg_score": deg_score}
+        reason = (
+            "The primitive is degenerate on our evaluation inputs: its output is "
+            "almost always the same (e.g., almost always True or almost always False), "
+            "so it does not provide a useful, discriminative condition for the policy."
+        )
+        return {"keep": False, "reason": reason, "deg_score": deg_score}
 
     # -----------------------------------------------------
     # Level 2: Semantic similarity

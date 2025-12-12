@@ -68,7 +68,7 @@ def query_vlam(img: Image.Image, task_description: str) -> tuple[int, int] | Non
     img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
     r = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4.1",
         messages=[
             {
                 "role": "system",
