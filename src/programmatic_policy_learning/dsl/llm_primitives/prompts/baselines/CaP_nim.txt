@@ -1,0 +1,95 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+Environment description:
+
+- The environment is a grid-based implementation of the game Nim.
+- The observation `obs` is a 2D Python list (rows × columns).
+- Each cell contains one of the following values:
+
+  0 = EMPTY
+  1 = TOKEN
+
+- Each contiguous horizontal group of TOKEN cells represents a pile.
+- There are exactly two piles in the grid.
+- The agent acts on its own turn only.
+
+--
+
+## Action Space
+The policy must return a tuple (row, col) indicating a cell to select.
+
+Rules of the game:
+- Selecting a TOKEN cell removes that cell and all TOKEN cells to its right in the same row.
+- Selecting an EMPTY cell is invalid.
+- The agent that removes the last TOKEN wins the game.
+
+
+--
+
+## Task Description
+Task:
+Play the game optimally and win by forcing the opponent into a losing position.
+The policy should follow the optimal Nim strategy whenever possible.
+
+--
+
+## Expert-Derived Hints
+Hints derived from expert demonstrations:
+
+### High-frequency relational patterns:
+- The agent frequently acts to create or maintain a configuration where the number of objects (matches) in both columns is equal.
+- The agent often removes objects from the column with more objects, especially when the columns are unequal.
+- When both columns have the same number of objects, the agent tends to remove all objects from one column.
+
+### Useful directional / asymmetry relations:
+- When the two columns are unequal, the agent targets the column with the greater count.
+- The agent’s actions are sensitive to which column is “ahead” (has more matches), indicating an asymmetry-based decision.
+- The agent does not appear to favor a specific column (left or right) unless there is an imbalance.
+
+### Example state–action correlations:
+- If the left and right columns have different numbers of objects, the agent removes objects from the column with the higher count to match the other column.
+- If both columns have the same number of objects, the agent removes all objects from one column, leaving the other column untouched.
+- When only one column has objects left, the agent clears that column.
+
+### Frequently observed local spatial configurations:
+- States where both columns have the same number of objects are frequently reached and often precede decisive actions.
+- States with only one column containing objects are terminal or near-terminal.
+- The agent avoids leaving a state where both columns have a different number of objects unless forced.
+
+### Observed distance thresholds or step ranges:
+- The agent often acts to reduce the difference in object count between columns to zero (distance along the “count” axis).
+- The agent’s actions are triggered when the difference in counts is nonzero, and the action reduces this difference to zero.
+- When both columns are equal, the agent may remove all objects from one column in a single step, regardless of the total count remaining.
+
+--
+
+## Output Format Constraint
+
+Write a Python function with the following signature:
+
+def policy(obs):
+    ...
+    return action
+
+Where `action` is either:
+- a tuple (row, col), or
+- None if no valid move exists.
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+
+--
+
+## Notes on Baseline Assumptions (Nim)
+
+- No Nim-specific helper functions are provided.
+- The policy must infer pile structure directly from the grid.
+- All game logic must be implemented by the LLM.
