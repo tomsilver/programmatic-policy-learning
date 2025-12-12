@@ -3,6 +3,7 @@
 from typing import Any, TypeVar
 
 import numpy as np
+from prpl_utils.search import SearchMetrics
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
@@ -44,6 +45,19 @@ class ExpertApproach(BaseApproach[_ObsType, _ActType]):
     def _get_action(self) -> Any:
         assert self._last_observation is not None
         return self._expert_fn(self._last_observation)
+
+    @property
+    def metrics(self) -> SearchMetrics:
+        """Return the search metrics from the expert policy."""
+        # Check if the expert function has a metrics attribute
+        if hasattr(self._expert_fn, "metrics"):
+            return self._expert_fn.metrics
+        # If it's a bound method, try to access the metrics from the instance
+        if hasattr(self._expert_fn, "__self__") and hasattr(
+            self._expert_fn.__self__, "metrics"
+        ):
+            return self._expert_fn.__self__.metrics
+        raise AttributeError("Expert policy does not have metrics attribute")
 
     def test_policy_on_envs(
         self,

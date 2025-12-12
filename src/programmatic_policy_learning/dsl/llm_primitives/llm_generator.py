@@ -29,6 +29,11 @@ from programmatic_policy_learning.dsl.llm_primitives.utils import (
     SemanticJSONVerifierReprompt,
     SmallProposalVerifier,
 )
+
+# SemanticJSONVerifierReprompt,; SemanticsPyStubRepromptCheck,
+# from programmatic_policy_learning.dsl.llm_primitives.utils import (
+#     JSONStructureRepromptCheck,
+# )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,
@@ -54,7 +59,7 @@ class LLMPrimitivesGenerator:
         self,
         llm_client: PretrainedLargeModel | None,
         removed_primitive: str | None,
-        output_dir: str = "new_outputs/",
+        output_dir: str = "outputs/",
     ) -> None:
         """Initialize the generator with an LLM client.
 
@@ -456,7 +461,9 @@ class LLMPrimitivesGenerator:
 
         # Add to DSL set
         updated_dsl_fn = self.add_primitive_to_dsl(  # fix this
-            list(accepted_primitives.keys()), list(accepted_primitives.values())
+            list(accepted_primitives.keys()),
+            list(accepted_primitives.values()),
+            mode=mode,
         )
         self.write_json("new_metadata.json", llm_response)
 
@@ -499,6 +506,7 @@ class LLMPrimitivesGenerator:
         self,
         names: list[str],
         implementations: list[Callable[..., Any]],
+        mode: str | None = "full",
     ) -> Callable[[], dict[str, Any]]:
         """Add a new primitive to the DSL functions dictionary.
 
@@ -510,7 +518,7 @@ class LLMPrimitivesGenerator:
             A modified `get_dsl_functions_dict` function.
         """
         # Get the base DSL functions
-        base_dsl_functions = get_dsl_functions_dict()
+        base_dsl_functions = get_dsl_functions_dict(mode=mode)
 
         for each_name, each_fn in zip(names, implementations):
             # if each_name in base_dsl_functions:

@@ -3,7 +3,7 @@
 from typing import Any, Callable, Iterator
 
 import numpy as np
-from prpl_utils.search import run_astar
+from prpl_utils.search import SearchMetrics, run_astar
 
 Obs = tuple[int, int]
 Act = int
@@ -36,6 +36,7 @@ class ExpertMazeWithOuterWorldPolicy:
 
         # Plan is maintained as part of the class.
         self.plan: list[Act] = []
+        self.metrics: SearchMetrics = SearchMetrics()
 
     # ---------- Helper methods ----------
 
@@ -121,7 +122,9 @@ class ExpertMazeWithOuterWorldPolicy:
         assert (r, c) == (-1, 0), f"Ended at {(r, c)} instead of entrance (-1, 0)"
         return actions
 
-    def _generate_plan(self, start: Obs, goal: Obs | None = None) -> list[Act]:
+    def _generate_plan(
+        self, start: Obs, goal: Obs | None = None
+    ) -> tuple[list[Act], SearchMetrics]:
         """Generate a plan using A* search."""
         if goal is None:
             goal = self.goal
@@ -135,13 +138,13 @@ class ExpertMazeWithOuterWorldPolicy:
                     cost = self.get_cost()
                     yield (action, next_state, cost)
 
-        _, search_plan = run_astar(
+        _, search_plan, search_metrics = run_astar(
             initial_state=start,
             check_goal=lambda state: self.check_goal(state, goal),
             get_successors=get_successors,
             heuristic=lambda s: abs(s[0] - goal[0]) + abs(s[1] - goal[1]),
         )
-        return search_plan
+        return (search_plan, search_metrics)
 
     # ---------- Main policy interface ----------
 
@@ -156,7 +159,7 @@ class ExpertMazeWithOuterWorldPolicy:
             else:
                 # We are in the maze (or at the entrance), so
                 # generate a plan to the goal.
-                self.plan = self._generate_plan(obs, self.goal)
+                self.plan, self.metrics = self._generate_plan(obs, self.goal)
 
         # Follow the plan one action at a time.
         return self.plan.pop(0)
