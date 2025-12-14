@@ -28,7 +28,6 @@ def run_single_episode(
 
         if done:
             break
-
     env.close()
 
     return total_reward
