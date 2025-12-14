@@ -1,0 +1,121 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+Environment description:
+
+- The environment is a grid world.
+- The observation `obs` is a 2D grid.
+- Each cell contains exactly one of the following symbols:
+  - empty
+  - agent
+  - target
+  - wall
+  - drawn
+  - left_arrow
+  - right_arrow
+  - up_arrow
+  - down_arrow
+
+- The agent occupies exactly one cell.
+- The target occupies exactly one cell.
+- Walls are impassable.
+- Arrow cells indicate directional cues in the environment.
+
+--
+
+## Action space:
+
+The policy must return a tuple (row, column) indicating a cell in the grid.
+
+- (row, column) must be a valid cell location within the grid bounds.
+- The agent attempts to move from its current position to the selected cell.
+- If the selected cell is adjacent to the agent, the agent moves into that cell.
+- If the selected cell is not adjacent or is invalid, the action has no effect.
+- Moving into a wall cell is not allowed and leaves the agent in the same position.
+
+
+--
+
+## Task Description
+Task:
+Play the game optimally and win by forcing the opponent into a losing position.
+The policy should follow the optimal Chase strategy whenever possible.
+
+--
+
+## Expert-Derived Hints
+Hints derived from expert demonstrations:
+
+## DEMONSTRATION-INFERRED FEATURES (HINTS)
+
+Below is a summary of patterns extracted from a set of expert trajectories.
+These are NOT DSL primitives, but they describe spatial relations frequently
+relevant to decision-making.
+
+### High-frequency relational patterns:
+- Agent frequently moves to reduce the Manhattan (grid) distance to the target.
+- Agent often aligns itself along the same row or column as the target before closing in further.
+- Agent tends to approach the target from the direction with the least obstacles or open space.
+- Agent avoids moving into positions where obstacles (trees) would block direct pursuit.
+
+### Useful directional / asymmetry relations:
+- Agent often moves to be directly north, south, east, or west of the target, rather than diagonally offset.
+- When the target is near a boundary or corner, the agent approaches from the side that limits the target’s escape options.
+- Agent sometimes prioritizes closing the larger of the x or y coordinate gaps first, depending on the environment’s shape.
+- When the target is adjacent to a wall, the agent approaches from the open side, not from the wall side.
+
+### Example state–action correlations:
+- If the agent is north of the target and there are no obstacles, the agent moves south.
+- If the agent is west of the target and the path is clear, the agent moves east.
+- When the target is near a corner, the agent tends to move to block the only open escape route.
+- If the agent and target are aligned along one axis, the agent moves directly along the other axis to close the gap.
+
+### Frequently observed local spatial configurations:
+- Agent and target are separated by a single row or column, with the agent moving to close that last gap.
+- Target is adjacent to a boundary or in a corner, and the agent positions itself to cut off escape along the open axis.
+- Agent avoids being diagonally adjacent to the target when a direct approach is possible.
+- Agent and target are both in open space, and the agent moves to minimize the number of steps to direct adjacency.
+
+### Observed distance thresholds or step ranges:
+- Agent typically acts to reduce the distance to the target to one grid cell (adjacency).
+- When more than two cells away, the agent prioritizes axis alignment before final approach.
+- If the target is within two steps of a boundary, the agent often moves to intercept along the boundary-adjacent path.
+- When the agent is within one move of being adjacent to the target, it always takes that move if not blocked.
+
+--
+
+## Output Format Constraint
+
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
+
+The code must define a function with the following signature:
+
+```python
+def policy(obs):
+    ...
+    return action
+```
+
+Where `action` is either:
+- a tuple (row, col), or
+- None if no valid move exists.
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+Do not include any text outside the code block.
+
+--
+
+## Notes on Baseline Assumptions (Chase)
+
+- No Chase-specific helper functions are provided.
+- The policy must infer pile structure directly from the grid.
+- All game logic must be implemented by the LLM.

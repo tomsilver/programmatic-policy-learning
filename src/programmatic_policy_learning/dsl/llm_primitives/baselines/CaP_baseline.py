@@ -176,8 +176,8 @@ class CaPBaseline:
             )
             expert_accuracies.append(expert_result)
             new_env.close()
-        logging.info(f"CaP Test Results: {accuracies}")
-        logging.info(f"Expert Test Results: {expert_accuracies}")
+        print(f"CaP Test Results: {accuracies}")
+        print(f"Expert Test Results: {expert_accuracies}")
 
 
 def _main() -> None:
@@ -186,8 +186,8 @@ def _main() -> None:
         {
             "provider": "ggg",
             "make_kwargs": {
-                "base_name": "TwoPileNim",
-                "id": "TwoPileNim0-v0",
+                "base_name": "Chase",
+                "id": "Chase0-v0",
             },
             "instance_num": 0,
         }

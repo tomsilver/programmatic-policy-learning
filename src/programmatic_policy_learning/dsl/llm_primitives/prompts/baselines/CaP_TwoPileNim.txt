@@ -11,11 +11,10 @@ Environment description:
 - The environment is a grid-based implementation of the game Nim.
 - The observation `obs` is a 2D Python list (rows × columns).
 - Each cell contains one of the following values:
+  - 'empty'
+  - 'token'
 
-  0 = EMPTY
-  1 = TOKEN
-
-- Each contiguous horizontal group of TOKEN cells represents a pile.
+- Each contiguous horizontal group of 'token' cells represents a pile.
 - There are exactly two piles in the grid.
 - The agent acts on its own turn only.
 
@@ -25,9 +24,9 @@ Environment description:
 The policy must return a tuple (row, col) indicating a cell to select.
 
 Rules of the game:
-- Selecting a TOKEN cell removes that cell and all TOKEN cells to its right in the same row.
-- Selecting an EMPTY cell is invalid.
-- The agent that removes the last TOKEN wins the game.
+- Selecting a 'token' cell removes that cell and all 'token' cells to its right in the same row.
+- Selecting an 'empty' cell is invalid.
+- The agent that removes the last 'token' wins the game.
 
 
 --
