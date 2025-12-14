@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
+import matplotlib.pyplot as plt
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.code import (
@@ -144,9 +146,35 @@ class CaPBaseline:
         env_factory: Any,
         test_env_nums: Sequence[int] = range(11, 20),
         max_num_steps: int = 50,
-    ) -> None:
+    ) -> tuple[list[Any], float, float]:
         """Roll out the synthesized policy (and expert) across env
         instances."""
+
+        def bootstrap_ci_success(
+            successes: Sequence[bool],
+            n_boot: int = 10000,
+            alpha: float = 0.05,
+            seed: int = 0,
+        ) -> tuple[float, tuple[float, float], float]:
+            """
+            successes: 1D array-like of 0/1 outcomes (length N)
+            returns: (mean, (lo, hi), half_width)
+            """
+            rng = np.random.default_rng(seed)
+            s = np.asarray(successes, dtype=float)
+            N = len(s)
+            mean = float(s.mean())
+
+            boots = np.empty(n_boot, dtype=float)
+            for b in range(n_boot):
+                sample = rng.choice(s, size=N, replace=True)
+                boots[b] = float(sample.mean())
+
+            lo = float(np.quantile(boots, alpha / 2))
+            hi = float(np.quantile(boots, 1 - alpha / 2))
+            half_width = float((hi - lo) / 2.0)
+            return mean, (lo, hi), half_width
+
         accuracies: list[bool] = []
         expert_accuracies: list[bool] = []
         for i in test_env_nums:
@@ -176,8 +204,61 @@ class CaPBaseline:
             )
             expert_accuracies.append(expert_result)
             new_env.close()
-        print(f"CaP Test Results: {accuracies}")
-        print(f"Expert Test Results: {expert_accuracies}")
+        logging.info(f"CaP Test Results: {accuracies}")
+        logging.info(f"Expert Test Results: {expert_accuracies}")
+        mean, (lo, hi), half = bootstrap_ci_success(accuracies)
+        logging.info(lo, hi)
+        return accuracies, mean, half
+
+    def plot_gap_to_expert(
+        self,
+        domains: Sequence[str],
+        policy_success: Sequence[float],
+        policy_ci: Sequence[float] | None = None,
+        title: str = "Gap to Expert Performance",
+        save_path: str | Path | None = None,
+    ) -> None:
+        """
+        domains: list[str]
+        policy_success: list[float] (0–100)
+        policy_ci: list[float] or None (same length, in percent)
+        """
+
+        domain_list: list[str] = list(domains)
+        policy_success_arr = np.asarray(policy_success, dtype=float)
+
+        # Expert is always 100%
+        gap = 100.0 - policy_success_arr
+
+        x = np.arange(len(domain_list))
+
+        plt.figure(figsize=(8, 4))
+
+        if policy_ci is not None:
+            policy_ci_arr = np.asarray(policy_ci, dtype=float)
+            plt.bar(
+                x,
+                gap,
+                yerr=policy_ci_arr,
+                capsize=4,
+            )
+        else:
+            plt.bar(x, gap)
+
+        # Expert reference line (zero gap)
+        plt.axhline(0.0, linestyle="--", linewidth=1)
+
+        plt.xticks(x, domain_list, rotation=20, ha="right")
+        plt.ylabel("Expert − Policy Success (%)")
+        plt.title(title)
+
+        plt.tight_layout()
+
+        if save_path is not None:
+            plt.savefig(save_path, dpi=300)
+            print(f"Saved figure to {save_path}")
+
+        plt.show()
 
 
 def _main() -> None:
@@ -186,8 +267,8 @@ def _main() -> None:
         {
             "provider": "ggg",
             "make_kwargs": {
-                "base_name": "Chase",
-                "id": "Chase0-v0",
+                "base_name": "TwoPileNim",
+                "id": "TwoPileNim0-v0",
             },
             "instance_num": 0,
         }
@@ -221,7 +302,12 @@ def _main() -> None:
     )
 
     baseline.generate_policy()
-    baseline.test_policy_on_envs(env_factory, range(11, 20), max_num_steps=50)
+    CaP_accuracies, mean, half = baseline.test_policy_on_envs(
+        env_factory, range(11, 20), max_num_steps=50
+    )
+    logging.info(CaP_accuracies, mean, half)
+    domains = [env_name]
+    baseline.plot_gap_to_expert(domains, [mean], [half], save_path="plots/image.png")
 
 
 if __name__ == "__main__":
