@@ -8,7 +8,7 @@ Return only executable Python code.
 
 Environment description:
 
-- The environment is a grid-based implementation of the game Nim.
+- The environment is a grid-based implementation of the game 'Nim'.
 - The observation `obs` is a 2D Python list (rows × columns).
 - Each cell contains one of the following values:
   - 'empty'
@@ -39,7 +39,8 @@ The policy should follow the optimal Nim strategy whenever possible.
 --
 
 ## Expert-Derived Hints
-Hints derived from expert demonstrations:
+
+Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
 
 ### High-frequency relational patterns:
 - The agent frequently acts to create or maintain a configuration where the number of objects (matches) in both columns is equal.

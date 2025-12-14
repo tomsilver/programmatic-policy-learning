@@ -8,54 +8,46 @@ Return only executable Python code.
 
 Environment description:
 
-- The environment is a grid world.
-- The observation `obs` is a 2D grid.
-- Each cell contains exactly one of the following symbols:
-  - empty
-  - agent
-  - target
-  - wall
-  - drawn
-  - left_arrow
-  - right_arrow
-  - up_arrow
-  - down_arrow
+- The environment is a grid-based implementation of the game 'Chase'.
+- The observation `obs` is a 2D Python list (rows × columns).
+- Each cell contains one of the following values:
+  - 'empty'
+  - 'target'
+  - 'agent'
+  - 'wall'
+  - 'drawn'
+  - 'left_arrow'
+  - 'right_arrow
+  - 'up_arrow'
+  - 'down_arrow'
 
-- The agent occupies exactly one cell.
-- The target occupies exactly one cell.
-- Walls are impassable.
-- Arrow cells indicate directional cues in the environment.
+- Each contiguous horizontal group of 'token' cells represents a pile.
+- There are exactly two piles in the grid.
+- The agent acts on its own turn only.
 
 --
 
-## Action space:
+## Action Space
+The policy must return a tuple (row, col) indicating a cell to select.
 
-The policy must return a tuple (row, column) indicating a cell in the grid.
-
-- (row, column) must be a valid cell location within the grid bounds.
-- The agent attempts to move from its current position to the selected cell.
-- If the selected cell is adjacent to the agent, the agent moves into that cell.
-- If the selected cell is not adjacent or is invalid, the action has no effect.
-- Moving into a wall cell is not allowed and leaves the agent in the same position.
+Rules of the game:
+- Selecting a 'token' cell removes that cell and all 'token' cells to its right in the same row.
+- Selecting an 'empty' cell is invalid.
+- The agent that removes the last 'token' wins the game.
 
 
 --
 
 ## Task Description
 Task:
-Play the game optimally and win by forcing the opponent into a losing position.
-The policy should follow the optimal Chase strategy whenever possible.
+Guide the agent to reach the target cell.
+The episode ends successfully when the agent reaches the target.
 
 --
 
 ## Expert-Derived Hints
-Hints derived from expert demonstrations:
 
-## DEMONSTRATION-INFERRED FEATURES (HINTS)
-
-Below is a summary of patterns extracted from a set of expert trajectories.
-These are NOT DSL primitives, but they describe spatial relations frequently
-relevant to decision-making.
+Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
 
 ### High-frequency relational patterns:
 - Agent frequently moves to reduce the Manhattan (grid) distance to the target.
