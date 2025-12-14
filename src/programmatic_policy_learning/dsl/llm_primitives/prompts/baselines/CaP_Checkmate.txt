@@ -1,0 +1,109 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+## Environment description:
+
+- The environment is a grid-based board game 'Checkmate' env.
+- The observation `obs` is a 2D grid.
+- Each cell contains exactly one of the following symbols:
+
+  - empty
+  - black_king
+  - white_king
+  - white_queen
+  - highlighted_white_king
+  - highlighted_white_queen
+
+- The agent controls the white pieces.
+- The black king is the opponent.
+- Highlighted white pieces indicate the piece that can currently be moved or legal move locations.
+
+--
+
+## Action space:
+
+The policy must return a tuple (row, column) indicating a cell in the grid.
+
+- (row, column) must be a valid cell location within the grid bounds.
+- The selected cell corresponds to a legal move for the currently highlighted white piece.
+- If the selected cell does not represent a legal move, the action has no effect.
+
+--
+
+## Task Description
+Task:
+Deliver checkmate to the black king.
+The episode ends successfully when the black king is checkmated.
+The episode ends unsuccessfully if no checkmate is possible.
+
+--
+
+## Expert-Derived Hints
+
+Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+
+### High-frequency relational patterns:
+- The agent frequently positions itself so that the target is adjacent to a board edge or corner.
+- The agent often maintains a line (row, column, or diagonal) between itself and the target, restricting the target’s movement.
+- The agent and its ally (if present) are often placed so that the target is “sandwiched” between them and a board boundary.
+- The agent avoids occupying squares directly adjacent to the target unless the target is already constrained by the edge or corner.
+
+### Useful directional / asymmetry relations:
+- The agent tends to approach the target from the direction opposite the nearest board edge, driving the target toward that edge or corner.
+- The agent often aligns itself along the same rank, file, or diagonal as the target, especially when the target is near a boundary.
+- When the target is in a corner, the agent frequently occupies a square that “cuts off” the only remaining escape route.
+- The agent’s movement is often coordinated with the ally to create an asymmetrical enclosure, with one piece blocking lateral escape and the other blocking forward/backward escape.
+
+### Example state–action correlations:
+- When the target is one square away from the edge, the agent often moves to a position that prevents escape along the edge-adjacent axis.
+- If the target is not yet near a boundary, the agent’s actions tend to reduce the number of available directions for the target to move.
+- When the target is in a corner, the agent’s next move is often to a square that completes the enclosure, leaving the target with no legal moves.
+
+### Frequently observed local spatial configurations:
+- The agent and ally form an “L” or “box” pattern with the target near a corner.
+- The agent is one square away from the target, with the target’s only escape squares blocked by the ally or the board edge.
+- The agent and ally are positioned such that all squares adjacent to the target are either occupied, attacked, or off the board.
+
+### Observed distance thresholds or step ranges:
+- The agent often maintains a minimum distance of one square from the target unless delivering the final constraint.
+- The agent’s distance to the target decreases as the target approaches the edge or corner, but rarely becomes zero unless the target is fully trapped.
+- The agent’s actions frequently reduce the Manhattan or Chebyshev distance between the target and the nearest board boundary.
+- The agent and ally maintain enough separation to avoid stalemating the target prematurely, typically staying at least one square apart from each other and the target except in the final enclosure.
+
+--
+
+## Output Format Constraint
+
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
+
+The code must define a function with the following signature:
+
+```python
+def policy(obs):
+    ...
+    return action
+```
+
+Where `action` is either:
+- a tuple (row, col), or
+- None if no valid move exists.
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+Do not include any text outside the code block.
+
+--
+
+## Notes on Baseline Assumptions (Checkmate)
+
+- No Checkmate-specific helper functions are provided.
+- The policy must infer pile structure directly from the grid.
+- All game logic must be implemented by the LLM.
