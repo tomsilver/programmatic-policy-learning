@@ -267,8 +267,8 @@ def _main() -> None:
         {
             "provider": "ggg",
             "make_kwargs": {
-                "base_name": "ReachForTheStar",
-                "id": "ReachForTheStar0-v0",
+                "base_name": "StopTheFall",
+                "id": "StopTheFall0-v0",
             },
             "instance_num": 0,
         }
