@@ -69,7 +69,7 @@ class CaPBaseline:
         """Produce, save, and echo the policy string returned by the LLM."""
         prompt = self.load_prompt()
         function_name = self.cfg.function_name
-        logging.info("LLM model: %s", self.llm_client.get_id())
+        print("LLM model: %s", self.llm_client.get_id())
 
         query = Query(prompt)
 
@@ -91,7 +91,7 @@ class CaPBaseline:
 
         policy_code_str = str(policy_code).strip()
 
-        # SAFTEY CHECK
+        # SAFETY CHECK
         if "```" in policy_code_str:
             policy_code_str = (
                 policy_code_str.split("```python", 1)[1].rsplit("```", 1)[0].strip()
@@ -127,17 +127,17 @@ class CaPBaseline:
             function_name=function_name,
         )
         self._policy = policy_fn
-        logging.info("Synthesized new policy:")
-        logging.info(policy_code_str)
+        print("Synthesized new policy:")
+        print(policy_code_str)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = Path(self.cfg.output_dir) / f"cap_policy_{timestamp}.py"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(policy_code_str + "\n", encoding="utf-8")
 
-        logging.info("\n=== LLM policy output (also saved to file) ===\n")
-        logging.info(policy_code_str)
-        logging.info(f"\n[Saved to: {out_path.resolve()}]\n")
+        print("\n=== LLM policy output (also saved to file) ===\n")
+        print(policy_code_str)
+        print(f"\n[Saved to: {out_path.resolve()}]\n")
 
         return policy_code_str
 
@@ -204,10 +204,10 @@ class CaPBaseline:
             )
             expert_accuracies.append(expert_result)
             new_env.close()
-        logging.info(f"CaP Test Results: {accuracies}")
-        logging.info(f"Expert Test Results: {expert_accuracies}")
+        print(f"CaP Test Results: {accuracies}")
+        print(f"Expert Test Results: {expert_accuracies}")
         mean, (lo, hi), half = bootstrap_ci_success(accuracies)
-        logging.info(lo, hi)
+        print(lo, hi)
         return accuracies, mean, half
 
     def plot_gap_to_expert(
@@ -267,8 +267,8 @@ def _main() -> None:
         {
             "provider": "ggg",
             "make_kwargs": {
-                "base_name": "TwoPileNim",
-                "id": "TwoPileNim0-v0",
+                "base_name": "ReachForTheStar",
+                "id": "ReachForTheStar0-v0",
             },
             "instance_num": 0,
         }
@@ -305,9 +305,9 @@ def _main() -> None:
     CaP_accuracies, mean, half = baseline.test_policy_on_envs(
         env_factory, range(11, 20), max_num_steps=50
     )
-    logging.info(CaP_accuracies, mean, half)
+    print(CaP_accuracies, mean, half)
     domains = [env_name]
-    baseline.plot_gap_to_expert(domains, [mean], [half], save_path="plots/image.png")
+    baseline.plot_gap_to_expert(domains, [mean], [half], save_path=f"plots/image_{env_name}.png")
 
 
 if __name__ == "__main__":
