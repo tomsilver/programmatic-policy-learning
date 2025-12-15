@@ -11,7 +11,7 @@ from typing import Any, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.code import (
     FunctionOutputRepromptCheck,
@@ -69,7 +69,7 @@ class CaPBaseline:
         """Produce, save, and echo the policy string returned by the LLM."""
         prompt = self.load_prompt()
         function_name = self.cfg.function_name
-        print("LLM model: %s", self.llm_client.get_id())
+        logging.info(f"LLM model: {self.llm_client.get_id()}")
 
         query = Query(prompt)
 
@@ -133,204 +133,201 @@ class CaPBaseline:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(policy_code_str + "\n", encoding="utf-8")
 
-        print("\n=== LLM policy output (also saved to file) ===\n")
-        print(policy_code_str)
-        print(f"\n[Saved to: {out_path.resolve()}]\n")
+        logging.info("\n=== LLM policy output (also saved to file) ===\n")
+        logging.info(policy_code_str)
+        logging.info(f"\n[Saved to: {out_path.resolve()}]\n")
 
         return policy_code_str
 
-    def test_policy_on_envs(
+    def evaluate_raw(
         self,
-        env_factory: Any,
-        test_env_nums: Sequence[int] = range(11, 20),
-        max_num_steps: int = 50,
-    ) -> tuple[float, float, float, float]:
-        """Roll out the synthesized policy (and expert) across env
-        instances."""
+        env_factory: Callable[[int | None], Any],
+        test_env_nums: Sequence[int],
+        max_num_steps: int,
+        run_expert: bool,
+    ) -> tuple[list[bool], list[bool]]:
+        cap_results: list[bool] = []
+        expert_results: list[bool] = []
 
-        def bootstrap_ci_success(
-            successes: Sequence[bool],
-            n_boot: int = 10000,
-            alpha: float = 0.05,
-            seed: int = 0,
-        ) -> tuple[float, tuple[float, float], float]:
-            """
-            successes: 1D array-like of 0/1 outcomes (length N)
-            returns: (mean, (lo, hi), half_width)
-            """
-            rng = np.random.default_rng(seed)
-            s = np.asarray(successes, dtype=float)
-            N = len(s)
-            mean = float(s.mean())
+        expert_fn = get_grid_expert(self.env_name) if run_expert else None
 
-            boots = np.empty(n_boot, dtype=float)
-            for b in range(n_boot):
-                sample = rng.choice(s, size=N, replace=True)
-                boots[b] = float(sample.mean())
-
-            lo = float(np.quantile(boots, alpha / 2))
-            hi = float(np.quantile(boots, 1 - alpha / 2))
-            half_width = float((hi - lo) / 2.0)
-            return mean, (lo, hi), half_width
-
-        accuracies: list[bool] = []
-        expert_accuracies: list[bool] = []
         for i in test_env_nums:
             env = env_factory(i)
-            assert self._policy is not None, "Policy not available."
-            result = (
-                run_single_episode(
-                    env,
-                    self._policy,  # type: ignore
-                    max_num_steps=max_num_steps,
-                )
-                > 0
+            cap_success = (
+                run_single_episode(env, self._policy, max_num_steps=max_num_steps) > 0
             )
-            accuracies.append(result)
+            cap_results.append(cap_success)
             env.close()
 
-            # expert comparison
-            expert_fn = get_grid_expert(self.env_name)
-            new_env = env_factory(i)
-            expert_result = (
-                run_single_episode(
-                    new_env,
-                    expert_fn,  # type: ignore
-                    max_num_steps=max_num_steps,
+            if run_expert:
+                env_e = env_factory(i)
+                expert_success = (
+                    run_single_episode(
+                        env_e, expert_fn, max_num_steps=max_num_steps
+                    )
+                    > 0
                 )
-                > 0
-            )
-            expert_accuracies.append(expert_result)
-            new_env.close()
-        print(f"CaP Test Results: {accuracies}")
-        print(f"Expert Test Results: {expert_accuracies}")
-        mean_expert, (_, _), half_expert = bootstrap_ci_success(expert_accuracies)
-        mean, (lo, hi), half = bootstrap_ci_success(accuracies)
-        print(lo, hi)
-        return mean_expert, half_expert, mean, half
+                expert_results.append(expert_success)
+                env_e.close()
 
-    def plot_gap_to_expert(
-        self,
-        domains: Sequence[str],
-        expert_means: Sequence[float],
-        expert_cis: Sequence[float],
-        cap_means: Sequence[float],
-        cap_cis: Sequence[float],
-        title: str = "Gap to Expert Performance",
-        save_path: str | Path | None = None,
-    ) -> None:
-        """Plot."""
-        print(expert_means)
-        print(expert_cis)
-        print(cap_means)
-        print(cap_cis)
-        x = np.arange(len(domains))
-        width = 0.35
+        return cap_results, expert_results
 
-        fig, ax = plt.subplots(figsize=(8, 4.5))
 
-        ax.bar(
-            x - width / 2,
-            expert_means,
-            width,
-            yerr=expert_cis,
-            label="Expert",
-            capsize=4,
-            color="dimgray",
-        )
+def bootstrap_ci_success(
+    successes: Sequence[bool],
+    n_boot: int = 10000,
+    alpha: float = 0.05,
+    seed: int = 0,
+) -> tuple[float, float]:
+    rng = np.random.default_rng(seed)
+    s = np.asarray(successes, dtype=float)
+    N = len(s)
 
-        ax.bar(
-            x + width / 2,
-            cap_means,
-            width,
-            yerr=cap_cis,
-            label="CaP",
-            capsize=4,
-            color="tab:blue",
-        )
+    boots = rng.choice(s, size=(n_boot, N), replace=True).mean(axis=1)
+    lo = np.quantile(boots, alpha / 2)
+    hi = np.quantile(boots, 1 - alpha / 2)
+    return s.mean(), (hi - lo) / 2
 
-        ax.set_ylabel("Success rate (%)")
-        ax.set_xticks(x)
-        ax.set_xticklabels(domains, rotation=20)
-        ax.set_ylim(0, 100)
-        ax.legend(frameon=False)
-        ax.set_title("Expert vs CaP performance across environments")
-        plt.tight_layout()
-        if save_path is not None:
-            plt.savefig(save_path, dpi=300)
-            print(f"Saved figure to {save_path}")
-        plt.show()
 
+def plot_expert_vs_cap(
+    domains,
+    expert_means,
+    expert_cis,
+    cap_means,
+    cap_cis,
+    save_path=None,
+):
+    
+    x = np.arange(len(domains))
+    width = 0.22  # thinner bars
+
+    fig, ax = plt.subplots(figsize=(9, 4.2))
+
+    # Expert bars
+    ax.bar(
+        x - width / 2,
+        expert_means,
+        width,
+        yerr=expert_cis,
+        label="Expert",
+        capsize=4,
+        facecolor="none",
+        edgecolor="dimgray",
+        linewidth=2,
+    )
+
+    # CaP bars
+    ax.bar(
+        x + width / 2,
+        cap_means,
+        width,
+        yerr=cap_cis,
+        label="CaP",
+        capsize=4,
+        facecolor="tab:blue",
+        edgecolor="tab:blue",
+        alpha=0.7,
+    )
+
+    ax.set_ylabel("Success rate (%)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(domains, rotation=15)
+    ax.set_ylim(0, 105)
+
+    ax.set_title(f"Expert vs CaP performance across {len(domains)} environments")
+    ax.legend(frameon=False)
+
+    ax.grid(axis="y", linestyle=":", alpha=0.5)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        logging.info(f"Saved figure to {save_path}")
+    plt.show()
 
 def _main() -> None:
-
-    cfg: DictConfig = OmegaConf.create(
-        {
-            "provider": "ggg",
-            "make_kwargs": {
-                "base_name": "StopTheFall",
-                "id": "StopTheFall0-v0",
-            },
-            "instance_num": 0,
-        }
-    )
     registry = EnvRegistry()
-    env = registry.load(cfg)
-    obs, _ = env.reset()
-    env_name = cfg.make_kwargs.base_name
-    env_factory = lambda instance_num=None: registry.load(
-        cfg, instance_num=instance_num
-    )
+    domains = ["TwoPileNim", "Chase", "CheckmateTactic0", "ReachForTheStar", "StopTheFall"]
+    NUM_LLM_SEEDS = 5
+    TEST_ENV_NUMS = list(range(11, 20))
+    MAX_NUM_STEPS = 50
+    expert_means, expert_cis = [], []
+    cap_means, cap_cis = [], []
 
-    cache_path = Path(f"outputs/baselines/baseline_cache_{env_name}.db")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache = SQLite3PretrainedLargeModelCache(cache_path)
-    main_llm_client = OpenAIModel("gpt-4.1", cache)
+    for env_name in domains:
+        logging.info(f"\n=== Running CaP on {env_name} ===")
 
-    main_cfg = CaPBaselineConfig(
-        prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
-        output_dir=f"outputs/baselines/{env_name}/",
-        max_attempts=5,
-        function_name="policy",
-    )
+        def env_factory(instance_num: int | None = None, *, _env_name: str = env_name):
+            return registry.load(
+                OmegaConf.create(
+                    {
+                        "provider": "ggg",
+                        "make_kwargs": {
+                            "base_name": _env_name,
+                            "id": f"{_env_name}0-v0",
+                        },
+                        "instance_num": instance_num,
+                    }
+                )
+            )
 
-    baseline = CaPBaseline(
-        llm_client=main_llm_client,
-        example_observation=obs,
-        action_space=env.action_space,
-        env_name=env_name,
-        cfg=main_cfg,
-    )
+        env0 = env_factory(0)
+        obs, _ = env0.reset()
+        action_space = env0.action_space
+        env0.close()
 
-    baseline.generate_policy()
+        cap_all: list[bool] = []
+        expert_all: list[bool] | None = None
 
-    expert_means = []
-    expert_cis = []
+        for seed in range(NUM_LLM_SEEDS):
+            logging.info(f"  CaP seed {seed}")
 
-    cap_means = []
-    cap_cis = []
-    domains = [env_name]
+            cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            llm_client = OpenAIModel("gpt-4.1", cache)
 
-    for env in domains:
-        m_e, h_e, m_c, h_c = baseline.test_policy_on_envs(
-            env_factory, range(11, 20), max_num_steps=50
-        )
+            cap_cfg = CaPBaselineConfig(
+                prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
+                output_dir=f"outputs/baselines/{env_name}/seed{seed}",
+            )
+
+            baseline = CaPBaseline(
+                llm_client, obs, action_space, env_name, cap_cfg
+            )
+            baseline.generate_policy()
+
+            cap_res, exp_res = baseline.evaluate_raw(
+                env_factory,
+                TEST_ENV_NUMS,
+                MAX_NUM_STEPS,
+                run_expert=(seed == 0),
+            )
+
+            cap_all.extend(cap_res)
+            if seed == 0:
+                expert_all = exp_res
+
+        assert expert_all is not None
+
+        m_e, h_e = bootstrap_ci_success(expert_all)
+        m_c, h_c = bootstrap_ci_success(cap_all)
 
         expert_means.append(100 * m_e)
         expert_cis.append(100 * h_e)
-
         cap_means.append(100 * m_c)
         cap_cis.append(100 * h_c)
-
-    baseline.plot_gap_to_expert(
+    logging.info(expert_means)
+    logging.info(expert_cis)
+    logging.info(cap_means)
+    logging.info(cap_cis)
+    plot_expert_vs_cap(
         domains,
         expert_means,
         expert_cis,
         cap_means,
         cap_cis,
-        save_path=f"plots/image_{env_name}.png",
+        save_path=Path("plots/cap_vs_expert_all_envs.png"),
     )
-
 
 if __name__ == "__main__":
     _main()
