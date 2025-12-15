@@ -305,7 +305,7 @@ def _main() -> None:
     CaP_accuracies, mean, half = baseline.test_policy_on_envs(
         env_factory, range(11, 20), max_num_steps=50
     )
-    logging.info(CaP_accuracies, mean, half)
+    logging.info(f"Results: {CaP_accuracies}, {mean}, {half}")
     domains = [env_name]
     baseline.plot_gap_to_expert(domains, [mean], [half], save_path="plots/image.png")
 
