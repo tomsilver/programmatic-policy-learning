@@ -127,8 +127,6 @@ class CaPBaseline:
             function_name=function_name,
         )
         self._policy = policy_fn
-        print("Synthesized new policy:")
-        print(policy_code_str)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = Path(self.cfg.output_dir) / f"cap_policy_{timestamp}.py"
@@ -146,7 +144,7 @@ class CaPBaseline:
         env_factory: Any,
         test_env_nums: Sequence[int] = range(11, 20),
         max_num_steps: int = 50,
-    ) -> tuple[list[Any], float, float]:
+    ) -> tuple[float, float, float, float]:
         """Roll out the synthesized policy (and expert) across env
         instances."""
 
@@ -206,58 +204,61 @@ class CaPBaseline:
             new_env.close()
         print(f"CaP Test Results: {accuracies}")
         print(f"Expert Test Results: {expert_accuracies}")
+        mean_expert, (_, _), half_expert = bootstrap_ci_success(expert_accuracies)
         mean, (lo, hi), half = bootstrap_ci_success(accuracies)
         print(lo, hi)
-        return accuracies, mean, half
+        return mean_expert, half_expert, mean, half
 
     def plot_gap_to_expert(
         self,
         domains: Sequence[str],
-        policy_success: Sequence[float],
-        policy_ci: Sequence[float] | None = None,
+        expert_means: Sequence[float],
+        expert_cis: Sequence[float],
+        cap_means: Sequence[float],
+        cap_cis: Sequence[float],
         title: str = "Gap to Expert Performance",
         save_path: str | Path | None = None,
     ) -> None:
-        """
-        domains: list[str]
-        policy_success: list[float] (0–100)
-        policy_ci: list[float] or None (same length, in percent)
-        """
+        """Plot."""
+        print(expert_means)
+        print(expert_cis)
+        print(cap_means)
+        print(cap_cis)
+        x = np.arange(len(domains))
+        width = 0.35
 
-        domain_list: list[str] = list(domains)
-        policy_success_arr = np.asarray(policy_success, dtype=float)
+        fig, ax = plt.subplots(figsize=(8, 4.5))
 
-        # Expert is always 100%
-        gap = 100.0 - policy_success_arr
+        ax.bar(
+            x - width / 2,
+            expert_means,
+            width,
+            yerr=expert_cis,
+            label="Expert",
+            capsize=4,
+            color="dimgray",
+        )
 
-        x = np.arange(len(domain_list))
+        ax.bar(
+            x + width / 2,
+            cap_means,
+            width,
+            yerr=cap_cis,
+            label="CaP",
+            capsize=4,
+            color="tab:blue",
+        )
 
-        plt.figure(figsize=(8, 4))
-
-        if policy_ci is not None:
-            policy_ci_arr = np.asarray(policy_ci, dtype=float)
-            plt.bar(
-                x,
-                gap,
-                yerr=policy_ci_arr,
-                capsize=4,
-            )
-        else:
-            plt.bar(x, gap)
-
-        # Expert reference line (zero gap)
-        plt.axhline(0.0, linestyle="--", linewidth=1)
-
-        plt.xticks(x, domain_list, rotation=20, ha="right")
-        plt.ylabel("Expert − Policy Success (%)")
-        plt.title(title)
-
+        ax.set_ylabel("Success rate (%)")
+        ax.set_xticks(x)
+        ax.set_xticklabels(domains, rotation=20)
+        ax.set_ylim(0, 100)
+        ax.legend(frameon=False)
+        ax.set_title("Expert vs CaP performance across environments")
         plt.tight_layout()
-
         if save_path is not None:
             plt.savefig(save_path, dpi=300)
             print(f"Saved figure to {save_path}")
-
         plt.show()
 
 
@@ -302,13 +303,32 @@ def _main() -> None:
     )
 
     baseline.generate_policy()
-    CaP_accuracies, mean, half = baseline.test_policy_on_envs(
-        env_factory, range(11, 20), max_num_steps=50
-    )
-    logging.info(f"Results: {CaP_accuracies}, {mean}, {half}")
+
+    expert_means = []
+    expert_cis = []
+
+    cap_means = []
+    cap_cis = []
     domains = [env_name]
+
+    for env in domains:
+        m_e, h_e, m_c, h_c = baseline.test_policy_on_envs(
+            env_factory, range(11, 20), max_num_steps=50
+        )
+
+        expert_means.append(100 * m_e)
+        expert_cis.append(100 * h_e)
+
+        cap_means.append(100 * m_c)
+        cap_cis.append(100 * h_c)
+
     baseline.plot_gap_to_expert(
-        domains, [mean], [half], save_path=f"plots/image_{env_name}.png"
+        domains,
+        expert_means,
+        expert_cis,
+        cap_means,
+        cap_cis,
+        save_path=f"plots/image_{env_name}.png",
     )
 
 
