@@ -8,7 +8,7 @@ Return only executable Python code.
 
 ## Environment description:
 
-- The environment is a grid-based board game 'Checkmate' env.
+- The environment is a grid-based board game implementing a simplified checkmate scenario.
 - The observation `obs` is a 2D grid.
 - Each cell contains exactly one of the following symbols:
 
@@ -21,17 +21,18 @@ Return only executable Python code.
 
 - The agent controls the white pieces.
 - The black king is the opponent.
-- Highlighted white pieces indicate the piece that can currently be moved or legal move locations.
+- Highlighted white pieces indicate which white piece can be moved on the current turn.
 
 --
 
 ## Action space:
 
-The policy must return a tuple (row, column) indicating a cell in the grid.
+The policy must return a tuple (row, column) corresponding to a cell in the grid.
 
 - (row, column) must be a valid cell location within the grid bounds.
-- The selected cell corresponds to a legal move for the currently highlighted white piece.
-- If the selected cell does not represent a legal move, the action has no effect.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines which actions are legal and how they affect the game state.
+- Selecting an invalid or illegal cell has no effect.
 
 --
 
@@ -39,7 +40,7 @@ The policy must return a tuple (row, column) indicating a cell in the grid.
 Task:
 Deliver checkmate to the black king.
 The episode ends successfully when the black king is checkmated.
-The episode ends unsuccessfully if no checkmate is possible.
+The episode ends unsuccessfully if the environment reaches a terminal non-checkmate state.
 
 --
 
@@ -50,7 +51,7 @@ Below is a summary of patterns extracted from a set of expert trajectories. Thes
 ### High-frequency relational patterns:
 - The agent frequently positions itself so that the target is adjacent to a board edge or corner.
 - The agent often maintains a line (row, column, or diagonal) between itself and the target, restricting the target’s movement.
-- The agent and its ally (if present) are often placed so that the target is “sandwiched” between them and a board boundary.
+- The agent and its ally (white king and white queen) may be both present and are often placed so that the target is “sandwiched” between them and a board boundary.
 - The agent avoids occupying squares directly adjacent to the target unless the target is already constrained by the edge or corner.
 
 ### Useful directional / asymmetry relations:
@@ -102,8 +103,10 @@ Do not include any text outside the code block.
 
 --
 
-## Notes on Baseline Assumptions (Checkmate)
+## Notes on Checkmate Assumptions
 
 - No Checkmate-specific helper functions are provided.
-- The policy must infer pile structure directly from the grid.
-- All game logic must be implemented by the LLM.
+- The policy must infer piece locations and roles directly from the grid observation.
+- Highlighted cells provide cues about valid actions but do not expose the underlying rules.
+- The policy does not have access to the environment’s transition or legality rules.
+- All game logic, beyond interpreting the grid observation, is handled by the environment.

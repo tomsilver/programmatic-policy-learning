@@ -14,19 +14,18 @@ Environment description:
   - 'empty'
   - 'token'
 
-- Each contiguous horizontal group of 'token' cells represents a pile.
+- Each contiguous vertical group of 'token' cells represents a pile (In this environment, each pile corresponds to a single column; “left” and “right” refer to the two vertical token stacks.)
 - There are exactly two piles in the grid.
 - The agent acts on its own turn only.
 
 --
 
-## Action Space
-The policy must return a tuple (row, col) indicating a cell to select.
+## Action semantics
 
-Rules of the game:
-- Selecting a 'token' cell removes that cell and all 'token' cells to its right in the same row.
-- Selecting an 'empty' cell is invalid.
-- The agent that removes the last 'token' wins the game.
+- The policy must return a tuple (row, col) corresponding to a valid cell location in the grid. The returned action (row, col) should mean: col -> which pile, row -> how many tokens to remove.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines which actions are legal and how selecting a cell affects the game state.
+- Selecting a cell that does not correspond to a legal action has no effect.
 
 
 --
@@ -94,8 +93,8 @@ Do not include any text outside the code block.
 
 --
 
-## Notes on Baseline Assumptions (Nim)
+## Notes on Nim Assumptions
 
 - No Nim-specific helper functions are provided.
-- The policy must infer pile structure directly from the grid.
-- All game logic must be implemented by the LLM.
+- The policy must infer pile structure directly from the grid observation.
+- The policy selects actions by choosing grid cells; all legality, turn-taking, and termination logic is handled by the environment.

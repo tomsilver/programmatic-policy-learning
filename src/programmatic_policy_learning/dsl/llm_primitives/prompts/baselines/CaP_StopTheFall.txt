@@ -23,19 +23,18 @@ Return only executable Python code.
 - Falling cells represent objects that are moving downward over time.
 - Red cells represent dangerous locations that should be avoided.
 - Static cells do not move.
-- Advance cells indicate progress or timing cues in the environment.
+- Advance cells provide observable cues but do not correspond to explicit actions.
 
 --
 
 ## Action space:
 
-The policy must return a tuple (row, column) indicating a cell in the grid.
+The policy must return a tuple (row, column) corresponding to a cell in the grid.
 
 - (row, column) must be a valid cell location within the grid bounds.
-- The agent attempts to move from its current position to the selected cell.
-- Valid actions typically correspond to one of the neighboring cells of the agent.
-- If the selected cell is invalid or unsafe, the action has no effect.
-
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines how selecting a cell affects the agent and other objects.
+- Selecting an invalid or unsafe cell has no effect.
 
 --
 
@@ -54,33 +53,33 @@ Below is a summary of patterns extracted from a set of expert trajectories. Thes
 
 ### High-frequency relational patterns:
 - Agent frequently positions itself directly beneath the falling target, aligning along the same vertical (y-axis) column.
-- Agent often moves to intercept the target before it reaches hazardous tiles (fire).
-- Agent avoids positioning itself on or adjacent to fire tiles.
-- Agent sometimes positions itself on the only available safe (non-fire, non-blocked) tile beneath the target’s projected path.
+- Agent often moves to intercept the target before it reaches hazardous tiles (red tiles).
+- Agent avoids positioning itself on or adjacent to red tiles.
+- Agent sometimes positions itself on the only available safe (non-red, non-blocked) tile beneath the target’s projected path.
 
 ### Useful directional / asymmetry relations:
 - Agent’s movement is primarily vertical (along the y-axis) to match the target’s descent, with horizontal (x-axis) adjustments to align with the target’s column.
 - When the target is closer to the left or right edge, the agent moves horizontally to match the target’s lateral position.
-- Agent responds to asymmetries in fire/block placement, preferring columns with clear paths from the target to the ground.
-- If the target is above a cluster of hazards, the agent moves to the nearest safe landing zone in the same row or column.
+- Agent responds to asymmetries in red/block placement, preferring columns with clear paths from the target to the ground.
+- If the target is above a cluster of hazards (red tiles), the agent moves to the nearest safe landing zone (non-red) in the same row or column.
 
 ### Example state–action correlations:
-- When the target is directly above a fire tile, the agent moves to the nearest adjacent safe tile in the same row.
-- If there is a single clear column between hazards, the agent moves to that column to intercept the target.
-- When the target is descending above a gap between hazards, the agent positions itself at the bottom of that gap.
-- If the target is above a blocked tile (gray), the agent does not attempt to intercept directly below but seeks the nearest accessible safe tile.
+- When the target is directly above a red tile, the agent moves to the nearest adjacent safe tile in the same row.
+- If there is a single clear column between hazards (red tiles), the agent moves to that column to intercept the target.
+- When the target is descending above a gap between hazards (red tiles), the agent positions itself at the bottom of that gap.
+- If a falling object is above a static cell, the agent does not attempt to intercept directly below.
 
 ### Frequently observed local spatial configurations:
-- Agent and target aligned vertically with no hazards between them.
-- Agent positioned at the edge of a contiguous block of fire tiles, intercepting the target at the first available safe tile.
-- Agent occupying a single isolated safe tile surrounded by hazards, directly beneath the target’s path.
+- Agent and target aligned vertically with no hazards (red tiles) between them.
+- Agent positioned at the edge of a contiguous block of red tiles, intercepting the target at the first available safe tile.
+- Agent occupying a single isolated safe tile surrounded by hazards (red tiles), directly beneath the target’s path.
 - Agent and target both near the grid boundary, with the agent using the edge as a constraint for movement.
 
 ### Observed distance thresholds or step ranges:
-- Agent begins lateral movement when the target is several rows above the hazard layer (often 2–4 tiles away from hazards).
-- Agent completes horizontal alignment before the target reaches the last 1–2 rows above the hazard layer.
+- Agent begins lateral movement when the target is several rows above the hazard (red) layer (often 2–4 tiles away from hazards).
+- Agent completes horizontal alignment before the target reaches the last 1–2 rows above the hazard (red) layer.
 - Agent rarely moves more than a few tiles horizontally unless the only safe path is at the far edge.
-- Agent’s vertical position is less important until the target nears the hazard layer, at which point precise alignment is prioritized.
+- Agent’s vertical position is less important until the target nears the hazard (red) layer, at which point precise alignment is prioritized.
 
 --
 
@@ -109,8 +108,10 @@ Do not include any text outside the code block.
 
 --
 
-## Notes on Baseline Assumptions (StopTheFall)
+## Notes on StopTheFall Assumptions
 
 - No StopTheFall-specific helper functions are provided.
-- The policy must infer pile structure directly from the grid.
-- All game logic must be implemented by the LLM.
+- The policy must infer the agent and object locations directly from the grid observation.
+- Falling, red, static, and advance cells are treated as observable cues.
+- The policy does not have access to the environment’s transition dynamics.
+- All movement, collision, and failure semantics are defined by the environment.

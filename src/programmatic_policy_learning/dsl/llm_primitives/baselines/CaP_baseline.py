@@ -307,7 +307,9 @@ def _main() -> None:
     )
     logging.info(f"Results: {CaP_accuracies}, {mean}, {half}")
     domains = [env_name]
-    baseline.plot_gap_to_expert(domains, [mean], [half], save_path=f"plots/image_{env_name}.png")
+    baseline.plot_gap_to_expert(
+        domains, [mean], [half], save_path=f"plots/image_{env_name}.png"
+    )
 
 
 if __name__ == "__main__":

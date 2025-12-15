@@ -8,7 +8,7 @@ Return only executable Python code.
 
 ## Environment description:
 
-- The environment is a grid world of the game 'ReachFortheStar'.
+- The environment is a grid world of the game 'ReachForTheStar'.
 - The observation `obs` is a 2D grid.
 - Each cell contains exactly one of the following symbols:
 
@@ -21,19 +21,19 @@ Return only executable Python code.
 
 - The agent occupies exactly one cell.
 - The star occupies exactly one cell and represents the goal.
-- Arrow cells provide directional cues in the environment.
+- Arrow cells provide directional cues that correlate with successful movement patterns.
 - Drawn cells are part of the environment but do not represent the agent or the goal.
 
 --
 
 ## Action space:
 
-The policy must return a tuple (row, column) indicating a cell in the grid.
+The policy must return a tuple (row, column) corresponding to a cell in the grid.
 
 - (row, column) must be a valid cell location within the grid bounds.
-- The agent attempts to move from its current position to the selected cell.
-- Valid actions typically correspond to one of the neighboring cells of the agent.
-- If the selected cell is invalid or not reachable, the action has no effect.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines how selecting a cell affects the agent’s movement.
+- Selecting an invalid or unreachable cell has no effect.
 
 
 --
@@ -61,7 +61,7 @@ Below is a summary of patterns extracted from a set of expert trajectories. Thes
 
 ### Example state–action correlations:
 - When the agent is not vertically aligned with the target, the next action is a horizontal move toward the target’s x-coordinate.
-- When the agent is vertically aligned (or nearly so) with the target, the next action is to move upward or build upward.
+- When the agent is vertically aligned (or nearly so) with the target, - the next action tends to move upward when such a move is possible.
 - If there is an obstacle or gap below the target, the agent constructs or climbs a staircase structure to reach the target’s height.
 
 ### Frequently observed local spatial configurations:
@@ -102,8 +102,10 @@ Do not include any text outside the code block.
 
 --
 
-## Notes on Baseline Assumptions (ReachFortheStar)
+## Notes on ReachForTheStar Assumptions 
 
-- No ReachFortheStar-specific helper functions are provided.
-- The policy must infer pile structure directly from the grid.
-- All game logic must be implemented by the LLM.
+- No ReachForTheStar-specific helper functions are provided.
+- The policy must infer the agent and target locations directly from the grid observation.
+- Arrow cells are treated as directional cues but do not correspond to explicit actions.
+- The policy does not have access to the environment’s transition dynamics.
+- All movement and interaction semantics are defined by the environment.
