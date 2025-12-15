@@ -17,7 +17,7 @@ Environment description:
   - 'wall'
   - 'drawn'
   - 'left_arrow'
-  - 'right_arrow
+  - 'right_arrow'
   - 'up_arrow'
   - 'down_arrow'
 
