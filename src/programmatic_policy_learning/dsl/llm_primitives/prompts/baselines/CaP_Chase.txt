@@ -9,7 +9,8 @@ Return only executable Python code.
 Environment description:
 
 - The environment is a grid-based implementation of the game 'Chase'.
-- The observation `obs` is a 2D Python list (rows × columns).
+- The observation `obs` is a 2D Python NumPy array (rows × columns).
+  - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
 - Each cell contains one of the following values:
   - 'empty'
   - 'target'

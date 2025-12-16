@@ -9,7 +9,8 @@ Return only executable Python code.
 ## Environment description:
 
 - The environment is a grid world of the game 'StopTheFall'.
-- The observation `obs` is a 2D grid.
+- The observation `obs` is a 2D Python NumPy array (rows × columns).
+  - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
 - Each cell contains exactly one of the following symbols:
 
   - empty

@@ -186,5 +186,8 @@ videos/
 cc_jobs/
 bash_jobs/
 
+# ignore plots
+plots/
+
 # ignore output files
 *.out

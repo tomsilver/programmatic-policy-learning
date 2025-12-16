@@ -26,6 +26,11 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
 
 @dataclass
 class CaPBaselineConfig:
@@ -146,8 +151,12 @@ class CaPBaseline:
         max_num_steps: int,
         run_expert: bool,
     ) -> tuple[list[bool], list[bool]]:
+        """Roll out CaP and (optionally) expert policies on specified envs."""
         cap_results: list[bool] = []
         expert_results: list[bool] = []
+
+        if self._policy is None:
+            raise RuntimeError("Policy has not been generated.")
 
         expert_fn = get_grid_expert(self.env_name) if run_expert else None
 
@@ -160,11 +169,11 @@ class CaPBaseline:
             env.close()
 
             if run_expert:
+                if expert_fn is None:
+                    raise RuntimeError("Expert policy unavailable.")
                 env_e = env_factory(i)
                 expert_success = (
-                    run_single_episode(
-                        env_e, expert_fn, max_num_steps=max_num_steps
-                    )
+                    run_single_episode(env_e, expert_fn, max_num_steps=max_num_steps)
                     > 0
                 )
                 expert_results.append(expert_success)
@@ -179,6 +188,7 @@ def bootstrap_ci_success(
     alpha: float = 0.05,
     seed: int = 0,
 ) -> tuple[float, float]:
+    """Return mean success and half-width of a bootstrap CI."""
     rng = np.random.default_rng(seed)
     s = np.asarray(successes, dtype=float)
     N = len(s)
@@ -190,18 +200,19 @@ def bootstrap_ci_success(
 
 
 def plot_expert_vs_cap(
-    domains,
-    expert_means,
-    expert_cis,
-    cap_means,
-    cap_cis,
-    save_path=None,
-):
-    
+    domains: Sequence[str],
+    expert_means: Sequence[float],
+    expert_cis: Sequence[float],
+    cap_means: Sequence[float],
+    cap_cis: Sequence[float],
+    save_path: str | Path | None = None,
+) -> None:
+    """Bar plot comparing expert and CaP performance with error bars."""
+
     x = np.arange(len(domains))
     width = 0.22  # thinner bars
 
-    fig, ax = plt.subplots(figsize=(9, 4.2))
+    _, ax = plt.subplots(figsize=(9, 4.2))
 
     # Expert bars
     ax.bar(
@@ -245,9 +256,16 @@ def plot_expert_vs_cap(
         logging.info(f"Saved figure to {save_path}")
     plt.show()
 
+
 def _main() -> None:
     registry = EnvRegistry()
-    domains = ["TwoPileNim", "Chase", "CheckmateTactic0", "ReachForTheStar", "StopTheFall"]
+    domains = [
+        "TwoPileNim",
+        "Chase",
+        "CheckmateTactic",
+        "ReachForTheStar",
+        "StopTheFall",
+    ]
     NUM_LLM_SEEDS = 5
     TEST_ENV_NUMS = list(range(11, 20))
     MAX_NUM_STEPS = 50
@@ -257,7 +275,13 @@ def _main() -> None:
     for env_name in domains:
         logging.info(f"\n=== Running CaP on {env_name} ===")
 
-        def env_factory(instance_num: int | None = None, *, _env_name: str = env_name):
+        # ------------------------------------------------------------------
+        # Environment factory
+        # ------------------------------------------------------------------
+        def env_factory(
+            instance_num: int | None = None, *, _env_name: str = env_name
+        ) -> Any:
+            """Env Factory."""
             return registry.load(
                 OmegaConf.create(
                     {
@@ -271,43 +295,76 @@ def _main() -> None:
                 )
             )
 
+        # ------------------------------------------------------------------
+        # Get example observation + action space
+        # ------------------------------------------------------------------
         env0 = env_factory(0)
         obs, _ = env0.reset()
         action_space = env0.action_space
         env0.close()
 
+        # ------------------------------------------------------------------
+        # Storage
+        # ------------------------------------------------------------------
         cap_all: list[bool] = []
         expert_all: list[bool] | None = None
 
+        # ------------------------------------------------------------------
+        # Loop over LLM seeds
+        # ------------------------------------------------------------------
         for seed in range(NUM_LLM_SEEDS):
             logging.info(f"  CaP seed {seed}")
 
-            cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
-            cache = SQLite3PretrainedLargeModelCache(cache_path)
-            llm_client = OpenAIModel("gpt-4.1", cache)
+            try:
+                cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-            cap_cfg = CaPBaselineConfig(
-                prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
-                output_dir=f"outputs/baselines/{env_name}/seed{seed}",
-            )
+                cache = SQLite3PretrainedLargeModelCache(cache_path)
+                llm_client = OpenAIModel("gpt-4.1", cache)
 
-            baseline = CaPBaseline(
-                llm_client, obs, action_space, env_name, cap_cfg
-            )
-            baseline.generate_policy()
+                cap_cfg = CaPBaselineConfig(
+                    prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
+                    output_dir=f"outputs/baselines/{env_name}/seed{seed}",
+                )
 
-            cap_res, exp_res = baseline.evaluate_raw(
-                env_factory,
-                TEST_ENV_NUMS,
-                MAX_NUM_STEPS,
-                run_expert=(seed == 0),
-            )
+                baseline = CaPBaseline(
+                    llm_client=llm_client,
+                    example_observation=obs,
+                    action_space=action_space,
+                    env_name=env_name,
+                    cfg=cap_cfg,
+                )
 
-            cap_all.extend(cap_res)
-            if seed == 0:
-                expert_all = exp_res
+                baseline.generate_policy()
 
-        assert expert_all is not None
+                cap_res, exp_res = baseline.evaluate_raw(
+                    env_factory,
+                    TEST_ENV_NUMS,
+                    MAX_NUM_STEPS,
+                    run_expert=(seed == 0),
+                )
+
+                cap_all.extend(cap_res)
+
+                if seed == 0:
+                    expert_all = exp_res
+
+            except (RuntimeError, ValueError, OSError) as exc:
+                logging.warning(
+                    "[CaP failure] env=%s, seed=%d: %s", env_name, seed, exc
+                )
+                continue
+
+        # ------------------------------------------------------------------
+        # Aggregate + CI
+        # ------------------------------------------------------------------
+        if expert_all is None or len(cap_all) == 0:
+            logging.info(f"[Skipping domain] {env_name} (no valid results)")
+            expert_means.append(float("nan"))
+            expert_cis.append(float("nan"))
+            cap_means.append(float("nan"))
+            cap_cis.append(float("nan"))
+            continue
 
         m_e, h_e = bootstrap_ci_success(expert_all)
         m_c, h_c = bootstrap_ci_success(cap_all)
@@ -316,18 +373,28 @@ def _main() -> None:
         expert_cis.append(100 * h_e)
         cap_means.append(100 * m_c)
         cap_cis.append(100 * h_c)
-    logging.info(expert_means)
-    logging.info(expert_cis)
-    logging.info(cap_means)
-    logging.info(cap_cis)
+
+    logging.info(f"Expert means: {expert_means}")
+    logging.info(f"Expert CIs:   {expert_cis}")
+    logging.info(f"CaP means:    {cap_means}")
+    logging.info(f"CaP CIs:      {cap_cis}")
+    valid = [i for i, m in enumerate(cap_means) if not np.isnan(m)]
+
+    domains_plot = [domains[i] for i in valid]
+    expert_means_plot = [expert_means[i] for i in valid]
+    expert_cis_plot = [expert_cis[i] for i in valid]
+    cap_means_plot = [cap_means[i] for i in valid]
+    cap_cis_plot = [cap_cis[i] for i in valid]
+
     plot_expert_vs_cap(
-        domains,
-        expert_means,
-        expert_cis,
-        cap_means,
-        cap_cis,
-        save_path=Path("plots/cap_vs_expert_all_envs.png"),
+        domains_plot,
+        expert_means_plot,
+        expert_cis_plot,
+        cap_means_plot,
+        cap_cis_plot,
+        save_path=f"plots/cap_vs_expert_{len(valid)}_{NUM_LLM_SEEDS}.png",
     )
+
 
 if __name__ == "__main__":
     _main()
