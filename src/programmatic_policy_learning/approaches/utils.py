@@ -1,13 +1,12 @@
 """Utils for Testing LPP Approach."""
 
+from collections.abc import Callable
 from typing import Any
-
-from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
 
 def run_single_episode(
     env: Any,
-    policy: LPPPolicy,
+    policy: Callable[[Any], Any],
     record_video: bool = False,
     video_out_path: str | None = None,
     max_num_steps: int = 100,
@@ -28,7 +27,6 @@ def run_single_episode(
 
         if done:
             break
-
     env.close()
 
     return total_reward

@@ -1,0 +1,118 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+## Environment description:
+
+- The environment is a grid world of the game 'StopTheFall'.
+- The observation `obs` is a 2D Python NumPy array (rows × columns).
+  - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
+- Each cell contains exactly one of the following symbols:
+
+  - empty
+  - falling
+  - red
+  - static
+  - advance
+  - drawn
+
+- The agent occupies exactly one cell.
+- Falling cells represent objects that are moving downward over time.
+- Red cells represent dangerous locations that should be avoided.
+- Static cells do not move.
+- Advance cells provide observable cues but do not correspond to explicit actions.
+
+--
+
+## Action space:
+
+The policy must return a tuple (row, column) corresponding to a cell in the grid.
+
+- (row, column) must be a valid cell location within the grid bounds.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines how selecting a cell affects the agent and other objects.
+- Selecting an invalid or unsafe cell has no effect.
+
+--
+
+## Task Description
+Task:
+Prevent falling objects from causing failure.
+The agent should position itself to block or avoid falling objects and must avoid red cells.
+The episode ends unsuccessfully if a falling object reaches a critical state or if the agent enters a red cell.
+The episode is successful if the agent survives until the end of the episode.
+
+--
+
+## Expert-Derived Hints
+
+Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+
+### High-frequency relational patterns:
+- Agent frequently positions itself directly beneath the falling target, aligning along the same vertical (y-axis) column.
+- Agent often moves to intercept the target before it reaches hazardous tiles (red tiles).
+- Agent avoids positioning itself on or adjacent to red tiles.
+- Agent sometimes positions itself on the only available safe (non-red, non-blocked) tile beneath the target’s projected path.
+
+### Useful directional / asymmetry relations:
+- Agent’s movement is primarily vertical (along the y-axis) to match the target’s descent, with horizontal (x-axis) adjustments to align with the target’s column.
+- When the target is closer to the left or right edge, the agent moves horizontally to match the target’s lateral position.
+- Agent responds to asymmetries in red/block placement, preferring columns with clear paths from the target to the ground.
+- If the target is above a cluster of hazards (red tiles), the agent moves to the nearest safe landing zone (non-red) in the same row or column.
+
+### Example state–action correlations:
+- When the target is directly above a red tile, the agent moves to the nearest adjacent safe tile in the same row.
+- If there is a single clear column between hazards (red tiles), the agent moves to that column to intercept the target.
+- When the target is descending above a gap between hazards (red tiles), the agent positions itself at the bottom of that gap.
+- If a falling object is above a static cell, the agent does not attempt to intercept directly below.
+
+### Frequently observed local spatial configurations:
+- Agent and target aligned vertically with no hazards (red tiles) between them.
+- Agent positioned at the edge of a contiguous block of red tiles, intercepting the target at the first available safe tile.
+- Agent occupying a single isolated safe tile surrounded by hazards (red tiles), directly beneath the target’s path.
+- Agent and target both near the grid boundary, with the agent using the edge as a constraint for movement.
+
+### Observed distance thresholds or step ranges:
+- Agent begins lateral movement when the target is several rows above the hazard (red) layer (often 2–4 tiles away from hazards).
+- Agent completes horizontal alignment before the target reaches the last 1–2 rows above the hazard (red) layer.
+- Agent rarely moves more than a few tiles horizontally unless the only safe path is at the far edge.
+- Agent’s vertical position is less important until the target nears the hazard (red) layer, at which point precise alignment is prioritized.
+
+--
+
+## Output Format Constraint
+
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
+
+The code must define a function with the following signature:
+
+```python
+def policy(obs):
+    ...
+    return action
+```
+
+Where `action` is either:
+- a tuple (row, col), or
+- None if no valid move exists.
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+Do not include any text outside the code block.
+
+--
+
+## Notes on StopTheFall Assumptions
+
+- No StopTheFall-specific helper functions are provided.
+- The policy must infer the agent and object locations directly from the grid observation.
+- Falling, red, static, and advance cells are treated as observable cues.
+- The policy does not have access to the environment’s transition dynamics.
+- All movement, collision, and failure semantics are defined by the environment.

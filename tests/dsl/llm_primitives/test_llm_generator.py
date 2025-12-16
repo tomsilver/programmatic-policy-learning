@@ -146,7 +146,6 @@ def test_add_primitive_to_dsl() -> None:
 
     # Retrieve the updated DSL functions
     updated_get_dsl_functions_dict = updated_dsl_functions()
-    print(updated_get_dsl_functions_dict)
     # Assertions
     assert "new_primitive" in updated_get_dsl_functions_dict
     assert updated_get_dsl_functions_dict["new_primitive"] is new_primitive

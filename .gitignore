@@ -172,6 +172,10 @@ cache/
 slurm/
 outputs/
 new_outputs/
+#ignore py files
+**/baselines/outputs/* 
+
+
 
 # ignore the expert demo videos directory
 videos/
@@ -181,6 +185,9 @@ videos/
 *.sh
 cc_jobs/
 bash_jobs/
+
+# ignore plots
+plots/
 
 # ignore output files
 *.out
