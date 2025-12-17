@@ -1,4 +1,4 @@
-# grid_hint_config.py
+"""Domain-specific token whitelists for hint extraction."""
 
 SALIENT_TOKENS = {
     "Chase": [

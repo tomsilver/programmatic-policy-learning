@@ -1,20 +1,23 @@
-# trajectory_serializer.py
+"""Serialize expert trajectories into textual hint blocks."""
 
-from typing import Any, List, Tuple
+from typing import List, Sequence, Tuple
+
 import numpy as np
-from grid_encoder import GridStateEncoder
-from transition_analyzer import GenericTransitionAnalyzer
+
+from .grid_encoder import GridStateEncoder
+from .transition_analyzer import GenericTransitionAnalyzer
 
 
 def trajectory_to_text(
-    trajectory: List[Tuple[np.ndarray, Tuple[int, int], np.ndarray]],
+    trajectory: Sequence[Tuple[np.ndarray, Tuple[int, int], np.ndarray]],
     *,
     encoder: GridStateEncoder,
     analyzer: GenericTransitionAnalyzer,
     salient_tokens: List[str],
     max_steps: int | None = None,
 ) -> str:
-    blocks = []
+    """Convert (obs, action, next_obs) tuples to structured text."""
+    blocks: list[str] = []
     steps = trajectory[:max_steps] if max_steps else trajectory
 
     for i, (obs_t, action, obs_t1) in enumerate(steps):
@@ -30,6 +33,7 @@ def trajectory_to_text(
             encoder=encoder,
         )
 
+        change_summary = "\n".join(f"- {event}" for event in events)
         block = f"""
 === TRANSITION {i} ===
 ASCII(t):
@@ -44,8 +48,8 @@ Objects(t):
 {listing}
 
 Change summary:
-""" + "\n".join(f"- {e}" for e in events)
-
-        blocks.append(block.strip())
+{change_summary}
+        """.strip()
+        blocks.append(block)
 
     return "\n\n".join(blocks)

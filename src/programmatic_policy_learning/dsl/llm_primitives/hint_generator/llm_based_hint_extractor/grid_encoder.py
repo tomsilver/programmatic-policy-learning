@@ -1,28 +1,36 @@
-# grid_encoder.py
+"""Helpers for encoding grid observations into text features."""
 
 from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
 import numpy as np
-from typing import Any, Dict, List, Tuple
+
 
 @dataclass
 class GridStateEncoderConfig:
+    """Simple configuration for mapping tokens to ASCII symbols."""
+
     symbol_map: Dict[str, str]
     empty_token: str = "empty"
     coordinate_style: str = "rc"  # row, col
 
 
 class GridStateEncoder:
+    """Encode observations to ASCII and coordinate listings."""
+
     def __init__(self, cfg: GridStateEncoderConfig):
+        """Store the encoder configuration."""
         self.cfg = cfg
 
     def to_ascii(self, obs: np.ndarray) -> str:
-        rows = []
+        """Render the grid as ASCII art."""
+        rows: list[str] = []
         for r in range(obs.shape[0]):
-            row = []
+            row_chars = []
             for c in range(obs.shape[1]):
                 token = obs[r, c]
-                row.append(self.cfg.symbol_map.get(token, "?"))
-            rows.append("".join(row))
+                row_chars.append(self.cfg.symbol_map.get(token, "?"))
+            rows.append("".join(row_chars))
         return "\n".join(rows)
 
     def extract_objects(
@@ -30,6 +38,7 @@ class GridStateEncoder:
         obs: np.ndarray,
         salient_tokens: List[str],
     ) -> Dict[str, List[Tuple[int, int]]]:
+        """Collect coordinates for the requested tokens."""
         objects: Dict[str, List[Tuple[int, int]]] = {t: [] for t in salient_tokens}
         for r in range(obs.shape[0]):
             for c in range(obs.shape[1]):
@@ -43,6 +52,7 @@ class GridStateEncoder:
         objects: Dict[str, List[Tuple[int, int]]],
         max_per_token: int = 8,
     ) -> str:
+        """Return a human-readable summary of token coordinates."""
         lines = []
         for token, coords in objects.items():
             if not coords:

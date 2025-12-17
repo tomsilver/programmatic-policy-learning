@@ -19,6 +19,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 
+
 def extract_frames(
     video_path: str,
     max_frames: int = 12,
