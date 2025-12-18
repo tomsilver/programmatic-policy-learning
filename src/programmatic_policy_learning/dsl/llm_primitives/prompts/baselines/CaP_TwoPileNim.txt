@@ -9,6 +9,7 @@ Return only executable Python code.
 Environment description:
 
 - The environment is a grid-based implementation of the game 'Nim'.
+- ADD RULES OF THE GAME
 - The observation `obs` is a 2D Python NumPy array (rows × columns).
   - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
 - Each cell contains one of the following values:

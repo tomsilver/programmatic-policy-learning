@@ -1,37 +1,47 @@
-# transition_analyzer.py
+"""Simple heuristics for describing grid transitions."""
 
-from typing import Any, Dict, List, Tuple
+# pylint: disable=line-too-long
 
 import numpy as np
-from grid_encoder import GridStateEncoder
+
+from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
+    GridStateEncoder,
+)
 
 
-def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
+def manhattan(a: tuple[int, int], b: tuple[int, int]) -> int:
+    """Return the Manhattan distance between two cells."""
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
 class GenericTransitionAnalyzer:
+    """Produce text descriptions of transitions without domain knowledge."""
+
     def analyze(
         self,
         obs_t: np.ndarray,
-        action: Tuple[int, int],
+        action: tuple[int, int],
         obs_t1: np.ndarray,
         *,
-        encoder: GridStateEncoder,
+        encoder: "GridStateEncoder",
         agent_token: str = "agent",
         target_token: str | None = "target",
-    ) -> List[str]:
-        events: List[str] = []
+    ) -> list[str]:
+        """Return human-readable events summarizing the transition."""
+        del encoder  # unused for now but kept for interface symmetry
+        events: list[str] = []
 
-        # locate agent / target
-        def find(token, obs):
+        def find(token: str | None, obs: np.ndarray) -> tuple[int, int] | None:
+            """Locate the first cell containing the given token."""
+            if token is None:
+                return None
             locs = np.argwhere(obs == token)
             return tuple(locs[0]) if len(locs) > 0 else None
 
         a0 = find(agent_token, obs_t)
         a1 = find(agent_token, obs_t1)
-        t0 = find(target_token, obs_t) if target_token else None
-        t1 = find(target_token, obs_t1) if target_token else None
+        t0 = find(target_token, obs_t)
+        t1 = find(target_token, obs_t1)
 
         if a0 and a1:
             if a0 != a1:

@@ -1,19 +1,25 @@
 """Serialize expert trajectories into textual hint blocks."""
 
-from typing import List, Sequence, Tuple
+# pylint: disable=line-too-long
+
+from typing import Sequence
 
 import numpy as np
 
-from .grid_encoder import GridStateEncoder
-from .transition_analyzer import GenericTransitionAnalyzer
+from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
+    GridStateEncoder,
+)
+from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.transition_analyzer import (
+    GenericTransitionAnalyzer,
+)
 
 
 def trajectory_to_text(
-    trajectory: Sequence[Tuple[np.ndarray, Tuple[int, int], np.ndarray]],
+    trajectory: Sequence[tuple[np.ndarray, tuple[int, int], np.ndarray]],
     *,
     encoder: GridStateEncoder,
     analyzer: GenericTransitionAnalyzer,
-    salient_tokens: List[str],
+    salient_tokens: list[str],
     max_steps: int | None = None,
 ) -> str:
     """Convert (obs, action, next_obs) tuples to structured text."""

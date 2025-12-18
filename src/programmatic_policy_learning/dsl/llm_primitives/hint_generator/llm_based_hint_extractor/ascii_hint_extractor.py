@@ -1,29 +1,26 @@
 """Script for extracting textual hints from grid trajectories."""
 
-from collections import Counter
+from __future__ import annotations
 
-from prpl_llm_utils.reprompting import query_with_reprompts
+from collections import Counter
+from typing import Any, Callable
+
+from prpl_llm_utils.models import PretrainedLargeModel
+from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
-    GridStateEncoder,
-    GridStateEncoderConfig,
-)
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_hint_config import (
-    SALIENT_TOKENS,
-)
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.trajectory_serializer import (
-    trajectory_to_text,
-)
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.transition_analyzer import (
-    GenericTransitionAnalyzer,
-)
+from programmatic_policy_learning.dsl.llm_primitives.hint_generator import (
+    llm_based_hint_extractor as lbe,)
 
 
-def collect_full_episode(env, expert_fn, max_steps=200):
+def collect_full_episode(
+    env: Any,
+    expert_fn: Callable[[Any], Any],
+    max_steps: int = 200,
+) -> list[tuple[Any, Any, Any]]:
     """Roll out expert policy and capture (obs, action, next_obs) tuples."""
     obs, _ = env.reset()
     trajectory = []
@@ -92,15 +89,16 @@ Output ONLY the following template:
 
 
 def build_hint_prompt(trajectory_text: str) -> str:
+    """Wrap the serialized trajectory text in the hint prompt."""
     return HINT_EXTRACTION_PROMPT_TEMPLATE.format(TRAJECTORY_TEXT=trajectory_text)
 
 
 def run_chase_example(
-    llm_client,
-    env_factory,
+    llm_client: PretrainedLargeModel,
+    env_factory: Callable[[int, str], Any],
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
-):
+) -> str:
     """Collect multiple Chase trajectories and summarise hints via the LLM."""
 
     # ------------------------------------------------------------
@@ -118,19 +116,19 @@ def run_chase_example(
         "down_arrow": "v",
     }
 
-    enc_cfg = GridStateEncoderConfig(
+    enc_cfg = lbe.grid_encoder.GridStateEncoderConfig(
         symbol_map=symbol_map,
         empty_token="empty",
         coordinate_style="rc",
     )
-    encoder = GridStateEncoder(enc_cfg)
-    analyzer = GenericTransitionAnalyzer()
+    encoder = lbe.grid_encoder.GridStateEncoder(enc_cfg)
+    analyzer = lbe.transition_analyzer.GenericTransitionAnalyzer()
 
     # ------------------------------------------------------------
     # 2) Collect expert trajectories
     # ------------------------------------------------------------
     expert = get_grid_expert("Chase")
-    trajectories = []
+    trajectories: list[list[tuple[Any, Any, Any]]] = []
 
     for init_idx in range(num_initial_states):
         env = env_factory(init_idx, "Chase")
@@ -144,11 +142,11 @@ def run_chase_example(
     per_traj_hints: list[str] = []
 
     for i, traj in enumerate(trajectories):
-        text = trajectory_to_text(
+        text = lbe.trajectory_serializer.trajectory_to_text(
             traj,
             encoder=encoder,
             analyzer=analyzer,
-            salient_tokens=SALIENT_TOKENS["Chase"],
+            salient_tokens=lbe.grid_hint_config.SALIENT_TOKENS["Chase"],
             max_steps=max_steps_per_traj,
         )
 
@@ -157,12 +155,12 @@ def run_chase_example(
 
         prompt = build_hint_prompt(text)
         query = Query(prompt)
-        reprompt_checks = []  # TODOO: Add for full version
+        per_traj_checks: list[RepromptCheck] = []  # TODOO: add actual checks
 
         response = query_with_reprompts(
             llm_client,
             query,
-            reprompt_checks,  # type: ignore[arg-type]
+            per_traj_checks,  # type: ignore[arg-type]
             max_attempts=5,
         )
 
@@ -174,7 +172,7 @@ def run_chase_example(
     # ------------------------------------------------------------
     # 4) Aggregate hints (machine-side)
     # ------------------------------------------------------------
-    counter = Counter()
+    counter: Counter[str] = Counter()
     for hint_block in per_traj_hints:
         for line in hint_block.splitlines():
             line = line.strip()
@@ -212,16 +210,17 @@ Your task:
 Patterns:
 {aggregation_text}
 
+
 Output ONLY the structured hint template used previously.
 """
 
     final_query = Query(final_prompt)
-    reprompt_checks = []  # TODOO: Add for full version
+    aggregation_checks: list[RepromptCheck] = []  # TODOO: add actual checks
 
     final_response = query_with_reprompts(
         llm_client,
         final_query,
-        reprompt_checks,  # type: ignore[arg-type]
+        aggregation_checks,  # type: ignore[arg-type]
         max_attempts=5,
     )
 

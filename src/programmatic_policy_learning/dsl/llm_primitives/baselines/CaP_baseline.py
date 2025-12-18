@@ -1,6 +1,6 @@
 """CaP baseline: one-shot end-to-end policy synthesis without DSL learning."""
 
-# from __future__ import annotations
+from __future__ import annotations
 
 import logging
 from collections.abc import Callable
@@ -26,10 +26,12 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
-logging.basicConfig(
-    level=print,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
+# logging.basicConfig(
+#     level=print,
+#     format="%(asctime)s %(levelname)s %(message)s",
+# )
+
+print("TOP OF FILE, __name__ =", __name__)
 
 
 @dataclass
@@ -266,6 +268,7 @@ def _main() -> None:
         "ReachForTheStar",
         "StopTheFall",
     ]
+    print("HERE")
     NUM_LLM_SEEDS = 5
     TEST_ENV_NUMS = list(range(11, 20))
     MAX_NUM_STEPS = 50
@@ -397,4 +400,5 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
+    print("MAIN")
     _main()

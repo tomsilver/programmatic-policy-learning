@@ -1,7 +1,6 @@
 """Helpers for encoding grid observations into text features."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -10,7 +9,7 @@ import numpy as np
 class GridStateEncoderConfig:
     """Simple configuration for mapping tokens to ASCII symbols."""
 
-    symbol_map: Dict[str, str]
+    symbol_map: dict[str, str]
     empty_token: str = "empty"
     coordinate_style: str = "rc"  # row, col
 
@@ -36,10 +35,10 @@ class GridStateEncoder:
     def extract_objects(
         self,
         obs: np.ndarray,
-        salient_tokens: List[str],
-    ) -> Dict[str, List[Tuple[int, int]]]:
+        salient_tokens: list[str],
+    ) -> dict[str, list[tuple[int, int]]]:
         """Collect coordinates for the requested tokens."""
-        objects: Dict[str, List[Tuple[int, int]]] = {t: [] for t in salient_tokens}
+        objects: dict[str, list[tuple[int, int]]] = {t: [] for t in salient_tokens}
         for r in range(obs.shape[0]):
             for c in range(obs.shape[1]):
                 token = obs[r, c]
@@ -49,7 +48,7 @@ class GridStateEncoder:
 
     def format_coordinate_listing(
         self,
-        objects: Dict[str, List[Tuple[int, int]]],
+        objects: dict[str, list[tuple[int, int]]],
         max_per_token: int = 8,
     ) -> str:
         """Return a human-readable summary of token coordinates."""
