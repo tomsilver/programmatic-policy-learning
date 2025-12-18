@@ -255,11 +255,11 @@ def plot_expert_vs_cap(
 def _main() -> None:
     registry = EnvRegistry()
     domains = [
-        "TwoPileNim",
+        # "TwoPileNim",
         "Chase",
-        "CheckmateTactic",
-        "ReachForTheStar",
-        "StopTheFall",
+        # "CheckmateTactic",
+        # "ReachForTheStar",
+        # "StopTheFall",
     ]
 
     NUM_LLM_SEEDS = 5
