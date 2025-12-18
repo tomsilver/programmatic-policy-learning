@@ -12,8 +12,14 @@ from prpl_llm_utils.structs import Query
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator import (
-    llm_based_hint_extractor as lbe,)
+
+# pylint: disable=line-too-long
+from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor import (
+    grid_encoder,
+    grid_hint_config,
+    trajectory_serializer,
+    transition_analyzer,
+)
 
 
 def collect_full_episode(
@@ -116,13 +122,13 @@ def run_chase_example(
         "down_arrow": "v",
     }
 
-    enc_cfg = lbe.grid_encoder.GridStateEncoderConfig(
+    enc_cfg = grid_encoder.GridStateEncoderConfig(
         symbol_map=symbol_map,
         empty_token="empty",
         coordinate_style="rc",
     )
-    encoder = lbe.grid_encoder.GridStateEncoder(enc_cfg)
-    analyzer = lbe.transition_analyzer.GenericTransitionAnalyzer()
+    encoder = grid_encoder.GridStateEncoder(enc_cfg)
+    analyzer = transition_analyzer.GenericTransitionAnalyzer()
 
     # ------------------------------------------------------------
     # 2) Collect expert trajectories
@@ -142,11 +148,11 @@ def run_chase_example(
     per_traj_hints: list[str] = []
 
     for i, traj in enumerate(trajectories):
-        text = lbe.trajectory_serializer.trajectory_to_text(
+        text = trajectory_serializer.trajectory_to_text(
             traj,
             encoder=encoder,
             analyzer=analyzer,
-            salient_tokens=lbe.grid_hint_config.SALIENT_TOKENS["Chase"],
+            salient_tokens=grid_hint_config.SALIENT_TOKENS["Chase"],
             max_steps=max_steps_per_traj,
         )
 

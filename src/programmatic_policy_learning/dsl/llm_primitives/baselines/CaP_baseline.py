@@ -26,13 +26,6 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
-# logging.basicConfig(
-#     level=print,
-#     format="%(asctime)s %(levelname)s %(message)s",
-# )
-
-print("TOP OF FILE, __name__ =", __name__)
-
 
 @dataclass
 class CaPBaselineConfig:

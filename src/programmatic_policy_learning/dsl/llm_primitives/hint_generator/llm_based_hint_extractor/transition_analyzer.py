@@ -1,9 +1,8 @@
 """Simple heuristics for describing grid transitions."""
 
-# pylint: disable=line-too-long
-
 import numpy as np
 
+# pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
     GridStateEncoder,
 )

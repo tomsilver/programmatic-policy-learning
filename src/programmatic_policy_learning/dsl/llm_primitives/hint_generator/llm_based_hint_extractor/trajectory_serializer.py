@@ -1,11 +1,10 @@
 """Serialize expert trajectories into textual hint blocks."""
 
-# pylint: disable=line-too-long
-
 from typing import Sequence
 
 import numpy as np
 
+# pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
     GridStateEncoder,
 )
