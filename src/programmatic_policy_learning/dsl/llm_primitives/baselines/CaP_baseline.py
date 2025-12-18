@@ -261,7 +261,7 @@ def _main() -> None:
         "ReachForTheStar",
         "StopTheFall",
     ]
-    print("HERE")
+
     NUM_LLM_SEEDS = 5
     TEST_ENV_NUMS = list(range(11, 20))
     MAX_NUM_STEPS = 50
@@ -393,5 +393,4 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
-    print("MAIN")
     _main()
