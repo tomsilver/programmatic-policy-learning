@@ -121,17 +121,7 @@ def run(
     # ------------------------------------------------------------
     # 1) Setup encoder + analyzer
     # ------------------------------------------------------------
-    symbol_map = {
-        "empty": ".",
-        "agent": "A",
-        "target": "T",
-        "wall": "#",
-        "drawn": "*",
-        "left_arrow": "<",
-        "right_arrow": ">",
-        "up_arrow": "^",
-        "down_arrow": "v",
-    }
+    symbol_map = grid_hint_config.get_symbol_map(env_name)
 
     enc_cfg = grid_encoder.GridStateEncoderConfig(
         symbol_map=symbol_map,

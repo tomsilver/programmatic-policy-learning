@@ -6,7 +6,7 @@ Return only executable Python code.
 
 --
 
-Environment description:
+## Environment description:
 
 - The environment is a grid-based implementation of the game 'Chase'.
 - The observation `obs` is a 2D Python NumPy array (rows × columns).
@@ -22,9 +22,52 @@ Environment description:
   - 'up_arrow'
   - 'down_arrow'
 
-- Each contiguous horizontal group of 'token' cells represents a pile.
-- There are exactly two piles in the grid.
-- The agent acts on its own turn only.
+
+## Game Dynamics and Rules
+
+- The game is played on a fixed-size 2D grid.
+- Each grid cell contains exactly one symbol representing its contents:
+  - agent: the controllable player character
+  - target: the entity the agent must reach
+  - wall (trees): impassable obstacles
+  - empty: free space the agent can occup
+  - drawn: special terrain (treated as non-blocking unless otherwise specified)
+  - arrow cells: visual directional cues present in the grid but not actions themselves
+
+### Movement and Actions
+
+- At each time step, the agent chooses one action.
+- An action is represented by selecting a single grid cell (row, col).
+- Internally, the environment interprets this selection as a directional move (up, down, left, or right), based on the chosen cell.
+- The agent attempts to move one cell in the corresponding direction.
+
+### Movement Constraints
+
+- If the destination cell in the chosen direction is:
+  - empty or target → the agent moves into that cell.
+  - wall or outside the grid → the agent does not move (the action has no effect).
+- The agent cannot move diagonally.
+- The agent cannot pass through walls or obstacles.
+
+### Episode Termination and Success
+
+- The episode terminates successfully when the agent occupies the same cell as the target.
+- If the agent never reaches the target, the episode ends after a fixed maximum number of steps.
+- Only the agent is controlled; the target does not respond to the agent’s actions unless defined by the environment.
+
+### Observability and Knowledge
+
+- The policy observes the entire grid state at each step.
+- The policy does not have access to:
+  - the environment’s transition function,
+  - future states,
+  - reward values,
+  - or internal game logic beyond what can be inferred from observations.
+- All decisions must be based solely on the current grid observation.
+
+### Objective Summary
+
+- The sole objective is to guide the agent through free cells, navigating around obstacles, to reach the target cell as efficiently as possible.
 
 --
 
@@ -48,37 +91,19 @@ The episode ends successfully when the agent reaches the target.
 
 ## Expert-Derived Hints
 
-Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-### High-frequency relational patterns:
-- Agent frequently moves to reduce the Manhattan (grid) distance to the target.
-- Agent often aligns itself along the same row or column as the target before closing in further.
-- Agent tends to approach the target from the direction with the least obstacles or open space.
-- Agent avoids moving into positions where obstacles (trees) would block direct pursuit.
+**Core Consistent Strategy:**  
+The agent consistently seeks to minimize its spatial distance to the target by selecting movement actions that directly approach the target's position, prioritizing progress along one axis (typically horizontal alignment first, followed by vertical alignment) when not blocked. The agent exclusively uses environment-provided movement controls (such as directional arrows) and only acts when a move both reduces the distance to the target and does not require traversing an impassable cell (such as a wall). When no such move is available, the agent remains stationary, demonstrating patience rather than attempting detours or exploratory actions. The agent does not attempt illegal moves or bypass obstacles and waits until a viable, direct action is possible before proceeding step by step along the most direct open path.
 
-### Useful directional / asymmetry relations:
-- Agent often moves to be directly north, south, east, or west of the target, rather than diagonally offset.
-- When the target is near a boundary or corner, the agent approaches from the side that limits the target’s escape options.
-- Agent sometimes prioritizes closing the larger of the x or y coordinate gaps first, depending on the environment’s shape.
-- When the target is adjacent to a wall, the agent approaches from the open side, not from the wall side.
+**Context-Dependent Behaviors:**  
+The agent’s movement direction (left/right or up/down) is contingent on the relative positions of itself and the target. The agent’s decision to move or remain stationary depends on both the presence of obstacles and the availability of movement controls aligned with a clear path toward the target. In scenarios where movement in the optimal direction is blocked by a wall or unavailable through the current controls, the agent refrains from acting, regardless of the target’s behavior or movement.
 
-### Example state–action correlations:
-- If the agent is north of the target and there are no obstacles, the agent moves south.
-- If the agent is west of the target and the path is clear, the agent moves east.
-- When the target is near a corner, the agent tends to move to block the only open escape route.
-- If the agent and target are aligned along one axis, the agent moves directly along the other axis to close the gap.
+**Discarded Explanations:**  
+There is no evidence that the agent explores alternate routes, attempts to circumvent obstacles via indirect paths, or reacts to the target’s motion beyond maintaining the direct pursuit. The agent does not engage in exploratory, detour, or random actions, nor does it attempt illegal or futile moves into walls. Explanations suggesting opportunistic, adaptive, or learning behavior beyond the described direct, distance-minimizing pursuit are not supported.
 
-### Frequently observed local spatial configurations:
-- Agent and target are separated by a single row or column, with the agent moving to close that last gap.
-- Target is adjacent to a boundary or in a corner, and the agent positions itself to cut off escape along the open axis.
-- Agent avoids being diagonally adjacent to the target when a direct approach is possible.
-- Agent and target are both in open space, and the agent moves to minimize the number of steps to direct adjacency.
-
-### Observed distance thresholds or step ranges:
-- Agent typically acts to reduce the distance to the target to one grid cell (adjacency).
-- When more than two cells away, the agent prioritizes axis alignment before final approach.
-- If the target is within two steps of a boundary, the agent often moves to intercept along the boundary-adjacent path.
-- When the agent is within one move of being adjacent to the target, it always takes that move if not blocked.
+**Unified Environment-Level Strategy:**  
+The agent implements a strategy of direct pursuit: it minimizes its distance to the target by sequentially moving along the open, unobstructed axis—typically aligning with the target’s column first, then its row—using the environment’s directional controls. The agent only initiates movement when the action is both valid (not blocked by a wall or impassable cell) and reduces its distance to the target. When the environment presents no immediately available, legal move that decreases this distance, the agent remains stationary and waits for such an opportunity. This disciplined, non-exploratory approach reflects a consistent, environment-level policy of pursuing the most direct open path to the target, progressing only when legitimate, advantageous moves exist.
 
 --
 
@@ -95,9 +120,8 @@ def policy(obs):
     return action
 ```
 
-Where `action` is either:
-- a tuple (row, col), or
-- None if no valid move exists.
+Where `action` is:
+- a tuple (row, col)
 
 You may define helper functions inside the code.
 Do not use external libraries.

@@ -20,11 +20,54 @@ Return only executable Python code.
   - advance
   - drawn
 
-- The agent occupies exactly one cell.
-- Falling cells represent objects that are moving downward over time.
-- Red cells represent dangerous locations that should be avoided.
-- Static cells do not move.
-- Advance cells provide observable cues but do not correspond to explicit actions.
+## Game Dynamics and Rules
+
+- The game unfolds on a 2D grid representing a dynamic environment with gravity-like behavior.
+- The agent occupies exactly one cell and can reposition itself by selecting grid cells as actions.
+- Other objects in the environment evolve over time independently of the agent’s direct control.
+
+### Falling Objects
+
+- Cells marked as `falling` represent objects that move downward over time according to the environment’s internal dynamics.
+- Falling objects pose a threat: if they reach certain critical regions or states without being intercepted or mitigated, the episode ends unsuccessfully.
+- The agent cannot directly control falling objects but can influence outcomes by positioning itself relative to their paths.
+
+### Hazard and Obstacle Cells
+
+- Cells marked as `red` are hazardous.
+  - If the agent enters a red cell, the episode immediately ends unsuccessfully.
+  - Red cells may also indicate regions where falling objects should not be allowed to reach.
+- Cells marked as `static` represent immovable obstacles or structural elements.
+  - These cells block movement and falling-object traversal but do not change over time.
+- Cells marked as `drawn` are part of the environment’s structure but do not have special dynamics by themselves.
+
+### Advance Cells and Environmental Cues
+
+- Cells marked as `advance` act as observable cues related to progression, timing, or environmental state changes.
+- These cells do not correspond to explicit actions or immediate rewards but may signal when progression, survival milestones, or transitions are imminent.
+- The agent may use the spatial arrangement of advance cells to infer safe timing or positioning.
+
+### Movement and Action Semantics
+
+- On each step, the agent selects a target cell `(row, col)` as its action.
+- The environment determines whether the action results in movement, blocking, interception, or no effect.
+- Selecting invalid, unreachable, or unsafe cells (including red cells) results in no beneficial outcome and may trigger failure.
+- The agent cannot override gravity, collision rules, or timing mechanics; these are fully handled by the environment.
+
+### Objective and Termination Conditions
+
+- The objective is to survive until the end of the episode by preventing falling objects from causing failure and by avoiding red cells.
+- The episode ends unsuccessfully if:
+  - A falling object reaches a critical failure condition, or
+  - The agent enters a red cell.
+- The episode ends successfully if the agent survives through all environmental dynamics until termination.
+
+### Information and Constraints
+
+- The policy has no access to the environment’s internal physics, update rules, or future object trajectories.
+- All decisions must be based solely on the current grid observation.
+- Strategic behavior therefore relies on interpreting spatial relationships, timing cues, and object configurations visible in the grid.
+- All enforcement of legality, collisions, falling behavior, and termination is handled internally by the environment.
 
 --
 
@@ -50,38 +93,19 @@ The episode is successful if the agent survives until the end of the episode.
 
 ## Expert-Derived Hints
 
-Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-### High-frequency relational patterns:
-- Agent frequently positions itself directly beneath the falling target, aligning along the same vertical (y-axis) column.
-- Agent often moves to intercept the target before it reaches hazardous tiles (red tiles).
-- Agent avoids positioning itself on or adjacent to red tiles.
-- Agent sometimes positions itself on the only available safe (non-red, non-blocked) tile beneath the target’s projected path.
+**Core Consistent Strategy:**  
+The agent operates by pursuing contiguous progress within the environment through a sequence of locally adjacent or aligned cell selections—prioritizing uninterrupted advancement in a consistent spatial direction (vertical or horizontal) or incremental cluster-building. When movement along the current direction becomes constrained by boundaries, obstacles, or structural limits, the agent switches to target special-object cells (e.g., those with ‘advance_token’), which serve as a progression or termination condition. Actions never target inaccessible, blocked, or isolated open regions; the strategy is grounded in stepwise expansion along available, adjacent cells or immediate engagement with goal-signaling objects once standard progression halts.
 
-### Useful directional / asymmetry relations:
-- Agent’s movement is primarily vertical (along the y-axis) to match the target’s descent, with horizontal (x-axis) adjustments to align with the target’s column.
-- When the target is closer to the left or right edge, the agent moves horizontally to match the target’s lateral position.
-- Agent responds to asymmetries in red/block placement, preferring columns with clear paths from the target to the ground.
-- If the target is above a cluster of hazards (red tiles), the agent moves to the nearest safe landing zone (non-red) in the same row or column.
+**Context-Dependent Behaviors:**  
+The preferred direction of movement (vertical, horizontal, cluster-adjacent) and the specific sequence of targeted cells vary depending on local grid structure and obstacle placement. The agent may proceed straight upwards, downwards, leftwards, or act adjacent to clusters, contingent on the spatial configuration and accessibility of paths or openings in each environment instance. The location and timing of interaction with special tokens are determined by their emergence within accessible areas once routine path advancement is exhausted.
 
-### Example state–action correlations:
-- When the target is directly above a red tile, the agent moves to the nearest adjacent safe tile in the same row.
-- If there is a single clear column between hazards (red tiles), the agent moves to that column to intercept the target.
-- When the target is descending above a gap between hazards (red tiles), the agent positions itself at the bottom of that gap.
-- If a falling object is above a static cell, the agent does not attempt to intercept directly below.
+**Discarded Explanations:**  
+There is no evidence of random exploration, detours around obstacles, or direct movement into distant open areas disconnected from current progression. The agent does not attempt moves into blocked cells, revisit previously completed regions, or select open regions that are non-adjacent to its current trajectory or cluster.
 
-### Frequently observed local spatial configurations:
-- Agent and target aligned vertically with no hazards (red tiles) between them.
-- Agent positioned at the edge of a contiguous block of red tiles, intercepting the target at the first available safe tile.
-- Agent occupying a single isolated safe tile surrounded by hazards (red tiles), directly beneath the target’s path.
-- Agent and target both near the grid boundary, with the agent using the edge as a constraint for movement.
-
-### Observed distance thresholds or step ranges:
-- Agent begins lateral movement when the target is several rows above the hazard (red) layer (often 2–4 tiles away from hazards).
-- Agent completes horizontal alignment before the target reaches the last 1–2 rows above the hazard (red) layer.
-- Agent rarely moves more than a few tiles horizontally unless the only safe path is at the far edge.
-- Agent’s vertical position is less important until the target nears the hazard (red) layer, at which point precise alignment is prioritized.
-
+**Unified Environment-Level Strategy:**  
+The agent systematically advances through available, adjacent cells—preferring continuous sequential or cluster-based movement along open paths within the environment. This process continues until progression is blocked or the structure of the environment shifts, at which point the agent transitions to interact with designated special-object cells to achieve advancement or conclude its objective. The overarching strategy is local expansion that adapts to environmental layout but always culminates in purposeful engagement with critical tokens or cells when forward progress in the current mode is no longer viable.
 --
 
 ## Output Format Constraint
@@ -97,9 +121,8 @@ def policy(obs):
     return action
 ```
 
-Where `action` is either:
-- a tuple (row, col), or
-- None if no valid move exists.
+Where `action` is:
+- a tuple (row, col)
 
 You may define helper functions inside the code.
 Do not use external libraries.

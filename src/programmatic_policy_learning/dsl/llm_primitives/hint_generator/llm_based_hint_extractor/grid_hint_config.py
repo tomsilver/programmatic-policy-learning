@@ -23,6 +23,55 @@ SALIENT_TOKENS = {
     ],
 }
 
+SYMBOL_MAPS = {
+    "Chase": {
+        "empty": ".",
+        "agent": "A",
+        "target": "T",
+        "wall": "#",
+        "drawn": "*",
+        "left_arrow": "<",
+        "right_arrow": ">",
+        "up_arrow": "^",
+        "down_arrow": "v",
+    },
+    "TwoPileNim": {
+        "empty": ".",
+        "token": "#",
+    },
+    "ReachForTheStar": {
+        "empty": ".",
+        "agent": "A",
+        "star": "*",
+        "left_arrow": "<",
+        "right_arrow": ">",
+        "drawn": "#",
+    },
+    "StopTheFall": {
+        "empty": ".",
+        "falling": "F",
+        "red": "R",
+        "static": "S",
+        "advance": "A",
+    },
+    "Checkmate": {
+        "empty": ".",
+        "black_king": "K",
+        "white_king": "k",
+        "white_queen": "Q",
+        "highlighted_white_king": "K",
+        "highlighted_white_queen": "Q",
+    },
+}
+
+
+def get_symbol_map(env_name: str) -> dict[str, str]:
+    """Return the ASCII symbol map for the given environment."""
+    try:
+        return SYMBOL_MAPS[env_name]
+    except KeyError as exc:
+        raise KeyError(f"No symbol map configured for {env_name}") from exc
+
 
 
 
