@@ -35,6 +35,7 @@ class CaPBaselineConfig:
     output_dir: str = "outputs/baselines"
     max_attempts: int = 5
     function_name: str = "policy"
+    hints_path: str | None = None
 
 
 class CaPBaseline:
@@ -63,7 +64,24 @@ class CaPBaseline:
         path = Path(self.cfg.prompt_path)
         if not path.exists():
             raise FileNotFoundError(f"Prompt file not found: {path.resolve()}")
-        return path.read_text(encoding="utf-8")
+        prompt_text = path.read_text(encoding="utf-8")
+
+        if "{}" in prompt_text:
+
+            if not self.cfg.hints_path:
+                raise ValueError("Hint path not configured.")
+            hints_dir = Path(self.cfg.hints_path)
+
+            if hints_dir.is_dir():
+                hint_file = sorted(hints_dir.iterdir())[0]
+            else:
+                hint_file = hints_dir
+
+            hint_text = hint_file.read_text(encoding="utf-8")
+            prompt_text = prompt_text.replace("{}", hint_text, 1)
+
+        return prompt_text
+
 
     def generate_policy(self) -> str:
         """Produce, save, and echo the policy string returned by the LLM."""
@@ -256,8 +274,8 @@ def _main() -> None:
     registry = EnvRegistry()
     domains = [
         # "TwoPileNim",
-        "Chase",
-        # "CheckmateTactic",
+        # "Chase",
+        "CheckmateTactic",
         # "ReachForTheStar",
         # "StopTheFall",
     ]
@@ -321,6 +339,7 @@ def _main() -> None:
                 cap_cfg = CaPBaselineConfig(
                     prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
                     output_dir=f"outputs/baselines/{env_name}/seed{seed}",
+                    hints_path = f"../hint_generator/llm_based_hint_extractor/hints/{env_name}",
                 )
 
                 baseline = CaPBaseline(
