@@ -86,7 +86,7 @@ class CaPBaseline:
         """Produce, save, and echo the policy string returned by the LLM."""
         prompt = self.load_prompt()
         function_name = self.cfg.function_name
-        print(f"LLM model: {self.llm_client.get_id()}")
+        logging.info(f"LLM model: {self.llm_client.get_id()}")
 
         query = Query(prompt)
 
@@ -150,9 +150,9 @@ class CaPBaseline:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(policy_code_str + "\n", encoding="utf-8")
 
-        print("\n=== LLM policy output (also saved to file) ===\n")
-        print(policy_code_str)
-        print(f"\n[Saved to: {out_path.resolve()}]\n")
+        logging.info("\n=== LLM policy output (also saved to file) ===\n")
+        logging.info(policy_code_str)
+        logging.info(f"\n[Saved to: {out_path.resolve()}]\n")
 
         return policy_code_str
 
@@ -265,7 +265,7 @@ def plot_expert_vs_cap(
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=300)
-        print(f"Saved figure to {save_path}")
+        logging.info(f"Saved figure to {save_path}")
     plt.show()
 
 
@@ -286,7 +286,7 @@ def _main() -> None:
     cap_means, cap_cis = [], []
 
     for env_name in domains:
-        print(f"\n=== Running CaP on {env_name} ===")
+        logging.info(f"\n=== Running CaP on {env_name} ===")
 
         # ------------------------------------------------------------------
         # Environment factory
@@ -326,7 +326,7 @@ def _main() -> None:
         # Loop over LLM seeds
         # ------------------------------------------------------------------
         for seed in range(NUM_LLM_SEEDS):
-            print(f"  CaP seed {seed}")
+            logging.info(f"  CaP seed {seed}")
 
             try:
                 cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
@@ -376,7 +376,7 @@ def _main() -> None:
         # Aggregate + CI
         # ------------------------------------------------------------------
         if expert_all is None or len(cap_all) == 0:
-            print(f"[Skipping domain] {env_name} (no valid results)")
+            logging.info(f"[Skipping domain] {env_name} (no valid results)")
             expert_means.append(float("nan"))
             expert_cis.append(float("nan"))
             cap_means.append(float("nan"))
@@ -391,10 +391,10 @@ def _main() -> None:
         cap_means.append(100 * m_c)
         cap_cis.append(100 * h_c)
 
-    print(f"Expert means: {expert_means}")
-    print(f"Expert CIs:   {expert_cis}")
-    print(f"CaP means:    {cap_means}")
-    print(f"CaP CIs:      {cap_cis}")
+    logging.info(f"Expert means: {expert_means}")
+    logging.info(f"Expert CIs:   {expert_cis}")
+    logging.info(f"CaP means:    {cap_means}")
+    logging.info(f"CaP CIs:      {cap_cis}")
     valid = [i for i, m in enumerate(cap_means) if not np.isnan(m)]
 
     domains_plot = [domains[i] for i in valid]
