@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from collections import Counter
+from pathlib import Path
 from typing import Any, Callable
 
 from prpl_llm_utils.models import PretrainedLargeModel
@@ -12,7 +14,6 @@ from prpl_llm_utils.structs import Query
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
-
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor import (
     grid_encoder,
@@ -20,6 +21,13 @@ from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hi
     trajectory_serializer,
     transition_analyzer,
 )
+from prpl_llm_utils.models import PretrainedLargeModel
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel
+import tempfile
+from pathlib import Path
+from omegaconf import OmegaConf
+from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
 def collect_full_episode(
@@ -41,71 +49,74 @@ def collect_full_episode(
 
     return trajectory
 
-
 HINT_EXTRACTION_PROMPT_TEMPLATE = """
-You are analyzing expert demonstrations from a grid-based environment.
 
-We ONLY control the agent, not other entities.
+    You are analyzing expert demonstrations from a grid-based environment.
 
-Your job:
-1) Infer the agent’s high-level objective.
-2) Extract RECURRING spatial–relational patterns used for decision-making.
-3) Identify directional asymmetries, alignment behavior, and distance-based cues.
-4) Produce NON-CHEATY hints that could guide a symbolic policy or DSL design.
+    You are given a sequence of states and actions expressed as:
+    - ASCII grid representations
+    - Coordinate-based descriptions of objects
+    - Transitions showing how the grid changes after each action
 
-Hard constraints:
-- Do NOT propose DSL primitives, function names, or code.
-- Use descriptive relational language only.
-- Focus on observable spatial relations, not abstract strategy names.
-- If uncertain, say so.
+    The agent is the ONLY controlled entity.
 
-You are given a sequence of expert state transitions below.
+    Your task:
+    Infer the decision-making strategy demonstrated by the agent.
 
-Each step contains:
-- ASCII grid of the state
-- Coordinate-based object listing
-- Action taken
-- Observed transition effects
+    Focus on:
+    - What the agent appears to optimize or prioritize
+    - How the agent chooses actions based on relative positions, obstacles, and boundaries
+    - What conditions cause the agent to prefer one direction or move over another
+    - How the agent adapts its behavior when simple direct movement is blocked
 
----
+    Constraints:
+    - Do NOT propose DSL primitives, function names, or code.
+    - Use clear, causal, spatial language grounded in the observations.
+    - Describe *conditional logic* when relevant (e.g., “when X holds, the agent does Y”).
+    - If behavior seems inconsistent or ambiguous, state that explicitly.
 
-{TRAJECTORY_TEXT}
+    ---
+    Demonstrations:\n\n
 
----
+    {TRAJECTORY_TEXT}
 
-Output ONLY the following template:
+    ---
+    Output format:
+    Write a concise but structured explanation of the strategy, as if explaining the agent’s reasoning to a human.
+    Do NOT invent mechanics not visible in the data.
+    Output ONLY the strategy description text.
+    No preamble. No conclusion. No formatting markers.
 
-## DEMONSTRATION-INFERRED FEATURES (HINTS)
-
-### High-frequency relational patterns:
-- ...
-
-### Useful directional / asymmetry relations:
-- ...
-
-### Example state–action correlations:
-- ...
-
-### Frequently observed local spatial configurations:
-- ...
-
-### Observed distance thresholds or step ranges:
-- ...
-"""
+    """
 
 
 def build_hint_prompt(trajectory_text: str) -> str:
     """Wrap the serialized trajectory text in the hint prompt."""
     return HINT_EXTRACTION_PROMPT_TEMPLATE.format(TRAJECTORY_TEXT=trajectory_text)
 
+def env_factory(instance_num: int | None = None, env_name: str = None) -> Any:
+    """Env Factory."""
+    registry = EnvRegistry()
+    return registry.load(
+        OmegaConf.create(
+            {
+                "provider": "ggg",
+                "make_kwargs": {
+                    "base_name": env_name,
+                    "id": f"{env_name}0-v0",
+                },
+                "instance_num": instance_num,
+            }
+        )
+    )
 
-def run_chase_example(
+def run(
     llm_client: PretrainedLargeModel,
-    env_factory: Callable[[int, str], Any],
+    env_name: str,
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
 ) -> str:
-    """Collect multiple Chase trajectories and summarise hints via the LLM."""
+    """Collect multiple env trajectories and summarise hints via the LLM."""
 
     # ------------------------------------------------------------
     # 1) Setup encoder + analyzer
@@ -133,11 +144,11 @@ def run_chase_example(
     # ------------------------------------------------------------
     # 2) Collect expert trajectories
     # ------------------------------------------------------------
-    expert = get_grid_expert("Chase")
+    expert = get_grid_expert(env_name)
     trajectories: list[list[tuple[Any, Any, Any]]] = []
 
     for init_idx in range(num_initial_states):
-        env = env_factory(init_idx, "Chase")
+        env = env_factory(init_idx, env_name)
         traj = collect_full_episode(env, expert)
         env.close()
         trajectories.append(traj)
@@ -152,12 +163,10 @@ def run_chase_example(
             traj,
             encoder=encoder,
             analyzer=analyzer,
-            salient_tokens=grid_hint_config.SALIENT_TOKENS["Chase"],
+            salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
             max_steps=max_steps_per_traj,
         )
 
-        print(f"\n=== TEXT TO FEED INTO LLM (trajectory {i}) ===\n")
-        print(text)
 
         prompt = build_hint_prompt(text)
         query = Query(prompt)
@@ -169,56 +178,41 @@ def run_chase_example(
             per_traj_checks,  # type: ignore[arg-type]
             max_attempts=5,
         )
-
-        print(f"\n=== HINTS FROM TRAJECTORY {i} ===\n")
-        print(response.text)
-
         per_traj_hints.append(response.text)
 
     # ------------------------------------------------------------
     # 4) Aggregate hints (machine-side)
     # ------------------------------------------------------------
-    counter: Counter[str] = Counter()
-    for hint_block in per_traj_hints:
-        for line in hint_block.splitlines():
-            line = line.strip()
-            if line.startswith("-"):
-                counter[line] += 1
-
-    print("\n=== AGGREGATED RAW HINT COUNTS ===\n")
-    for k, v in counter.most_common():
-        print(f"{k}  [{v}/{num_initial_states}]")
+    blocks = []
+    for i, hint in enumerate(per_traj_hints, start=1):
+        blocks.append(f"[ANALYSIS {i}]\n{hint.strip()}")
+    consolidation_input =  "\n\n".join(blocks)
 
     # ------------------------------------------------------------
     # 5) Final abstraction pass (LLM)
     # ------------------------------------------------------------
-    summary_lines = [
-        f"{k}  (observed in {v}/{num_initial_states} trajectories)"
-        for k, v in counter.most_common()
-    ]
-
-    aggregation_text = "\n".join(summary_lines)
 
     final_prompt = f"""
-You are analyzing expert behavior across multiple trajectories
-in a grid-based Chase environment.
+    You are given multiple independent analyses of expert behavior,
+    each derived from a different initial state of the same environment.
 
-Below are relational patterns extracted independently from
-{num_initial_states} expert demonstrations.
+    Your task:
+    - Identify the core strategy that is consistent across trajectories
+    - Identify behaviors that appear context-dependent
+    - Discard incidental or contradictory explanations
+    - Produce a unified, environment-level description of the agent’s strategy
 
-Your task:
-- Identify invariant decision-making structures
-- Downweight rare or inconsistent patterns
-- Produce concise, reusable relational hints
-- Do NOT invent new behavior
-- Do NOT propose code, DSL primitives, or function names
+    Do NOT invent new behaviors.
+    Do NOT refer to individual trajectories explicitly.
+    Do NOT average language — reason conceptually.
 
-Patterns:
-{aggregation_text}
+    Below are the analyses:
 
+    {consolidation_input}
+    
 
-Output ONLY the structured hint template used previously.
-"""
+    \nOutput ONLY the structured hint template used previously.
+    """
 
     final_query = Query(final_prompt)
     aggregation_checks: list[RepromptCheck] = []  # TODOO: add actual checks
@@ -233,4 +227,18 @@ Output ONLY the structured hint template used previously.
     print("\n=== FINAL AGGREGATED EXPERT BEHAVIOR HINTS ===\n")
     print(final_response.text)
 
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    out_dir = Path("hints") / env_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / f"{num_initial_states}_{timestamp}.txt"
+    out_file.write_text(final_response.text, encoding="utf-8")
+
     return final_response.text
+
+
+if __name__ == "__main__":
+    _env_name = "TwoPileNim"
+    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache = SQLite3PretrainedLargeModelCache(cache_path)
+    client = OpenAIModel("gpt-4.1", cache)
+    run(client, _env_name, num_initial_states=5)
