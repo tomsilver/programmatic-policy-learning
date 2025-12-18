@@ -87,14 +87,7 @@ The episode ends successfully when the agent reaches the star.
 
 Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-**Core Consistent Strategy:**  
-The agent reliably postpones movement until a continuous, marked path (using special symbols, such as '*') has been constructed from its starting position to the goal (the star). Throughout this preparatory phase, the agent stays in place and interactively extends or completes a traversable route by targeting specific empty or designated grid cells, ensuring that a connected, safe corridor is established. Only once this path is complete does the agent initiate movement, progressing strictly along the route of marked cells, step by step, toward the goal. Movement never occurs onto unmarked or non-designated cells, and detours or shortcuts are systematically avoided. The agent’s ability to act is strictly conditional: without a fully constructed path, it will not begin movement, regardless of proximity or open spaces.
-
-**Context-Dependent Behaviors:**  
-The specific direction in which the path is constructed (e.g., horizontally, vertically, or diagonally) and the choice of which cues to respond to (such as selecting arrows pointing left or right) depend on the initial arrangement of the environment and the location of interactive objects. In some contexts, when multiple directional cues (arrows) are available, the agent consistently follows their guidance as part of the constructed route; in others, path construction alone suffices. The agent adapts the shape and extension of the path—turning, branching, or changing direction as necessitated by the spatial configuration of obstacles and boundaries—to ensure continuous progress toward the goal, but always resumes its core strategy of route construction and dedicated traversal. Movements may involve horizontal, vertical, or diagonal advances, dictated by the established path and environmental layout.
-
-**Unified Environment-Level Description:**  
-The agent operates via a two-phase process: first, it ensures that a continuous, marked pathway exists from its current location to the goal by systematically selecting and designating cells along the intended route; second, it follows this constructed path exactly, moving only along marked cells and strictly refraining from deviating or initiating movement before the path is complete. Movement decisions and path-construction choices are always governed by the need to connect the agent and the goal via a continuous, safe route, with environmental cues (such as arrows) incorporated when they form part of the constructed path. The strategy is one of deliberate, adaptive route engineering followed by precise, rule-bound traversal.
+{}
 
 --
 

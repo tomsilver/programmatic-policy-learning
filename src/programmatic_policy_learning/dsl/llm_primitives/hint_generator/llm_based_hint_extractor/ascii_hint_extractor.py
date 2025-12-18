@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import tempfile
 import time
-from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
-from prpl_llm_utils.models import PretrainedLargeModel
+from omegaconf import OmegaConf
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
+
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor import (
     grid_encoder,
@@ -21,12 +25,6 @@ from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hi
     trajectory_serializer,
     transition_analyzer,
 )
-from prpl_llm_utils.models import PretrainedLargeModel
-from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-from prpl_llm_utils.models import OpenAIModel
-import tempfile
-from pathlib import Path
-from omegaconf import OmegaConf
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
@@ -48,6 +46,7 @@ def collect_full_episode(
             break
 
     return trajectory
+
 
 HINT_EXTRACTION_PROMPT_TEMPLATE = """
 
@@ -94,8 +93,14 @@ def build_hint_prompt(trajectory_text: str) -> str:
     """Wrap the serialized trajectory text in the hint prompt."""
     return HINT_EXTRACTION_PROMPT_TEMPLATE.format(TRAJECTORY_TEXT=trajectory_text)
 
-def env_factory(instance_num: int | None = None, env_name: str = None) -> Any:
+
+def env_factory(
+    instance_num: int | None = None,
+    env_name: str | None = None,
+) -> Any:
     """Env Factory."""
+    if env_name is None:
+        raise ValueError("env_name must be provided.")
     registry = EnvRegistry()
     return registry.load(
         OmegaConf.create(
@@ -109,6 +114,7 @@ def env_factory(instance_num: int | None = None, env_name: str = None) -> Any:
             }
         )
     )
+
 
 def run(
     llm_client: PretrainedLargeModel,
@@ -157,7 +163,6 @@ def run(
             max_steps=max_steps_per_traj,
         )
 
-
         prompt = build_hint_prompt(text)
         query = Query(prompt)
         per_traj_checks: list[RepromptCheck] = []  # TODOO: add actual checks
@@ -176,7 +181,7 @@ def run(
     blocks = []
     for i, hint in enumerate(per_traj_hints, start=1):
         blocks.append(f"[ANALYSIS {i}]\n{hint.strip()}")
-    consolidation_input =  "\n\n".join(blocks)
+    consolidation_input = "\n\n".join(blocks)
 
     # ------------------------------------------------------------
     # 5) Final abstraction pass (LLM)
@@ -214,8 +219,8 @@ def run(
         max_attempts=5,
     )
 
-    print("\n=== FINAL AGGREGATED EXPERT BEHAVIOR HINTS ===\n")
-    print(final_response.text)
+    logging.info("\n=== FINAL AGGREGATED EXPERT BEHAVIOR HINTS ===\n")
+    logging.info(final_response.text)
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     out_dir = Path("hints") / env_name
@@ -227,7 +232,7 @@ def run(
 
 
 if __name__ == "__main__":
-    _env_name = "TwoPileNim"
+    _env_name = "CheckmateTactic"
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     client = OpenAIModel("gpt-4.1", cache)

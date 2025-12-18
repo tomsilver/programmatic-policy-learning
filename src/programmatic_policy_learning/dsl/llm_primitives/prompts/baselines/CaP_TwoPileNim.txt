@@ -59,17 +59,8 @@ The policy should follow the optimal Nim strategy whenever possible.
 
 Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-**Core Consistent Strategy:**
-The agent’s primary and invariant strategy is to seek out and act exclusively upon cells containing tokens, selecting its actions in a systematic order. The agent ignores empty cells entirely, targeting only positions where tokens are present. There is a prevailing pattern of sequential removal of tokens, with choices guided by spatial properties—most commonly a direct, immediate selection based on token location. The agent proceeds through the environment without regard for obstacles or movement restrictions, as none are present or relevant in the observed behaviors.
+{}
 
-**Context-Dependent Behaviors:**
-The order in which tokens are selected exhibits context-dependent variation: in some situations the agent prioritizes downward movement within a column (vertical progression), in others, the selection is guided by a preference for the lowest or rightmost token, or by sequential top-to-bottom, left-to-right "reading order." When multiple tokens are present, selection may depend on spatial proximity, a predefined traversal order (such as vertical then horizontal), or the relative positions of available tokens.
-
-**Discarded/Incidental Explanations:**
-Behaviors related to obstacle avoidance, boundary handling, or path planning are not supported by the evidence, as obstacles and environment constraints are absent from all demonstrations. Any apparent preference for a specific traversal beyond immediate token presence—such as always starting at a set location or following an absolute left-to-right order—is not universally consistent and is thus not part of the environment-level strategy.
-
-**Unified Environment-Level Strategy:**
-The agent systematically and exclusively targets grid cells containing tokens, removing tokens in a spatially-ordered sequence until none remain. Its actions are governed by the presence and positions of tokens, with consistent ignorance of empty cells and no adaptation for obstacles or boundaries. The common principle unifying all observed behaviors is: "Identify all token locations and act directly and sequentially to remove each token, using a consistent spatial order informed by token positions."
 --
 
 ## Output Format Constraint

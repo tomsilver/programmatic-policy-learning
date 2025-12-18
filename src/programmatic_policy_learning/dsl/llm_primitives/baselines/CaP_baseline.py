@@ -82,7 +82,6 @@ class CaPBaseline:
 
         return prompt_text
 
-
     def generate_policy(self) -> str:
         """Produce, save, and echo the policy string returned by the LLM."""
         prompt = self.load_prompt()
@@ -273,11 +272,11 @@ def plot_expert_vs_cap(
 def _main() -> None:
     registry = EnvRegistry()
     domains = [
-        # "TwoPileNim",
-        # "Chase",
+        "TwoPileNim",
+        "Chase",
         "CheckmateTactic",
-        # "ReachForTheStar",
-        # "StopTheFall",
+        "ReachForTheStar",
+        "StopTheFall",
     ]
 
     NUM_LLM_SEEDS = 5
@@ -339,7 +338,10 @@ def _main() -> None:
                 cap_cfg = CaPBaselineConfig(
                     prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
                     output_dir=f"outputs/baselines/{env_name}/seed{seed}",
-                    hints_path = f"../hint_generator/llm_based_hint_extractor/hints/{env_name}",
+                    hints_path=(
+                        f"../hint_generator/llm_based_hint_extractor/hints/"
+                        f"{env_name}"
+                    ),
                 )
 
                 baseline = CaPBaseline(

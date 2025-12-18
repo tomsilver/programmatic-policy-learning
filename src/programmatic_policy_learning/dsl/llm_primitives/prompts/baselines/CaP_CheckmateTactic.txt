@@ -81,21 +81,7 @@ The episode ends unsuccessfully if the environment reaches a terminal non-checkm
 
 Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
 
-CORE CONSISTENT STRATEGY:  
-The agent’s strategy is to prioritize interaction with key pieces—most notably the white queen—by selecting their positions when available. When a key piece is not directly targetable, the agent instead selects empty cells that are contextually significant due to their alignment or proximity to major objects (typically the kings), favoring cells that lie between, adjacent to, or in effective alignment with these pieces. Throughout, the agent avoids arbitrary or off-path movements and does not engage with irrelevant or blocked cells.
-
-CONTEXT-DEPENDENT BEHAVIORS:  
-- If the white queen is present and selectable, the agent targets its location first.  
-- If the queen is not present or selectable, the agent selects empty cells that are strategically aligned—frequently those between or adjacent to the kings, and often on the same row or column to maximize influence or control over their spatial relationship.  
-- The preference for the precise alignment (row versus column) or direct adjacency depends on the current arrangement of the pieces.
-
-INCIDENTAL/CONTRADICTORY ELEMENTS DISCARDED:  
-- Selection of the queen’s own cell when occupied may result from the environment’s rules rather than a distinct strategy.  
-- No evidence supports responses to obstacles or boundaries, so interpretations involving obstacle navigation are not part of the core strategy.  
-- No preference for arbitrary empty squares far from key objects is supported.
-
-UNIFIED ENVIRONMENT-LEVEL DESCRIPTION:  
-The agent systematically prioritizes interactive engagement with principal pieces—most notably the white queen—by acting directly on their positions when available. Otherwise, it selects spatially significant empty cells that are closely aligned, adjacent, or centered relative to both kings, maximizing its strategic positioning with respect to the major pieces' configuration. This approach adapts dynamically based on the arrangement of key pieces, always emphasizing proximity, alignment, and influence over the relevant objects, and disregards irrelevant or distant cells.
+{}
 
 --
 

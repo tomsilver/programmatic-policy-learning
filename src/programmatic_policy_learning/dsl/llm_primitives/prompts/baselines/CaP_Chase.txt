@@ -93,17 +93,7 @@ The episode ends successfully when the agent reaches the target.
 
 Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-**Core Consistent Strategy:**  
-The agent consistently seeks to minimize its spatial distance to the target by selecting movement actions that directly approach the target's position, prioritizing progress along one axis (typically horizontal alignment first, followed by vertical alignment) when not blocked. The agent exclusively uses environment-provided movement controls (such as directional arrows) and only acts when a move both reduces the distance to the target and does not require traversing an impassable cell (such as a wall). When no such move is available, the agent remains stationary, demonstrating patience rather than attempting detours or exploratory actions. The agent does not attempt illegal moves or bypass obstacles and waits until a viable, direct action is possible before proceeding step by step along the most direct open path.
-
-**Context-Dependent Behaviors:**  
-The agent’s movement direction (left/right or up/down) is contingent on the relative positions of itself and the target. The agent’s decision to move or remain stationary depends on both the presence of obstacles and the availability of movement controls aligned with a clear path toward the target. In scenarios where movement in the optimal direction is blocked by a wall or unavailable through the current controls, the agent refrains from acting, regardless of the target’s behavior or movement.
-
-**Discarded Explanations:**  
-There is no evidence that the agent explores alternate routes, attempts to circumvent obstacles via indirect paths, or reacts to the target’s motion beyond maintaining the direct pursuit. The agent does not engage in exploratory, detour, or random actions, nor does it attempt illegal or futile moves into walls. Explanations suggesting opportunistic, adaptive, or learning behavior beyond the described direct, distance-minimizing pursuit are not supported.
-
-**Unified Environment-Level Strategy:**  
-The agent implements a strategy of direct pursuit: it minimizes its distance to the target by sequentially moving along the open, unobstructed axis—typically aligning with the target’s column first, then its row—using the environment’s directional controls. The agent only initiates movement when the action is both valid (not blocked by a wall or impassable cell) and reduces its distance to the target. When the environment presents no immediately available, legal move that decreases this distance, the agent remains stationary and waits for such an opportunity. This disciplined, non-exploratory approach reflects a consistent, environment-level policy of pursuing the most direct open path to the target, progressing only when legitimate, advantageous moves exist.
+{}
 
 --
 

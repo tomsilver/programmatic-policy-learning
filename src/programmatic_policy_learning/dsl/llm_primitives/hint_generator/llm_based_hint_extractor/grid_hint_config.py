@@ -54,7 +54,7 @@ SYMBOL_MAPS = {
         "static": "S",
         "advance": "A",
     },
-    "Checkmate": {
+    "CheckmateTactic": {
         "empty": ".",
         "black_king": "K",
         "white_king": "k",
@@ -71,8 +71,6 @@ def get_symbol_map(env_name: str) -> dict[str, str]:
         return SYMBOL_MAPS[env_name]
     except KeyError as exc:
         raise KeyError(f"No symbol map configured for {env_name}") from exc
-
-
 
 
 HINT_EXTRACTION_BIASED_PROMPT_TEMPLATE = """

@@ -95,17 +95,8 @@ The episode is successful if the agent survives until the end of the episode.
 
 Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-**Core Consistent Strategy:**  
-The agent operates by pursuing contiguous progress within the environment through a sequence of locally adjacent or aligned cell selections—prioritizing uninterrupted advancement in a consistent spatial direction (vertical or horizontal) or incremental cluster-building. When movement along the current direction becomes constrained by boundaries, obstacles, or structural limits, the agent switches to target special-object cells (e.g., those with ‘advance_token’), which serve as a progression or termination condition. Actions never target inaccessible, blocked, or isolated open regions; the strategy is grounded in stepwise expansion along available, adjacent cells or immediate engagement with goal-signaling objects once standard progression halts.
+{}
 
-**Context-Dependent Behaviors:**  
-The preferred direction of movement (vertical, horizontal, cluster-adjacent) and the specific sequence of targeted cells vary depending on local grid structure and obstacle placement. The agent may proceed straight upwards, downwards, leftwards, or act adjacent to clusters, contingent on the spatial configuration and accessibility of paths or openings in each environment instance. The location and timing of interaction with special tokens are determined by their emergence within accessible areas once routine path advancement is exhausted.
-
-**Discarded Explanations:**  
-There is no evidence of random exploration, detours around obstacles, or direct movement into distant open areas disconnected from current progression. The agent does not attempt moves into blocked cells, revisit previously completed regions, or select open regions that are non-adjacent to its current trajectory or cluster.
-
-**Unified Environment-Level Strategy:**  
-The agent systematically advances through available, adjacent cells—preferring continuous sequential or cluster-based movement along open paths within the environment. This process continues until progression is blocked or the structure of the environment shifts, at which point the agent transitions to interact with designated special-object cells to achieve advancement or conclude its objective. The overarching strategy is local expansion that adapts to environmental layout but always culminates in purposeful engagement with critical tokens or cells when forward progress in the current mode is no longer viable.
 --
 
 ## Output Format Constraint
