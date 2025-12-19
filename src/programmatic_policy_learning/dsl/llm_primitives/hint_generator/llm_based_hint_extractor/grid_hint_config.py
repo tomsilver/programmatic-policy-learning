@@ -59,8 +59,8 @@ SYMBOL_MAPS = {
         "black_king": "K",
         "white_king": "k",
         "white_queen": "Q",
-        "highlighted_white_king": "K",
-        "highlighted_white_queen": "Q",
+        "highlighted_white_king": "k*",
+        "highlighted_white_queen": "Q*",
     },
 }
 
