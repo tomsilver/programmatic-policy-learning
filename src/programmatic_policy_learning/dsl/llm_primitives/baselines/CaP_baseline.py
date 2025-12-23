@@ -272,11 +272,11 @@ def plot_expert_vs_cap(
 def _main() -> None:
     registry = EnvRegistry()
     domains = [
-        "TwoPileNim",
+        # "TwoPileNim",
         "Chase",
-        "CheckmateTactic",
-        "ReachForTheStar",
-        "StopTheFall",
+        # "CheckmateTactic",
+        # "ReachForTheStar",
+        # "StopTheFall",
     ]
 
     NUM_LLM_SEEDS = 5
@@ -409,7 +409,7 @@ def _main() -> None:
         expert_cis_plot,
         cap_means_plot,
         cap_cis_plot,
-        save_path=f"plots/cap_vs_expert_{len(valid)}_{NUM_LLM_SEEDS}.png",
+        save_path=f"plots/{env_name}_cap_vs_expert_{len(valid)}_{NUM_LLM_SEEDS}.png",
     )
 
 

@@ -11,7 +11,7 @@ from typing import Any, Callable
 from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
-from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
+from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
@@ -48,50 +48,97 @@ def collect_full_episode(
     return trajectory
 
 
-HINT_EXTRACTION_PROMPT_TEMPLATE = """
+nim_game_description = """
+        Environment description:
 
-    You are analyzing expert demonstrations from a grid-based environment.
-
-    You are given a sequence of states and actions expressed as:
-    - ASCII grid representations
-    - Coordinate-based descriptions of objects
-    - Transitions showing how the grid changes after each action
-
-    The agent is the ONLY controlled entity.
-
-    Your task:
-    Infer the decision-making strategy demonstrated by the agent.
-
-    Focus on:
-    - What the agent appears to optimize or prioritize
-    - How the agent chooses actions based on relative positions, obstacles, and boundaries
-    - What conditions cause the agent to prefer one direction or move over another
-    - How the agent adapts its behavior when simple direct movement is blocked
-
-    Constraints:
-    - Do NOT propose DSL primitives, function names, or code.
-    - Use clear, causal, spatial language grounded in the observations.
-    - Describe *conditional logic* when relevant (e.g., “when X holds, the agent does Y”).
-    - If behavior seems inconsistent or ambiguous, state that explicitly.
-
-    ---
-    Demonstrations:\n\n
-
-    {TRAJECTORY_TEXT}
-
-    ---
-    Output format:
-    Write a concise but structured explanation of the strategy, as if explaining the agent’s reasoning to a human.
-    Do NOT invent mechanics not visible in the data.
-    Output ONLY the strategy description text.
-    No preamble. No conclusion. No formatting markers.
-
-    """
+        - The environment is a grid-based implementation of the game 'Nim'.
+        - The observation `obs` is a 2D Python NumPy array (rows × columns).
+        - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
+        - Each cell contains one of the following values:
+        - 'empty'
+        - 'token'
 
 
-def build_hint_prompt(trajectory_text: str) -> str:
-    """Wrap the serialized trajectory text in the hint prompt."""
-    return HINT_EXTRACTION_PROMPT_TEMPLATE.format(TRAJECTORY_TEXT=trajectory_text)
+        ## Game Dynamics and Rules (TwoPileNim)
+
+        - The grid encodes a two-pile Nim position using **two token columns** (two vertical stacks of `'token'`).
+        - **Each pile corresponds to one column**: the number of `'token'` cells in that column is the pile size.
+        - The game is **turn-based**. On each agent turn, the policy selects exactly one action `(row, col)`.
+
+        ### Action meaning
+        - The action `(row, col)` indicates choosing **pile `col`** and removing tokens according to the selected **row**.
+        - A move is legal only if the selected `(row, col)` corresponds to a location in a token-stack column that results in removing **at least one** token from that pile.
+        - Intuitively: selecting a cell in a pile column removes tokens **from that cell and all tokens “below it” in the same column** (i.e., it reduces the pile to the tokens strictly above the selected cell).  
+        - Selecting higher rows removes fewer tokens; selecting lower rows removes more tokens.
+
+        ### Terminal condition and winner
+        - The game ends when **no `'token'` cells remain in the grid** (both piles are empty).
+        - The player who makes the move that leaves the grid with **no remaining tokens** wins (standard normal-play Nim).
+
+        ### Optimal play objective
+        - The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
+"""
+
+# # ---
+# # Environment Desciption:
+# # {nim_game_description}
+# # Transition Semantics Clarification
+
+# Each demonstration step is shown as:
+
+#     state_t  →  action_t  →  state_(t+1)
+
+# Important:
+# - The agent controls ONLY `action_t`.
+# - The resulting `state_(t+1)` reflects the combined effect of:
+# (1) the agent’s chosen action, and
+# (2) the opponent’s response and environment dynamics.
+# - Therefore, `state_(t+1)` should NOT be interpreted as a direct or fully controlled outcome of the agent’s action.
+
+# Your task is to analyze:
+# - How the agent’s choice of `action_t` depends on `state_t`,
+# - What properties of `state_t` appear to guide the agent’s decision-making,
+# - What consistent decision principles explain the agent’s actions across different states.
+
+# Do NOT infer intent from opponent behavior.
+# Do NOT attribute changes in `state_(t+1)` solely to the agent.
+# Focus on the relationship between `state_t` and `action_t`.
+
+
+def build_joint_hint_prompt(all_trajectories_text: str) -> str:
+    """Build a prompt that includes all trajectories."""
+    return f"""
+        You are analyzing multiple expert demonstrations from the SAME environment.
+        Each trajectory starts from a different initial state.
+        Your task:
+        - Infer the agent's STRATEGY that is consistent ACROSS trajectories.
+        - Focus ONLY on behaviors that generalize across different initial states.
+        - Do NOT describe trajectory-specific or one-off behaviors.
+        - If a behavior appears in only one trajectory, treat it as incidental.
+
+        Hard constraints:
+        - Do NOT describe per-trajectory actions (e.g.“in trajectory 1 the agent did X”).
+        - Do NOT overfit to a single column, cell index, or fixed action order.
+        - Do NOT assume optimality unless it is supported across trajectories.
+        - If multiple plausible strategies exist, describe the one which is most 
+        supported by the evidence.
+
+        Your output should:
+        - Describe the agent’s strategy at the ENVIRONMENT LEVEL
+        - Be invariant to initial state
+        - Use relational, abstract language
+        - Avoid referencing specific coordinates, columns, or indices
+
+        Below are multiple expert trajectories:
+
+        {all_trajectories_text}
+
+        ---
+        Output:
+        A concise but precise description of the agent’s inferred strategy.
+        Do not include headers, lists, or analysis scaffolding.
+        Do not mention individual trajectories.
+        """
 
 
 def env_factory(
@@ -146,13 +193,15 @@ def run(
     for init_idx in range(num_initial_states):
         env = env_factory(init_idx, env_name)
         traj = collect_full_episode(env, expert)
+        print(traj)
         env.close()
         trajectories.append(traj)
 
     # ------------------------------------------------------------
-    # 3) Per-trajectory hint extraction
+    # 3) All trajectories hint extraction
     # ------------------------------------------------------------
-    per_traj_hints: list[str] = []
+
+    all_traj_texts = []
 
     for i, traj in enumerate(trajectories):
         text = trajectory_serializer.trajectory_to_text(
@@ -162,77 +211,37 @@ def run(
             salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
             max_steps=max_steps_per_traj,
         )
+        all_traj_texts.append(f"[TRAJECTORY {i}]\n{text}")
 
-        prompt = build_hint_prompt(text)
-        query = Query(prompt)
-        per_traj_checks: list[RepromptCheck] = []  # TODOO: add actual checks
+    combined_text = "\n\n".join(all_traj_texts)
+    print(combined_text)
 
-        response = query_with_reprompts(
-            llm_client,
-            query,
-            per_traj_checks,  # type: ignore[arg-type]
-            max_attempts=5,
-        )
-        per_traj_hints.append(response.text)
+    prompt = build_joint_hint_prompt(combined_text)
+    query = Query(prompt)
 
-    # ------------------------------------------------------------
-    # 4) Aggregate hints (machine-side)
-    # ------------------------------------------------------------
-    blocks = []
-    for i, hint in enumerate(per_traj_hints, start=1):
-        blocks.append(f"[ANALYSIS {i}]\n{hint.strip()}")
-    consolidation_input = "\n\n".join(blocks)
-
-    # ------------------------------------------------------------
-    # 5) Final abstraction pass (LLM)
-    # ------------------------------------------------------------
-
-    final_prompt = f"""
-    You are given multiple independent analyses of expert behavior,
-    each derived from a different initial state of the same environment.
-
-    Your task:
-    - Identify the core strategy that is consistent across trajectories
-    - Identify behaviors that appear context-dependent
-    - Discard incidental or contradictory explanations
-    - Produce a unified, environment-level description of the agent’s strategy
-
-    Do NOT invent new behaviors.
-    Do NOT refer to individual trajectories explicitly.
-    Do NOT average language — reason conceptually.
-
-    Below are the analyses:
-
-    {consolidation_input}
-    
-
-    \nOutput ONLY the structured hint template used previously.
-    """
-
-    final_query = Query(final_prompt)
-    aggregation_checks: list[RepromptCheck] = []  # TODOO: add actual checks
-
-    final_response = query_with_reprompts(
+    response = query_with_reprompts(
         llm_client,
-        final_query,
-        aggregation_checks,  # type: ignore[arg-type]
+        query,
+        reprompt_checks=[],
         max_attempts=5,
     )
 
+    final_hint = response.text
+
     logging.info("\n=== FINAL AGGREGATED EXPERT BEHAVIOR HINTS ===\n")
-    logging.info(final_response.text)
+    logging.info(final_hint)
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     out_dir = Path("hints") / env_name
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{num_initial_states}_{timestamp}.txt"
-    out_file.write_text(final_response.text, encoding="utf-8")
+    out_file.write_text(final_hint, encoding="utf-8")
 
-    return final_response.text
+    return final_hint
 
 
 if __name__ == "__main__":
-    _env_name = "CheckmateTactic"
+    _env_name = "Chase"
     cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     client = OpenAIModel("gpt-4.1", cache)
