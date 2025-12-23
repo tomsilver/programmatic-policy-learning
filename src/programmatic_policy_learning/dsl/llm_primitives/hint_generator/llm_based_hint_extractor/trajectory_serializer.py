@@ -26,8 +26,19 @@ def trajectory_to_text(
     steps = trajectory[:max_steps] if max_steps else trajectory
 
     for i, (obs_t, action, obs_t1) in enumerate(steps):
-        ascii_t = encoder.to_ascii(obs_t)
-        ascii_t1 = encoder.to_ascii(obs_t1)
+
+        ascii_t = encoder.to_ascii(obs_t, action)
+        # ascii_t1 = encoder.to_ascii(obs_t1)
+        # action_array = np.full(obs_t.shape, "_", dtype=object)
+        # action_array[action] = "C"
+        # rows: list[str] = []
+        # for r in range(action_array.shape[0]):
+        #     row_chars = []
+        #     for c in range(action_array.shape[1]):
+        #         token = action_array[r, c]
+        #         row_chars.append(token)
+        #     rows.append("".join(row_chars))
+        # ascii_action = "\n".join(rows)
         objs = encoder.extract_objects(obs_t, salient_tokens)
         listing = encoder.format_coordinate_listing(objs)
 
@@ -40,21 +51,9 @@ def trajectory_to_text(
 
         change_summary = "\n".join(f"- {event}" for event in events)
         block = f"""
-=== TRANSITION {i} ===
-ASCII(t):
+=== EXAMPLE ===
 {ascii_t}
-
-Action: {action}
-
-ASCII(t+1):
-{ascii_t1}
-
-Objects(t):
-{listing}
-
-Change summary:
-{change_summary}
-        """.strip()
+""".strip()
         blocks.append(block)
 
     return "\n\n".join(blocks)

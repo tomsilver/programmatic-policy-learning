@@ -36,8 +36,8 @@ SYMBOL_MAPS = {
         "down_arrow": "v",
     },
     "TwoPileNim": {
-        "empty": ".",
-        "token": "#",
+        "empty": "0",
+        "token": "1",
     },
     "ReachForTheStar": {
         "empty": ".",

@@ -83,36 +83,17 @@ nim_game_description = """
 def build_joint_hint_prompt(all_trajectories_text: str) -> str:
     """Build a prompt that includes all trajectories."""
     return f"""
-        You are analyzing multiple expert demonstrations from the SAME environment.
-        Each trajectory starts from a different initial state.
-        Your task:
-        - Infer the agent's STRATEGY that is consistent ACROSS trajectories.
-        - Focus ONLY on behaviors that generalize across different initial states.
-        - Do NOT describe trajectory-specific or one-off behaviors.
-        - If a behavior appears in only one trajectory, treat it as incidental.
-
-        Hard constraints:
-        - Do NOT describe per-trajectory actions (e.g.“in trajectory 1 the agent did X”).
-        - Do NOT overfit to a single column, cell index, or fixed action order.
-        - Do NOT assume optimality unless it is supported across trajectories.
-        - If multiple plausible strategies exist, describe the one which is most 
-        supported by the evidence.
-
-        Your output should:
-        - Describe the agent’s strategy at the ENVIRONMENT LEVEL
-        - Be invariant to initial state
-        - Use relational, abstract language
-        - Avoid referencing specific coordinates, columns, or indices
-
-        Below are multiple expert trajectories:
+        Consider the examples below.
 
         {all_trajectories_text}
 
         ---
-        Output:
-        A concise but precise description of the agent’s inferred strategy.
-        Do not include headers, lists, or analysis scaffolding.
-        Do not mention individual trajectories.
+        What is the rule that is used to choose the action given the observation?
+
+        NOTES:
+        1. Do not use "left", "right', "up", "down", etc.; instead, use numbers with the numpy-array-convention that (0, 0) is the top left corner.
+
+        After identifying the rule, write a python function that implements the rule. The function should take in an observation (numpy array) and return an action (index).
         """
 
 
@@ -186,7 +167,8 @@ def run(
             salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
             max_steps=max_steps_per_traj,
         )
-        all_traj_texts.append(f"[TRAJECTORY {i}]\n{text}")
+        # all_traj_texts.append(f"[TRAJECTORY {i}]\n{text}")
+        all_traj_texts.append(f"\n{text}")
 
     combined_text = "\n\n".join(all_traj_texts)
     print(combined_text)
@@ -216,8 +198,8 @@ def run(
 
 
 if __name__ == "__main__":
-    _env_name = "Chase"
-    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    _env_name = "TwoPileNim"
+    cache_path = Path("hint_llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     client = OpenAIModel("gpt-4.1", cache)
     run(client, _env_name, num_initial_states=5)

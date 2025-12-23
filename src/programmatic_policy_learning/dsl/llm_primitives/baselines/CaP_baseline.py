@@ -272,14 +272,14 @@ def plot_expert_vs_cap(
 def _main() -> None:
     registry = EnvRegistry()
     domains = [
-        # "TwoPileNim",
-        "Chase",
+        "TwoPileNim",
+        # "Chase",
         # "CheckmateTactic",
         # "ReachForTheStar",
         # "StopTheFall",
     ]
 
-    NUM_LLM_SEEDS = 5
+    NUM_LLM_SEEDS = 1
     TEST_ENV_NUMS = list(range(11, 20))
     MAX_NUM_STEPS = 50
     expert_means, expert_cis = [], []
@@ -328,49 +328,49 @@ def _main() -> None:
         for seed in range(NUM_LLM_SEEDS):
             logging.info(f"  CaP seed {seed}")
 
-            try:
-                cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
+            # try:
+            cache_path = Path(f"outputs/baselines/cache_{env_name}_seed{seed}.db")
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-                cache = SQLite3PretrainedLargeModelCache(cache_path)
-                llm_client = OpenAIModel("gpt-4.1", cache)
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            llm_client = OpenAIModel("gpt-4.1", cache)
 
-                cap_cfg = CaPBaselineConfig(
-                    prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
-                    output_dir=f"outputs/baselines/{env_name}/seed{seed}",
-                    hints_path=(
-                        f"../hint_generator/llm_based_hint_extractor/hints/"
-                        f"{env_name}"
-                    ),
-                )
+            cap_cfg = CaPBaselineConfig(
+                prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
+                output_dir=f"outputs/baselines/{env_name}/seed{seed}",
+                hints_path=(
+                    f"../hint_generator/llm_based_hint_extractor/hints/"
+                    f"{env_name}"
+                ),
+            )
 
-                baseline = CaPBaseline(
-                    llm_client=llm_client,
-                    example_observation=obs,
-                    action_space=action_space,
-                    env_name=env_name,
-                    cfg=cap_cfg,
-                )
+            baseline = CaPBaseline(
+                llm_client=llm_client,
+                example_observation=obs,
+                action_space=action_space,
+                env_name=env_name,
+                cfg=cap_cfg,
+            )
 
-                baseline.generate_policy()
+            baseline.generate_policy()
 
-                cap_res, exp_res = baseline.evaluate_raw(
-                    env_factory,
-                    TEST_ENV_NUMS,
-                    MAX_NUM_STEPS,
-                    run_expert=(seed == 0),
-                )
+            cap_res, exp_res = baseline.evaluate_raw(
+                env_factory,
+                TEST_ENV_NUMS,
+                MAX_NUM_STEPS,
+                run_expert=(seed == 0),
+            )
 
-                cap_all.extend(cap_res)
+            cap_all.extend(cap_res)
 
-                if seed == 0:
-                    expert_all = exp_res
+            if seed == 0:
+                expert_all = exp_res
 
-            except (RuntimeError, ValueError, OSError) as exc:
-                logging.warning(
-                    "[CaP failure] env=%s, seed=%d: %s", env_name, seed, exc
-                )
-                continue
+            # except (RuntimeError, ValueError, OSError) as exc:
+            #     logging.warning(
+            #         "[CaP failure] env=%s, seed=%d: %s", env_name, seed, exc
+            #     )
+            #     continue
 
         # ------------------------------------------------------------------
         # Aggregate + CI

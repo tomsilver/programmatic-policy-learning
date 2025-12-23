@@ -21,16 +21,38 @@ class GridStateEncoder:
         """Store the encoder configuration."""
         self.cfg = cfg
 
-    def to_ascii(self, obs: np.ndarray) -> str:
+    def to_ascii(self, obs: np.ndarray, action: tuple[int, int]) -> str:
         """Render the grid as ASCII art."""
+        ascii_grid = ""
+
+        ascii_grid += "Observation:\n"
         rows: list[str] = []
         for r in range(obs.shape[0]):
             row_chars = []
             for c in range(obs.shape[1]):
                 token = obs[r, c]
-                row_chars.append(self.cfg.symbol_map.get(token, "?"))
-            rows.append("".join(row_chars))
-        return "\n".join(rows)
+                char = self.cfg.symbol_map.get(token, "?")
+                row_chars.append(char)
+            rows.append(",".join(row_chars))
+        ascii_grid += "\n".join(rows)
+
+        ascii_grid += "\n\nAction (the * represents clicking on a cell):\n"
+        rows: list[str] = []
+        for r in range(obs.shape[0]):
+            row_chars = []
+            for c in range(obs.shape[1]):
+                token = obs[r, c]
+                if (r, c) == action:
+                    char = "*"
+                    assert char not in self.cfg.symbol_map.values()
+                else:
+                    char = self.cfg.symbol_map.get(token, "?")
+                row_chars.append(char)
+            rows.append(",".join(row_chars))
+        ascii_grid += "\n".join(rows)
+
+        ascii_grid += f"\nToken meanings: {self.cfg.symbol_map}"
+        return ascii_grid
 
     def extract_objects(
         self,
@@ -49,7 +71,7 @@ class GridStateEncoder:
     def format_coordinate_listing(
         self,
         objects: dict[str, list[tuple[int, int]]],
-        max_per_token: int = 8,
+        max_per_token: int = 10000,
     ) -> str:
         """Return a human-readable summary of token coordinates."""
         lines = []
