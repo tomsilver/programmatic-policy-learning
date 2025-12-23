@@ -80,6 +80,24 @@ The policy must return a tuple (row, col) corresponding to a cell in the grid.
 - The environment defines how selecting a cell affects the agent’s movement.
 - Selecting a cell corresponding to a wall or invalid location has no effect.
 
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (Chase)
+
+- Clicking a cell containing a directional arrow
+  ('left_arrow', 'right_arrow', 'up_arrow', 'down_arrow')
+  attempts to move the agent one step in that direction.
+- Clicking any other cell has no effect.
+- The agent may remain stationary if no valid directional click is available.
+- The policy does not control the target; the target’s movement is external.
+
 --
 
 ## Task Description

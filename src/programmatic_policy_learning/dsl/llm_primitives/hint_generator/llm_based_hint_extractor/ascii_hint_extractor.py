@@ -79,31 +79,6 @@ nim_game_description = """
         - The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
 """
 
-# # ---
-# # Environment Desciption:
-# # {nim_game_description}
-# # Transition Semantics Clarification
-
-# Each demonstration step is shown as:
-
-#     state_t  →  action_t  →  state_(t+1)
-
-# Important:
-# - The agent controls ONLY `action_t`.
-# - The resulting `state_(t+1)` reflects the combined effect of:
-# (1) the agent’s chosen action, and
-# (2) the opponent’s response and environment dynamics.
-# - Therefore, `state_(t+1)` should NOT be interpreted as a direct or fully controlled outcome of the agent’s action.
-
-# Your task is to analyze:
-# - How the agent’s choice of `action_t` depends on `state_t`,
-# - What properties of `state_t` appear to guide the agent’s decision-making,
-# - What consistent decision principles explain the agent’s actions across different states.
-
-# Do NOT infer intent from opponent behavior.
-# Do NOT attribute changes in `state_(t+1)` solely to the agent.
-# Focus on the relationship between `state_t` and `action_t`.
-
 
 def build_joint_hint_prompt(all_trajectories_text: str) -> str:
     """Build a prompt that includes all trajectories."""

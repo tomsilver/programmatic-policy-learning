@@ -391,10 +391,10 @@ def _main() -> None:
         cap_means.append(100 * m_c)
         cap_cis.append(100 * h_c)
 
-    logging.info(f"Expert means: {expert_means}")
-    logging.info(f"Expert CIs:   {expert_cis}")
-    logging.info(f"CaP means:    {cap_means}")
-    logging.info(f"CaP CIs:      {cap_cis}")
+    print(f"Expert means: {expert_means}")
+    print(f"Expert CIs:   {expert_cis}")
+    print(f"CaP means:    {cap_means}")
+    print(f"CaP CIs:      {cap_cis}")
     valid = [i for i, m in enumerate(cap_means) if not np.isnan(m)]
 
     domains_plot = [domains[i] for i in valid]
@@ -409,7 +409,7 @@ def _main() -> None:
         expert_cis_plot,
         cap_means_plot,
         cap_cis_plot,
-        save_path=f"plots/{env_name}_cap_vs_expert_{len(valid)}_{NUM_LLM_SEEDS}.png",
+        save_path=f"plots/cap_vs_expert_{len(valid)}_{NUM_LLM_SEEDS}_.png",
     )
 
 

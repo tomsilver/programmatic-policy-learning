@@ -67,6 +67,23 @@ The policy must return a tuple (row, column) corresponding to a cell in the grid
 - The environment defines which actions are legal and how they affect the game state.
 - Selecting an invalid or illegal cell has no effect.
 
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (Checkmate)
+
+- Clicking a highlighted white piece selects that piece for movement.
+- Clicking a legal destination square moves the selected piece.
+- Highlighted cells indicate which pieces or squares are currently selectable.
+- Clicking a non-highlighted or illegal cell has no effect.
+- All legality rules (check, checkmate, stalemate) are enforced by the environment.
+
 --
 
 ## Task Description

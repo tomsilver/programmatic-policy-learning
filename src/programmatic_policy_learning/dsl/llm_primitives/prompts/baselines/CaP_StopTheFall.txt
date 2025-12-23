@@ -80,6 +80,22 @@ The policy must return a tuple (row, column) corresponding to a cell in the grid
 - The environment defines how selecting a cell affects the agent and other objects.
 - Selecting an invalid or unsafe cell has no effect.
 
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (StopTheFall)
+
+- Clicking a cell selects a target position for the agent.
+- The agent attempts to move to or occupy that position if it is safe.
+- Clicking a red cell or unsafe location has no effect.
+- Falling objects evolve independently over time; the agent only positions itself.
+
 --
 
 ## Task Description
