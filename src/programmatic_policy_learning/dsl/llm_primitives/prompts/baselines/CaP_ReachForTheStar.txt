@@ -20,10 +20,47 @@ Return only executable Python code.
   - 'left_arrow'
   - 'right_arrow'
 
-- The agent occupies exactly one cell.
-- The star occupies exactly one cell and represents the goal.
-- Arrow cells provide directional cues that correlate with successful movement patterns.
-- Drawn cells are part of the environment but do not represent the agent or the goal.
+## Game Dynamics and Rules
+
+- The game takes place on a 2D grid representing a vertical navigation environment.
+- There are two key entities:
+  - **Agent**: the controllable character.
+  - **Star**: a fixed goal location that the agent must reach.
+- The agent occupies exactly one grid cell at all times.
+- The star occupies exactly one grid cell and does not move.
+- The environment may include structural elements (represented implicitly via `drawn` cells) that affect movement feasibility.
+
+### Movement and Interaction Mechanics
+
+- On each step, the agent selects a target cell `(row, col)` as its action.
+- The environment interprets the selected cell and determines whether and how the agent moves.
+- Movement is constrained by the environment’s internal rules, which may include gravity-like effects, support requirements, or blocking structures.
+- Selecting an unreachable or invalid cell results in no movement.
+- The agent cannot move arbitrarily in all directions at all times; movement feasibility depends on the surrounding grid configuration.
+
+### Directional Cues
+
+- Arrow cells (`left_arrow`, `right_arrow`) appear in the grid and serve as **implicit directional guidance**.
+- These arrows do not constitute actions themselves but correlate with movement directions that are often viable or successful in the current configuration.
+- The agent may use the spatial arrangement of arrow cells as hints about which movements are likely to succeed.
+
+### Objective and Termination
+
+- The objective is to guide the agent to the star’s location.
+- The episode ends successfully when the agent reaches the star cell.
+- The episode continues indefinitely until success or until externally terminated by the environment.
+- There are no explicit penalties or rewards provided to the policy other than episode termination.
+
+### Interaction Constraints and Implications
+
+- The policy does not have access to the environment’s physics, gravity rules, or movement constraints.
+- The policy must infer feasible actions purely from the spatial layout of the grid.
+- Progress toward the star often requires:
+  - Horizontal positioning before vertical ascent,
+  - Utilizing stable structures beneath the agent,
+  - Respecting the environment’s implicit movement constraints.
+- All legality checks, movement execution, and termination conditions are handled internally by the environment.
+
 
 --
 
@@ -36,6 +73,22 @@ The policy must return a tuple (row, column) corresponding to a cell in the grid
 - The environment defines how selecting a cell affects the agent’s movement.
 - Selecting an invalid or unreachable cell has no effect.
 
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (ReachForTheStar)
+
+- Clicking a reachable adjacent or supported cell causes the agent to attempt movement.
+- The environment determines whether the selected cell is reachable
+  (e.g., supported by a staircase or structure).
+- Arrow cells act as directional cues but do not correspond to explicit actions.
+- Clicking an unreachable cell has no effect.
 
 --
 
@@ -48,33 +101,9 @@ The episode ends successfully when the agent reaches the star.
 
 ## Expert-Derived Hints
 
-Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-### High-frequency relational patterns:
-- The agent consistently moves horizontally until it is aligned beneath the target (star) along the x-axis.
-- The agent only begins to ascend (move vertically) after reaching a column directly below or nearly below the target.
-- The agent constructs or utilizes a staircase-like structure to reach the vertical level of the target.
-
-### Useful directional / asymmetry relations:
-- The agent prioritizes reducing horizontal (x-axis) distance before addressing vertical (y-axis) distance.
-- The agent’s movement is asymmetric: horizontal movement dominates until a specific x-position is reached, after which vertical movement becomes relevant.
-- The agent always approaches the target from below, never from above or the sides.
-
-### Example state–action correlations:
-- When the agent is not vertically aligned with the target, the next action is a horizontal move toward the target’s x-coordinate.
-- When the agent is vertically aligned (or nearly so) with the target, - the next action tends to move upward when such a move is possible.
-- If there is an obstacle or gap below the target, the agent constructs or climbs a staircase structure to reach the target’s height.
-
-### Frequently observed local spatial configurations:
-- The agent is positioned directly below the target, separated by a vertical gap.
-- There is a staircase or column of blocks leading from the agent’s position up to the target.
-- The agent is always on a solid surface (never floating), and the staircase is contiguous from the ground to the target’s level.
-
-### Observed distance thresholds or step ranges:
-- The agent begins vertical movement when the horizontal distance to the target is zero or within one cell.
-- The staircase height matches the vertical distance between the agent’s ground level and the target’s position.
-- The agent does not attempt to ascend until the horizontal offset is minimized (distance ≤ 1 cell).
-- The agent never moves more than one cell away from the staircase or supporting structure while ascending.
+{}
 
 --
 
@@ -91,9 +120,8 @@ def policy(obs):
     return action
 ```
 
-Where `action` is either:
-- a tuple (row, col), or
-- None if no valid move exists.
+Where `action` is:
+- a tuple (row, col)
 
 You may define helper functions inside the code.
 Do not use external libraries.
