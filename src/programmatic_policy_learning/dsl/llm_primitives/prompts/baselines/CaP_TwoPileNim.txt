@@ -15,9 +15,25 @@ Environment description:
   - 'empty'
   - 'token'
 
-- Each contiguous vertical group of 'token' cells represents a pile (In this environment, each pile corresponds to a single column; “left” and “right” refer to the two vertical token stacks.)
-- There are exactly two piles in the grid.
-- The agent acts on its own turn only.
+
+## Game Dynamics and Rules (TwoPileNim)
+
+- The grid encodes a two-pile Nim position using **two token columns** (two vertical stacks of `'token'`).
+- **Each pile corresponds to one column**: the number of `'token'` cells in that column is the pile size.
+- The game is **turn-based**. On each agent turn, the policy selects exactly one action `(row, col)`.
+
+### Action meaning
+- The action `(row, col)` indicates choosing **pile `col`** and removing tokens according to the selected **row**.
+- A move is legal only if the selected `(row, col)` corresponds to a location in a token-stack column that results in removing **at least one** token from that pile.
+- Intuitively: selecting a cell in a pile column removes tokens **from that cell and all tokens “below it” in the same column** (i.e., it reduces the pile to the tokens strictly above the selected cell).  
+  - Selecting higher rows removes fewer tokens; selecting lower rows removes more tokens.
+
+### Terminal condition and winner
+- The game ends when **no `'token'` cells remain in the grid** (both piles are empty).
+- The player who makes the move that leaves the grid with **no remaining tokens** wins (standard normal-play Nim).
+
+### Optimal play objective
+- The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
 
 --
 
@@ -28,6 +44,22 @@ Environment description:
 - The environment defines which actions are legal and how selecting a cell affects the game state.
 - Selecting a cell that does not correspond to a legal action has no effect.
 
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (TwoPileNim)
+
+- Clicking a cell containing a 'token' selects that pile and removes tokens.
+- The column of the clicked cell determines which pile is chosen.
+- The row of the clicked cell determines how many tokens are removed.
+- Clicking an empty cell has no effect.
+- All turn-taking and win conditions are handled by the environment.
 
 --
 
@@ -40,32 +72,9 @@ The policy should follow the optimal Nim strategy whenever possible.
 
 ## Expert-Derived Hints
 
-Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
 
-### High-frequency relational patterns:
-- The agent frequently acts to create or maintain a configuration where the number of objects (matches) in both columns is equal.
-- The agent often removes objects from the column with more objects, especially when the columns are unequal.
-- When both columns have the same number of objects, the agent tends to remove all objects from one column.
-
-### Useful directional / asymmetry relations:
-- When the two columns are unequal, the agent targets the column with the greater count.
-- The agent’s actions are sensitive to which column is “ahead” (has more matches), indicating an asymmetry-based decision.
-- The agent does not appear to favor a specific column (left or right) unless there is an imbalance.
-
-### Example state–action correlations:
-- If the left and right columns have different numbers of objects, the agent removes objects from the column with the higher count to match the other column.
-- If both columns have the same number of objects, the agent removes all objects from one column, leaving the other column untouched.
-- When only one column has objects left, the agent clears that column.
-
-### Frequently observed local spatial configurations:
-- States where both columns have the same number of objects are frequently reached and often precede decisive actions.
-- States with only one column containing objects are terminal or near-terminal.
-- The agent avoids leaving a state where both columns have a different number of objects unless forced.
-
-### Observed distance thresholds or step ranges:
-- The agent often acts to reduce the difference in object count between columns to zero (distance along the “count” axis).
-- The agent’s actions are triggered when the difference in counts is nonzero, and the action reduces this difference to zero.
-- When both columns are equal, the agent may remove all objects from one column in a single step, regardless of the total count remaining.
+{}
 
 --
 
@@ -82,9 +91,8 @@ def policy(obs):
     return action
 ```
 
-Where `action` is either:
-- a tuple (row, col), or
-- None if no valid move exists.
+Where `action` is:
+- a tuple (row, col)
 
 You may define helper functions inside the code.
 Do not use external libraries.

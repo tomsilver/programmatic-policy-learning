@@ -189,5 +189,8 @@ bash_jobs/
 # ignore plots
 plots/
 
+#ignore hints files
+hints/
+
 # ignore output files
 *.out

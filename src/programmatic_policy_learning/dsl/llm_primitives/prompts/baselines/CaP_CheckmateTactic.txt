@@ -20,9 +20,41 @@ Return only executable Python code.
   - highlighted_white_king
   - highlighted_white_queen
 
-- The agent controls the white pieces.
-- The black king is the opponent.
-- Highlighted white pieces indicate which white piece can be moved on the current turn.
+
+## Game Dynamics and Rules
+
+- The game takes place on a finite 2D grid representing a simplified chessboard.
+- There are three pieces in the environment:
+  - **Black king** (the opponent and target),
+  - **White king** (controlled by the agent),
+  - **White queen** (controlled by the agent).
+- On each turn, **only one white piece is movable**, indicated by a highlighted cell (`highlighted_white_king` or `highlighted_white_queen`).
+- The agent must select a grid cell corresponding to a legal move for the highlighted white piece.
+- Legal movement rules (e.g., how kings and queens move, captures, checks) are enforced internally by the environment and are **not explicitly provided** to the policy.
+- The black king moves according to the environment’s internal rules and is not directly controlled by the agent.
+
+### Objective and Termination
+
+- The goal is to **deliver checkmate** to the black king.
+- A checkmate occurs when the black king has **no legal moves** and is under unavoidable threat according to the environment’s rules.
+- The episode ends successfully when the environment detects a checkmate.
+- The episode ends unsuccessfully if the game reaches a terminal state that is not checkmate (e.g., stalemate or draw conditions handled internally).
+
+### Interaction Constraints
+
+- The agent does not explicitly issue “check” or “capture” commands.
+- The agent does not control which white piece is active on a given turn.
+- Selecting an invalid cell, an illegal move, or a non-highlighted piece results in no effect.
+- The policy must rely solely on the spatial configuration of pieces and highlighted cells in the observation.
+
+### Key Implications for Decision-Making
+
+- The agent must infer effective play purely from board geometry and piece positioning.
+- Progress toward checkmate typically involves:
+  - Restricting the black king’s available movement,
+  - Coordinating the white king and queen,
+  - Using board edges and corners as natural constraints.
+- All enforcement of legality, turn order, and win conditions is handled by the environment, not the policy.
 
 --
 
@@ -34,6 +66,23 @@ The policy must return a tuple (row, column) corresponding to a cell in the grid
 - Selecting a cell represents choosing that cell as the agent’s action.
 - The environment defines which actions are legal and how they affect the game state.
 - Selecting an invalid or illegal cell has no effect.
+
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (Checkmate)
+
+- Clicking a highlighted white piece selects that piece for movement.
+- Clicking a legal destination square moves the selected piece.
+- Highlighted cells indicate which pieces or squares are currently selectable.
+- Clicking a non-highlighted or illegal cell has no effect.
+- All legality rules (check, checkmate, stalemate) are enforced by the environment.
 
 --
 
@@ -49,33 +98,7 @@ The episode ends unsuccessfully if the environment reaches a terminal non-checkm
 
 Below is a summary of patterns extracted from a set of expert trajectories. These are NOT DSL primitives, but they describe spatial relations frequently relevant to decision-making.
 
-### High-frequency relational patterns:
-- The agent frequently positions itself so that the target is adjacent to a board edge or corner.
-- The agent often maintains a line (row, column, or diagonal) between itself and the target, restricting the target’s movement.
-- The agent and its ally (white king and white queen) may be both present and are often placed so that the target is “sandwiched” between them and a board boundary.
-- The agent avoids occupying squares directly adjacent to the target unless the target is already constrained by the edge or corner.
-
-### Useful directional / asymmetry relations:
-- The agent tends to approach the target from the direction opposite the nearest board edge, driving the target toward that edge or corner.
-- The agent often aligns itself along the same rank, file, or diagonal as the target, especially when the target is near a boundary.
-- When the target is in a corner, the agent frequently occupies a square that “cuts off” the only remaining escape route.
-- The agent’s movement is often coordinated with the ally to create an asymmetrical enclosure, with one piece blocking lateral escape and the other blocking forward/backward escape.
-
-### Example state–action correlations:
-- When the target is one square away from the edge, the agent often moves to a position that prevents escape along the edge-adjacent axis.
-- If the target is not yet near a boundary, the agent’s actions tend to reduce the number of available directions for the target to move.
-- When the target is in a corner, the agent’s next move is often to a square that completes the enclosure, leaving the target with no legal moves.
-
-### Frequently observed local spatial configurations:
-- The agent and ally form an “L” or “box” pattern with the target near a corner.
-- The agent is one square away from the target, with the target’s only escape squares blocked by the ally or the board edge.
-- The agent and ally are positioned such that all squares adjacent to the target are either occupied, attacked, or off the board.
-
-### Observed distance thresholds or step ranges:
-- The agent often maintains a minimum distance of one square from the target unless delivering the final constraint.
-- The agent’s distance to the target decreases as the target approaches the edge or corner, but rarely becomes zero unless the target is fully trapped.
-- The agent’s actions frequently reduce the Manhattan or Chebyshev distance between the target and the nearest board boundary.
-- The agent and ally maintain enough separation to avoid stalemating the target prematurely, typically staying at least one square apart from each other and the target except in the final enclosure.
+{}
 
 --
 
@@ -92,9 +115,8 @@ def policy(obs):
     return action
 ```
 
-Where `action` is either:
-- a tuple (row, col), or
-- None if no valid move exists.
+Where `action` is:
+- a tuple (row, col)
 
 You may define helper functions inside the code.
 Do not use external libraries.

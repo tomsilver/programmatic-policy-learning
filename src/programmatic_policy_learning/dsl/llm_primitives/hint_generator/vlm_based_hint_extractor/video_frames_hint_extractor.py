@@ -14,6 +14,11 @@ from typing import Any, cast
 import cv2
 from openai import OpenAI
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
 
 def extract_frames(
     video_path: str,
