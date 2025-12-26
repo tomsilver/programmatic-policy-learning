@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import tempfile
+import random
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -32,8 +32,10 @@ def collect_full_episode(
     env: Any,
     expert_fn: Callable[[Any], Any],
     max_steps: int = 200,
+    sample_count: int | None = None,
 ) -> list[tuple[Any, Any, Any]]:
-    """Roll out expert policy and capture (obs, action, next_obs) tuples."""
+    """Roll out expert policy, optionally sampling a subset of (obs, action,
+    obs_next)."""
     obs, _ = env.reset()
     trajectory = []
 
@@ -45,56 +47,70 @@ def collect_full_episode(
         if term or trunc:
             break
 
-    return trajectory
+    if sample_count is None or sample_count >= len(trajectory):
+        return trajectory
+    if sample_count <= 0:
+        return []
+
+    sampled: list[tuple[Any, Any, Any]] = []
+    if trajectory:
+        sampled.append(trajectory[0])
+
+    if len(sampled) >= sample_count or len(trajectory) <= 1:
+        return sampled[:sample_count]
+
+    remaining = trajectory[1:]
+    needed = min(sample_count - len(sampled), len(remaining))
+    if needed > 0:
+        sampled.extend(random.sample(remaining, needed))
+
+    return sampled
 
 
-nim_game_description = """
-        Environment description:
+def build_joint_hint_prompt(
+    all_trajectories_text: str, env_name: str, encoding: str
+) -> str:
+    """Return the LLM prompt for summarising expert trajectories."""
+    action_mask = ""
+    if encoding == "1":
+        action_mask = "The ACTION MASK has a single 1 at the clicked cell."
 
-        - The environment is a grid-based implementation of the game 'Nim'.
-        - The observation `obs` is a 2D Python NumPy array (rows × columns).
-        - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
-        - Each cell contains one of the following values:
-        - 'empty'
-        - 'token'
-
-
-        ## Game Dynamics and Rules (TwoPileNim)
-
-        - The grid encodes a two-pile Nim position using **two token columns** (two vertical stacks of `'token'`).
-        - **Each pile corresponds to one column**: the number of `'token'` cells in that column is the pile size.
-        - The game is **turn-based**. On each agent turn, the policy selects exactly one action `(row, col)`.
-
-        ### Action meaning
-        - The action `(row, col)` indicates choosing **pile `col`** and removing tokens according to the selected **row**.
-        - A move is legal only if the selected `(row, col)` corresponds to a location in a token-stack column that results in removing **at least one** token from that pile.
-        - Intuitively: selecting a cell in a pile column removes tokens **from that cell and all tokens “below it” in the same column** (i.e., it reduces the pile to the tokens strictly above the selected cell).  
-        - Selecting higher rows removes fewer tokens; selecting lower rows removes more tokens.
-
-        ### Terminal condition and winner
-        - The game ends when **no `'token'` cells remain in the grid** (both piles are empty).
-        - The player who makes the move that leaves the grid with **no remaining tokens** wins (standard normal-play Nim).
-
-        ### Optimal play objective
-        - The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
-"""
-
-
-def build_joint_hint_prompt(all_trajectories_text: str) -> str:
-    """Build a prompt that includes all trajectories."""
     return f"""
-        Consider the examples below.
+You are given a few expert demonstrations of the SAME task.
+Each demonstration is a full trajectory from a different initial state.
 
-        {all_trajectories_text}
+IMPORTANT:
+- Coordinates are 0-indexed (row, col) with (0,0) at top-left.
+- An action is "Click cell (r,c)". {action_mask}
+- Steps within a trajectory are temporally consecutive and highly correlated.
+- Many steps may be repetitive (execution), not decision-revealing.
+- Your job is to infer the underlying strategy/policy that generalizes across trajectories.
+- Do NOT describe every step.
+- Prefer rules that are consistent across trajectories; ignore trajectory-specific ones.
 
-        ---
-        What is the rule that is used to choose the action given the observation?
+Token meanings:
+{grid_hint_config.SYMBOL_MAPS[env_name]}\n
 
-        NOTES:
-        1. Do not use "left", "right', "up", "down", etc.; instead, use numbers with the numpy-array-convention that (0, 0) is the top left corner.
+========================
+DEMONSTRATIONS
+========================
+{all_trajectories_text}
 
-        After identifying the rule, write a python function that implements the rule. The function should take in an observation (numpy array) and return an action (index).
-        """
+Your task:
+Infer the rule used to choose the action from the observation, then implement it.
+
+OUTPUT FORMAT (STRICT):
+- Return ONLY executable Python code.
+- The code MUST be wrapped in a Markdown code block that starts with ```python and ends with ```.
+- Do NOT include any text, explanation, headings, or comments outside the code block.
+
+CODE REQUIREMENTS:
+- Define a function with signature: def policy(obs):
+- The function takes a NumPy array observation and returns an action (row, col).
+- Use numeric coordinates only (NumPy convention: (0, 0) is top-left).
+- Do NOT use words like left, right, up, or down.
+- Do NOT import external libraries.
+"""
 
 
 def env_factory(
@@ -122,6 +138,7 @@ def env_factory(
 def run(
     llm_client: PretrainedLargeModel,
     env_name: str,
+    encoding_method: str,
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
 ) -> str:
@@ -148,8 +165,7 @@ def run(
 
     for init_idx in range(num_initial_states):
         env = env_factory(init_idx, env_name)
-        traj = collect_full_episode(env, expert)
-        print(traj)
+        traj = collect_full_episode(env, expert, sample_count=None)
         env.close()
         trajectories.append(traj)
 
@@ -165,15 +181,16 @@ def run(
             encoder=encoder,
             analyzer=analyzer,
             salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
+            encoding_method=encoding_method,
             max_steps=max_steps_per_traj,
         )
-        # all_traj_texts.append(f"[TRAJECTORY {i}]\n{text}")
-        all_traj_texts.append(f"\n{text}")
+        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
+        # all_traj_texts.append(f"\n{text}")
 
     combined_text = "\n\n".join(all_traj_texts)
     print(combined_text)
 
-    prompt = build_joint_hint_prompt(combined_text)
+    prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     query = Query(prompt)
 
     response = query_with_reprompts(
@@ -198,8 +215,9 @@ def run(
 
 
 if __name__ == "__main__":
-    _env_name = "TwoPileNim"
+    _env_name = "Chase"
+    encoding_mode = "3"  # 1=ascii+mask 2=coordinate-based 3=2+changes summary
     cache_path = Path("hint_llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     client = OpenAIModel("gpt-4.1", cache)
-    run(client, _env_name, num_initial_states=5)
+    run(client, _env_name, encoding_mode, num_initial_states=3)

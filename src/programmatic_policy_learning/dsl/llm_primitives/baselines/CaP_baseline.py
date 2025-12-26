@@ -339,8 +339,7 @@ def _main() -> None:
                 prompt_path=f"../prompts/baselines/CaP_{env_name}.txt",
                 output_dir=f"outputs/baselines/{env_name}/seed{seed}",
                 hints_path=(
-                    f"../hint_generator/llm_based_hint_extractor/hints/"
-                    f"{env_name}"
+                    f"../hint_generator/llm_based_hint_extractor/hints/" f"{env_name}"
                 ),
             )
 
@@ -391,10 +390,10 @@ def _main() -> None:
         cap_means.append(100 * m_c)
         cap_cis.append(100 * h_c)
 
-    print(f"Expert means: {expert_means}")
-    print(f"Expert CIs:   {expert_cis}")
-    print(f"CaP means:    {cap_means}")
-    print(f"CaP CIs:      {cap_cis}")
+    logging.info(f"Expert means: {expert_means}")
+    logging.info(f"Expert CIs:   {expert_cis}")
+    logging.info(f"CaP means:    {cap_means}")
+    logging.info(f"CaP CIs:      {cap_cis}")
     valid = [i for i, m in enumerate(cap_means) if not np.isnan(m)]
 
     domains_plot = [domains[i] for i in valid]

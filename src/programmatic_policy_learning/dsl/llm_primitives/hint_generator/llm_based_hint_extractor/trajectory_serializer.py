@@ -19,6 +19,7 @@ def trajectory_to_text(
     encoder: GridStateEncoder,
     analyzer: GenericTransitionAnalyzer,
     salient_tokens: list[str],
+    encoding_method: str,
     max_steps: int | None = None,
 ) -> str:
     """Convert (obs, action, next_obs) tuples to structured text."""
@@ -27,21 +28,18 @@ def trajectory_to_text(
 
     for i, (obs_t, action, obs_t1) in enumerate(steps):
 
-        ascii_t = encoder.to_ascii(obs_t, action)
+        ascii_t = encoder.to_ascii(obs_t, action, i)
+        # ascii_t = encoder.to_ascii_list_literal(obs_t, action)
         # ascii_t1 = encoder.to_ascii(obs_t1)
-        # action_array = np.full(obs_t.shape, "_", dtype=object)
-        # action_array[action] = "C"
-        # rows: list[str] = []
-        # for r in range(action_array.shape[0]):
-        #     row_chars = []
-        #     for c in range(action_array.shape[1]):
-        #         token = action_array[r, c]
-        #         row_chars.append(token)
-        #     rows.append("".join(row_chars))
-        # ascii_action = "\n".join(rows)
-        objs = encoder.extract_objects(obs_t, salient_tokens)
-        listing = encoder.format_coordinate_listing(objs)
 
+        tokens = list(dict.fromkeys([*salient_tokens, encoder.cfg.empty_token]))
+        objs = encoder.extract_objects(obs_t, tokens)
+        # objs_next = encoder.extract_objects(obs_t1, tokens)
+        listing = encoder.format_cell_value_listing(
+            objs,
+            i,
+            action=action,
+        )
         events = analyzer.analyze(
             obs_t,
             action,
@@ -50,10 +48,18 @@ def trajectory_to_text(
         )
 
         change_summary = "\n".join(f"- {event}" for event in events)
-        block = f"""
-=== EXAMPLE ===
-{ascii_t}
-""".strip()
-        blocks.append(block)
+        # block = f"=== EXAMPLE ===\n{ascii_t}"
+
+        if encoding_method == "1":
+            block = ascii_t
+            blocks.append(block)
+
+        elif encoding_method == "2":
+            block = listing
+            blocks.append(block)
+        elif encoding_method == "3":
+            block = listing
+            blocks.append(block)
+            blocks.append(f"\nCHANGES SUMMARY:\n{change_summary}")
 
     return "\n\n".join(blocks)

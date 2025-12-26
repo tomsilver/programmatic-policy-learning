@@ -24,16 +24,27 @@ SALIENT_TOKENS = {
 }
 
 SYMBOL_MAPS = {
+    # "Chase": {
+    #     "empty": ".",
+    #     "agent": "A",
+    #     "target": "T",
+    #     "wall": "#",
+    #     "drawn": "*",
+    #     "left_arrow": "<",
+    #     "right_arrow": ">",
+    #     "up_arrow": "^",
+    #     "down_arrow": "v",
+    # },
     "Chase": {
-        "empty": ".",
-        "agent": "A",
-        "target": "T",
-        "wall": "#",
-        "drawn": "*",
-        "left_arrow": "<",
-        "right_arrow": ">",
-        "up_arrow": "^",
-        "down_arrow": "v",
+        "empty": "0",
+        "agent": "1",
+        "target": "2",
+        "wall": "3",
+        "drawn": "4",
+        "left_arrow": "5",
+        "right_arrow": "6",
+        "up_arrow": "7",
+        "down_arrow": "8",
     },
     "TwoPileNim": {
         "empty": "0",
@@ -73,53 +84,33 @@ def get_symbol_map(env_name: str) -> dict[str, str]:
         raise KeyError(f"No symbol map configured for {env_name}") from exc
 
 
-HINT_EXTRACTION_BIASED_PROMPT_TEMPLATE = """
-    You are analyzing expert demonstrations from a grid-based environment.
+nim_game_description = """
+        Environment description:
 
-    We ONLY control the agent, not other entities.
+        - The environment is a grid-based implementation of the game 'Nim'.
+        - The observation `obs` is a 2D Python NumPy array (rows × columns).
+        - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
+        - Each cell contains one of the following values:
+        - 'empty'
+        - 'token'
 
-    Your job:
-    1) Infer the agent’s high-level objective.
-    2) Extract RECURRING spatial–relational patterns used for decision-making.
-    3) Identify directional asymmetries, alignment behavior, and distance-based cues.
-    4) Produce NON-CHEATY hints that could guide a symbolic policy or DSL design.
 
-    Hard constraints:
-    - Do NOT propose DSL primitives, function names, or code.
-    - Use descriptive relational language only.
-    - Focus on observable spatial relations, not abstract strategy names.
-    - If uncertain, say so.
+        ## Game Dynamics and Rules (TwoPileNim)
 
-    You are given a sequence of expert state transitions below.
+        - The grid encodes a two-pile Nim position using **two token columns** (two vertical stacks of `'token'`).
+        - **Each pile corresponds to one column**: the number of `'token'` cells in that column is the pile size.
+        - The game is **turn-based**. On each agent turn, the policy selects exactly one action `(row, col)`.
 
-    Each step contains:
-    - ASCII grid of the state
-    - Coordinate-based object listing
-    - Action taken
-    - Observed transition effects
+        ### Action meaning
+        - The action `(row, col)` indicates choosing **pile `col`** and removing tokens according to the selected **row**.
+        - A move is legal only if the selected `(row, col)` corresponds to a location in a token-stack column that results in removing **at least one** token from that pile.
+        - Intuitively: selecting a cell in a pile column removes tokens **from that cell and all tokens “below it” in the same column** (i.e., it reduces the pile to the tokens strictly above the selected cell).  
+        - Selecting higher rows removes fewer tokens; selecting lower rows removes more tokens.
 
-    ---
+        ### Terminal condition and winner
+        - The game ends when **no `'token'` cells remain in the grid** (both piles are empty).
+        - The player who makes the move that leaves the grid with **no remaining tokens** wins (standard normal-play Nim).
 
-    {TRAJECTORY_TEXT}
-
-    ---
-
-    Output ONLY the following template:
-
-    ## DEMONSTRATION-INFERRED FEATURES (HINTS)
-
-    ### High-frequency relational patterns:
-    - ...
-
-    ### Useful directional / asymmetry relations:
-    - ...
-
-    ### Example state–action correlations:
-    - ...
-
-    ### Frequently observed local spatial configurations:
-    - ...
-
-    ### Observed distance thresholds or step ranges:
-    - ...
-    """
+        ### Optimal play objective
+        - The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
+"""
