@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import logging
 import random
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
@@ -19,7 +22,7 @@ from programmatic_policy_learning.approaches.experts.grid_experts import (
 )
 
 # pylint: disable=line-too-long
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor import (
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
     grid_encoder,
     grid_hint_config,
     trajectory_serializer,
@@ -215,10 +218,128 @@ def run(
     return final_hint
 
 
+def _parse_cli_args() -> argparse.Namespace:
+    """Return CLI args for batch CaP experiments."""
+
+    parser = argparse.ArgumentParser(
+        description="Generate code-as-policies hints for multiple encodings/seeds."
+    )
+    parser.add_argument("--env", required=True, help="Grid environment name.")
+    parser.add_argument(
+        "--encodings",
+        nargs="+",
+        default=["3"],
+        help="Encoding modes to evaluate (matching `run`).",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=[0],
+        help="Random seeds for reproducible rollouts.",
+    )
+    parser.add_argument(
+        "--model",
+        default="gpt-4.1",
+        help="LLM identifier passed to OpenAIModel (default: gpt-4.1).",
+    )
+    parser.add_argument(
+        "--num-initial-states",
+        type=int,
+        default=4,
+        help="Number of expert rollouts per run.",
+    )
+    parser.add_argument(
+        "--max-steps-per-traj",
+        type=int,
+        default=40,
+        help="Maximum trajectory length fed to the LLM.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("logs/CaP"),
+        help="Directory for storing per-run outputs and metadata.",
+    )
+    parser.add_argument(
+        "--cache-path",
+        type=Path,
+        default=Path("baseline_llm_cache.db"),
+        help="SQLite cache used by the OpenAI model wrapper.",
+    )
+    parser.add_argument(
+        "--sleep-between-runs",
+        type=float,
+        default=60.0,
+        help="Seconds to sleep between sequential runs to throttle LLM queries.",
+    )
+    return parser.parse_args()
+
+
+def _configure_rng(seed: int) -> None:
+    """Seed Python/NumPy RNGs for deterministic rollouts."""
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def main() -> None:
+    """Batch entry-point mirroring run_code_as_policies."""
+
+    args = _parse_cli_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    cache = SQLite3PretrainedLargeModelCache(args.cache_path)
+    client = OpenAIModel(args.model, cache)
+
+    summary: list[dict[str, str | int]] = []
+    for encoding in args.encodings:
+        for seed in args.seeds:
+            _configure_rng(seed)
+            final_hint = run(
+                client,
+                args.env,
+                encoding,
+                num_initial_states=args.num_initial_states,
+                max_steps_per_traj=args.max_steps_per_traj,
+            )
+
+            run_dir = (
+                args.output_dir / args.env / f"encoding_{encoding}" / f"seed_{seed}"
+            )
+            run_dir.mkdir(parents=True, exist_ok=True)
+            hint_path = run_dir / "policy.txt"
+            hint_path.write_text(final_hint, encoding="utf-8")
+
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            metadata = {
+                "env": args.env,
+                "encoding": encoding,
+                "seed": seed,
+                "model": args.model,
+                "num_initial_states": args.num_initial_states,
+                "max_steps_per_traj": args.max_steps_per_traj,
+                "timestamp": timestamp,
+                "hint_path": str(hint_path.resolve()),
+            }
+            meta_path = run_dir / "metadata.json"
+            meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+            summary.append(
+                {
+                    "env": args.env,
+                    "encoding": encoding,
+                    "seed": seed,
+                    "hint_file": str(hint_path),
+                }
+            )
+
+            time.sleep(args.sleep_between_runs)
+
+    manifest_path = args.output_dir / args.env / "manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
 if __name__ == "__main__":
-    _env_name = "Chase"
-    encoding_mode = "1"  # 1=ascii+mask 2=coordinate-based 3=2+diff 4=3+relations
-    cache_path = Path("hint_llm_cache.db")
-    cache = SQLite3PretrainedLargeModelCache(cache_path)
-    client = OpenAIModel("gpt-4.1", cache)
-    run(client, _env_name, encoding_mode, num_initial_states=4)
+    main()
