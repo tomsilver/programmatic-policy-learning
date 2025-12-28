@@ -1,4 +1,3 @@
-
 """This module provides utilities for extracting hints from demonstration
 videos.
 

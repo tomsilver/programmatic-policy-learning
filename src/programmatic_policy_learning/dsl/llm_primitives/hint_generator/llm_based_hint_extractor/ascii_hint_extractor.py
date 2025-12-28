@@ -71,9 +71,11 @@ def build_joint_hint_prompt(
     all_trajectories_text: str, env_name: str, encoding: str
 ) -> str:
     """Return the LLM prompt for summarising expert trajectories."""
+    token_meanings = ""
     action_mask = ""
     if encoding == "1":
         action_mask = "The ACTION MASK has a single 1 at the clicked cell."
+        token_meanings = f"Token meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}\n"
 
     return f"""
 You are given a few expert demonstrations of the SAME task.
@@ -83,13 +85,12 @@ IMPORTANT:
 - Coordinates are 0-indexed (row, col) with (0,0) at top-left.
 - An action is "Click cell (r,c)". {action_mask}
 - Steps within a trajectory are temporally consecutive and highly correlated.
-- Many steps may be repetitive (execution), not decision-revealing.
 - Your job is to infer the underlying strategy/policy that generalizes across trajectories.
-- Do NOT describe every step.
+- Do NOT describe individual steps.
+- Do NOT narrate what happens over time.
 - Prefer rules that are consistent across trajectories; ignore trajectory-specific ones.
 
-Token meanings:
-{grid_hint_config.SYMBOL_MAPS[env_name]}\n
+{token_meanings}
 
 ========================
 DEMONSTRATIONS
@@ -216,8 +217,8 @@ def run(
 
 if __name__ == "__main__":
     _env_name = "Chase"
-    encoding_mode = "3"  # 1=ascii+mask 2=coordinate-based 3=2+changes summary
+    encoding_mode = "1"  # 1=ascii+mask 2=coordinate-based 3=2+diff 4=3+relations
     cache_path = Path("hint_llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     client = OpenAIModel("gpt-4.1", cache)
-    run(client, _env_name, encoding_mode, num_initial_states=3)
+    run(client, _env_name, encoding_mode, num_initial_states=4)
