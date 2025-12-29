@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
@@ -298,6 +299,7 @@ def _parse_cli_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--eval-run-expert",
+        type=bool,
         default=True,
         help="Also evaluate the handcrafted expert policy during evaluation.",
     )
@@ -306,6 +308,17 @@ def _parse_cli_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Only run the expert when the current seed equals this value.",
+    )
+    parser.add_argument(
+        "--plot-results",
+        action="store_true",
+        help="Generate a plot summarizing averaged CaP vs expert success rates.",
+    )
+    parser.add_argument(
+        "--plot-path",
+        type=Path,
+        default=None,
+        help="Optional destination for the plot. Defaults to <output_dir>/<env>.",
     )
     return parser.parse_args()
 
@@ -375,18 +388,140 @@ def _evaluate_policy_function(
         env.close()
 
         if run_expert:
-            # print("HERE")
-            # input()
             if expert_fn is None:
                 raise RuntimeError("Expert policy unavailable.")
             env_e = env_builder(env_idx)
             expert_success = (
                 run_single_episode(env_e, expert_fn, max_num_steps=max_num_steps) > 0
             )
+            print(expert_success)
             expert_results.append(expert_success)
             env_e.close()
 
     return cap_results, expert_results
+
+
+def bootstrap_ci_success(
+    successes: Sequence[bool],
+    n_boot: int = 10000,
+    alpha: float = 0.05,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Return mean success and half-width of a bootstrap CI."""
+    rng = np.random.default_rng(seed)
+    s = np.asarray(successes, dtype=float)
+    N = len(s)
+    if N == 0:
+        raise ValueError("Cannot compute CI for an empty list of successes.")
+
+    boots = rng.choice(s, size=(n_boot, N), replace=True).mean(axis=1)
+    lo = np.quantile(boots, alpha / 2)
+    hi = np.quantile(boots, 1 - alpha / 2)
+    return s.mean(), (hi - lo) / 2
+
+
+def plot_expert_vs_cap(
+    labels: Sequence[str],
+    expert_means: Sequence[float],
+    expert_cis: Sequence[float],
+    cap_means: Sequence[float],
+    cap_cis: Sequence[float],
+    *,
+    title: str,
+    save_path: str | Path,
+) -> None:
+    """Bar plot comparing expert and CaP performance with error bars."""
+
+    if not labels:
+        raise ValueError("No labels supplied for plotting.")
+
+    x = np.arange(len(labels))
+    width = 0.22  # thinner bars
+
+    _, ax = plt.subplots(figsize=(9, 4.2))
+
+    # Expert bars
+    ax.bar(
+        x - width / 2,
+        expert_means,
+        width,
+        yerr=expert_cis,
+        label="Expert",
+        capsize=4,
+        facecolor="none",
+        edgecolor="dimgray",
+        linewidth=2,
+    )
+
+    # CaP bars
+    ax.bar(
+        x + width / 2,
+        cap_means,
+        width,
+        yerr=cap_cis,
+        label="CaP",
+        capsize=4,
+        facecolor="tab:blue",
+        edgecolor="tab:blue",
+        alpha=0.7,
+    )
+
+    ax.set_ylabel("Success rate (%)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=15)
+    ax.set_ylim(0, 105)
+
+    ax.set_title(title)
+    ax.legend(frameon=False)
+
+    ax.grid(axis="y", linestyle=":", alpha=0.5)
+
+    plt.tight_layout()
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(save_path, dpi=300)
+    logging.info("Saved CaP vs Expert plot to %s", save_path.resolve())
+    plt.close()
+
+
+def _prepare_results_for_plot(
+    encoding_eval_results: dict[str, dict[str, Any]],
+    encoding_order: Sequence[str],
+) -> tuple[list[str], list[float], list[float], list[float], list[float]]:
+    """Aggregate evaluation results per encoding for plotting."""
+
+    labels: list[str] = []
+    expert_means: list[float] = []
+    expert_cis: list[float] = []
+    cap_means: list[float] = []
+    cap_cis: list[float] = []
+
+    for encoding in encoding_order:
+        stats = encoding_eval_results.get(encoding)
+        if not stats:
+            continue
+        cap_runs = stats.get("cap_runs", [])
+        expert_run = stats.get("expert_run")
+        if not cap_runs:
+            logging.warning("No CaP evaluation results recorded for encoding %s", encoding)
+            continue
+        if expert_run is None:
+            logging.warning(
+                "Expert results missing for encoding %s; skipping it in the plot.", encoding
+            )
+            continue
+
+        cap_flat = [bool(result) for run in cap_runs for result in run]
+        cap_mean, cap_ci = bootstrap_ci_success(cap_flat)
+        expert_mean, expert_ci = bootstrap_ci_success(expert_run)
+
+        labels.append(f"enc_{encoding}")
+        cap_means.append(100 * cap_mean)
+        cap_cis.append(100 * cap_ci)
+        expert_means.append(100 * expert_mean)
+        expert_cis.append(100 * expert_ci)
+
+    return labels, expert_means, expert_cis, cap_means, cap_cis
 
 
 def main() -> None:
@@ -399,6 +534,7 @@ def main() -> None:
     client = OpenAIModel(args.model, cache)
 
     summary: list[dict[str, str | int]] = []
+    encoding_eval_results: dict[str, dict[str, Any]] = {}
     for encoding in args.encodings:
         encoding_dir = args.output_dir / args.env / f"encoding_{encoding}"
         encoding_dir.mkdir(parents=True, exist_ok=True)
@@ -459,6 +595,13 @@ def main() -> None:
                     env_name=args.env,
                     run_expert=run_expert,
                 )
+                enc_summary = encoding_eval_results.setdefault(
+                    encoding,
+                    {"cap_runs": [], "expert_run": None},
+                )
+                enc_summary["cap_runs"].append(cap_results)
+                if run_expert:
+                    enc_summary["expert_run"] = expert_results
                 metadata.setdefault("evaluation", {})
                 metadata["evaluation"] = {
                     "cap_results": cap_results,
@@ -467,6 +610,46 @@ def main() -> None:
                 meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
             time.sleep(args.sleep_between_runs)
+    print(encoding_eval_results)
+    input()
+    if args.plot_results:
+        if not args.eval_env_nums:
+            logging.warning(
+                "Plotting requested but no evaluation environments were configured; skipping."
+            )
+        elif not encoding_eval_results:
+            logging.warning(
+                "Plotting requested but no evaluation results were recorded; skipping."
+            )
+        else:
+            (
+                labels,
+                expert_means,
+                expert_cis,
+                cap_means,
+                cap_cis,
+            ) = _prepare_results_for_plot(encoding_eval_results, args.encodings)
+            if labels:
+                plot_path = args.plot_path
+                if plot_path is None:
+                    plot_path = args.output_dir / args.env / "cap_vs_expert.png"
+                title = (
+                    f"{args.env}: Expert vs CaP "
+                    f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"
+                )
+                plot_expert_vs_cap(
+                    labels,
+                    expert_means,
+                    expert_cis,
+                    cap_means,
+                    cap_cis,
+                    title=title,
+                    save_path=plot_path,
+                )
+            else:
+                logging.warning(
+                    "Plotting requested but no encodings had both CaP and expert results."
+                )
 
     manifest_path = args.output_dir / args.env / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
