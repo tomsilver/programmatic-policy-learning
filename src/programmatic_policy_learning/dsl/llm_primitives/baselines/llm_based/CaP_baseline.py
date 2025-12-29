@@ -8,18 +8,23 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
 from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.code import (
+    FunctionOutputRepromptCheck,
+    SyntaxRepromptCheck,
+)
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
-from prpl_llm_utils.reprompting import query_with_reprompts
+from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
+from programmatic_policy_learning.approaches.utils import run_single_episode
 
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
@@ -100,11 +105,13 @@ DEMONSTRATIONS
 ========================
 {all_trajectories_text}
 
+========================
 Your task:
 Infer the rule used to choose the action from the observation, then implement it.
 
 OUTPUT FORMAT (STRICT):
 - Return ONLY executable Python code.
+- The function MUST return a valid (row, col) tuple on EVERY call (returning None is NOT allowed).
 - The code MUST be wrapped in a Markdown code block that starts with ```python and ends with ```.
 - Do NOT include any text, explanation, headings, or comments outside the code block.
 
@@ -114,6 +121,7 @@ CODE REQUIREMENTS:
 - Use numeric coordinates only (NumPy convention: (0, 0) is top-left).
 - Do NOT use words like left, right, up, or down.
 - Do NOT import external libraries.
+
 """
 
 
@@ -196,25 +204,22 @@ def run(
 
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     query = Query(prompt)
-
+    reprompt_checks: list[RepromptCheck] = [
+        SyntaxRepromptCheck(),
+        # FunctionOutputRepromptCheck(
+        #     function_name,
+        #     [(self.example_observation,)],
+        #     [self.action_space.contains],
+        # ),
+    ]
     response = query_with_reprompts(
         llm_client,
         query,
-        reprompt_checks=[],
+        reprompt_checks=reprompt_checks,
         max_attempts=5,
     )
 
     final_hint = response.text
-
-    logging.info("\n=== FINAL AGGREGATED EXPERT BEHAVIOR HINTS ===\n")
-    logging.info(final_hint)
-
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = Path("hints") / env_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{num_initial_states}_{timestamp}.txt"
-    out_file.write_text(final_hint, encoding="utf-8")
-
     return final_hint
 
 
@@ -273,6 +278,35 @@ def _parse_cli_args() -> argparse.Namespace:
         default=60.0,
         help="Seconds to sleep between sequential runs to throttle LLM queries.",
     )
+    parser.add_argument(
+        "--function-name",
+        default="policy",
+        help="Expected name of the generated policy function.",
+    )
+    parser.add_argument(
+        "--eval-env-nums",
+        nargs="*",
+        type=int,
+        default=[11,12,13,14,15,16,17,18,19],
+        help="Optional list of environment indices for post-generation evaluation.",
+    )
+    parser.add_argument(
+        "--eval-max-steps",
+        type=int,
+        default=100,
+        help="Maximum number of steps per evaluation rollout.",
+    )
+    parser.add_argument(
+        "--eval-run-expert",
+        default=True,
+        help="Also evaluate the handcrafted expert policy during evaluation.",
+    )
+    parser.add_argument(
+        "--expert-reference-seed",
+        type=int,
+        default=0,
+        help="Only run the expert when the current seed equals this value.",
+    )
     return parser.parse_args()
 
 
@@ -281,6 +315,78 @@ def _configure_rng(seed: int) -> None:
 
     random.seed(seed)
     np.random.seed(seed)
+
+
+def _strip_code_block(text: str) -> str:
+    """Remove Markdown fences from code."""
+
+    text = text.strip()
+    if "```" in text:
+        if "```python" in text:
+            text = text.split("```python", 1)[1]
+        else:
+            text = text.split("```", 1)[1]
+        text = text.rsplit("```", 1)[0].strip()
+    return text
+
+
+def _compile_policy_function(code: str, function_name: str) -> Callable[[Any], Any]:
+    """Compile Python code defining `function_name` into a callable."""
+
+    globals_dict: dict[str, Any] = {}
+    locals_dict: dict[str, Any] = {}
+    exec(code, globals_dict, locals_dict)  # pylint: disable=exec-used
+
+    if function_name in locals_dict:
+        fn = locals_dict[function_name]
+    elif function_name in globals_dict:
+        fn = globals_dict[function_name]
+    else:
+        raise RuntimeError(f"Function '{function_name}' not found in generated code.")
+
+    if not callable(fn):
+        raise RuntimeError(f"'{function_name}' is not callable.")
+
+    return fn
+
+
+def _evaluate_policy_function(
+    policy_fn: Callable[[Any], Any],
+    env_builder: Callable[[int], Any],
+    test_env_nums: Sequence[int],
+    max_num_steps: int,
+    *,
+    env_name: str,
+    run_expert: bool,
+) -> tuple[list[bool], list[bool]]:
+    """Roll out CaP (and optional expert) policies on the requested envs."""
+
+    cap_results: list[bool] = []
+    expert_results: list[bool] = []
+    expert_fn = get_grid_expert(env_name) if run_expert else None
+    print(run_expert)
+
+    for env_idx in test_env_nums:
+        env = env_builder(env_idx)
+        cap_success = run_single_episode(
+            env, policy_fn, max_num_steps=max_num_steps
+        ) > 0
+        cap_results.append(cap_success)
+        env.close()
+
+        if run_expert:
+            # print("HERE")
+            # input()
+            if expert_fn is None:
+                raise RuntimeError("Expert policy unavailable.")
+            env_e = env_builder(env_idx)
+            expert_success = (
+                run_single_episode(env_e, expert_fn, max_num_steps=max_num_steps) > 0
+            )
+            expert_results.append(expert_success)
+            env_e.close()
+
+    return cap_results, expert_results
 
 
 def main() -> None:
@@ -294,6 +400,9 @@ def main() -> None:
 
     summary: list[dict[str, str | int]] = []
     for encoding in args.encodings:
+        encoding_dir = args.output_dir / args.env / f"encoding_{encoding}"
+        encoding_dir.mkdir(parents=True, exist_ok=True)
+
         for seed in args.seeds:
             _configure_rng(seed)
             final_hint = run(
@@ -304,11 +413,8 @@ def main() -> None:
                 max_steps_per_traj=args.max_steps_per_traj,
             )
 
-            run_dir = (
-                args.output_dir / args.env / f"encoding_{encoding}" / f"seed_{seed}"
-            )
-            run_dir.mkdir(parents=True, exist_ok=True)
-            hint_path = run_dir / "policy.txt"
+            policy_filename = f"policy_seed{seed}.txt"
+            hint_path = encoding_dir / policy_filename
             hint_path.write_text(final_hint, encoding="utf-8")
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -322,7 +428,7 @@ def main() -> None:
                 "timestamp": timestamp,
                 "hint_path": str(hint_path.resolve()),
             }
-            meta_path = run_dir / "metadata.json"
+            meta_path = encoding_dir / f"metadata_seed{seed}.json"
             meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
             summary.append(
@@ -333,6 +439,32 @@ def main() -> None:
                     "hint_file": str(hint_path),
                 }
             )
+
+            if args.eval_env_nums:
+                code_str = _strip_code_block(final_hint)
+                policy_fn = _compile_policy_function(code_str, args.function_name)
+                env_builder = lambda idx: env_factory(idx, args.env)
+                # print(args.eval_run_expert)
+                # print(args.expert_reference_seed)
+                # print(seed)
+
+                run_expert = args.eval_run_expert and seed == args.expert_reference_seed
+                # print(run_expert)
+                # input()
+                cap_results, expert_results = _evaluate_policy_function(
+                    policy_fn,
+                    env_builder,
+                    args.eval_env_nums,
+                    args.eval_max_steps,
+                    env_name=args.env,
+                    run_expert=run_expert,
+                )
+                metadata.setdefault("evaluation", {})
+                metadata["evaluation"] = {
+                    "cap_results": cap_results,
+                    "expert_results": expert_results,
+                }
+                meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
             time.sleep(args.sleep_between_runs)
 
