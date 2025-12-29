@@ -3,6 +3,7 @@
 logs
 multirun
 llm_cache.db
+*.db
 results
 
 # Byte-compiled / optimized / DLL files
