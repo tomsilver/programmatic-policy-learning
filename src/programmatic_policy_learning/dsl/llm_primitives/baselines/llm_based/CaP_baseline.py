@@ -154,6 +154,7 @@ def run(
     encoding_method: str,
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
+    function_name: str = "policy",
 ) -> str:
     """Collect multiple env trajectories and summarise hints via the LLM."""
 
@@ -198,20 +199,24 @@ def run(
             max_steps=max_steps_per_traj,
         )
         all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
-        # all_traj_texts.append(f"\n{text}")
 
     combined_text = "\n\n".join(all_traj_texts)
     print(combined_text)
 
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     query = Query(prompt)
+    # example demo for reprompt check
+    env0 = env_factory(0, env_name)
+    obs, _ = env0.reset()
+    action_space = env0.action_space
+    env0.close()
     reprompt_checks: list[RepromptCheck] = [
         SyntaxRepromptCheck(),
-        # FunctionOutputRepromptCheck(
-        #     function_name,
-        #     [(self.example_observation,)],
-        #     [self.action_space.contains],
-        # ),
+        FunctionOutputRepromptCheck(
+            function_name,
+            [(obs,)],
+            [action_space.contains],
+        ),
     ]
     response = query_with_reprompts(
         llm_client,
@@ -271,7 +276,10 @@ def _parse_cli_args() -> argparse.Namespace:
         "--cache-path",
         type=Path,
         default=Path("baseline_llm_cache.db"),
-        help="SQLite cache used by the OpenAI model wrapper.",
+        help=(
+            "Base SQLite cache filename. We automatically append env/encoding/seed "
+            "to create per-run caches unless you reuse the same path manually."
+        ),
     )
     parser.add_argument(
         "--sleep-between-runs",
@@ -288,7 +296,7 @@ def _parse_cli_args() -> argparse.Namespace:
         "--eval-env-nums",
         nargs="*",
         type=int,
-        default=[11,12,13,14,15,16,17,18,19],
+        default=[11, 12, 13, 14, 15, 16, 17, 18, 19],
         help="Optional list of environment indices for post-generation evaluation.",
     )
     parser.add_argument(
@@ -377,13 +385,12 @@ def _evaluate_policy_function(
     cap_results: list[bool] = []
     expert_results: list[bool] = []
     expert_fn = get_grid_expert(env_name) if run_expert else None
-    print(run_expert)
 
     for env_idx in test_env_nums:
         env = env_builder(env_idx)
-        cap_success = run_single_episode(
-            env, policy_fn, max_num_steps=max_num_steps
-        ) > 0
+        cap_success = (
+            run_single_episode(env, policy_fn, max_num_steps=max_num_steps) > 0
+        )
         cap_results.append(cap_success)
         env.close()
 
@@ -394,7 +401,6 @@ def _evaluate_policy_function(
             expert_success = (
                 run_single_episode(env_e, expert_fn, max_num_steps=max_num_steps) > 0
             )
-            print(expert_success)
             expert_results.append(expert_success)
             env_e.close()
 
@@ -503,11 +509,14 @@ def _prepare_results_for_plot(
         cap_runs = stats.get("cap_runs", [])
         expert_run = stats.get("expert_run")
         if not cap_runs:
-            logging.warning("No CaP evaluation results recorded for encoding %s", encoding)
+            logging.warning(
+                "No CaP evaluation results recorded for encoding %s", encoding
+            )
             continue
         if expert_run is None:
             logging.warning(
-                "Expert results missing for encoding %s; skipping it in the plot.", encoding
+                "Expert results missing for encoding %s; skipping it in the plot.",
+                encoding,
             )
             continue
 
@@ -530,9 +539,6 @@ def main() -> None:
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    cache = SQLite3PretrainedLargeModelCache(args.cache_path)
-    client = OpenAIModel(args.model, cache)
-
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
     for encoding in args.encodings:
@@ -541,6 +547,18 @@ def main() -> None:
 
         for seed in args.seeds:
             _configure_rng(seed)
+            cache_base = args.cache_path
+            cache_dir = (
+                cache_base.parent if cache_base.parent != Path("") else Path(".")
+            )
+            stem = cache_base.stem or "cache"
+            suffix = cache_base.suffix or ".db"
+            cache_path = (
+                cache_dir / f"{stem}_{args.env}_enc{encoding}_seed{seed}{suffix}"
+            )
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            client = OpenAIModel(args.model, cache)
             final_hint = run(
                 client,
                 args.env,
@@ -580,13 +598,7 @@ def main() -> None:
                 code_str = _strip_code_block(final_hint)
                 policy_fn = _compile_policy_function(code_str, args.function_name)
                 env_builder = lambda idx: env_factory(idx, args.env)
-                # print(args.eval_run_expert)
-                # print(args.expert_reference_seed)
-                # print(seed)
-
                 run_expert = args.eval_run_expert and seed == args.expert_reference_seed
-                # print(run_expert)
-                # input()
                 cap_results, expert_results = _evaluate_policy_function(
                     policy_fn,
                     env_builder,
@@ -610,8 +622,6 @@ def main() -> None:
                 meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
             time.sleep(args.sleep_between_runs)
-    print(encoding_eval_results)
-    input()
     if args.plot_results:
         if not args.eval_env_nums:
             logging.warning(
