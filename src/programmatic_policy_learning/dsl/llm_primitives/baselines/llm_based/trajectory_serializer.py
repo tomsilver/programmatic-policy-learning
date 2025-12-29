@@ -5,10 +5,10 @@ from typing import Sequence
 import numpy as np
 
 # pylint: disable=line-too-long
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.grid_encoder import (
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.grid_encoder import (
     GridStateEncoder,
 )
-from programmatic_policy_learning.dsl.llm_primitives.hint_generator.llm_based_hint_extractor.transition_analyzer import (
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.transition_analyzer import (
     GenericTransitionAnalyzer,
     extract_relational_facts,
 )
