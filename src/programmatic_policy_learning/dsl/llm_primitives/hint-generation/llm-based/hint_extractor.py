@@ -49,6 +49,7 @@ DEMONSTRATIONS:
 {trajectories_text}
 
 ----
+
 Your task:
 
 Extract **abstract, reusable decision-time features** that could inform the design of a DSL for selecting actions.
@@ -63,8 +64,7 @@ IMPORTANT:
 
 Instead:
 - Describe **generic spatial, relational, or comparison-based predicates**
-- Each hint should correspond to something that could plausibly be implemented as:
-  (Cell, Obs) -> Bool
+- Each hint should correspond to something that could plausibly be implemented as: (Cell, Obs) -> Bool
 
 OUTPUT FORMAT:
 - Return ONLY a list of short hints
@@ -72,6 +72,11 @@ OUTPUT FORMAT:
 - No introduction or explanation text
 """
 
+
+# Your task:
+
+# Extract hints about **what properties of the current state (s_t)** are being used to select the action.
+# """
 
 # Your task:
 
@@ -156,7 +161,7 @@ def save_hints(
 
 if __name__ == "__main__":
     num_initial_states = 4
-    env_name = "CheckmateTactic"
+    env_name = "StopTheFall"
     encoding_method = "4"
     max_steps_per_traj = 40
     seed = 0
