@@ -177,7 +177,7 @@ def save_hints(
 
 def build_dsl_generation_prompt_final(
     hint_text: str,
-    object_types: Sequence[str],
+    grid_object_types: Sequence[str],
     *,
     min_primitives: int = 5,
     max_primitives: int = 10,
@@ -331,7 +331,7 @@ that is expressive and productively recursive (generates many programs).
 {hint_text}
 
 ## INPUT 2: OBJECT_TYPES
-{json.dumps(list(object_types))}
+{json.dumps(list(grid_object_types))}
 
 ## TYPE SYSTEM (binding)
 {type_system}
