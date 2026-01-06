@@ -10,13 +10,25 @@ import json
 import random
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
-from prpl_llm_utils.models import OpenAIModel
+from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
+from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
+from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.CaP_baseline import *
+from programmatic_policy_learning.approaches.experts.grid_experts import (
+    get_grid_expert,
+)
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    CaP_baseline as cap_baseline,)
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    grid_encoder,
+    grid_hint_config,
+    trajectory_serializer,
+    transition_analyzer,
+)
 
 
 def _configure_rng(seed: int) -> None:
@@ -38,66 +50,70 @@ def build_hint_prompt(trajectories_text: str) -> str:
         (ASCII, object-based, etc.)
     """
     return f"""
+## SYSTEM
 You are given expert demonstrations from a grid-based environment.
 
+Your task is to analyze the demonstrations and infer what kinds of
+state-level queries or relational measurements would be necessary
+to reproduce the expert’s behavior.
+
+Do NOT assume any predefined object roles or game semantics.
+Do NOT invent rules not supported by the demonstrations.
+
+## INPUT
 Each demonstration consists of:
-- State s_t (before action)
-- Action a_t (clicked cell: row, col)
-- State s_t+1 (after deterministic transition)
+- a grid observation (before action),
+- a clicked cell (row, col),
+- the resulting grid after a deterministic transition.
 
-DEMONSTRATIONS:
-{trajectories_text}
+## TASK
+Based on the demonstrations, describe at a high level:
 
-----
-
-Your task:
-
-Extract **abstract, reusable decision-time features** that could inform the design of a DSL for selecting actions.
+- What kinds of information about the grid state must be measurable
+  in order to explain the expert’s action choices.
+- What kinds of spatial, relational, or temporal relationships
+  appear to matter.
+- What kinds of distinctions between action effects are required
+  (e.g., actions that change state directionally vs. actions that do not).
 
 IMPORTANT:
-- Use ONLY information observable in the current state (s_t).
-- Ignore state transitions and future effects.
-- Do NOT describe game rules or mechanics.
-- Do NOT mention specific object names (e.g., arrow, wall, target).
-- Treat cell contents as abstract VALUEs.
-- Do NOT describe a policy or strategy.
+- Do NOT define persistent entity types or value-classes (no “the movable entity”, no “type A/B”, no placeholders like V1/V2).
+- Do NOT track identities across time (avoid phrasing like “the same object moves”).
+- Describe requirements only in terms of observable transition statistics and action-effect signatures.
+- Each bullet must start with: “We need the ability to …”
 
-Instead:
-- Describe **generic spatial, relational, or comparison-based predicates**
-- Each hint should correspond to something that could plausibly be implemented as: (Cell, Obs) -> Bool
+Express your answer in terms of **needed functions, relations, or measurements**
+over the grid (e.g., distance between cells satisfying some property,
+relative position of selected cells, whether an action produces a directional change).
 
-OUTPUT FORMAT:
-- Return ONLY a list of short hints
-- One hint per line
-- No introduction or explanation text
+Do NOT name or infer object roles (e.g., agent, target).
+Do NOT name specific grid symbols or controls.
+Do NOT write code.
+Do NOT propose a DSL or formal grammar.
+
+Be concise and factual.
+If something is uncertain, explicitly state the uncertainty.
+
+## DEMONSTRATIONS
+{trajectories_text}\n
+
+AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc.)
 """
 
 
-# Your task:
+#     return f"""
+# You are given expert demonstrations from a grid-based environment.
 
-# Extract hints about **what properties of the current state (s_t)** are being used to select the action.
-# """
+# Each demonstration consists of:
+# - State s_t (before action)
+# - Action a_t (clicked cell: row, col)
+# - State s_t+1 (after deterministic transition)
 
-# Your task:
-
-# Extract hints about **what properties of the current state (s_t)**
-# are being used to select the action.
-
-# IMPORTANT:
-# - Only use information observable in s_t.
-# - Ignore how the board changes after the action.
-# - Do NOT explain why an action is good in terms of future outcomes.
-# - Do NOT describe environment rules or transition dynamics.
-
-# OUTPUT FORMAT:
-# - Return ONLY a bullet list of concise hints.
-# - Do not add any extra text in your answer.
-
-# Focus on **state-based, spatial, or relational predicates** that could be implemented as reusable DSL functions.
-# """
+# DEMONSTRATIONS:
+# {trajectories_text}
 
 
-def extract_hints(llm_client, trajectories_text: str) -> dict[str, Any]:
+def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> str:
     """Query the LLM and return parsed hint JSON."""
     prompt = build_hint_prompt(trajectories_text)
 
@@ -109,19 +125,23 @@ def extract_hints(llm_client, trajectories_text: str) -> dict[str, Any]:
         reprompt_checks=reprompt_checks,
         max_attempts=5,
     )
-
-    # try:
     response_text = response.text if hasattr(response, "text") else str(response)
-    # hints = json.loads(response_text)
-    # except json.JSONDecodeError as e:
-    #     raise ValueError(
-    #         f"LLM did not return valid JSON.\nResponse:\n{response_text}"
-    #     ) from e
     print(response_text)
-    # Minimal sanity checks
-    # assert "high_level_rules" in hints
-    # assert "local_rules" in hints
+    return response_text
 
+
+def extract_dsl(llm_client: PretrainedLargeModel, prompt: str) -> str:
+    """Query the LLM and return parsed hint JSON."""
+    query = Query(prompt)
+    reprompt_checks: list[RepromptCheck] = []
+    response = query_with_reprompts(
+        llm_client,
+        query,
+        reprompt_checks=reprompt_checks,
+        max_attempts=5,
+    )
+    response_text = response.text if hasattr(response, "text") else str(response)
+    print(response_text)
     return response_text
 
 
@@ -155,13 +175,190 @@ def save_hints(
     return out_path
 
 
-# ---------------------------------------------------------------------
-# Example usage
-# ---------------------------------------------------------------------
+def build_dsl_generation_prompt_final(
+    hint_text: str,
+    object_types: Sequence[str],
+    *,
+    min_primitives: int = 5,
+    max_primitives: int = 10,
+) -> str:
+    """DSL generation prompt."""
 
-if __name__ == "__main__":
-    num_initial_states = 4
-    env_name = "StopTheFall"
+    type_system = r"""
+Type system:
+- Obs := grid observation (2D grid of discrete values)
+- Cell := (int, int)                # (row, col)
+- Value := one of OBJECT_TYPES
+- Direction := (int, int)           # (dr, dc)
+- Bool := {True, False}
+
+Fixed nonterminals and denotations:
+- START: a Bool expression evaluated in environment {a: Cell, s: Obs}
+- LOCAL_PROGRAM: a function (Cell, Obs) -> Bool
+- CONDITION: a function (Cell, Obs) -> Bool
+- DIRECTION: a Direction constant
+- VALUE: a Value constant
+""".strip()
+
+    primitive_constraints = r"""
+Primitive constraints (binding):
+- Propose between MIN_PRIMITIVES and MAX_PRIMITIVES primitives.
+- EVERY primitive must:
+  (1) be executable Python,
+  (2) return Bool,
+  (3) take Cell and Obs as the LAST TWO arguments: (..., cell: Cell, obs: Obs) -> Bool
+  (4) may take additional typed args (Value, Direction, Int, Bool, Cell, (Cell,Obs)->Bool, etc.).
+- Names should be descriptive and generic; do NOT use domain-specific words (agent/target/wall/arrow/...).
+- Avoid redundancy: primitives should cover distinct families of checks.
+""".strip()
+
+    grammar_rules = r"""
+Grammar rules (binding):
+- You must output a full grammar with productions for:
+  START, LOCAL_PROGRAM, CONDITION, DIRECTION, VALUE.
+
+- Cross-links are allowed if type-correct:
+  e.g., START may expand to LOCAL_PROGRAM(a, s) or CONDITION(a, s),
+        LOCAL_PROGRAM may expand to CONDITION,
+        CONDITION may expand to LOCAL_PROGRAM, etc.
+  (You decide which links are useful, but they must be type-safe.)
+
+- Primitive uniqueness per nonterminal (very important):
+  Each primitive name may appear as a direct terminal application in the production list
+  of AT MOST ONE of {START, LOCAL_PROGRAM, CONDITION}.
+  (You can still use nonterminal cross-links to share structure instead of repeating primitives.)
+  Example: if "is_value" appears in CONDITION productions, it must not appear directly in START or LOCAL_PROGRAM productions.
+
+- START environment variables:
+  In START productions, use variables (a, s) (not (cell, obs)).
+  If you call a predicate of type (Cell,Obs)->Bool, you must pass (a, s) into it.
+""".strip()
+
+    recursion_constraints = r"""
+Recursion + productivity constraints (mandatory):
+1) Reachability: every nonterminal must be reachable from START.
+2) Productivity: the grammar must generate MANY distinct programs.
+   Include at least one productive recursive cycle involving CONDITION and/or LOCAL_PROGRAM,
+   where recursion strictly grows the expression (not CONDITION -> CONDITION).
+3) Termination: include base cases so derivations can end.
+4) Combinatorial growth: use boolean composition or other branching structure to yield many programs.
+""".strip()
+
+    output_schema = r"""
+Output ONLY valid JSON with this schema:
+
+{
+  "object_types": ["..."],
+
+  "types": {
+    "Obs": "...",
+    "Cell": "...",
+    "Value": "...",
+    "Direction": "...",
+    "Bool": "..."
+  },
+
+  "primitives": [
+    {
+      "name": "primitive_name",
+      "type": "(..., Cell, Obs) -> Bool",
+      "args": [
+        {"name": "...", "type": "Value|Direction|Int|Bool|Cell|(Cell,Obs)->Bool|..."},
+        {"name": "cell", "type": "Cell"},
+        {"name": "obs", "type": "Obs"}
+      ],
+      "description": "generic description; no domain-specific words",
+      "python_impl": "def primitive_name(..., cell, obs):\n    ...\n"
+    }
+  ],
+
+  "grammar": {
+    "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
+    "start_symbol": "START",
+    "productions": {
+      "START": [
+        "... Bool expression using a,s and/or calling LOCAL_PROGRAM/CONDITION with (a,s) ...",
+        "..."
+      ],
+      "LOCAL_PROGRAM": [
+        "... expression of type (Cell,Obs)->Bool ...",
+        "..."
+      ],
+      "CONDITION": [
+        "... expression of type (Cell,Obs)->Bool ...",
+        "..."
+      ],
+      "DIRECTION": ["(1,0)", "(0,1)", "(-1,0)", "(0,-1)", "(1,1)", "(-1,1)", "(1,-1)", "(-1,-1)"],
+      "VALUE": ["<OBJECT_TYPES>"]
+    }
+  },
+
+  "sanity": {
+    "type_safe": true,
+    "all_nonterminals_reachable_from_start": true,
+    "has_productive_recursion": true,
+    "has_base_cases": true,
+    "num_primitives": "between MIN_PRIMITIVES and MAX_PRIMITIVES",
+    "all_primitives_return_bool": true,
+    "all_primitives_take_cell_obs_last": true,
+    "start_uses_a_s_only": true,
+    "primitive_used_in_only_one_nonterminal": true,
+    "no_redundant_primitives": true
+  },
+
+  "notes": ["optional"]
+}
+
+Hard constraints:
+- No text outside JSON.
+- Every primitive returns Bool and ends with (..., cell, obs).
+- In START productions, only (a,s) may appear as the state variables.
+- Each primitive appears in productions of at most one of START/LOCAL_PROGRAM/CONDITION.
+- Grammar must be type-correct and productively recursive.
+""".strip()
+
+    return f"""
+## SYSTEM
+You are an expert language designer for program synthesis systems.
+
+Your job: given a high-level hint extracted from expert demonstrations,
+propose:
+(1) 5–10 generic Boolean grid-game primitives (Python implementations),
+(2) a type-safe grammar over the fixed nonterminals START/LOCAL_PROGRAM/CONDITION/DIRECTION/VALUE,
+that is expressive and productively recursive (generates many programs).
+
+## INPUT 1: Level-1 hint (capability requirements)
+{hint_text}
+
+## INPUT 2: OBJECT_TYPES
+{json.dumps(list(object_types))}
+
+## TYPE SYSTEM (binding)
+{type_system}
+
+MIN_PRIMITIVES = {min_primitives}
+MAX_PRIMITIVES = {max_primitives}
+
+## PRIMITIVE CONSTRAINTS (binding)
+{primitive_constraints}
+
+## GRAMMAR RULES (binding)
+{grammar_rules}
+
+## RECURSION / PRODUCTIVITY (binding)
+{recursion_constraints}
+
+## OUTPUT FORMAT
+Output ONLY valid JSON following this schema:
+
+{output_schema}
+""".strip()
+
+
+def main() -> None:
+    """Entry point for running hint and DSL extraction."""
+    num_initial_states = 2
+    env_name = "Chase"
     encoding_method = "4"
     max_steps_per_traj = 40
     seed = 0
@@ -169,11 +366,16 @@ if __name__ == "__main__":
 
     expert = get_grid_expert(env_name)
     trajectories: list[list[tuple[Any, Any, Any]]] = []
+    object_types: Sequence[str] | None = None
     for init_idx in range(num_initial_states):
-        env = env_factory(init_idx, env_name)
-        traj = collect_full_episode(env, expert, sample_count=None)
+        env = cap_baseline.env_factory(init_idx, env_name)
+        traj = cap_baseline.collect_full_episode(env, expert, sample_count=None)
         env.close()
+        object_types = env.get_object_types()
         trajectories.append(traj)
+
+    if object_types is None:
+        raise RuntimeError("No object types collected from environments.")
 
     symbol_map = grid_hint_config.get_symbol_map(env_name)
 
@@ -187,7 +389,7 @@ if __name__ == "__main__":
 
     all_traj_texts = []
 
-    for i, traj in enumerate(trajectories):
+    for idx, traj in enumerate(trajectories):
         text = trajectory_serializer.trajectory_to_text(
             traj,
             encoder=encoder,
@@ -196,7 +398,7 @@ if __name__ == "__main__":
             encoding_method=encoding_method,
             max_steps=max_steps_per_traj,
         )
-        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
+        all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
 
     combined_text = "\n\n".join(all_traj_texts)
 
@@ -204,14 +406,18 @@ if __name__ == "__main__":
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4.1", cache)
-    reprompt_checks = []
 
     hints = extract_hints(llm_client, combined_text)
+    dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
+    output = extract_dsl(llm_client, dsl_prompt)
 
     path = save_hints(
-        hints,
+        output,
         env_name=env_name,
         seed=seed,
     )
-
     print(f"Hints saved to {path}")
+
+
+if __name__ == "__main__":
+    main()

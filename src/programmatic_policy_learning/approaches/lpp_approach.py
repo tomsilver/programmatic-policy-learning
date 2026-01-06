@@ -2,7 +2,8 @@
 
 import logging
 import signal
-import tempfile
+
+# import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -344,6 +345,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
+
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )

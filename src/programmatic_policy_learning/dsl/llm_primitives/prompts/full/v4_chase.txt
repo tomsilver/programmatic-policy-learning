@@ -38,18 +38,15 @@ CONDITION := (Cell, Obs) -> Bool
 DIRECTION := (Int, Int)
 VALUE := ObjectType from {OBJECT_TYPES}
 
+- No integer-typed arguments are allowed in primitive signatures.
+- All numeric constants must be internal constants inside the Python stub implementation only, and must not appear as grammar arguments.
 
-If integer arguments appear:
-- Use `"type": "Int"`
-- Use nonterminal VALUE_INT in productions
-- Define `"VALUE_INT": "1 | 2 | 3 ..."`
-- The range for VALUE_INT should be chosen automatically by the model based on the needs of the primitives. It must not default to {1,2,3} if a larger or different range is required.
 
 ---
 
 ## PRIMITIVE DESIGN RULES (CRITICAL)
 
-You must design **exactly 5-10 primitives**, each implementing `(Cell, Obs) -> Bool`.
+Design exactly 6–10 primitives, each returning Bool, and each ending with either (cell, obs) or (a, s) depending on its owning nonterminal. Primitives may take additional typed arguments (VALUE, DIRECTION, CONDITION, LOCAL_PROGRAM, Cell).
 - Choose the number automatically based on the structure needed to express useful behaviors in the trajectories.
 
 ### Core expressiveness requirement
@@ -71,7 +68,9 @@ Across all primitives, there must be meaningful coverage of spatial, directional
 - If `"nonterminal": "START"`, it may appear *only* in START.
 - **No primitive may appear in more than one nonterminal.**
 - **No primitive may be repeated across START, LOCAL_PROGRAM, and CONDITION.**
-- No primitive may exist solely to combine Boolean results of other primitives.
+- A primitive is invalid only if it combines predicate outputs at the same cell without performing any additional observation (no indexing/scanning/offsetting/aggregation).
+- It is allowed to combine predicate checks when the primitive performs observation over the grid (e.g., shifts, scans, counts, min-distance, existence along a ray, obstacle checks).
+
 
 ### Distribution
 - **3–4 recursive combinators**:
@@ -80,13 +79,12 @@ Across all primitives, there must be meaningful coverage of spatial, directional
 - At least one must take CONDITION.
 - At least one must take LOCAL_PROGRAM.
 - **1–2 base-case primitives**:
-- May take only VALUE / DIRECTION / VALUE_INT.
+- May take only VALUE / DIRECTION.
 - Must not take CONDITION or LOCAL_PROGRAM.
 - Base-case primitives may not belong to START.
 
 ### Meaningful Observation Access
 - Every primitive must index into `obs` with bounds checks.
-- No primitive may perform Boolean glue (`and`, `or`, `not`) on outputs of other primitives.
 - Before proposing a primitive, ask: Does this function answer a question about the grid, or does it only transform Boolean outputs of other functions?
   - If it is the latter, do not include it.
 
@@ -113,47 +111,63 @@ instead of observing the environment.
   - bounded for-loops  
 - No helper functions, no recursion, no placeholders.
 - No hardcoded obs values (must compare obs[...] only to VALUE arguments).
-
----
+- Numeric(Int) constants are allowed only as internal constants and must not be exposed as parameters.
 
 ## DEMONSTRATION-INFERRED FEATURES (HINTS)
 
 Below is a summary of patterns extracted from a set of expert trajectories.
 Use the hints below as a feature inventory, not as requirements.
 
-Your goal is to:
-- Infer which spatial, relational, and value-based predicates are actually useful
-  for explaining the demonstrated behavior.
-- Propose only the minimal set of DSL functions needed to express these behaviors.
-- Prefer general, reusable primitives over trajectory-specific or overly concrete ones.
+"
+- We need the ability to measure the content category (e.g., unique symbol) of each grid cell, both at the start and after an action, to detect which cells are selected and which locations experience a content change.
+- We need the ability to detect and compare spatial relationships between cell positions, such as horizontal/vertical/adjacent/diagonal relations (e.g., "cell X is above cell Y," "cell X is N steps left of cell Y").
+- We need the ability to quantify the shortest path distance (e.g., Manhattan or grid-based) between cells with certain contents to cells containing other specific contents, both before and after actions.
+- We need the ability to identify if selecting specific cells (by their content and/or position) changes (or preserves) the spatial arrangement or distances between grid features.
+- We need the ability to compare the before/after difference in the distance between certain grid features, especially to note when the separation increases, decreases, or remains constant after an action.
+- We need the ability to determine whether a selected action cell is associated with a unique symbol whose effect is to move some grid feature(s) in a consistent spatial direction (such as "up," "down," "left," or "right").
+- We need the ability to distinguish between actions that physically move grid features versus those that simply modify the cell content without positional change (e.g., transforming one cell type into another at the same location).
+- We need the ability to measure if a cell with a specific symbol, when selected, always produces a non-local effect (e.g., moving a symbol elsewhere on the grid), as opposed to a local effect (such as drawing/changing the clicked cell only).
+- We need the ability to track which content types can become adjacent as a result of an action, and to measure adjacency relations (as in "content A is now adjacent to content B" after an action).
+- We need the ability to detect circumstances where certain action choices become available or unavailable based on the current arrangement of grid contents (e.g., a movement action is blocked by the content of an adjacent cell).
+- We need to determine whether clicking on static or border cell types (such as those never changing content) has an effect on the dynamics of other grid features, even if the clicked cell itself does not change.
+- We need the ability to recognize temporally extended sequences in which repeated selection of the same symbol/direction causes consistent, cumulative displacement of a content in a particular direction or toward another distinctive feature.
+- We need to observe and compare effects from the same action symbol in varied grid regions to determine if directionality or effect magnitude depends on the initial relative arrangement of several grid components.
+- We need the ability to measure whether some grid transformations only occur when specific cells are in proximity or particular spatial configurations to each other.
+- If there are symbols that only alter cells of a certain type or in a certain region (e.g., only draw/change a cell if near a moving feature), we need to be able to measure those conditional, relational dependencies.
+- We need the ability to describe transition statistics: for each action type and cell position, what are the systematic effects on grid-wide cell contents and relative spatial relationships between key content types.
 
 "
-cell_is_adjacent_to_agent(cell, obs)
-cell_is_adjacent_to_value(cell, obs, VALUE)
-cell_contains_value(cell, obs, VALUE)
-cell_row_equals_agent_row(cell, obs)
-cell_col_equals_agent_col(cell, obs)
-cell_is_between_agent_and_value(cell, obs, VALUE)
-cell_is_closer_to_agent_than(cell, obs, other_cell)
-cell_is_closer_to_value_than(cell, obs, VALUE, other_cell)
-cell_is_at_edge_of_grid(cell, obs)
-cell_is_in_direction_from_agent(cell, obs, DIRECTION)
-agent_is_adjacent_to_value(obs, VALUE)
-cell_is_within_n_steps_of_agent(cell, obs, N)
-cell_is_in_corner(cell, obs)
-cell_is_on_path_between_agent_and_value(cell, obs, VALUE)
-cell_has_no_adjacent_value(cell, obs, VALUE)
-cell_is_only_accessible_direction(cell, obs)
-cell_is_adjacent_to_empty(cell, obs)
-cell_is_blocked_in_all_directions(cell, obs)
-cell_has_value_in_direction_within_n(cell, obs, VALUE, DIRECTION, N)
-"
+---
+---
+
+## CRITICAL: TWO INTERFACE LEVELS + BRIDGING (MANDATORY)
+
+There are two evaluation interfaces in this DSL:
+
+1) Program-level interface (START / PROGRAM):
+- Expressions are evaluated in the environment {a, s}.
+- START must evaluate to Bool using only (a, s) as the final evaluation context.
+
+2) Local-level interface (LOCAL_PROGRAM and CONDITION):
+- LOCAL_PROGRAM and CONDITION denote predicates of type (Cell, Obs) -> Bool.
+- These predicates are evaluated at arbitrary cells inside the grid.
+
+Bridging requirement:
+- You MUST include at least one START-owned primitive that *lifts* a local predicate into a program-level Bool decision.
+- Concretely: every START-owned primitive must (i) take at least one argument whose type is CONDITION or LOCAL_PROGRAM, and (ii) end with (a, s).
+- Inside the stub semantics, the START-owned primitive must apply the provided local predicate to at least one cell derived from (a, s)
+  (e.g., the action cell itself, or a bounded offset/scan from it), producing a Bool.
+
+Suffix rule (binding):
+- START-owned primitives MUST have signatures ending in (..., a, s).
+- CONDITION/LOCAL_PROGRAM-owned primitives MUST have signatures ending in (..., cell, obs).
+
 ---
 
 ## GRAMMAR REQUIREMENTS
 
 Nonterminals:  
-["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "VALUE_INT"]
+["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"]
 
 
 Terminals: the names of all primitives.
@@ -203,8 +217,7 @@ START alternatives must be constructed mechanically:
 
 ### 4. Other Nonterminals
 "DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)"
-"VALUE": "{OBJECT_TYPES}"
-"VALUE_INT": "1 | 2 | 3 ..." 
+"VALUE": "{OBJECT_TYPES}" -> DO NOT REPLACE IT WITH real OBJECT_TYPES, leave it as it is.
 
 
 ---
@@ -260,7 +273,6 @@ This requires:
 "CONDITION": "... | ...",
 "DIRECTION": "...",
 "VALUE": "...",
-"VALUE_INT": "1 | 2 | 3 ..."
 }
 }
 }
