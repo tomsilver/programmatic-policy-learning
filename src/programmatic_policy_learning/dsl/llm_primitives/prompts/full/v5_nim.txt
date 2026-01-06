@@ -119,25 +119,22 @@ Below is a summary of patterns extracted from a set of expert trajectories.
 Use the hints below as a feature inventory, not as requirements.
 
 "
-- We need the ability to measure the content category (e.g., unique symbol) of each grid cell, both at the start and after an action, to detect which cells are selected and which locations experience a content change.
-- We need the ability to detect and compare spatial relationships between cell positions, such as horizontal/vertical/adjacent/diagonal relations (e.g., "cell X is above cell Y," "cell X is N steps left of cell Y").
-- We need the ability to quantify the shortest path distance (e.g., Manhattan or grid-based) between cells with certain contents to cells containing other specific contents, both before and after actions.
-- We need the ability to identify if selecting specific cells (by their content and/or position) changes (or preserves) the spatial arrangement or distances between grid features.
-- We need the ability to compare the before/after difference in the distance between certain grid features, especially to note when the separation increases, decreases, or remains constant after an action.
-- We need the ability to determine whether a selected action cell is associated with a unique symbol whose effect is to move some grid feature(s) in a consistent spatial direction (such as "up," "down," "left," or "right").
-- We need the ability to distinguish between actions that physically move grid features versus those that simply modify the cell content without positional change (e.g., transforming one cell type into another at the same location).
-- We need the ability to measure if a cell with a specific symbol, when selected, always produces a non-local effect (e.g., moving a symbol elsewhere on the grid), as opposed to a local effect (such as drawing/changing the clicked cell only).
-- We need the ability to track which content types can become adjacent as a result of an action, and to measure adjacency relations (as in "content A is now adjacent to content B" after an action).
-- We need the ability to detect circumstances where certain action choices become available or unavailable based on the current arrangement of grid contents (e.g., a movement action is blocked by the content of an adjacent cell).
-- We need to determine whether clicking on static or border cell types (such as those never changing content) has an effect on the dynamics of other grid features, even if the clicked cell itself does not change.
-- We need the ability to recognize temporally extended sequences in which repeated selection of the same symbol/direction causes consistent, cumulative displacement of a content in a particular direction or toward another distinctive feature.
-- We need to observe and compare effects from the same action symbol in varied grid regions to determine if directionality or effect magnitude depends on the initial relative arrangement of several grid components.
-- We need the ability to measure whether some grid transformations only occur when specific cells are in proximity or particular spatial configurations to each other.
-- If there are symbols that only alter cells of a certain type or in a certain region (e.g., only draw/change a cell if near a moving feature), we need to be able to measure those conditional, relational dependencies.
-- We need the ability to describe transition statistics: for each action type and cell position, what are the systematic effects on grid-wide cell contents and relative spatial relationships between key content types.
-
+Cell contains a VALUE  
+Cell is adjacent to a VALUE_CLUSTER  
+Cell is part of a VALUE_CLUSTER of size N  
+Cell is adjacent to a VALUE_CLUSTER of size N  
+Cell’s VALUE is unique along its row or column  
+Cell is surrounded by cells with VALUE  
+Cell is at the boundary of a VALUE_CLUSTER  
+Cell is the only instance of its VALUE in the grid  
+Cell is adjacent to empty cells  
+Cell is in a contiguous sequence of cells with the same VALUE  
+Cell is the last remaining cell with a given VALUE  
+Cell has a neighboring cell with a different VALUE  
+Cell is at the edge of the grid  
+Cell is adjacent to more than one VALUE_CLUSTER  
+Cell’s neighbors are all the same VALUE as itself
 "
----
 ---
 
 ## CRITICAL: TWO INTERFACE LEVELS + BRIDGING (MANDATORY)
@@ -155,8 +152,7 @@ There are two evaluation interfaces in this DSL:
 Bridging requirement:
 - You MUST include at least one START-owned primitive that *lifts* a local predicate into a program-level Bool decision.
 - Concretely: every START-owned primitive must (i) take at least one argument whose type is CONDITION or LOCAL_PROGRAM, and (ii) end with (a, s).
-- Inside the stub semantics, the START-owned primitive must apply the provided local predicate to at least one cell derived from (a, s)
-  (e.g., the action cell itself, or a bounded offset/scan from it), producing a Bool.
+- Inside the stub semantics, the START-owned primitive must apply the provided local predicate to at least one cell derived from (a, s), producing a Bool.
 
 Suffix rule (binding):
 - START-owned primitives MUST have signatures ending in (..., a, s).
@@ -168,7 +164,6 @@ Suffix rule (binding):
 
 Nonterminals:  
 ["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE"]
-
 
 Terminals: the names of all primitives.
 

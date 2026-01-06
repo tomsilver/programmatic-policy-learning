@@ -1,9 +1,10 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
-import signal
 
 # import tempfile
+import random
+import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -308,6 +309,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
+        self.seed_num = seed
+        self.configure_rng()
         self._policy: LPPPolicy | None = None
         self.env_factory = env_factory
         self.base_class_name = base_class_name
@@ -321,6 +324,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
         self.program_generation = program_generation
+
+    def configure_rng(self) -> None:
+        """Seed Python/NumPy RNGs for deterministic rollouts."""
+        random.seed(self.seed_num)
+        np.random.seed(self.seed_num)
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)

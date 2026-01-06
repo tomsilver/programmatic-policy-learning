@@ -10,9 +10,10 @@ import json
 import random
 import time
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import numpy as np
+from omegaconf import OmegaConf
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
@@ -22,13 +23,12 @@ from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    CaP_baseline as cap_baseline,)
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
     grid_encoder,
     grid_hint_config,
     trajectory_serializer,
     transition_analyzer,
 )
+from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
 def _configure_rng(seed: int) -> None:
@@ -37,12 +37,116 @@ def _configure_rng(seed: int) -> None:
     np.random.seed(seed)
 
 
+def env_factory(
+    instance_num: int | None = None,
+    env_name: str | None = None,
+) -> Any:
+    """Env Factory."""
+    if env_name is None:
+        raise ValueError("env_name must be provided.")
+    registry = EnvRegistry()
+    return registry.load(
+        OmegaConf.create(
+            {
+                "provider": "ggg",
+                "make_kwargs": {
+                    "base_name": env_name,
+                    "id": f"{env_name}0-v0",
+                },
+                "instance_num": instance_num,
+            }
+        )
+    )
+
+
+def collect_full_episode(
+    env: Any,
+    expert_fn: Callable[[Any], Any],
+    max_steps: int = 200,
+    sample_count: int | None = None,
+) -> list[tuple[Any, Any, Any]]:
+    """Roll out expert policy, optionally sampling a subset of (obs, action,
+    obs_next)."""
+    obs, _ = env.reset()
+    trajectory = []
+
+    for _ in range(max_steps):
+        action = expert_fn(obs)
+        obs_next, _, term, trunc, _ = env.step(action)
+        trajectory.append((obs, action, obs_next))
+        obs = obs_next
+        if term or trunc:
+            break
+
+    if sample_count is None or sample_count >= len(trajectory):
+        return trajectory
+    if sample_count <= 0:
+        return []
+
+    sampled: list[tuple[Any, Any, Any]] = []
+    if trajectory:
+        sampled.append(trajectory[0])
+
+    if len(sampled) >= sample_count or len(trajectory) <= 1:
+        return sampled[:sample_count]
+
+    remaining = trajectory[1:]
+    needed = min(sample_count - len(sampled), len(remaining))
+    if needed > 0:
+        sampled.extend(random.sample(remaining, needed))
+
+    return sampled
+
+
 # ---------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------
 
 
-def build_hint_prompt(trajectories_text: str) -> str:
+def build_hint_prompt_v1(trajectories_text: str) -> str:
+    """Build the LLM prompt for extracting strategy hints from demonstrations.
+
+    trajectories_text:
+        A human-readable representation of expert trajectories
+        (ASCII, object-based, etc.)
+    """
+    return f"""
+You are given expert demonstrations from a grid-based environment.
+
+Each demonstration consists of:
+- State s_t (before action)
+- Action a_t (clicked cell: row, col)
+- State s_t+1 (after deterministic transition)
+
+DEMONSTRATIONS:
+{trajectories_text}
+
+----
+Your task:
+
+Extract **abstract, reusable decision-time predicates/features** that could inform the design of a DSL.
+
+IMPORTANT:
+- Use ONLY information observable in the current state (s_t).
+- Use ONLY information available at decision time (do not use future states or transition outcomes).
+- Do NOT describe game rules or mechanics.
+- Do NOT mention specific object names (e.g., arrow, wall, target).
+- Treat cell contents as abstract VALUEs.
+- Do NOT describe a policy or strategy.
+
+Instead:
+- Describe **generic spatial, relational, or comparison-based predicates**
+- Each hint should correspond to something that could plausibly be implemented as a boolean predicate over
++  (Cell, Obs) and optionally a distinguished reference from the decision-time inputs.
+
+OUTPUT FORMAT:
+- Return ONLY a list of short hints
+- One hint per line
+- No introduction or explanation text
+"""
+
+
+def build_hint_prompt_v2(trajectories_text: str) -> str:
     """Build the LLM prompt for extracting strategy hints from demonstrations.
 
     trajectories_text:
@@ -115,7 +219,7 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 
 def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> str:
     """Query the LLM and return parsed hint JSON."""
-    prompt = build_hint_prompt(trajectories_text)
+    prompt = build_hint_prompt_v1(trajectories_text)
 
     query = Query(prompt)
     reprompt_checks: list[RepromptCheck] = []
@@ -154,6 +258,7 @@ def save_hints(
     hints: dict[str, Any] | str,
     env_name: str,
     seed: int,
+    encoding_method: str,
     out_dir: Path | str = "hints",
     filename: str | None = None,
 ) -> Path:
@@ -161,7 +266,7 @@ def save_hints(
     Save extracted hints under:
         hints/{env_name}/{filename}
     """
-    out_dir = Path(out_dir) / env_name
+    out_dir = Path(out_dir) / env_name / f"enc_{encoding_method}"
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     filename = filename or f"hints_seed{seed}_{timestamp}.json"
@@ -357,8 +462,8 @@ Output ONLY valid JSON following this schema:
 
 def main() -> None:
     """Entry point for running hint and DSL extraction."""
-    num_initial_states = 2
-    env_name = "Chase"
+    num_initial_states = 3
+    env_name = "StopTheFall"
     encoding_method = "4"
     max_steps_per_traj = 40
     seed = 0
@@ -368,8 +473,8 @@ def main() -> None:
     trajectories: list[list[tuple[Any, Any, Any]]] = []
     object_types: Sequence[str] | None = None
     for init_idx in range(num_initial_states):
-        env = cap_baseline.env_factory(init_idx, env_name)
-        traj = cap_baseline.collect_full_episode(env, expert, sample_count=None)
+        env = env_factory(init_idx, env_name)
+        traj = collect_full_episode(env, expert, sample_count=None)
         env.close()
         object_types = env.get_object_types()
         trajectories.append(traj)
@@ -406,15 +511,12 @@ def main() -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4.1", cache)
-
     hints = extract_hints(llm_client, combined_text)
-    dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
-    output = extract_dsl(llm_client, dsl_prompt)
+    # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
+    # output = extract_dsl(llm_client, dsl_prompt)
 
     path = save_hints(
-        output,
-        env_name=env_name,
-        seed=seed,
+        hints, env_name=env_name, seed=seed, encoding_method=encoding_method
     )
     print(f"Hints saved to {path}")
 
