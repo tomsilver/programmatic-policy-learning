@@ -386,9 +386,13 @@ class LLMPrimitivesGenerator:
                         "semantics_py_stub"
                     ]
                     llm_response["proposal"][i]["args"] = new_proposal["args"]
-                    llm_response["proposal"][i]["rationale_short"] = new_proposal["rationale_short"]
+                    llm_response["proposal"][i]["rationale_short"] = new_proposal[
+                        "rationale_short"
+                    ]
                     # Keep pcfg_insertion the same (same NT + same types)
-                    llm_response["proposal"][i]["pcfg_insertion"] = new_proposal["pcfg_insertion"]
+                    llm_response["proposal"][i]["pcfg_insertion"] = new_proposal[
+                        "pcfg_insertion"
+                    ]
                     break
 
             # ------------------------------------------------------------------
@@ -466,7 +470,7 @@ class LLMPrimitivesGenerator:
             list(accepted_primitives.values()),
             mode=mode,
         )
-        #TODOO: later remove the filtered one from dsl
+        # TODOO: later remove the filtered one from dsl
         self.write_json("new_metadata.json", llm_response)
 
         # ----------------------------------------------------------------------
@@ -480,7 +484,9 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         filtered_llm_response = self.filter_metadata_with_llm(
             metadata=llm_response,
-            filter_prompt_path=str(self.base_dir / "prompts" / "full"/"filter_dsls.txt"),
+            filter_prompt_path=str(
+                self.base_dir / "prompts" / "full" / "filter_dsls.txt"
+            ),
         )
         print(filtered_llm_response)
 
@@ -494,7 +500,7 @@ class LLMPrimitivesGenerator:
         # ----------------------------------------------------------------------
         # 8. Return the results
         # ----------------------------------------------------------------------
-        return self.grammar, updated_dsl_fn(), new_dsl_object 
+        return self.grammar, updated_dsl_fn(), new_dsl_object
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
@@ -713,7 +719,6 @@ class LLMPrimitivesGenerator:
 
         return self.grammar, updated_dsl_fn(), new_dsl_object
 
-
     def filter_metadata_with_llm(
         self,
         metadata: dict[str, Any],
@@ -728,7 +733,7 @@ class LLMPrimitivesGenerator:
             raise ValueError("LLM client is not initialized.")
 
         # Load filtering prompt template
-        with open(filter_prompt_path, "r") as f:
+        with open(filter_prompt_path, "r", encoding="utf-8") as f:
             filter_prompt_template = f.read()
 
         # Inject metadata into INPUT JSON placeholder

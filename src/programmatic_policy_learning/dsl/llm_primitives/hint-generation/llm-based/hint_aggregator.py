@@ -1,15 +1,15 @@
+"""Aggregate per-environment hint lists into a single curated set."""
+
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from prpl_llm_utils.structs import Query
-from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-
-from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.models import OpenAIModel  # or your model
-
+from prpl_llm_utils.models import PretrainedLargeModel
+from prpl_llm_utils.reprompting import query_with_reprompts
+from prpl_llm_utils.structs import Query
 
 ENV_NAMES = [
     "Chase",
@@ -21,10 +21,12 @@ ENV_NAMES = [
 
 
 class HintAggregator:
+    """Load the latest hint files, aggregate via LLM, and persist results."""
+
     def __init__(
         self,
         llm_client: PretrainedLargeModel,
-        root_dir: str,
+        root_dir: str | Path,
         encoding_folder: str,
         output_name: str = "aggregated_hints.json",
     ) -> None:
@@ -39,6 +41,7 @@ class HintAggregator:
 
     def _load_latest_hint_file(self, env_name: str) -> list[str]:
         """Open the latest hint file for a given env + encoding.
+
         The file may be JSON or plain text with one hint per line.
         """
         enc_dir = self.root_dir / env_name / self.encoding_folder
@@ -52,7 +55,7 @@ class HintAggregator:
         latest_file = hint_files[-1]
         logging.info(f"[{env_name}] Using hint file: {latest_file.name}")
 
-        with open(latest_file, "r") as f:
+        with open(latest_file, "r", encoding="utf-8") as f:
             raw_text = f.read().strip()
 
         # First try JSON
@@ -75,6 +78,7 @@ class HintAggregator:
             if line.strip() and not line.strip().startswith("#")
         ]
         return lines
+
     # ------------------------------------------------------------------
     # LLM aggregation
     # ------------------------------------------------------------------
@@ -188,21 +192,22 @@ INPUT HINT SETS:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = output_dir / self.output_name
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(aggregated, f, indent=2)
 
         logging.info(f"Aggregated hints saved to: {output_path}")
         return aggregated
 
+
 if __name__ == "__main__":
     cache_path = Path("aggregate.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_client = OpenAIModel("gpt-4.1", cache)
-    root_dir=Path(__file__).parent
+    llm_client_instance = OpenAIModel("gpt-4.1", cache)
+    root_dir_path = Path(__file__).parent
     aggregator = HintAggregator(
-        llm_client=llm_client,
-        root_dir=root_dir / "hints",
+        llm_client=llm_client_instance,
+        root_dir=root_dir_path / "hints",
         encoding_folder="enc_4",
     )
 

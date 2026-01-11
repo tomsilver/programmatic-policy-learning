@@ -144,8 +144,11 @@ OUTPUT FORMAT:
 - One hint per line
 - No introduction or explanation text
 """
+
+
 # Explain the decision making rule, how action a is selected in state s.
 # """
+
 
 def build_hint_prompt_v2(trajectories_text: str) -> str:
     """Build the LLM prompt for extracting strategy hints from demonstrations.

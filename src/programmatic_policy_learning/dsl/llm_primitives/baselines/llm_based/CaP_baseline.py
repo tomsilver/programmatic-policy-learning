@@ -394,15 +394,17 @@ def _evaluate_policy_function(
 
     for env_idx in test_env_nums:
         env = env_builder(env_idx)
-        def safe_policy(obs: Any) -> Any:
-            """Guard policy execution to avoid crashes from invalid assumptions."""
+
+        def safe_policy(obs: Any, *, _env: Any = env) -> Any:
+            """Guard policy execution to avoid crashes from invalid
+            assumptions."""
 
             try:
                 action = policy_fn(obs)
-            except Exception:  # noqa: BLE001
+            except Exception:  # pylint: disable=broad-exception-caught
                 action = None
             if action is None:
-                return env.action_space.sample()
+                return _env.action_space.sample()
             return action
 
         cap_success = (
@@ -558,7 +560,12 @@ def main() -> None:
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
     for encoding in args.encodings:
-        encoding_dir = args.output_dir / args.env / f"*_{str(args.num_initial_states)}" /f"encoding_{encoding}"
+        encoding_dir = (
+            args.output_dir
+            / args.env
+            / f"*_{str(args.num_initial_states)}"
+            / f"encoding_{encoding}"
+        )
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
@@ -570,7 +577,8 @@ def main() -> None:
             stem = cache_base.stem or "cache"
             suffix = cache_base.suffix or ".db"
             cache_path = (
-                cache_dir / f"{stem}_{args.env}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
+                cache_dir
+                / f"{stem}_{args.env}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
@@ -658,7 +666,11 @@ def main() -> None:
             if labels:
                 plot_path = args.plot_path
                 if plot_path is None:
-                    plot_path = args.output_dir / args.env / f"cap_vs_expert_{args.num_initial_states}.png"
+                    plot_path = (
+                        args.output_dir
+                        / args.env
+                        / f"cap_vs_expert_{args.num_initial_states}.png"
+                    )
                 title = (
                     f"{args.env}: Expert vs CaP "
                     f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"

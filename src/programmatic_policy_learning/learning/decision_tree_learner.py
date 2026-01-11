@@ -186,7 +186,7 @@ def extract_plp_from_dt(
             and len(value[node_id]) >= 2
             and value[node_id][1] > value[node_id][0]
         ):
-        # elif value[node_id][1] > value[node_id][0]:
+            # elif value[node_id][1] > value[node_id][0]:
             true_leaves.append(node_id)
 
     paths_to_true_leaves = [get_path_to_leaf(leaf, parents) for leaf in true_leaves]

@@ -90,7 +90,8 @@ def video_to_data_urls(
 
 # pylint: disable=line-too-long
 def build_demo_hint_prompt(num_frames: int) -> str:
-    """Build the VLM prompt for extracting DSL-relevant hints from visual demonstrations."""
+    """Build the VLM prompt for extracting DSL-relevant hints from visual
+    demonstrations."""
     return f"""
 You are given expert demonstrations from a grid-based environment as IMAGE FRAMES.
 
@@ -108,6 +109,8 @@ Explain the decision making rule, how action a is selected in state s.
 NOTE:
 - just infer rule from the demos, not from the nature of the game, and the way it is usually played.
 """
+
+
 # From the visual observations ONLY, extract **abstract, reusable decision-time predicates**
 # that could serve as **atomic building blocks** in a domain-specific language (DSL).
 
