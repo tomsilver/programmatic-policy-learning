@@ -53,7 +53,7 @@ You must design **exactly 5-10 primitives**, each implementing `(Cell, Obs) -> B
 - Choose the number automatically based on the structure needed to express useful behaviors in the trajectories.
 
 ### Core expressiveness requirement
-At least two primitives must explicitly capture spatial relationships between grid values (i.e., it must compute something involving the relative position or  arrangement of VALUEs).
+At least two primitives must explicitly capture spatial relationships between grid values (i.e., it must compute something involving the relative position or arrangement of VALUEs).
 At least one primitive must capture a relational or logical dependency.
 Across all primitives, there must be meaningful coverage of spatial, directional, distance-based, and obstacle-aware reasoning patterns (inspired by demonstration-inferred hints).
 

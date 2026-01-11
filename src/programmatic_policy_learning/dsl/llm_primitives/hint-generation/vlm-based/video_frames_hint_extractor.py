@@ -89,38 +89,60 @@ def video_to_data_urls(
 
 
 # pylint: disable=line-too-long
-def build_demo_hint_prompt() -> str:
-    """Prompt that asks for behavior/task description WITHOUT inventing DSL
-    primitives."""
-    return (
-        "You are analyzing expert demonstrations from a grid-based Chase-like environment.\n"
-        "We ONLY control the agent, not the target.\n\n"
-        "Your job:\n"
-        "1) Infer the high-level objective of the agent.\n"
-        "2) Extract RECURRING SPATIAL–RELATIONAL patterns that the agent seems to use.\n"
-        "3) Identify asymmetries, directional relations, and distance-based cues.\n"
-        "4) Extract NON-CHEATY hints about decision structure that could inspire DSL primitives later.\n\n"
-        "Hard constraints:\n"
-        "- Do NOT propose DSL primitives, function names, or grammar rules.\n"
-        "- Use descriptive *relational* language only (e.g., 'agent is north of target', 'closing distance along x-axis', 'target nearer to boundary on that side').\n"
-        "- Focus on *specific spatial relations*, not general strategies.\n"
-        "- If uncertain, say so.\n\n"
-        "Output ONLY this template:\n\n"
-        "## DEMONSTRATION-INFERRED FEATURES (HINTS)\n\n"
-        "Below is a summary of patterns extracted from a set of expert trajectories.\n"
-        "These are NOT DSL primitives, but they describe spatial relations frequently\n"
-        "relevant to decision-making.\n\n"
-        "### High-frequency relational patterns:\n"
-        "{HINT_PATTERNS}\n\n"
-        "### Useful directional / asymmetry relations:\n"
-        "{HINT_DIRECTIONAL}\n\n"
-        "### Example state–action correlations:\n"
-        "{HINT_CAUSAL}\n\n"
-        "### Frequently observed local spatial configurations:\n"
-        "{HINT_LOCAL}\n\n"
-        "### Observed distance thresholds or step ranges:\n"
-        "{HINT_DISTANCES}\n\n"
-    )
+def build_demo_hint_prompt(num_frames: int) -> str:
+    """Build the VLM prompt for extracting DSL-relevant hints from visual demonstrations."""
+    return f"""
+You are given expert demonstrations from a grid-based environment as IMAGE FRAMES.
+
+Each demonstration consists of:
+- An image of the state s_t (before action)
+- The action a_t, given as a clicked cell location (row, col)
+- An image of the state s_t+1 (after deterministic transition)
+
+You will be shown {num_frames} demonstrations in sequence.
+
+----
+Your task:
+Explain the decision making rule, how action a is selected in state s.
+
+NOTE:
+- just infer rule from the demos, not from the nature of the game, and the way it is usually played.
+"""
+# From the visual observations ONLY, extract **abstract, reusable decision-time predicates**
+# that could serve as **atomic building blocks** in a domain-specific language (DSL).
+
+# CONSTRAINTS:
+
+# OBSERVATION SCOPE
+# - Use ONLY information visible in the current image (s_t).
+# - Use ONLY information available at decision time.
+# - Do NOT use future frames or changes after the action.
+
+# ABSTRACTION LEVEL
+# - Each predicate MUST be atomic and independent.
+# - Each predicate MUST correspond to a single boolean-valued property.
+# - Each predicate MUST be implementable as a function of the form:
+#     (Cell, Observation) -> Bool
+
+# PROHIBITED CONTENT
+# - Do NOT describe strategies, policies, or goals.
+# - Do NOT describe game rules or mechanics.
+# - Do NOT name or label objects, symbols, colors, or semantics.
+# - Do NOT describe multi-step logic, compositions, or conjunctions.
+# - Do NOT describe shapes, patterns, regions, or global configurations.
+# - Do NOT describe counts, extrema, uniqueness, or optimality.
+# - Do NOT include examples, explanations, or justification.
+
+# REFERENCE CELLS
+# - If a predicate depends on another cell, refer to it only as
+#   a “reference cell derived from the current observation”.
+# - Do NOT define how the reference cell is chosen.
+
+# OUTPUT FORMAT
+# - Return ONLY a list of predicates
+# - One predicate per line
+# - No introduction, explanation, or extra text
+# """
 
 
 def describe_five_videos(
@@ -134,7 +156,7 @@ def describe_five_videos(
     client = OpenAI()
 
     content: list[dict[str, Any]] = [
-        {"type": "input_text", "text": build_demo_hint_prompt()}
+        {"type": "input_text", "text": build_demo_hint_prompt(4)}
     ]
 
     # Build multi-video content
@@ -182,7 +204,7 @@ def describe_five_videos(
 
 if __name__ == "__main__":
     env_name = "TwoPileNim"
-    paths = [f"videos/expert_demonstration_{env_name}_{i}.mp4" for i in range(11)]
+    paths = [f"videos/expert_demonstration_{env_name}_{i}.mp4" for i in range(4)]
 
     text = describe_five_videos(
         paths,

@@ -144,7 +144,8 @@ OUTPUT FORMAT:
 - One hint per line
 - No introduction or explanation text
 """
-
+# Explain the decision making rule, how action a is selected in state s.
+# """
 
 def build_hint_prompt_v2(trajectories_text: str) -> str:
     """Build the LLM prompt for extracting strategy hints from demonstrations.
@@ -220,7 +221,8 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> str:
     """Query the LLM and return parsed hint JSON."""
     prompt = build_hint_prompt_v1(trajectories_text)
-
+    print(prompt)
+    input()
     query = Query(prompt)
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
@@ -463,7 +465,7 @@ Output ONLY valid JSON following this schema:
 def main() -> None:
     """Entry point for running hint and DSL extraction."""
     num_initial_states = 3
-    env_name = "StopTheFall"
+    env_name = "TwoPileNim"
     encoding_method = "4"
     max_steps_per_traj = 40
     seed = 0
