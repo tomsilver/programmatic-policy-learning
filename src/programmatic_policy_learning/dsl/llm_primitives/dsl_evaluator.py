@@ -334,7 +334,12 @@ def eval_on_random_inputs(
             if p == "obs":
                 args[p] = obs
                 continue
-
+            if p == "a":
+                args[p] = cell
+                continue
+            if p == "s":
+                args[p] = obs
+                continue
             # remaining args must be typed by DSL
             if p not in sig_dict:
                 logging.info(sig_dict)

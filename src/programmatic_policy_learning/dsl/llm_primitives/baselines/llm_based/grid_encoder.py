@@ -146,6 +146,14 @@ class GridStateEncoder:
             entries.sort(key=lambda item: item[0])
             return "\n".join(f"{coord} - {label}" for coord, label in entries)
 
+        def get_cell_type(
+            d: dict[str, list[tuple[int, int]]], rc: tuple[int, int]
+        ) -> str | None:
+            for k, coords in d.items():
+                if rc in coords:
+                    return k
+            return None
+
         sections: list[str] = []
         sections.append(
             # pylint: disable=line-too-long
@@ -153,6 +161,5 @@ class GridStateEncoder:
         )
 
         if action is not None:
-            sections.append(f"Action Taken: {action}")
-
+            sections.append(f"Action Taken: {action}: {get_cell_type(objects, action)}")
         return "\n\n".join(sections)

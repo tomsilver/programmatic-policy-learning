@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=debug
+#SBATCH --job-name=rfts_v9_20k
 #SBATCH --account=aip-krallen
-#SBATCH --time=1:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=16G
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=2
 #SBATCH --gres=gpu:0
 #SBATCH --output=%x-%j.out
 #SBATCH --error=%x-%j.out
@@ -15,16 +15,16 @@ module load python/3.11
 export OPENAI_API_KEY="${OPENAI_API_KEY}"
 
 source ~/projects/aip-krallen/zahrab98/programmatic-policy-learning/.venv/bin/activate
-cd ~/projects/aip-krallen/zahrab98/programmatic-policy-learning
+cd ~/projects/aip-krallen/zahrab98/new/programmatic-policy-learning
 
 
 
-python -u experiments/run_experiment.py \
-    env=ggg_nim \
+python -u experiments/run_experiment.py\
+    env=ggg_rfts \
     approach=lpp \
     seed=0 \
-    approach.program_generation.dsl_generator_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/full/v3_nim.txt\
-    approach.num_programs=200\
-    approach.program_generation_step_size=1\
+    approach.program_generation.dsl_generator_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/full/v9_hint.txt\
+    approach.num_programs=20000\
+    approach.program_generation_step_size=200\
     approach.num_dts=5\
     approach.max_num_particles=25\

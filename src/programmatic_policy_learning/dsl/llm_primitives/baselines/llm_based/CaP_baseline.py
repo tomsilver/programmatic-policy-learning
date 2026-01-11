@@ -111,7 +111,8 @@ Your task:
 Infer the rule used to choose the action from the observation, then implement it.
 
 OUTPUT FORMAT (STRICT):
-- Return ONLY executable Python code.
+- Return ONLY executable Python code. 
+- Write the inferred rule as a docstring of that function.
 - The function MUST return a valid (row, col) tuple on EVERY call (returning None is NOT allowed).
 - The code MUST be wrapped in a Markdown code block that starts with ```python and ends with ```.
 - Do NOT include any text, explanation, headings, or comments outside the code block.
@@ -201,10 +202,11 @@ def run(
         all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
 
     combined_text = "\n\n".join(all_traj_texts)
-    print(combined_text)
-
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
-    query = Query(prompt)
+    logging.info(prompt)
+    query = Query(prompt, hyperparameters={"temperature": 0.0, "top_p": 1.0})
+    logging.info("LLM hyperparameters: %s", query.hyperparameters)
+
     # example demo for reprompt check
     env0 = env_factory(0, env_name)
     obs, _ = env0.reset()
@@ -239,7 +241,7 @@ def _parse_cli_args() -> argparse.Namespace:
     parser.add_argument(
         "--encodings",
         nargs="+",
-        default=["3"],
+        default=["4"],
         help="Encoding modes to evaluate (matching `run`).",
     )
     parser.add_argument(
@@ -388,8 +390,21 @@ def _evaluate_policy_function(
 
     for env_idx in test_env_nums:
         env = env_builder(env_idx)
+
+        def safe_policy(obs: Any, *, _env: Any = env) -> Any:
+            """Guard policy execution to avoid crashes from invalid
+            assumptions."""
+
+            try:
+                action = policy_fn(obs)
+            except Exception:  # pylint: disable=broad-exception-caught
+                action = None
+            if action is None:
+                return _env.action_space.sample()
+            return action
+
         cap_success = (
-            run_single_episode(env, policy_fn, max_num_steps=max_num_steps) > 0
+            run_single_episode(env, safe_policy, max_num_steps=max_num_steps) > 0
         )
         cap_results.append(cap_success)
         env.close()
@@ -538,11 +553,15 @@ def main() -> None:
 
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
     for encoding in args.encodings:
-        encoding_dir = args.output_dir / args.env / f"encoding_{encoding}"
+        encoding_dir = (
+            args.output_dir
+            / args.env
+            / f"*_{str(args.num_initial_states)}"
+            / f"encoding_{encoding}"
+        )
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
@@ -554,7 +573,8 @@ def main() -> None:
             stem = cache_base.stem or "cache"
             suffix = cache_base.suffix or ".db"
             cache_path = (
-                cache_dir / f"{stem}_{args.env}_enc{encoding}_seed{seed}{suffix}"
+                cache_dir
+                / f"{stem}_{args.env}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
@@ -642,7 +662,11 @@ def main() -> None:
             if labels:
                 plot_path = args.plot_path
                 if plot_path is None:
-                    plot_path = args.output_dir / args.env / "cap_vs_expert.png"
+                    plot_path = (
+                        args.output_dir
+                        / args.env
+                        / f"cap_vs_expert_{args.num_initial_states}.png"
+                    )
                 title = (
                     f"{args.env}: Expert vs CaP "
                     f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"

@@ -1,8 +1,10 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import logging
+
+# import tempfile
+import random
 import signal
-import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -209,8 +211,8 @@ def _generate_with_dsl_generator(
     outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    # cache_path = Path("llm_cache.db")
-    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache_path = Path("llm_cache.db")
+    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4.1", cache)
     prompt_path = program_generation["dsl_generator_prompt"]
@@ -307,6 +309,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
+        self.seed_num = seed
+        self.configure_rng()
         self._policy: LPPPolicy | None = None
         self.env_factory = env_factory
         self.base_class_name = base_class_name
@@ -320,6 +324,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
         self.program_generation = program_generation
+
+    def configure_rng(self) -> None:
+        """Seed Python/NumPy RNGs for deterministic rollouts."""
+        random.seed(self.seed_num)
+        np.random.seed(self.seed_num)
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -344,6 +353,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]
+
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )

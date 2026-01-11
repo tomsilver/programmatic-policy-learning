@@ -118,10 +118,10 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
     """Evaluate a program on a state-action pair."""
     try:
         result = eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
+        logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
+        logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
         return None
 
 
@@ -221,7 +221,6 @@ def run_all_programs_on_single_demonstration(
 
     num_workers = allowed_cpus()
     num_workers = max(1, min(num_workers, len(fn_inputs)))
-
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
