@@ -1,0 +1,433 @@
+## SYSTEM
+
+You are an expert language designer for program synthesis systems.
+Your task is to design a complete, type-safe DSL grammar for Logical Programmatic Policies in grid-based games.
+
+**Output ONLY valid JSON. No markdown, no prose, no comments.**
+
+---
+
+## OUTPUT REQUIREMENTS
+
+Your response must be:
+- Raw JSON starting with `{` and ending with `}`
+- Directly parsable by `json.loads()`
+- No markdown code blocks
+- No explanatory text
+
+Formatting requirements:
+- No trailing commas
+- Escape quotes in strings
+- Use "\n" for newlines in Python code
+- All brackets/braces must be closed
+- No comments in JSON
+
+---
+
+## ENVIRONMENT & TYPES
+
+Generalization Grid Games (GGG):
+- Discrete 2D grids with symbolic values per cell
+- Actions = selecting a grid cell
+- Deterministic transitions
+
+Type System:
+PROGRAM := Bool
+LOCAL_PROGRAM := (Cell, Obs) -> Bool
+CONDITION := (Cell, Obs) -> Bool
+DIRECTION := (Int, Int)
+VALUE := ObjectType from {OBJECT_TYPES}
+
+
+If integer arguments appear:
+- Use `"type": "Int"`
+- Use nonterminal VALUE_INT in productions
+- Define `"VALUE_INT": "1 | 2 | 3 ..."`
+- The range for VALUE_INT should be chosen automatically by the model based on the needs of the primitives. It must not default to {1,2,3} if a larger or different range is required.
+
+---
+
+## PRIMITIVE DESIGN RULES (CRITICAL)
+
+You must design **exactly 5-10 primitives**, each implementing `(Cell, Obs) -> Bool`.
+- Choose the number automatically based on the structure needed to express useful behaviors in the trajectories.
+
+### Core expressiveness requirement
+At least two primitives must explicitly capture spatial relationships between grid values (i.e., it must compute something involving the relative position or  arrangement of VALUEs).
+At least one primitive must capture a relational dependency between multiple entities or spatial structures in the environment
+Across all primitives, there must be meaningful coverage of spatial, directional, distance-based, and obstacle-aware reasoning patterns (inspired by demonstration-inferred hints).
+
+
+### Global Uniqueness Across Nonterminals (CRITICAL)
+- All primitives must have **distinct names**.
+- Each primitive must belong to **exactly one** of the nonterminals:
+  - `"START"`
+  - `"LOCAL_PROGRAM"`
+  - `"CONDITION"`
+- Ownership is determined by: pcfg_insertion.nonterminal ∈ {"START","LOCAL_PROGRAM","CONDITION"}
+- A primitive’s name may appear **only** in the productions of its owning nonterminal.
+- If a primitive has `"nonterminal": "CONDITION"`, it may appear *only* in the CONDITION production.
+- If `"nonterminal": "LOCAL_PROGRAM"`, it may appear *only* in LOCAL_PROGRAM.
+- If `"nonterminal": "START"`, it may appear *only* in START.
+- **No primitive may appear in more than one nonterminal.**
+- **No primitive may be repeated across START, LOCAL_PROGRAM, and CONDITION.**
+- No primitive may exist solely to combine Boolean results of other primitives.
+
+### Distribution
+- **3–4 recursive combinators**:
+- Must accept at least one CONDITION or LOCAL_PROGRAM argument.
+- Must have exactly one fixed signature.
+- At least one must take CONDITION.
+- At least one must take LOCAL_PROGRAM.
+- **1–2 base-case primitives**:
+- May take only VALUE / DIRECTION / VALUE_INT.
+- Must not take CONDITION or LOCAL_PROGRAM.
+- Base-case primitives may not belong to START.
+
+### Meaningful Observation Access
+- Every primitive must index into `obs` with bounds checks.
+- No primitive may perform Boolean glue (`and`, `or`, `not`) on outputs of other primitives.
+- Before proposing a primitive, ask: Does this function answer a question about the grid, or does it only transform Boolean outputs of other functions?
+  - If it is the latter, do not include it.
+
+#### INVALID PRIMITIVES (DO NOT PROPOSE):
+  - logical_not(p)
+  - both_local(p, q, cell, obs)
+  - and_predicate(p, q)
+  - negate_condition(cond)
+
+These are rejected because they manipulate other predicates
+instead of observing the environment.
+
+
+### Prohibited trivial primitives
+- No primitive may be a Boolean combiner in disguise...
+
+### Python Stub Requirements
+- Signature:
+`def NAME(arg1, arg2, ..., cell, obs):`
+- Must check `if cell is None: return False`
+- Only allowed:
+  - indexing `obs[r, c]`
+  - arithmetic, comparisons
+  - bounded for-loops  
+- No helper functions, no recursion, no placeholders.
+- No hardcoded obs values (must compare obs[...] only to VALUE arguments).
+
+---
+
+## DEMONSTRATION-INFERRED FEATURES (HINTS)
+
+Below is a summary of patterns extracted from a set of expert trajectories.
+Use the hints below as a feature inventory, not as requirements.
+
+Your goal is to:
+- Infer which spatial, relational, and value-based predicates are actually useful
+  for explaining the demonstrated behavior.
+- Propose only the minimal set of DSL functions needed to express these behaviors.
+- Prefer general, reusable primitives over trajectory-specific or overly concrete ones.
+
+"
+# Overview of the Demonstrations
+
+There are 4 trajectories. Let's summarize and extract the hints:
+
+---
+
+## Common Patterns and Observed State Properties
+
+### 1. **Agent Movement Only on Arrow Tiles**
+
+- In all trajectories, the agent only moves when the action cell contains a **Left Arrow** or **Right Arrow**.
+  - Example: In Trajectory 0, the agent remains stationary while the 'empty' cells are clicked for many steps. **Only when the action cell is (11, 18): left_arrow does the agent move.**
+  - Otherwise, the "CHANGES SUMMARY" reports: "agent did not move, action cell contained 'empty'".
+
+> **Hint:**  
+  - The presence of a "Left Arrow" or "Right Arrow" tile **in the action cell** is necessary for action to cause movement.
+  - If the action cell is not an arrow, no agent movement happens, regardless of the rest of the state.
+
+---
+
+### 2. **Drawing a Path Leading to the Arrow Tile (or Approaching a Goal/Star)**
+
+- Across all the trajectories, a lot of actions are clicks on "empty" cells with **no immediate effect** (agent doesn't move).
+- However, the action cells that are clicked appear to **form a path from the arrow tile toward the agent or between the agent and the star**.
+- For example, in Trajectory 0, clicks start at (4,6), then to the right, then down, then right, etc., forming a "drawn" path toward the agent.
+- In all cases, the agent moves **after** a path of "drawn" tiles connects the agent to the "arrow" tile.
+
+> **Hint:**  
+  - The agent moves only when there is a continuous "drawn" path connecting its position to an "arrow" tile (left or right arrow).
+  - The actions are being chosen to **incrementally build this path**: i.e., the next step in the path is clicked (empty cell), "drawn" tiles propagate, the agent stays in place, and so on until the path is complete.
+
+---
+
+### 3. **Direction of Movement Depends on the Arrow**
+
+- When the action is on a "right arrow", the agent moves rightward; "left arrow" moves agent leftward. (In these demos, only left arrows are used for movement.)
+- This suggests a need to reason about the **relative direction** indicated by the arrow, and the agent's movement is "toward" that direction.
+
+---
+
+### 4. **Proximity to Star/Goal May Influence Path Planning**
+
+- There is always a "Star" tile somewhere above the agent, far away.
+- The path being drawn is originated such that eventually the agent will be able to reach this star (though in these episodes, the agent hasn't reached the star yet).
+- The demonstration is mainly focused on building the path and using arrows to move the agent toward it, possibly for pickup later.
+- So the **distance or orientation to star** could be part of the decision, at least in planning.
+
+---
+
+### 5. **Adjacency and "Drawn" Tiles**
+
+- The agent is often adjacent to "drawn" tiles when it moves.
+- "Agent adjacent_to drawn" is always true in facts.
+- This may be a required property for movement, or simply a byproduct of path-drawing.
+
+---
+
+### 6. **Stepwise Progression: Only One New "Drawn" Cell per Step**
+
+- The demonstration builds the path one cell at a time: each action draws at most one new drawn cell.
+- The action cell for each step is a cell that is the next in the path.
+
+---
+
+### 7. **Selecting Action Cell: Next Frontier Cell on Path**
+
+- The action at each step is always an "empty" cell that is:
+    - Adjacent to the existing contiguous mass of "drawn" tiles,
+    - Closer to the agent or on the way from arrow to agent (in a line/path fashion).
+
+---
+
+### 8. **Never Clicking on Non-path Empty Cells**
+
+- Actions are never on random empty cells, only on "empty" cells that are adjacent to "drawn" tiles and lie along the desired path.
+
+---
+
+# **Summary: Properties of s_t Used to Select the Action**
+
+## **Properties Used in Action Selection**
+
+1. **Content of the Action Cell**
+   - Is it "empty"? (for drawing)
+   - Is it "left_arrow" or "right_arrow"? (for moving the agent)
+
+2. **Adjacency**
+   - Is the action cell adjacent to already drawn tiles?
+
+3. **Path Construction**
+   - Does the action cell advance the path from arrow tile toward agent (or from agent toward goal/star)?
+   - The typical action constructs a contiguous chain/path of drawn tiles.
+
+4. **Agent’s Location Relative to Path and Arrow**
+   - Is the agent currently adjacent to the drawn path, or is the path being drawn toward/around the agent?
+
+5. **Connectivity**
+   - Is the "drawn" path contiguous from agent to arrow? Movement only happens if path is complete.
+
+6. **Goal (Star) Distance/Direction (Potentially)**
+   - The overall path direction is related to the location of the star/goal.
+
+7. **Arrow Direction**
+   - When agent is on a square adjacent to a path that reaches a left/right arrow, clicking that arrow triggers a movement left/right.
+   - Arrow direction is respected when moving agent.
+
+## **In Essence:**
+
+- **To build a path:**  
+  - The action is an empty cell that is:
+    - Adjacent to an existing drawn cell.
+    - On the planned path between arrow and agent (or, more generally, between agent and star).
+  - Only one new cell is drawn per action.
+
+- **To move agent:**  
+  - The action is on a left/right arrow cell, but **only** when:
+    - There is a contiguous drawn path connecting agent to the arrow.
+    - The agent is adjacent to the drawn path and arrow.
+
+***
+
+# **Structured List of State Properties Used in Action Selection**
+
+**At each step, the following state properties are checked or used:**
+
+1. **Is the chosen action cell “empty”, “left arrow”, or “right arrow”?**
+2. **Is the action cell adjacent to (“frontier of”) the current drawn path?**
+3. **Does the action cell extend the drawn path toward the agent (or star)?**
+4. **Is the drawn path currently contiguous between agent and an arrow?**
+5. **Is the agent adjacent to the drawn path or arrow?**
+6. **Is the action cell the next position required to connect agent and arrow (or to make progress toward the goal)?**
+7. **When the path is complete, is the action cell an arrow adjacent (via drawn path) to the agent (to trigger movement)?**
+
+**Additional state properties** that may be considered:
+- The distances: agent to arrow, agent to star, agent to nearest drawn cell, etc.
+- Whether a movement would be allowed (i.e. path completeness).
+
+***
+
+# **Explicit Hints**
+
+- Actions select **empty cells adjacent to drawn path** to extend the path toward agent/goal.
+- When a **contiguous drawn path exists between agent and arrow**, actions select the corresponding **arrow cell** to move the agent in that direction.
+- **Path building is incremental**, one cell at a time, always extending from the current path tip.
+- The **agent only moves if a left/right arrow action is taken, and only if a path exists**.
+
+---
+
+## **Conclusion**:
+
+**Action selection is based on:**
+- The content and neighborhood of the action cell (is it an empty cell adjacent to drawn, or an arrow at the end of path).
+- The progress of the drawn path connecting agent and arrow.
+- The location of the agent relative to the path and arrow.
+- The presence of a contiguous path (i.e., are all the necessary connections made?).
+- Directionality (left/right arrow matches desired movement).
+
+---
+
+## **Short Answer (Key Properties)**
+
+**The properties of the current state (s_t) that are used to select the action are:**
+
+- **Which cells are 'empty', 'drawn', or 'arrow' tiles.**
+- **Whether the action cell is adjacent to/extends the currently drawn path.**
+- **Whether the drawn path connects the agent to an arrow.**
+- **Whether clicking an arrow would move the agent (i.e., if a path connects agent and arrow).**
+- **The direction indicated by the arrow (left/right) relative to agent’s position.**
+- **Ultimately, the action steps incrementally construct a drawn path linking the agent to an arrow and use the arrow to move the agent, with each action chosen to either extend this path or trigger agent movement.**
+"
+---
+
+## GRAMMAR REQUIREMENTS
+
+Nonterminals:  
+["START", "LOCAL_PROGRAM", "CONDITION", "DIRECTION", "VALUE", "VALUE_INT"]
+
+
+Terminals: the names of all primitives.
+
+---
+
+### 1. START Production (STRICT)
+- START is a normal nonterminal following uniqueness rules.
+- Only primitives with `"pcfg_insertion.nonterminal": "START"` may appear in START.
+- START must have **≥2 alternatives**.
+- Each START alternative must:
+  - Call a START-owned primitive
+  - Contain at least one argument that is CONDITION or LOCAL_PROGRAM
+  - End with `a, s`
+- No lambdas in START.
+- Base-case primitives may not be START-owned.
+
+START alternatives must be constructed mechanically:
+1. Take a primitive whose owning nonterminal is `"START"`.
+2. Read its args list in order.
+3. Replace each arg with the corresponding NT name.
+4. Emit: `"PRIM(NT1, NT2, ..., a, s)"`.
+
+---
+
+### 2. LOCAL_PROGRAM Production (STRICT)
+- Only primitives with `"pcfg_insertion.nonterminal": "LOCAL_PROGRAM"` may appear in LOCAL_PROGRAM.
+- LOCAL_PROGRAM must contain:
+  1. The literal alternative: `"CONDITION"`
+  2. ≥1 recursive lambda alternative using LOCAL_PROGRAM arguments.
+- Format for lambda alternatives:
+  `"lambda cell, obs: PRIM(ARG1, ARG2, ..., cell, obs)"`.
+- LOCAL_PROGRAM may not include base-case primitives.
+
+---
+
+### 3. CONDITION Production (STRICT)
+- Only primitives with `"pcfg_insertion.nonterminal": "CONDITION"` may appear in CONDITION.
+- CONDITION must contain:
+  - ≥3 alternatives total
+  - ≥2 recursive alternatives using CONDITION arguments
+  - ≥1 base-case alternative
+- CONDITION may **not** contain primitives expecting LOCAL_PROGRAM arguments.
+- Base-case primitives may only appear here.
+
+---
+
+### 4. Other Nonterminals
+"DIRECTION": "(1,0) | (0,1) | (-1,0) | (0,-1) | (1,1) | (-1,1) | (1,-1) | (-1,-1)"
+"VALUE": "{OBJECT_TYPES}"
+"VALUE_INT": "1 | 2 | 3 ..." 
+
+
+---
+
+## GLOBAL ARGUMENT CONSISTENCY RULES
+
+For each primitive:
+1. Use exactly the number of args listed in its `args` array.
+2. Use nonterminal names matching argument types in order.
+3. Do not reorder, drop, or add arguments.
+4. Production string must match the primitive’s name exactly.
+5. No duplicate appearances within a nonterminal. 
+  - Repeating the same primitive in multiple alternatives of the same nonterminal is forbidden.
+
+
+
+---
+
+## PROGRAM COMPLEXITY REQUIREMENT
+The grammar must generate **≥1000** distinct programs through recursive expansion.  
+This requires:
+- START: ≥2 recursive branches
+- LOCAL_PROGRAM: ≥1 recursive branch
+- CONDITION: ≥2 recursive branches
+
+---
+
+## OUTPUT FORMAT
+
+- `args` **must** be a JSON array of objects, each with string fields `"name"` and `"type"` (e.g., `[{"name": "cond", "type": "CONDITION"}]`). Never write `args` as a string or any other structure.
+
+{
+"proposal": [
+{
+"rationale_short": "...",
+"name": "...",
+"type_signature": "(Cell, Obs) -> Bool",
+"args": [...],
+"semantics_py_stub": "from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import *\ndef NAME(...):\n ...",
+"pcfg_insertion": {
+"nonterminal": "START" | "LOCAL_PROGRAM" | "CONDITION",
+"production": "lambda cell, obs: NAME(..., cell, obs)" // Except START, which uses no lambda
+}
+}
+// exactly all primitives in totall
+],
+"updated_grammar": {
+"nonterminals": [...],
+"terminals": [...],
+"productions": {
+"START": "... | ...",
+"LOCAL_PROGRAM": "... | ...",
+"CONDITION": "... | ...",
+"DIRECTION": "...",
+"VALUE": "...",
+"VALUE_INT": "1 | 2 | 3 ..."
+}
+}
+}
+
+
+---
+
+## FINAL VALIDATION CHECKLIST (MANDATORY)
+Before returning your answer, ensure:
+- Each primitive appears in exactly ONE NT’s productions.
+- No primitive repeats across START, LOCAL_PROGRAM, CONDITION.
+- START uses only its own primitives, never CONDITION/LOCAL_PROGRAM ones.
+- LOCAL_PROGRAM includes `"CONDITION"` + ≥1 recursive lambda.
+- CONDITION and LOCAL_PROGRAM have lambda expressions. NO lambda in START.
+- CONDITION includes ≥3 alternatives, ≥2 recursive, ≥1 base case.
+- At least one combinator takes CONDITION; at least one takes LOCAL_PROGRAM.
+- All stubs index obs with bounds checks.
+- ALL computed coordinates (neighbor_r, new_r, etc.) are bounds-checked before use
+- Grammar generates ≥1000 programs.
+- Python stubs are complete (no `...`)

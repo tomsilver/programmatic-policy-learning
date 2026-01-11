@@ -111,7 +111,7 @@ Your task:
 Infer the rule used to choose the action from the observation, then implement it.
 
 OUTPUT FORMAT (STRICT):
-- Return ONLY executable Python code.
+- Return ONLY executable Python code. 
 - Write the inferred rule as a docstring of that function.
 - The function MUST return a valid (row, col) tuple on EVERY call (returning None is NOT allowed).
 - The code MUST be wrapped in a Markdown code block that starts with ```python and ends with ```.

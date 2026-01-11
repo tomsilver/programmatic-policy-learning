@@ -68,9 +68,9 @@ class LLMPrimitivesGenerator:
             with the LLM (e.g., OpenAI API client).
         """
         self.llm_client = llm_client
-        base_dir = Path(__file__).parent
+        self.base_dir = Path(__file__).parent
         self.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.output_path = base_dir / output_dir / self.run_id
+        self.output_path = self.base_dir / output_dir / self.run_id
 
         if llm_client is not None:
             self.output_path.mkdir(parents=True, exist_ok=True)
@@ -376,7 +376,6 @@ class LLMPrimitivesGenerator:
             """
 
             new_name = new_proposal["name"]
-
             # ------------------------------------------------------------------
             # 1. Update the "proposal" list entry
             # ------------------------------------------------------------------
@@ -387,7 +386,9 @@ class LLMPrimitivesGenerator:
                         "semantics_py_stub"
                     ]
                     llm_response["proposal"][i]["args"] = new_proposal["args"]
+                    llm_response["proposal"][i]["rationale_short"] = new_proposal["rationale_short"]
                     # Keep pcfg_insertion the same (same NT + same types)
+                    llm_response["proposal"][i]["pcfg_insertion"] = new_proposal["pcfg_insertion"]
                     break
 
             # ------------------------------------------------------------------
@@ -465,18 +466,35 @@ class LLMPrimitivesGenerator:
             list(accepted_primitives.values()),
             mode=mode,
         )
+        #TODOO: later remove the filtered one from dsl
         self.write_json("new_metadata.json", llm_response)
 
         # ----------------------------------------------------------------------
         # 7. Write metadata + Build Grammar
         # ----------------------------------------------------------------------
         # self.write_json("metadata.json", llm_response)
+        # self.grammar = self.create_grammar_from_response(llm_response, object_types)
+
+        # ----------------------------------------------------------------------
+        # 7.5 Optional: Concept-level DSL filtering
+        # ----------------------------------------------------------------------
+        filtered_llm_response = self.filter_metadata_with_llm(
+            metadata=llm_response,
+            filter_prompt_path=str(self.base_dir / "prompts" / "full"/"filter_dsls.txt"),
+        )
+        print(filtered_llm_response)
+
+        self.write_json("filtered_metadata.json", filtered_llm_response)
+
+        # # Replace metadata used downstream with filtered version
+        llm_response = filtered_llm_response
+
         self.grammar = self.create_grammar_from_response(llm_response, object_types)
 
         # ----------------------------------------------------------------------
         # 8. Return the results
         # ----------------------------------------------------------------------
-        return self.grammar, updated_dsl_fn(), new_dsl_object
+        return self.grammar, updated_dsl_fn(), new_dsl_object 
 
     def create_grammar(
         self, env_spec: dict[str, Any] | None
@@ -694,3 +712,32 @@ class LLMPrimitivesGenerator:
         )
 
         return self.grammar, updated_dsl_fn(), new_dsl_object
+
+
+    def filter_metadata_with_llm(
+        self,
+        metadata: dict[str, Any],
+        filter_prompt_path: str,
+    ) -> dict[str, Any]:
+        """Run a concept-level filtering pass on finalized metadata.
+
+        This removes redundant / overlapping primitives globally while
+        preserving JSON structure.
+        """
+        if self.llm_client is None:
+            raise ValueError("LLM client is not initialized.")
+
+        # Load filtering prompt template
+        with open(filter_prompt_path, "r") as f:
+            filter_prompt_template = f.read()
+
+        # Inject metadata into INPUT JSON placeholder
+        filter_prompt = filter_prompt_template.replace(
+            "<PASTE THE JSON HERE>",
+            json.dumps(metadata, indent=2),
+        )
+
+        # Query LLM (STRICT JSON output expected)
+        response = self.query_llm(filter_prompt)
+
+        return response

@@ -3,7 +3,7 @@
 from typing import Any, TypeVar
 
 import numpy as np
-from prpl_utils.search import SearchMetrics
+# from prpl_utils.search import SearchMetrics
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
@@ -46,43 +46,43 @@ class ExpertApproach(BaseApproach[_ObsType, _ActType]):
         assert self._last_observation is not None
         return self._expert_fn(self._last_observation)
 
-    @property
-    def metrics(self) -> SearchMetrics:
-        """Return the search metrics from the expert policy."""
-        # Check if the expert function has a metrics attribute
-        if hasattr(self._expert_fn, "metrics"):
-            return self._expert_fn.metrics
-        # If it's a bound method, try to access the metrics from the instance
-        if hasattr(self._expert_fn, "__self__") and hasattr(
-            self._expert_fn.__self__, "metrics"
-        ):
-            return self._expert_fn.__self__.metrics
-        raise AttributeError("Expert policy does not have metrics attribute")
+    # @property
+    # def metrics(self) -> SearchMetrics:
+    #     """Return the search metrics from the expert policy."""
+    #     # Check if the expert function has a metrics attribute
+    #     if hasattr(self._expert_fn, "metrics"):
+    #         return self._expert_fn.metrics
+    #     # If it's a bound method, try to access the metrics from the instance
+    #     if hasattr(self._expert_fn, "__self__") and hasattr(
+    #         self._expert_fn.__self__, "metrics"
+    #     ):
+    #         return self._expert_fn.__self__.metrics
+    #     raise AttributeError("Expert policy does not have metrics attribute")
 
-    def test_policy_on_envs(
-        self,
-        test_env_nums: range = range(11, 20),
-        max_num_steps: int = 50,
-        *,
-        _base_class_name: str | None = None,
-        _record_videos: bool = False,
-        _video_format: str = "mp4",
-        **_extra_env_kwargs: Any,
-    ) -> dict[int, float]:
-        """Currently necessary to conform with run_experiments.py."""
-        if self._env_factory is None:
-            raise NotImplementedError("ExpertApproach needs env_factory for testing.")
-        results: dict[int, float] = {}
-        for env_num in test_env_nums:
-            env = self._env_factory(env_num)
-            obs, _ = env.reset(seed=getattr(self, "_seed", None))
-            terminated = truncated = False
-            total = 0.0
-            steps = 0
-            while not (terminated or truncated) and steps < int(max_num_steps):
-                act = self._expert_fn(np.asarray(obs, dtype=np.float32))
-                obs, rew, terminated, truncated, _ = env.step(act)
-                total += float(rew)
-                steps += 1
-            results[int(env_num)] = total
-        return results
+    # def test_policy_on_envs(
+    #     self,
+    #     test_env_nums: range = range(11, 20),
+    #     max_num_steps: int = 50,
+    #     *,
+    #     _base_class_name: str | None = None,
+    #     _record_videos: bool = False,
+    #     _video_format: str = "mp4",
+    #     **_extra_env_kwargs: Any,
+    # ) -> dict[int, float]:
+    #     """Currently necessary to conform with run_experiments.py."""
+    #     if self._env_factory is None:
+    #         raise NotImplementedError("ExpertApproach needs env_factory for testing.")
+    #     results: dict[int, float] = {}
+    #     for env_num in test_env_nums:
+    #         env = self._env_factory(env_num)
+    #         obs, _ = env.reset(seed=getattr(self, "_seed", None))
+    #         terminated = truncated = False
+    #         total = 0.0
+    #         steps = 0
+    #         while not (terminated or truncated) and steps < int(max_num_steps):
+    #             act = self._expert_fn(np.asarray(obs, dtype=np.float32))
+    #             obs, rew, terminated, truncated, _ = env.step(act)
+    #             total += float(rew)
+    #             steps += 1
+    #         results[int(env_num)] = total
+    #     return results
