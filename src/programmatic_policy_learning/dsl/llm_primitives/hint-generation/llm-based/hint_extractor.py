@@ -7,6 +7,7 @@ strategy-level hints that can later be used for DSL generation.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import time
 from pathlib import Path
@@ -224,8 +225,7 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> str:
     """Query the LLM and return parsed hint JSON."""
     prompt = build_hint_prompt_v1(trajectories_text)
-    print(prompt)
-    input()
+    logging.info(prompt)
     query = Query(prompt)
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
@@ -235,7 +235,7 @@ def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> s
         max_attempts=5,
     )
     response_text = response.text if hasattr(response, "text") else str(response)
-    print(response_text)
+    logging.info(response_text)
     return response_text
 
 
@@ -250,7 +250,7 @@ def extract_dsl(llm_client: PretrainedLargeModel, prompt: str) -> str:
         max_attempts=5,
     )
     response_text = response.text if hasattr(response, "text") else str(response)
-    print(response_text)
+    logging.info(response_text)
     return response_text
 
 
@@ -523,7 +523,7 @@ def main() -> None:
     path = save_hints(
         hints, env_name=env_name, seed=seed, encoding_method=encoding_method
     )
-    print(f"Hints saved to {path}")
+    logging.info(f"Hints saved to {path}")
 
 
 if __name__ == "__main__":

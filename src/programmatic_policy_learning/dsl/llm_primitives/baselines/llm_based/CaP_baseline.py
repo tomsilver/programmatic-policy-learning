@@ -202,14 +202,10 @@ def run(
         all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
 
     combined_text = "\n\n".join(all_traj_texts)
-    # print(combined_text)
-
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
-
-    print(prompt)
-
+    logging.info(prompt)
     query = Query(prompt, hyperparameters={"temperature": 0.0, "top_p": 1.0})
-    print("LLM hyperparameters: %s", query.hyperparameters)
+    logging.info("LLM hyperparameters: %s", query.hyperparameters)
 
     # example demo for reprompt check
     env0 = env_factory(0, env_name)

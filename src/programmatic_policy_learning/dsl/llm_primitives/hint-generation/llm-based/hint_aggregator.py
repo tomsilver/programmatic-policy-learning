@@ -68,8 +68,12 @@ class HintAggregator:
                     return data["hints"]
                 if "aggregated_hints" in data:
                     return data["aggregated_hints"]
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            logging.info(
+                "Failed to parse %s as JSON, falling back to plain-text hints: %s",
+                latest_file,
+                exc,
+            )
 
         # Fallback: treat as plain text (one hint per line)
         lines = [

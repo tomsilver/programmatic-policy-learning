@@ -221,7 +221,6 @@ def run_all_programs_on_single_demonstration(
 
     num_workers = allowed_cpus()
     num_workers = max(1, min(num_workers, len(fn_inputs)))
-    print("HERE")
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
@@ -231,7 +230,6 @@ def run_all_programs_on_single_demonstration(
             initargs=(dsl_blob, module_map, program_batch),
             maxtasksperchild=100,
         ) as pool:
-            print("2")
             results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
             batch_rows_list = list(results_iter)
         batch_matrix = np.array(batch_rows_list, dtype=bool)

@@ -488,7 +488,7 @@ class LLMPrimitivesGenerator:
                 self.base_dir / "prompts" / "full" / "filter_dsls.txt"
             ),
         )
-        print(filtered_llm_response)
+        logging.info(filtered_llm_response)
 
         self.write_json("filtered_metadata.json", filtered_llm_response)
 
