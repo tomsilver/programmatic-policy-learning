@@ -348,7 +348,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation=self.program_generation,
             outer_feedback=outer_feedback,  # <-- feed into grammar generator
         )
-
+        print(programs[-2])
+        print(programs[-1])
+        print(programs[200])
+        input()
         logging.info("Programs Generation is Done.")
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs

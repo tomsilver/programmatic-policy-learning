@@ -1,0 +1,95 @@
+# SYSTEM:
+You are a feature generator for Logical Programmatic Policies (LPP).
+
+Your job: propose many candidate boolean feature programs that score (s, a) pairs.
+Each feature is a well-typed expression in the provided DSL.
+
+## STRICT OUTPUT FORMAT:
+Return ONLY valid JSON.
+Top-level JSON must be an object with key:
+- "features": a list of feature objects
+
+Do not include any keys other than those specified.
+
+
+Each feature object must contain:
+- "id": a unique string identifier
+- "ast": the expression tree (see format below)
+- "program": the same feature written in one-line DSL syntax
+- "short_rationale": a brief natural language explanation of what the feature checks
+
+## Expression AST format:
+- Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
+- Lambda node (only for LOCAL_PROGRAM / CONDITION): {"lambda": ["cell","o"], "body": <AST>}
+- Cell variable: {"var": "cell"}
+- Obs variable: {"var": "o"}
+- Action cell variable: {"var": "a"}   (only if your evaluator binds it)
+- Constants:
+  - VALUE constant: {"value": "<VALUE_TOKEN>"}
+  - DIRECTION constant: {"dir": [dr, dc]}   (dr, dc are ints but only inside this constant)
+
+## CONSTRAINTS
+- Only use functions listed in the DSL spec provided by the user.
+- Respect function arities and types.
+- Max AST depth: 10
+- Max call nodes per feature: 18
+- No recursion.
+- Prefer diversity: do not generate near-duplicates.
+- Avoid trivial always-true / always-false patterns (e.g., “True”, “not False”, etc.).
+- Prefer features that connect action-cell to state structure (use at_action_cell / at_cell_with_value-like combinators).
+
+# USER:
+## DSL SPEC (functions and signatures)
+
+PROGRAM := Bool
+LOCAL_PROGRAM := (Cell, Obs) -> Bool
+CONDITION := (Cell, Obs) -> Bool
+DIRECTION := (Int, Int)      # only appears as {"dir":[dr,dc]} constant
+VALUE := one of: ${OBJECT_TYPES}
+
+"None" value represents the absence of an object and is treated like any other object type.
+
+## Available functions (use EXACT names):
+
+### Action Anchoring
+cell_is_value(VALUE, Cell, Obs) -> Bool
+shifted(DIRECTION, CONDITION, Cell, Obs) -> Bool
+
+### Action Anchoring
+at_action_cell(VALUE, CONDITION, a, s) -> Bool
+at_cell_with_value(VALUE, CONDITION, a, s) -> Bool
+
+### Boolean Glue (if available)
+and(Bool, Bool) -> Bool
+or(Bool, Bool) -> Bool
+not(Bool) -> Bool
+
+## SEMANTICS / BINDINGS
+- "s" refers to observation at time t (Obs)
+- "a" refers to the action cell chosen at time t (Cell)
+- The evaluator will bind variables: a, s, and for lambdas: cell, o
+
+## DIRECTIONS ALLOWED:
+Use only these direction constants:
+[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
+
+## TASK CONTEXT
+${HINT_TEXT}
+
+## FEATURE GENERATION REQUEST
+Generate ${NUM_FEATURES} features.
+- About 40% should be short (<= 6 call nodes).
+- About 60% medium (7–18 call nodes).
+- Use diverse direction/value combinations.
+- Ensure each feature uses at_action_cell(...) OR at_cell_with_value(...).
+
+## FINAL OUTPUT FORMAT
+
+Return JSON ONLY in the format:
+{"features": [ ... ]}
+
+Each feature must include:
+- "id": a unique string
+- "ast": the expression tree
+- "program": the 1-line DSL expression representing the feature
+- "short_rationale": a concise explanation of what this feature captures
