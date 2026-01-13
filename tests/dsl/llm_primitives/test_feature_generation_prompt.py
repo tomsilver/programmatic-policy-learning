@@ -55,6 +55,37 @@ def _read_prompt(path: Path) -> str:
     return text
 
 
+def _load_env_object_types(env_name: str) -> tuple[str, ...]:
+    symbol_map = grid_hint_config.SYMBOL_MAPS.get(env_name)
+    if symbol_map is None:
+        raise KeyError(f"No symbol map configured for {env_name}")
+    return tuple(list(symbol_map.keys()) + ["None"])
+
+
+def _load_hint_text(env_name: str, encoding_method: str) -> str:
+    hint_dir = HINTS_ROOT / env_name / encoding_method
+    if not hint_dir.exists():
+        raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
+    hint_files = sorted(hint_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    if not hint_files:
+        raise FileNotFoundError(f"No hint files found in {hint_dir}")
+    latest_file = hint_files[-1]
+    raw_text = latest_file.read_text(encoding="utf-8").strip()
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return raw_text
+
+    if isinstance(data, list):
+        return "\n".join(str(x) for x in data)
+    if isinstance(data, dict):
+        if "hints" in data:
+            return "\n".join(str(x) for x in data["hints"])
+        if "aggregated_hints" in data:
+            return "\n".join(str(x) for x in data["aggregated_hints"])
+    return raw_text
+
 
 def _fill_prompt(template: str, object_types: tuple[str, ...]) -> str:
     rendered = (

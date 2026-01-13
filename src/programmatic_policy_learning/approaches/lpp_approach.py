@@ -1,11 +1,10 @@
 """An approach that learns a logical programmatic policy from data."""
 
-import logging
-
-# import tempfile
-import random
-import signal
 import json
+import logging
+import random
+import re
+import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -27,13 +26,15 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
     Grammar,
     GrammarBasedProgramGenerator,
 )
-from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
-    LLMPrimitivesGenerator,
-)
 from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
     LLMFeatureGenerator,
 )
-
+from programmatic_policy_learning.dsl.llm_primitives.feature_priors import (
+    compute_feature_log_probs,
+)
+from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
+    LLMPrimitivesGenerator,
+)
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     LocalProgram,
@@ -47,22 +48,14 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    grid_hint_config,
-)
-from programmatic_policy_learning.dsl.llm_primitives.feature_priors import compute_feature_log_probs
+
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
-EnvFactory = Callable[[], Any]
+EnvFactory = Callable[[int | None], Any]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
-    REPO_ROOT
-    / "dsl"
-    / "llm_primitives"
-    / "hint-generation"
-    / "llm-based"
-    / "hints"
+    REPO_ROOT / "dsl" / "llm_primitives" / "hint-generation" / "llm-based" / "hints"
 )
 
 
@@ -131,14 +124,6 @@ def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any])
     return "-".join(parts)
 
 
-
-def _load_env_object_types(env_name: str) -> tuple[str, ...]:
-    symbol_map = grid_hint_config.SYMBOL_MAPS.get(env_name)
-    if symbol_map is None:
-        raise KeyError(f"No symbol map configured for {env_name}")
-    return tuple(list(symbol_map.keys()) + ["None"])
-
-
 def _load_hint_text(env_name: str, encoding_method: str) -> str:
     hint_dir = HINTS_ROOT / env_name / encoding_method
     if not hint_dir.exists():
@@ -162,6 +147,28 @@ def _load_hint_text(env_name: str, encoding_method: str) -> str:
         if "aggregated_hints" in data:
             return "\n".join(str(x) for x in data["aggregated_hints"])
     return raw_text
+
+
+_DIR_LIST_RE = re.compile(r"\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]")
+
+
+def convert_dir_lists_to_tuples(programs: list[str]) -> list[str]:
+    """Convert direction lists like [-1, -1] to tuples (-1, -1) inside program
+    strings.
+
+    Args:
+        programs (list[str]): list of program strings
+
+    Returns:
+        list[str]: rewritten program strings
+    """
+
+    def repl(match: re.Match[str]) -> str:
+        x, y = match.groups()
+        return f"({x}, {y})"
+
+    return [_DIR_LIST_RE.sub(repl, p) for p in programs]
+
 
 def get_program_set(
     num_programs: int,
@@ -204,23 +211,26 @@ def get_program_set(
         llm_client = OpenAIModel("gpt-4.1", cache)
         prompt_path = program_generation["feature_generator_prompt"]
         num_features = program_generation["num_features"]
+        env = env_factory(0)
+        object_types = env.get_object_types()
         generator = LLMFeatureGenerator(llm_client)
-        hint_text = _load_hint_text(base_class_name, program_generation["encoding_method"])
-        object_types = _load_env_object_types(base_class_name)
+        hint_text = _load_hint_text(
+            base_class_name, program_generation["encoding_method"]
+        )
+
         features, payload = generator.generate(
             prompt_path=prompt_path,
             object_types=object_types,
             hint_text=hint_text,
             num_features=num_features,
         )
-        print(features)
-        input()
+        features = convert_dir_lists_to_tuples(features)
+
         program_prior_log_probs = compute_feature_log_probs(payload, object_types)
         dsl_fns = get_dsl_functions_dict()
         return features, program_prior_log_probs, dsl_fns
-    else:
-        if strategy not in strategies:
-            raise ValueError(f"Unknown strategy: {strategy}")
+    if strategy not in strategies:
+        raise ValueError(f"Unknown strategy: {strategy}")
 
     # Call the appropriate strategy
     program_generator, dsl_fns = strategies[strategy]()
@@ -312,7 +322,6 @@ def _generate_with_dsl_generator(
     )
 
     return program_generator, new_dsl_dict
-
 
 
 def _generate_with_offline_loader(

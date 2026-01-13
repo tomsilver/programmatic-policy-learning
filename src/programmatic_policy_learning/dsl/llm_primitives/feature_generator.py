@@ -74,6 +74,8 @@ class LLMFeatureGenerator:
         max_attempts: int = 3,
         reprompt_checks: list[RepromptCheck] | None = None,
     ) -> dict[str, Any]:
+        """Query LLM with a prompt."""
+
         if self.llm_client is None:
             raise ValueError("LLM client is not initialized.")
 

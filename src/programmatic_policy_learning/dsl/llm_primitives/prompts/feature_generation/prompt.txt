@@ -54,20 +54,18 @@ VALUE := one of: ${OBJECT_TYPES}
 ### Action Anchoring
 cell_is_value(VALUE, Cell, Obs) -> Bool
 shifted(DIRECTION, CONDITION, Cell, Obs) -> Bool
+scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, Cell, Obs)
 
 ### Action Anchoring
 at_action_cell(VALUE, CONDITION, a, s) -> Bool
 at_cell_with_value(VALUE, CONDITION, a, s) -> Bool
 
-### Boolean Glue (if available)
-and(Bool, Bool) -> Bool
-or(Bool, Bool) -> Bool
-not(Bool) -> Bool
+
 
 ## SEMANTICS / BINDINGS
 - "s" refers to observation at time t (Obs)
 - "a" refers to the action cell chosen at time t (Cell)
-- The evaluator will bind variables: a, s, and for lambdas: cell, o
+- The evaluator will bind variables: a, s, and for lambdas: cell,o
 
 ## DIRECTIONS ALLOWED:
 Use only these direction constants:
