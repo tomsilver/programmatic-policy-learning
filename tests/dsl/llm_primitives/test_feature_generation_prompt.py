@@ -13,8 +13,9 @@ from prpl_llm_utils.models import OpenAIModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    grid_hint_config,
+from programmatic_policy_learning.approaches.utils import load_hint_text
+from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor import (
+    env_factory,
 )
 
 llm_runs = pytest.mark.skipif("not config.getoption('runllms')")
@@ -31,7 +32,7 @@ BASE_DIR = (
 )
 PROMPT_PATH = BASE_DIR / "prompt.txt"
 MODEL_NAME = "gpt-4.1"
-CACHE_PATH = REPO_ROOT / "llm_cache.db"
+CACHE_PATH = REPO_ROOT / "test_cache.db"
 MAX_ATTEMPTS = 3
 ENV_NAME = "TwoPileNim"
 ENCODING_METHOD = "enc_4"
@@ -55,42 +56,10 @@ def _read_prompt(path: Path) -> str:
     return text
 
 
-def _load_env_object_types(env_name: str) -> tuple[str, ...]:
-    symbol_map = grid_hint_config.SYMBOL_MAPS.get(env_name)
-    if symbol_map is None:
-        raise KeyError(f"No symbol map configured for {env_name}")
-    return tuple(list(symbol_map.keys()) + ["None"])
-
-
-def _load_hint_text(env_name: str, encoding_method: str) -> str:
-    hint_dir = HINTS_ROOT / env_name / encoding_method
-    if not hint_dir.exists():
-        raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
-    hint_files = sorted(hint_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
-    if not hint_files:
-        raise FileNotFoundError(f"No hint files found in {hint_dir}")
-    latest_file = hint_files[-1]
-    raw_text = latest_file.read_text(encoding="utf-8").strip()
-
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return raw_text
-
-    if isinstance(data, list):
-        return "\n".join(str(x) for x in data)
-    if isinstance(data, dict):
-        if "hints" in data:
-            return "\n".join(str(x) for x in data["hints"])
-        if "aggregated_hints" in data:
-            return "\n".join(str(x) for x in data["aggregated_hints"])
-    return raw_text
-
-
 def _fill_prompt(template: str, object_types: tuple[str, ...]) -> str:
     rendered = (
         template.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
-        .replace("${HINT_TEXT}", _load_hint_text(ENV_NAME, ENCODING_METHOD))
+        .replace("${HINT_TEXT}", load_hint_text(ENV_NAME, ENCODING_METHOD, HINTS_ROOT))
         .replace("${NUM_FEATURES}", str(NUM_FEATURES))
     )
     if (
@@ -119,7 +88,8 @@ def _query_llm(
 
 def _run_query() -> tuple[Path, str]:
     prompt_template = _read_prompt(PROMPT_PATH)
-    object_types = _load_env_object_types(ENV_NAME)
+    env = env_factory(0)
+    object_types = env.get_object_types()
     prompt = _fill_prompt(prompt_template, object_types)
     response_text = _query_llm(
         prompt=prompt,

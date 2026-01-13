@@ -1,9 +1,7 @@
 """An approach that learns a logical programmatic policy from data."""
 
-import json
 import logging
 import random
-import re
 import signal
 from contextlib import contextmanager
 from pathlib import Path
@@ -19,7 +17,11 @@ from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.approaches.utils import run_single_episode
+from programmatic_policy_learning.approaches.utils import (
+    convert_dir_lists_to_tuples,
+    load_hint_text,
+    run_single_episode,
+)
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
@@ -52,11 +54,6 @@ from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[int | None], Any]
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-HINTS_ROOT = (
-    REPO_ROOT / "dsl" / "llm_primitives" / "hint-generation" / "llm-based" / "hints"
-)
 
 
 class CustomTimeoutError(Exception):
@@ -96,78 +93,10 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         signal.alarm(0)
 
 
-def key_fn_for_train_policy(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """Build a compact run id from training-related attributes on `self`."""
-    self_obj = args[0] if len(args) > 0 else kwargs.get("self")
-    if self_obj is None:
-        return ""
-    demo_numbers = getattr(self_obj, "demo_numbers", ())
-    demo_part = "-".join(str(x) for x in demo_numbers)
-    parts = [
-        str(getattr(self_obj, "base_class_name", "")),
-        demo_part,
-        str(getattr(self_obj, "program_generation_step_size", "")),
-        str(getattr(self_obj, "num_programs", "")),
-        str(getattr(self_obj, "num_dts", "")),
-        str(getattr(self_obj, "max_num_particles", "")),
-    ]
-    # filter empty pieces and join
-    return "-".join([p for p in parts if p != ""])
-
-
-def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """Return cache run id, excluding 'env_specs' which is too long."""
-    # join all positional args except index 2 and all kwargs except
-    # 'env_specs'.
-    parts = [str(a) for i, a in enumerate(args) if i != 2]
-    parts += [str(v) for k, v in kwargs.items() if k != "env_specs"]
-    return "-".join(parts)
-
-
-def _load_hint_text(env_name: str, encoding_method: str) -> str:
-    hint_dir = HINTS_ROOT / env_name / encoding_method
-    if not hint_dir.exists():
-        raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
-    hint_files = sorted(hint_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
-    if not hint_files:
-        raise FileNotFoundError(f"No hint files found in {hint_dir}")
-    latest_file = hint_files[-1]
-    raw_text = latest_file.read_text(encoding="utf-8").strip()
-
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return raw_text
-
-    if isinstance(data, list):
-        return "\n".join(str(x) for x in data)
-    if isinstance(data, dict):
-        if "hints" in data:
-            return "\n".join(str(x) for x in data["hints"])
-        if "aggregated_hints" in data:
-            return "\n".join(str(x) for x in data["aggregated_hints"])
-    return raw_text
-
-
-_DIR_LIST_RE = re.compile(r"\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]")
-
-
-def convert_dir_lists_to_tuples(programs: list[str]) -> list[str]:
-    """Convert direction lists like [-1, -1] to tuples (-1, -1) inside program
-    strings.
-
-    Args:
-        programs (list[str]): list of program strings
-
-    Returns:
-        list[str]: rewritten program strings
-    """
-
-    def repl(match: re.Match[str]) -> str:
-        x, y = match.groups()
-        return f"({x}, {y})"
-
-    return [_DIR_LIST_RE.sub(repl, p) for p in programs]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+HINTS_ROOT = (
+    REPO_ROOT / "dsl" / "llm_primitives" / "hint-generation" / "llm-based" / "hints"
+)
 
 
 def get_program_set(
@@ -214,8 +143,8 @@ def get_program_set(
         env = env_factory(0)
         object_types = env.get_object_types()
         generator = LLMFeatureGenerator(llm_client)
-        hint_text = _load_hint_text(
-            base_class_name, program_generation["encoding_method"]
+        hint_text = load_hint_text(
+            base_class_name, program_generation["encoding_method"], HINTS_ROOT
         )
 
         features, payload = generator.generate(
