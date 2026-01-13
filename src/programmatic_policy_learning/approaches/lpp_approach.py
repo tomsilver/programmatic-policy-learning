@@ -152,6 +152,8 @@ def get_program_set(
     if strategy not in strategies:
         raise ValueError(f"Unknown strategy: {strategy}")
 
+    ### IMPLEMENT IF STRATGEY IS FEATURE_GENERATION
+    ## IMPLEMENT PRIOR COMPUATATION
     # Call the appropriate strategy
     program_generator, dsl_fns = strategies[strategy]()
     # Generate programs using the shared helper function
@@ -242,6 +244,7 @@ def _generate_with_dsl_generator(
     )
 
     return program_generator, new_dsl_dict
+
 
 
 def _generate_with_offline_loader(
