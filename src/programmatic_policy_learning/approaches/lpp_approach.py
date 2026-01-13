@@ -5,6 +5,7 @@ import logging
 # import tempfile
 import random
 import signal
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -29,6 +30,10 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
 )
+from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
+    LLMFeatureGenerator,
+)
+
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     LocalProgram,
@@ -42,10 +47,23 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    grid_hint_config,
+)
+from programmatic_policy_learning.dsl.llm_primitives.feature_priors import compute_feature_log_probs
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[], Any]
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+HINTS_ROOT = (
+    REPO_ROOT
+    / "dsl"
+    / "llm_primitives"
+    / "hint-generation"
+    / "llm-based"
+    / "hints"
+)
 
 
 class CustomTimeoutError(Exception):
@@ -113,6 +131,38 @@ def key_fn_for_program_generation(args: tuple[Any, ...], kwargs: dict[str, Any])
     return "-".join(parts)
 
 
+
+def _load_env_object_types(env_name: str) -> tuple[str, ...]:
+    symbol_map = grid_hint_config.SYMBOL_MAPS.get(env_name)
+    if symbol_map is None:
+        raise KeyError(f"No symbol map configured for {env_name}")
+    return tuple(list(symbol_map.keys()) + ["None"])
+
+
+def _load_hint_text(env_name: str, encoding_method: str) -> str:
+    hint_dir = HINTS_ROOT / env_name / encoding_method
+    if not hint_dir.exists():
+        raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
+    hint_files = sorted(hint_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    if not hint_files:
+        raise FileNotFoundError(f"No hint files found in {hint_dir}")
+    latest_file = hint_files[-1]
+    raw_text = latest_file.read_text(encoding="utf-8").strip()
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return raw_text
+
+    if isinstance(data, list):
+        return "\n".join(str(x) for x in data)
+    if isinstance(data, dict):
+        if "hints" in data:
+            return "\n".join(str(x) for x in data["hints"])
+        if "aggregated_hints" in data:
+            return "\n".join(str(x) for x in data["aggregated_hints"])
+    return raw_text
+
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -148,12 +198,30 @@ def get_program_set(
             program_generation, env_specs, start_symbol
         ),
     }
+    if strategy == "feature_generator":
+        cache_path = Path("feature_cache.db")
+        cache = SQLite3PretrainedLargeModelCache(cache_path)
+        llm_client = OpenAIModel("gpt-4.1", cache)
+        prompt_path = program_generation["feature_generator_prompt"]
+        num_features = program_generation["num_features"]
+        generator = LLMFeatureGenerator(llm_client)
+        hint_text = _load_hint_text(base_class_name, program_generation["encoding_method"])
+        object_types = _load_env_object_types(base_class_name)
+        features, payload = generator.generate(
+            prompt_path=prompt_path,
+            object_types=object_types,
+            hint_text=hint_text,
+            num_features=num_features,
+        )
+        print(features)
+        input()
+        program_prior_log_probs = compute_feature_log_probs(payload, object_types)
+        dsl_fns = get_dsl_functions_dict()
+        return features, program_prior_log_probs, dsl_fns
+    else:
+        if strategy not in strategies:
+            raise ValueError(f"Unknown strategy: {strategy}")
 
-    if strategy not in strategies:
-        raise ValueError(f"Unknown strategy: {strategy}")
-
-    ### IMPLEMENT IF STRATGEY IS FEATURE_GENERATION
-    ## IMPLEMENT PRIOR COMPUATATION
     # Call the appropriate strategy
     program_generator, dsl_fns = strategies[strategy]()
     # Generate programs using the shared helper function
@@ -351,11 +419,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation=self.program_generation,
             outer_feedback=outer_feedback,  # <-- feed into grammar generator
         )
-        print(programs[-2])
-        print(programs[-1])
-        print(programs[200])
+        print(programs)
+        print(program_prior_log_probs)
+
         input()
         logging.info("Programs Generation is Done.")
+        print(len(programs))
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
         ]

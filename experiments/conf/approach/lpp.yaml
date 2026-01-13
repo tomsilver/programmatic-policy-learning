@@ -7,7 +7,10 @@ num_dts: 5 #5
 max_num_particles: 25 #25
 start_symbol: 0
 program_generation:
-  strategy: "fixed_grid_v1"  # Options: "fixed_grid_v1", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
+  strategy: "feature_generator"  # Options: "fixed_grid_v1", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
+  feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
   removed_primitive: ""
+  num_features: 3
+  encoding_method: "enc_4"
