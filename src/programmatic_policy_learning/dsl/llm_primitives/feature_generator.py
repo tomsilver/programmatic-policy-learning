@@ -47,6 +47,7 @@ class LLMFeatureGenerator:
             template.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
             .replace("${HINT_TEXT}", hint_text)
             .replace("${NUM_FEATURES}", str(num_features))
+            # .replace("${}", )
         )
         if (
             "${OBJECT_TYPES}" in rendered
@@ -57,6 +58,7 @@ class LLMFeatureGenerator:
         return rendered
 
     def _parse_response_text(self, response_text: str) -> dict[str, Any]:
+        print(response_text)
         text = response_text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()

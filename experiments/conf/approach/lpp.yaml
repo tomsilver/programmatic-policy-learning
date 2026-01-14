@@ -12,5 +12,5 @@ program_generation:
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
   feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
   removed_primitive: ""
-  num_features: 3
+  num_features: 200
   encoding_method: "enc_4"

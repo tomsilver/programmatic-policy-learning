@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from datetime import datetime
@@ -14,9 +15,10 @@ from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
 from programmatic_policy_learning.approaches.utils import load_hint_text
-from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor import (
-    env_factory,
-)
+
+# pylint: disable=line-too-long
+HINT_EXTRACTOR_MODULE = "programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor"
+env_factory = importlib.import_module(HINT_EXTRACTOR_MODULE).env_factory
 
 llm_runs = pytest.mark.skipif("not config.getoption('runllms')")
 
@@ -43,8 +45,8 @@ HINTS_ROOT = (
     / "programmatic_policy_learning"
     / "dsl"
     / "llm_primitives"
-    / "hint-generation"
-    / "llm-based"
+    / "hint_generation"
+    / "llm_based"
     / "hints"
 )
 

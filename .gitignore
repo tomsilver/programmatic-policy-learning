@@ -192,6 +192,7 @@ plots/
 
 #ignore hints files
 hints/
+exp_hints/
 
 # ignore output files
 *.out

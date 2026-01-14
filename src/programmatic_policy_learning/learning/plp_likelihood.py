@@ -102,6 +102,10 @@ def compute_likelihood_plps(
     plp_strs = [
         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in plps
     ]
+    print(plp_strs[-1])
+    print(plp_strs[20])
+    print(plp_strs[0])
+    input()
     num_plps = len(plp_strs)
 
     try:

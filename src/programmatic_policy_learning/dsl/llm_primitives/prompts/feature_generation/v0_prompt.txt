@@ -16,6 +16,7 @@ Each feature object must contain:
 - "id": a unique string identifier
 - "ast": the expression tree (see format below)
 - "program": the same feature written in one-line DSL syntax
+- "short_rationale": a brief natural language explanation of what the feature checks
 
 ## Expression AST format:
 - Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
@@ -26,18 +27,6 @@ Each feature object must contain:
 - Constants:
   - VALUE constant: {"value": "<VALUE_TOKEN>"}
   - DIRECTION constant: {"dir": [dr, dc]}   (dr, dc are ints but only inside this constant)
-
-- Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
-- Lambda node: {"lambda": ["cell","o"], "body": <AST>}
-  - Lambda args MUST be exactly ["cell","o"]. Do NOT use cell2/o2/etc.
-- Cell variable: {"var": "cell"}   (only inside lambdas)
-- Lambda Obs variable: {"var": "o"} (only inside lambdas)
-- Action cell variable: {"var": "a"}  (bound by evaluator)
-- Top-level Obs variable: {"var": "s"} (bound by evaluator)
-- Constants:
-  - VALUE constant: {"value": "<VALUE_TOKEN>"}
-  - DIRECTION constant: {"dir": [dr, dc]}
-
 
 ## CONSTRAINTS
 - Only use functions listed in the DSL spec provided by the user.
@@ -65,9 +54,7 @@ VALUE := one of: ${OBJECT_TYPES}
 ### Action Anchoring
 cell_is_value(VALUE, Cell, Obs) -> Bool
 shifted(DIRECTION, CONDITION, Cell, Obs) -> Bool
-
-## DSL SPEC FIX:
-scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, Cell, Obs) -> Bool
+scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, Cell, Obs)
 
 ### Action Anchoring
 at_action_cell(VALUE, CONDITION, a, s) -> Bool
@@ -84,16 +71,12 @@ Use only these direction constants:
 [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
 
 ## TASK CONTEXT
-The following hint explanation is described from the expert demonbstration taking actions given a state. Use it as a help for coming up with feature:
-
 ${HINT_TEXT}
 
 ## FEATURE GENERATION REQUEST
 Generate ${NUM_FEATURES} features.
 - Use diverse direction/value combinations.
-- Include short simple features and also longer ones.
 - Ensure each feature uses at_action_cell(...) OR at_cell_with_value(...).
-
 
 ## FINAL OUTPUT FORMAT
 
@@ -104,6 +87,7 @@ Each feature must include:
 - "id": a unique string
 - "ast": the expression tree
 - "program": the 1-line DSL expression representing the feature
+- "short_rationale": a concise explanation of what this feature captures
 
 ### STRICT OUTPUT RULES (MUST FOLLOW):
 - Output MUST be a single JSON object and MUST parse with json.loads().
@@ -112,6 +96,3 @@ Each feature must include:
 - Do NOT omit items. If asked for N features, you must output exactly N fully specified feature objects.
 - The output must end immediately after the closing brace '}' of the JSON object. No trailing text.
 - Do not include markdown code fences.
-- You must output exactly ${NUM_FEATURES} features with ids f1..f${NUM_FEATURES}.
-- Do not output f${NUM_FEATURES+1} or any additional items.
-- After feature f${NUM_FEATURES}, immediately close the JSON with "]}" and stop.

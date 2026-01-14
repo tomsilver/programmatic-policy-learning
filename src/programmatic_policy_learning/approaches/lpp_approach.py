@@ -95,7 +95,7 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
-    REPO_ROOT / "dsl" / "llm_primitives" / "hint-generation" / "llm-based" / "hints"
+    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "exp_hints"
 )
 
 
@@ -359,8 +359,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         print(programs)
         print(program_prior_log_probs)
-
-        input()
         logging.info("Programs Generation is Done.")
         print(len(programs))
         programs_sa: list[StateActionProgram] = [
