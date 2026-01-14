@@ -19,15 +19,6 @@ Each feature object must contain:
 
 ## Expression AST format:
 - Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
-- Lambda node (only for LOCAL_PROGRAM / CONDITION): {"lambda": ["cell","o"], "body": <AST>}
-- Cell variable: {"var": "cell"}
-- Obs variable: {"var": "o"}
-- Action cell variable: {"var": "a"}   (only if your evaluator binds it)
-- Constants:
-  - VALUE constant: {"value": "<VALUE_TOKEN>"}
-  - DIRECTION constant: {"dir": [dr, dc]}   (dr, dc are ints but only inside this constant)
-
-- Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
 - Lambda node: {"lambda": ["cell","o"], "body": <AST>}
   - Lambda args MUST be exactly ["cell","o"]. Do NOT use cell2/o2/etc.
 - Cell variable: {"var": "cell"}   (only inside lambdas)
