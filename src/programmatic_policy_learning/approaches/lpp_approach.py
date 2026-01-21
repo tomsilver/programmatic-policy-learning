@@ -1,5 +1,6 @@
 """An approach that learns a logical programmatic policy from data."""
 
+import ast
 import logging
 import random
 import signal
@@ -31,6 +32,9 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
 from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
     LLMFeatureGenerator,
 )
+from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
+    PyFeatureGenerator
+)
 from programmatic_policy_learning.dsl.llm_primitives.feature_priors import (
     compute_feature_log_probs,
 )
@@ -50,7 +54,10 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    grid_hint_config,
+)
+from programmatic_policy_learning.learning.prior_calculation import priors_from_features
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[int | None], Any]
@@ -97,6 +104,28 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
     REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "exp_hints"
 )
+
+
+def build_py_feature_functions(feature_programs: list[str], dsl_functions: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a dict of feature function names to callables from source strings."""
+    functions: dict[str, Any] = {}
+    for source in feature_programs:
+        tree = ast.parse(source)
+        func_names = [
+            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+        ]
+        if not func_names:
+            raise ValueError("Expected at least one function definition in feature.")
+        # module_globals: dict[str, Any] = {}
+        module_globals = dict(dsl_functions)
+        exec(source, module_globals)
+        for name in func_names:
+            fn = module_globals.get(name)
+            if not callable(fn):
+                raise ValueError(f"Feature function '{name}' is not callable.")
+            functions[name] = fn
+    return functions
 
 
 def get_program_set(
@@ -158,6 +187,35 @@ def get_program_set(
         program_prior_log_probs = compute_feature_log_probs(payload, object_types)
         dsl_fns = get_dsl_functions_dict()
         return features, program_prior_log_probs, dsl_fns
+    elif strategy == "py_feature_gen":
+        cache_path = Path("py_feature_cache.db")
+        cache = SQLite3PretrainedLargeModelCache(cache_path)
+        llm_client = OpenAIModel("gpt-4.1", cache)
+        prompt_path = program_generation["py_feature_gen_prompt"]
+        num_features = program_generation["num_features"]
+        env = env_factory(0)
+        object_types = env.get_object_types()
+        # object_types = grid_hint_config.SALIENT_TOKENS[base_class_name]
+        generator = PyFeatureGenerator(llm_client)
+        hint_text = load_hint_text(
+            base_class_name, program_generation["encoding_method"], HINTS_ROOT
+        )
+
+        features, payload = generator.generate(
+            prompt_path=prompt_path,
+            object_types=object_types,
+            hint_text=hint_text,
+            num_features=num_features,
+        )
+        program_prior_log_probs = [-4.0] * len(features)
+        # f6 = "def f6(s, a): return (((at_action_cell(lambda cell,o: cell_is_value(tpn.TOKEN, cell, o), a, s) and at_action_cell(lambda cell,o: shifted((0, -1), lambda cell,o: cell_is_value(tpn.EMPTY, cell, o), cell, o), a, s) and (not at_action_cell(lambda cell,o: shifted((1, -1), lambda cell,o: cell_is_value(tpn.EMPTY, cell, o), cell, o), a, s))) or (at_action_cell(lambda cell,o: cell_is_value(tpn.TOKEN, cell, o), a, s) and (not at_action_cell(lambda cell,o: shifted((0, -1), lambda cell,o: cell_is_value(tpn.EMPTY, cell, o), cell, o), a, s)) and at_action_cell(lambda cell,o: shifted((0, 1), lambda cell,o: cell_is_value(tpn.EMPTY, cell, o), cell, o), a, s) and at_action_cell(lambda cell,o: shifted((1, 1), lambda cell,o: cell_is_value(tpn.TOKEN, cell, o), cell, o), a, s))))"
+
+        dsl_fns = get_dsl_functions_dict()
+        dsl_fns.update(build_py_feature_functions(features, dsl_fns))
+        # out_dict = priors_from_features(features)
+        # program_prior_log_probs = out_dict["logprobs"]
+        return features, program_prior_log_probs, dsl_fns
+
     if strategy not in strategies:
         raise ValueError(f"Unknown strategy: {strategy}")
 
@@ -346,7 +404,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-
         outer_feedback = None
         programs, program_prior_log_probs, dsl_functions = get_program_set(
             self.num_programs,
@@ -359,16 +416,37 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         print(programs)
         print(program_prior_log_probs)
+        # print(dsl_functions)
+        # input()
         logging.info("Programs Generation is Done.")
         print(len(programs))
-        programs_sa: list[StateActionProgram] = [
-            StateActionProgram(p) for p in programs
-        ]
+        # programs_sa: list[StateActionProgram] = [
+        #     StateActionProgram(p) for p in programs
+        # ]
 
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
+        # dsl_functions = {**dsl_functions, **get_dsl_functions_dict()}
+        # print(dsl_functions)
+        # samples = []
+        # for traj in demo_dict.values():
+        #     samples.extend(traj.steps[:5])
+        #     if len(samples) >= 10:
+        #         break
 
+        # validate_feature_functions(dsl_functions, samples)
+
+        # new = ["f1(s, a)","f2(s, a)","f3(s, a)","f4(s, a)","f5(s, a)","f6(s, a)"]
+        n = self.program_generation["num_features"]
+        # n = 1
+        new = [f"f{i}(s, a)" for i in range(1, n + 1)]
+        # new.append("((at_action_cell( lambda cell,o : cell_is_value(tpn.TOKEN , cell, o) , a, s) and at_action_cell( lambda cell,o : shifted( (0, -1 ) , lambda cell,o : cell_is_value( tpn.EMPTY , cell, o) , cell, o) , a, s) and not (at_action_cell( lambda cell,o : shifted( ( 1 , -1 ) , lambda cell,o : cell_is_value( tpn.EMPTY , cell, o) , cell, o) , a, s)))) or ((at_action_cell( lambda cell,o : cell_is_value( tpn.TOKEN , cell, o) , a, s) and not (at_action_cell( lambda cell,o : shifted( (0, -1 ) , lambda cell,o : cell_is_value( tpn.EMPTY , cell, o) , cell, o) , a, s)) and at_action_cell( lambda cell,o : shifted( (0, 1 ) , lambda cell,o : cell_is_value( tpn.EMPTY , cell, o) , cell, o) , a, s) and at_action_cell( lambda cell,o : shifted( ( 1 , 1 ) , lambda cell,o : cell_is_value( tpn.TOKEN , cell, o) , cell, o) , a, s)))")
+        # program_prior_log_probs.append(-32.6)
+        
+        programs_sa: list[StateActionProgram] = [
+            StateActionProgram(p) for p in new
+        ]
         X, y = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
@@ -376,6 +454,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict,
             dsl_functions,
         )
+        print(X)
+        print(y)
         if X is None:
             raise ValueError(
                 "X is None. Ensure the program execution results are valid."
@@ -395,13 +475,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dsl_functions=dsl_functions,
         )
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
-
+        print("LIKELIHOOD", likelihoods)
         particles = []
         particle_log_probs = []
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
-
+        print(particle_log_probs)
         map_idx = np.argmax(particle_log_probs).squeeze()
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])

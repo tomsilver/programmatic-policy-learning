@@ -126,6 +126,7 @@ DEMONSTRATIONS:
 Your task:
 Based on the demonstrations, describe the strategy the expert is using to take action a 
 given state s. Explain it in one paragraph. No extra output.
+In another paragraph, describe the dynamics of the game that you've observed.
 """
 
 

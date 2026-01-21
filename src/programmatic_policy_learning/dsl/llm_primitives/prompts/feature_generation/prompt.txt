@@ -15,7 +15,6 @@ Do not include any keys other than those specified.
 Each feature object must contain:
 - "id": a unique string identifier
 - "ast": the expression tree (see format below)
-- "program": the same feature written in one-line DSL syntax
 
 ## Expression AST format:
 - Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
@@ -36,9 +35,6 @@ Each feature object must contain:
 - Max AST depth: 10
 - Max call nodes per feature: 18
 - No recursion.
-- Prefer diversity: do not generate near-duplicates.
-- Avoid trivial always-true / always-false patterns (e.g., “True”, “not False”, etc.).
-- Prefer features that connect action-cell to state structure (use at_action_cell / at_cell_with_value-like combinators).
 
 # USER:
 ## DSL SPEC (functions and signatures)
@@ -51,18 +47,22 @@ VALUE := one of: ${OBJECT_TYPES}
 
 "None" value represents the absence of an object and is treated like any other object type.
 
-## Available functions (use EXACT names):
+## Available functions:
 
-### Action Anchoring
 cell_is_value(VALUE, Cell, Obs) -> Bool
 shifted(DIRECTION, CONDITION, Cell, Obs) -> Bool
-
-## DSL SPEC FIX:
 scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, Cell, Obs) -> Bool
+at_action_cell(LOCAL_PROGRAM, a, s) -> Bool
+at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) -> Bool
 
-### Action Anchoring
-at_action_cell(VALUE, CONDITION, a, s) -> Bool
-at_cell_with_value(VALUE, CONDITION, a, s) -> Bool
+## GRAMMAR / WELL-FORMEDNESS RULES (MUST FOLLOW)
+You must generate each feature's AST according to these productions (starting from START):
+
+START := at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) | at_action_cell(LOCAL_PROGRAM, a, s)
+LOCAL_PROGRAM := CONDITION | lambda cell,o: shifted(DIRECTION, CONDITION, cell, o)
+CONDITION := lambda cell,o: cell_is_value(VALUE, cell, o) | lambda cell,o: scanning(DIRECTION, CONDITION, CONDITION, cell, o)
+DIRECTION := {"dir":[1,0]} | {"dir":[0,1]} | {"dir":[-1,0]} | {"dir":[0,-1]} | {"dir":[1,1]} | {"dir":[-1,1]} | {"dir":[1,-1]} | {"dir":[-1,-1]}
+VALUE := {"value":"<OBJECT_TYPE_TOKEN>"}  where OBJECT_TYPE_TOKEN ∈ {OBJECT_TYPES}
 
 
 ## SEMANTICS / BINDINGS
@@ -75,26 +75,20 @@ Use only these direction constants:
 [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
 
 ## TASK CONTEXT
-The following hint explanation is described from the expert demonbstration taking actions given a state. Use it as a help for coming up with feature:
-
+The hint below summarizes patterns from the expert demonstrations (how the expert chooses an action cell given a state). Use it to guide feature generation: create features that test these described conditions and relations between the action cell a and the observation s.
 ${HINT_TEXT}
 
 ## FEATURE GENERATION REQUEST
-Generate ${NUM_FEATURES} features.
-- Use diverse direction/value combinations.
-- Include short simple features and also longer ones.
-- Ensure each feature uses at_action_cell(...) OR at_cell_with_value(...).
-
+Generate ${NUM_FEATURES} features that seem relevant based on the task context.
 
 ## FINAL OUTPUT FORMAT
-
 Return JSON ONLY in the format:
 {"features": [ ... ]}
 
 Each feature must include:
 - "id": a unique string
 - "ast": the expression tree
-- "program": the 1-line DSL expression representing the feature
+
 
 ### STRICT OUTPUT RULES (MUST FOLLOW):
 - Output MUST be a single JSON object and MUST parse with json.loads().

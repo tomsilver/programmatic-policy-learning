@@ -14,10 +14,13 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     get_dsl_functions_dict,
 )
 
-
+ 
 class JSONStructureRepromptCheck(RepromptCheck):
     """Check whether the LLM's response contains valid JSON with required
     fields."""
+
+    def __init__(self, required_fields: list[str] | None = None) -> None:
+        self.required_fields = required_fields or ["proposal", "updated_grammar"]
 
     def get_reprompt(self, query: Query, response: Response) -> Query | None:
         try:
@@ -27,8 +30,9 @@ class JSONStructureRepromptCheck(RepromptCheck):
             return create_reprompt_from_error_message(query, response, error_msg)
 
         # Check for required fields
-        required_fields = ["proposal", "updated_grammar"]
-        missing_fields = [field for field in required_fields if field not in llm_output]
+        missing_fields = [
+            field for field in self.required_fields if field not in llm_output
+        ]
         if missing_fields:
             error_msg = f"The response JSON is missing required fields:\
                 {', '.join(missing_fields)}"
@@ -659,3 +663,86 @@ def create_function_from_stub(stub: str, function_name: str) -> Callable[..., An
     local_namespace: dict[str, Any] = {}
     exec(stub, {}, local_namespace)  # pylint: disable=exec-used
     return local_namespace[function_name]
+
+
+def programs_from_feature_dict(data: dict[str, Any]) -> list[str]:
+    """
+    Convert a feature-generator JSON dict of the form:
+      {"features": [{"id": "...", "ast": <AST>, ...}, ...]}
+    into a list of one-line DSL program strings rendered from each AST.
+
+    Supports AST node types:
+      - {"call": "<FUNC>", "args": [<AST>, ...]}
+      - {"lambda": ["cell","o"], "body": <AST>}
+      - {"var": "<name>"}
+      - {"value": "<TOKEN>"}          # e.g., "tpn.TOKEN", "None", "ct.EMPTY"
+      - {"dir": [dr, dc]}             # rendered as [dr,dc]
+    """
+
+    def render(node: Any) -> str:
+        if not isinstance(node, dict):
+            raise TypeError(f"AST node must be a dict, got {type(node)}: {node}")
+
+        if "var" in node:
+            v = node["var"]
+            if not isinstance(v, str):
+                raise TypeError(f'"var" must be str, got {type(v)}: {v}')
+            return v
+
+        if "value" in node:
+            v = node["value"]
+            if not isinstance(v, str):
+                raise TypeError(f'"value" must be str, got {type(v)}: {v}')
+            # Treat "None" as a literal in your DSL (not quoted)
+            return "None" if v == "None" else v
+
+        if "dir" in node:
+            d = node["dir"]
+            if (
+                not isinstance(d, list)
+                or len(d) != 2
+                or not all(isinstance(x, int) for x in d)
+            ):
+                raise TypeError(f'"dir" must be [int,int], got: {d}')
+            return f"[{d[0]},{d[1]}]"
+
+        if "lambda" in node:
+            args = node["lambda"]
+            if args != ["cell", "o"]:
+                raise ValueError(
+                    f'Lambda args must be exactly ["cell","o"], got: {args}'
+                )
+            body = node.get("body")
+            if body is None:
+                raise ValueError('Lambda node missing "body"')
+            return f"lambda cell,o: {render(body)}"
+
+        if "call" in node:
+            func = node["call"]
+            if not isinstance(func, str):
+                raise TypeError(f'"call" must be str, got {type(func)}: {func}')
+            args = node.get("args", [])
+            if not isinstance(args, list):
+                raise TypeError(f'"args" must be list, got {type(args)}: {args}')
+            rendered_args = ", ".join(render(a) for a in args)
+            return f"{func}({rendered_args})"
+
+        raise ValueError(f"Unknown AST node shape: {node}")
+
+    feats = data.get("features")
+    if not isinstance(feats, list):
+        raise ValueError('Expected top-level key "features" to be a list')
+
+    programs: list[str] = []
+    for f in feats:
+        if not isinstance(f, dict):
+            raise TypeError(f"Feature must be a dict, got {type(f)}: {f}")
+        ast = f.get("ast")
+        if ast is None:
+            raise ValueError(f"Feature missing 'ast': {f.get('id', '<no id>')}")
+        programs.append(render(ast))
+
+    return programs
+
+
+

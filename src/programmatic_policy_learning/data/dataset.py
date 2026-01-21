@@ -121,6 +121,7 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
         logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
+        print("EXCEPT")
         logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
         return None
 
@@ -173,7 +174,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            logging.info(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
+            print(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
     return results
 
 
@@ -210,7 +211,6 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
 
     X = lil_matrix((num_data, num_programs), dtype=bool)
-
     # Combine the context initialization into a single block to avoid redefinition
     try:
         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]

@@ -30,10 +30,6 @@ from programmatic_policy_learning.dsl.llm_primitives.utils import (
     SmallProposalVerifier,
 )
 
-# SemanticJSONVerifierReprompt,; SemanticsPyStubRepromptCheck,
-# from programmatic_policy_learning.dsl.llm_primitives.utils import (
-#     JSONStructureRepromptCheck,
-# )
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     _eval,

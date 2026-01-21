@@ -95,7 +95,11 @@ def compute_likelihood_plps(
     Uses fork-based multiprocessing and precompiled PLPs for speed.
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
-
+    for each in plps:
+        print(each)
+        print("***")
+    # print(plps)
+    print("AFTER")
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
     dsl_blob = cloudpickle.dumps(base_dsl)
