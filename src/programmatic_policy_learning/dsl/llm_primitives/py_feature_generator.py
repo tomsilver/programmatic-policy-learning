@@ -116,7 +116,6 @@ class PyFeatureGenerator:
             hint_text=hint_text,
             num_features=num_features,
         )
-        # input(prompt)
         payload = self.query_llm(
             prompt,
             max_attempts=max_attempts,

@@ -121,7 +121,6 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
         logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print("EXCEPT")
         logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
         return None
 
@@ -174,7 +173,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            print(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
+            logging.info(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
     return results
 
 

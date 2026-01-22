@@ -47,7 +47,7 @@ def learn_plps(
     plp_priors = []
 
     num_programs = len(programs)
-    print(num_programs)
+    logging.info(f"Total programs: {num_programs}")
 
     for i in range(0, num_programs, program_generation_step_size):
         logging.info(f"Learning plps with {i} programs")

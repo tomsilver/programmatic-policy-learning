@@ -63,7 +63,6 @@ class LLMFeatureGenerator:
         return rendered
 
     def _parse_response_text(self, response_text: str) -> dict[str, Any]:
-        # print(response_text)
         text = response_text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
@@ -125,7 +124,7 @@ class LLMFeatureGenerator:
             max_attempts=max_attempts,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
         )
-        print(payload)
+        logging.info(payload)
         feature_payload = payload.get("features")
 
         if not isinstance(feature_payload, list):

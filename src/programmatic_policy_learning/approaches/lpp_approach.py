@@ -420,19 +420,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation=self.program_generation,
             outer_feedback=outer_feedback,  # <-- feed into grammar generator
         )
-        print(programs)
-        print(program_prior_log_probs)
-
+        logging.info(programs)
+        logging.info(program_prior_log_probs)
         logging.info("Programs Generation is Done.")
-        print(len(programs))
-        # programs_sa: list[StateActionProgram] = [
-        #     StateActionProgram(p) for p in programs
-        # ]
+        logging.info(len(programs))
+
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
-        # dsl_functions = {**dsl_functions, **get_dsl_functions_dict()}
-        # print(dsl_functions)
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
         n = self.program_generation["num_features"]
@@ -445,8 +440,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict,
             dsl_functions,
         )
-        print(X)
-        print(y)
+        logging.info(X)
+        logging.info(y)
         if X is None:
             raise ValueError(
                 "X is None. Ensure the program execution results are valid."
@@ -466,13 +461,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dsl_functions=dsl_functions,
         )
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
-        print("LIKELIHOOD", likelihoods)
+        logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []
         particle_log_probs = []
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
-        print(particle_log_probs)
+        logging.info(particle_log_probs)
         map_idx = np.argmax(particle_log_probs).squeeze()
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])

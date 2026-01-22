@@ -96,10 +96,10 @@ def compute_likelihood_plps(
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
     for each in plps:
-        print(each)
-        print("***")
-    # print(plps)
-    print("AFTER")
+        logging.info(each)
+        logging.info("***")
+    logging.info("PLPS printed")
+
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
     dsl_blob = cloudpickle.dumps(base_dsl)
