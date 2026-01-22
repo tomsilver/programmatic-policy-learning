@@ -95,6 +95,10 @@ def compute_likelihood_plps(
     Uses fork-based multiprocessing and precompiled PLPs for speed.
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
+    for each in plps:
+        logging.info(each)
+        logging.info("***")
+    logging.info("PLPS printed")
 
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
@@ -102,6 +106,7 @@ def compute_likelihood_plps(
     plp_strs = [
         (p.program if isinstance(p, StateActionProgram) else str(p)) for p in plps
     ]
+
     num_plps = len(plp_strs)
 
     try:

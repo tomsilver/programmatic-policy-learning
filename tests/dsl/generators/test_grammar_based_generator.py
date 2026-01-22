@@ -119,8 +119,8 @@ def test_grid_grammar_infers_env_spec_from_env() -> None:
     dsl: DSL[str, None, str] = DSL(
         id="grid_v1", primitives={}, evaluate_fn=lambda p, i: p
     )
-    generator = GrammarBasedProgramGenerator(  # type:ignore
-        create_grammar, dsl, env_spec=env_spec, start_symbol=6  # type:ignore
+    generator = GrammarBasedProgramGenerator(  # type: ignore
+        create_grammar, dsl, env_spec=env_spec, start_symbol=6  # type: ignore
     )
     gen = generator.generate_programs()
 

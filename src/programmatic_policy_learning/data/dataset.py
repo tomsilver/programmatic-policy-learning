@@ -162,10 +162,8 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     s, a = fn_input
 
     if _WORKER_PROGRAMS is None:
-        raise RuntimeError(
-            "_WORKER_PROGRAMS is not initialized.\
-            Ensure worker_init is called before using worker_eval_example."
-        )
+        raise RuntimeError("_WORKER_PROGRAMS is not initialized.\
+            Ensure worker_init is called before using worker_eval_example.")
 
     results = []
     for f in _WORKER_PROGRAMS:
@@ -210,7 +208,6 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
 
     X = lil_matrix((num_data, num_programs), dtype=bool)
-
     # Combine the context initialization into a single block to avoid redefinition
     try:
         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]

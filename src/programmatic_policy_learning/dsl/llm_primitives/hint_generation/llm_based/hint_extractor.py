@@ -124,27 +124,35 @@ DEMONSTRATIONS:
 
 ----
 Your task:
-
-Extract **abstract, reusable decision-time predicates/features** that could inform the design of a DSL.
-
-IMPORTANT:
-- Use ONLY information observable in the current state (s_t).
-- Use ONLY information available at decision time (do not use future states or transition outcomes).
-- Do NOT describe game rules or mechanics.
-- Do NOT mention specific object names (e.g., arrow, wall, target).
-- Treat cell contents as abstract VALUEs.
-- Do NOT describe a policy or strategy.
-
-Instead:
-- Describe **generic spatial, relational, or comparison-based predicates**
-- Each hint should correspond to something that could plausibly be implemented as a boolean predicate over
-+  (Cell, Obs) and optionally a distinguished reference from the decision-time inputs.
-
-OUTPUT FORMAT:
-- Return ONLY a list of short hints
-- One hint per line
-- No introduction or explanation text
+Based on the demonstrations, describe the strategy the expert is using to take action a 
+given state s. Explain it in one paragraph. No extra output.
+In another paragraph, describe the dynamics of the game that you've observed.
 """
+
+
+# Extract **abstract, reusable decision-time predicates/features**
+# that could inform the design of a DSL.
+
+# IMPORTANT:
+# - Use ONLY information observable in the current state (s_t).
+# - Use ONLY information available at decision time
+# (do not use future states or transition outcomes).
+# - Do NOT describe game rules or mechanics.
+# - Do NOT mention specific object names (e.g., arrow, wall, target).
+# - Treat cell contents as abstract VALUEs.
+# - Do NOT describe a policy or strategy.
+
+# Instead:
+# - Describe **generic spatial, relational, or comparison-based predicates**
+# - Each hint should correspond to something that could plausibly
+# be implemented as a boolean predicate over
+# +  (Cell, Obs) and optionally a distinguished reference from the decision-time inputs.
+
+# OUTPUT FORMAT:
+# - Return ONLY a list of short hints
+# - One hint per line
+# - No introduction or explanation text
+# """
 
 
 # Explain the decision making rule, how action a is selected in state s.
@@ -521,7 +529,11 @@ def main() -> None:
     # output = extract_dsl(llm_client, dsl_prompt)
 
     path = save_hints(
-        hints, env_name=env_name, seed=seed, encoding_method=encoding_method
+        hints,
+        env_name=env_name,
+        seed=seed,
+        encoding_method=encoding_method,
+        out_dir="exp_hints",
     )
     logging.info(f"Hints saved to {path}")
 
