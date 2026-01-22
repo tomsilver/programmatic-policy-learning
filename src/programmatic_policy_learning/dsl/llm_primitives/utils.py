@@ -14,7 +14,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     get_dsl_functions_dict,
 )
 
- 
+
 class JSONStructureRepromptCheck(RepromptCheck):
     """Check whether the LLM's response contains valid JSON with required
     fields."""
@@ -737,12 +737,9 @@ def programs_from_feature_dict(data: dict[str, Any]) -> list[str]:
     for f in feats:
         if not isinstance(f, dict):
             raise TypeError(f"Feature must be a dict, got {type(f)}: {f}")
-        ast = f.get("ast")
-        if ast is None:
+        ast_node = f.get("ast")
+        if ast_node is None:
             raise ValueError(f"Feature missing 'ast': {f.get('id', '<no id>')}")
-        programs.append(render(ast))
+        programs.append(render(ast_node))
 
     return programs
-
-
-

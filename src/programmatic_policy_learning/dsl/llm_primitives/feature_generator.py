@@ -12,12 +12,12 @@ from typing import Any, Sequence
 from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
-from programmatic_policy_learning.dsl.llm_primitives.utils import (
-    programs_from_feature_dict,
-)
+
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
+    programs_from_feature_dict,
 )
+
 
 class LLMFeatureGenerator:
     """Generate candidate feature payloads by querying an LLM."""
@@ -127,11 +127,11 @@ class LLMFeatureGenerator:
         )
         print(payload)
         feature_payload = payload.get("features")
-        
+
         if not isinstance(feature_payload, list):
             raise ValueError("Expected payload with a 'features' list.")
         feature_programs = programs_from_feature_dict(payload)
-                
+
         if self.llm_client is not None:
             self.write_json("feature_payload.json", payload)
         return feature_programs, payload

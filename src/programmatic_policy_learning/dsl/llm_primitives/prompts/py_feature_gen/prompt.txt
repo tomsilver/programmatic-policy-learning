@@ -18,7 +18,7 @@ Your task: generate a library of useful boolean features for this domain that ca
 
 ## ENVIRONMENT SEMANTICS (IMPORTANT)
 - An action is selecting a cell on the grid. Concretely, choosing action a = (r, c) means clicking the cell at row r and column c.
-- Each grid cell stores exactly one value from the provided ["ec.EMPTY", "ec.TARGET", "ec.AGENT", "ec.WALL", "ec.DRAWN", "ec.LEFT_ARROW", "ec.RIGHT_ARROW", "ec.UP_ARROW", "ec.DOWN_ARROW", "None"] list.
+- Each grid cell stores exactly one value from the provided ${OBJECT_TYPES} list.
 
 
 ## INPUT FORMAT (IMPORTANT)
@@ -36,16 +36,16 @@ Your code must not crash if tokens are not numeric.
 
 ## OBJECT TYPES (CELL VALUES)
 The set of possible cell values is:
-["ec.EMPTY", "ec.TARGET", "ec.AGENT", "ec.WALL", "ec.DRAWN", "ec.LEFT_ARROW", "ec.RIGHT_ARROW", "ec.UP_ARROW", "ec.DOWN_ARROW", "None"]
+${OBJECT_TYPES}
 Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
 
 ## DEMONSTRATION-BASED HINT
 The following hint summarizes expert decision patterns from demonstrations. Use it to bias feature generation toward relevant relations.
 HINT:
-The expert's strategy is to first wait (by repeatedly clicking an irrelevant or unreachable 'wall' cell) until the moving target approaches a position that allows for an optimal interception route. Once the target is close enough or aligned for interception, the expert starts constructing a drawn path or begins moving the agent using the directional arrow controls (right/left/up) to reduce the agent's distance to the target, typically by repeatedly selecting the arrow that moves the agent directly toward the target along the shortest available path. The expert only begins moving or drawing when it is efficient to do so, maximizing the chance that the agent reaches the target as quickly as possible once movement starts, and always chooses actions that bring the agent closer to the target unless impeded by walls.
+${HINT_TEXT}
 
 ## FEATURE GENERATION REQUEST
-Generate exactly 100 features named f1..f100.
+Generate exactly ${NUM_FEATURES} features named f1..f${NUM_FEATURES}.
 - Each feature MUST be a boolean predicate about (s, a).
 - Features should be diverse: some simple, some more structured.
 - Do NOT generate near-duplicates.
@@ -69,7 +69,7 @@ Return ONLY valid JSON of the form:
 - Output MUST be a single JSON object and MUST parse with json.loads().
 - Do NOT include markdown, comments, or extra text.
 - Do NOT use ellipses or placeholders ("...", "etc", "and so on", "up to", "similar").
-- You must output exactly 100 feature objects, with ids and names f1..f100.
+- You must output exactly ${NUM_FEATURES} feature objects, with ids and names f1..f${NUM_FEATURES}.
 - The JSON must end immediately after the final closing brace '}'.
 - Do NOT use tuple‑unpacking in function parameters. (e.g., def cell((r,c))); only use simple parameter names like def cell(rc) and unpack inside the body if needed.
 
