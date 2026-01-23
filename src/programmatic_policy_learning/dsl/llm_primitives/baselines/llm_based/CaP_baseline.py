@@ -1,4 +1,4 @@
-"""Script for extracting textual hints from grid trajectories."""
+"""Script for running Code-as-Policies baseline."""
 
 from __future__ import annotations
 
@@ -84,7 +84,8 @@ def build_joint_hint_prompt(
     action_mask = ""
     if encoding == "1":
         action_mask = "The ACTION MASK has a single 1 at the clicked cell."
-        token_meanings = f"Token meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}\n"
+        token_meanings = f"Token meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}\nIMPORTANT: Observations are represented as object-type identifiers (e.g., {list(grid_hint_config.SYMBOL_MAPS[env_name].keys())}), not ASCII characters. Any inferred rule or policy must compare against object types, not symbols like '.' or '*'."
+
 
     return f"""
 You are given a few expert demonstrations of the SAME task.
@@ -93,7 +94,7 @@ Each demonstration is a full trajectory from a different initial state.
 IMPORTANT:
 - Coordinates are 0-indexed (row, col) with (0,0) at top-left.
 - An action is "Click cell (r,c)". {action_mask}
-- Steps within a trajectory are temporally consecutive and highly correlated.
+- Steps within a trajectory are temporally consecutive.
 - Your job is to infer the underlying strategy/policy that generalizes across trajectories.
 - Do NOT describe individual steps.
 - Do NOT narrate what happens over time.
@@ -119,7 +120,7 @@ OUTPUT FORMAT (STRICT):
 
 CODE REQUIREMENTS:
 - Define a function with signature: def policy(obs):
-- The function takes a NumPy array observation and returns an action (row, col).
+- The function takes a 2D NumPy array observation and returns an action (row, col).
 - Use numeric coordinates only (NumPy convention: (0, 0) is top-left).
 - Do NOT use words like left, right, up, or down.
 - Do NOT import external libraries.
@@ -153,6 +154,7 @@ def run(
     llm_client: PretrainedLargeModel,
     env_name: str,
     encoding_method: str,
+    seed: int,
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
     function_name: str = "policy",
@@ -203,8 +205,8 @@ def run(
 
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
-    logging.info(prompt)
-    query = Query(prompt, hyperparameters={"temperature": 0.0, "top_p": 1.0})
+    prompt = f"{prompt}\n\nSEED: {seed}\n"
+    query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed}) # "top_p": 1.0
     logging.info("LLM hyperparameters: %s", query.hyperparameters)
 
     # example demo for reprompt check
@@ -227,8 +229,8 @@ def run(
         max_attempts=5,
     )
 
-    final_hint = response.text
-    return final_hint
+    final_code = response.text
+    return final_code
 
 
 def _parse_cli_args() -> argparse.Namespace:
@@ -271,7 +273,7 @@ def _parse_cli_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("logs/CaP"),
+        default=Path("logs/CaP_baseline"),
         help="Directory for storing per-run outputs and metadata.",
     )
     parser.add_argument(
@@ -397,7 +399,9 @@ def _evaluate_policy_function(
 
             try:
                 action = policy_fn(obs)
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(e)
+                print("EXCEPT")
                 action = None
             if action is None:
                 return _env.action_space.sample()
@@ -559,7 +563,7 @@ def main() -> None:
         encoding_dir = (
             args.output_dir
             / args.env
-            / f"*_{str(args.num_initial_states)}"
+            / f"{str(args.num_initial_states)}"
             / f"encoding_{encoding}"
         )
         encoding_dir.mkdir(parents=True, exist_ok=True)
@@ -579,17 +583,18 @@ def main() -> None:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
             client = OpenAIModel(args.model, cache)
-            final_hint = run(
+            final_code = run(
                 client,
                 args.env,
                 encoding,
+                seed,
                 num_initial_states=args.num_initial_states,
                 max_steps_per_traj=args.max_steps_per_traj,
             )
 
             policy_filename = f"policy_seed{seed}.txt"
-            hint_path = encoding_dir / policy_filename
-            hint_path.write_text(final_hint, encoding="utf-8")
+            policy_path = encoding_dir / policy_filename
+            policy_path.write_text(final_code, encoding="utf-8")
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             metadata = {
@@ -600,7 +605,7 @@ def main() -> None:
                 "num_initial_states": args.num_initial_states,
                 "max_steps_per_traj": args.max_steps_per_traj,
                 "timestamp": timestamp,
-                "hint_path": str(hint_path.resolve()),
+                "policy_path": str(policy_path.resolve()),
             }
             meta_path = encoding_dir / f"metadata_seed{seed}.json"
             meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -610,12 +615,12 @@ def main() -> None:
                     "env": args.env,
                     "encoding": encoding,
                     "seed": seed,
-                    "hint_file": str(hint_path),
+                    "policy_file": str(policy_path),
                 }
             )
 
             if args.eval_env_nums:
-                code_str = _strip_code_block(final_hint)
+                code_str = _strip_code_block(final_code)
                 policy_fn = _compile_policy_function(code_str, args.function_name)
                 env_builder = lambda idx: env_factory(idx, args.env)
                 run_expert = args.eval_run_expert and seed == args.expert_reference_seed
