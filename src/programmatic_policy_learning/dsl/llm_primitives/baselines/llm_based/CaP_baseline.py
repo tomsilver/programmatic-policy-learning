@@ -402,8 +402,7 @@ def _evaluate_policy_function(
             try:
                 action = policy_fn(obs)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(e)
-                print("EXCEPT")
+                print(f"Exception: {e}")
                 action = None
             if action is None:
                 return _env.action_space.sample()
