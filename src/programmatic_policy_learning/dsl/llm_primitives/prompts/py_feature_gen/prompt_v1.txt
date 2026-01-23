@@ -10,23 +10,21 @@ You MUST follow the output schema exactly and return ONLY valid JSON.
 
 ## CONTEXT
 We have a grid-based game.
-We observe expert demonstrations: sequences of (s_t, a_t, s_{t+1}).
-- state s is a 2D grid observation.
-- action a is a clicked cell (row, col).
 
-Your task: generate a library of useful boolean features for this domain that can help explain/predict the expert’s chosen action.
+A separate upstream component analyzed expert demonstrations from this environment and produced a high-level natural-language explanation of the expert’s decision-making strategy.
+
+Expert demonstrations consist of sequences of transitions (s_t, a_t, s_{t+1}), where:
+- s_t is a 2D grid observation
+- a_t is a clicked cell (row, col)
+- s_{t+1} is the resulting next state
+
+Your task is to generate a library of useful boolean features f_i(s, a) that may help explain or predict the expert’s chosen action, using the provided explanation as a soft hint.
+
 
 ## ENVIRONMENT SEMANTICS (IMPORTANT)
 - An action is selecting a cell on the grid. Concretely, choosing action a = (r, c) means clicking the cell at row r and column c.
-- Each grid cell stores exactly one token from the provided ${OBJECT_TYPES} list.
+- Each grid cell stores exactly one value from the provided ${OBJECT_TYPES} list.
 
-## ACTION EFFECT (ARROW CONTROLS)
-- In this environment, the agent’s movement is controlled by clicking directional arrow tiles.
-  - To move the agent to the right, the expert clicks a cell whose token is right_arrow.
-  - To move left: click left_arrow.
-  - To move up: click up_arrow.
-  - To move down: click down_arrow.
-- Clicking other tokens may represent non-movement actions (e.g., waiting by clicking a WALL) depending on the task; use the hint from demonstrations to infer how non-arrow actions are used.
 
 ## INPUT FORMAT (IMPORTANT)
 Each feature will be called like:
@@ -36,19 +34,39 @@ Where:
 - s is a NumPy 2D array (shape HxW).
   - You MUST NOT import numpy.
   - You may treat s like a nested list: use s[r][c], len(s), len(s[0]).
-  - Cells contain tokens (strings/ints/objects) comparable by equality.
+  - Cells contain values (strings/ints/objects) comparable by equality.
 - a is always a tuple: a = (r, c)
 
 Your code must not crash if tokens are not numeric.
 
-## OBJECT TYPES (TOKENS)
-The set of possible cell tokens is:
+## OBJECT TYPES (CELL VALUES)
+The set of possible cell values is:
 ${OBJECT_TYPES}
+Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
 
 ## DEMONSTRATION-BASED HINT
+
 The following hint summarizes expert decision patterns from demonstrations. Use it to bias feature generation toward relevant relations.
+
+For reference, expert demonstrations consist of transitions of the form (s_t, a_t, s_{t+1}), where:
+- s_t is the grid state before acting
+- a_t = (r, c) is the selected cell
+- s_{t+1} is the resulting next state
+
+Example transition from the demonstrations:
+State s_t:
+${STATE_T_EXAMPLE}
+
+Action a_t:
+${ACTION_EXAMPLE}
+
+Next state s_{t+1}:
+${STATE_T1_EXAMPLE}
+
 HINT:
+The following is the inferred decision-making hint:
 ${HINT_TEXT}
+
 
 ## FEATURE GENERATION REQUEST
 Generate exactly ${NUM_FEATURES} features named f1..f${NUM_FEATURES}.
@@ -77,6 +95,7 @@ Return ONLY valid JSON of the form:
 - Do NOT use ellipses or placeholders ("...", "etc", "and so on", "up to", "similar").
 - You must output exactly ${NUM_FEATURES} feature objects, with ids and names f1..f${NUM_FEATURES}.
 - The JSON must end immediately after the final closing brace '}'.
+- Do NOT use tuple‑unpacking in function parameters. (e.g., def cell((r,c))); only use simple parameter names like def cell(rc) and unpack inside the body if needed.
 
 ## PYTHON SOURCE RULES (STRICT)
 For each feature object's "source" string:
@@ -92,8 +111,3 @@ For each feature object's "source" string:
 ## ACTION PARSING (MUST IMPLEMENT IN EACH FUNCTION)
 Inside each function:
 - Assume a is a tuple (r,c). If a is not a length-2 tuple/list of ints, return False.
-
-## IMPORTANT: TOKENS
-Do NOT assume specific token names unless the hint explicitly mentions them.
-If the hint mentions tokens (e.g., WALL, TARGET, AGENT, arrows), use those exact strings as tokens in comparisons.
-Otherwise, prefer token-agnostic features (frequency-based, non-empty-based, geometric-based).
