@@ -86,7 +86,6 @@ def build_joint_hint_prompt(
         action_mask = "The ACTION MASK has a single 1 at the clicked cell."
         token_meanings = f"Token meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}\nIMPORTANT: Observations are represented as object-type identifiers (e.g., {list(grid_hint_config.SYMBOL_MAPS[env_name].keys())}), not ASCII characters. Any inferred rule or policy must compare against object types, not symbols like '.' or '*'."
 
-
     return f"""
 You are given a few expert demonstrations of the SAME task.
 Each demonstration is a full trajectory from a different initial state.
@@ -206,7 +205,9 @@ def run(
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
-    query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed}) # "top_p": 1.0
+    query = Query(
+        prompt, hyperparameters={"temperature": 0.0, "seed": seed}
+    )  # "top_p": 1.0
     logging.info("LLM hyperparameters: %s", query.hyperparameters)
 
     # example demo for reprompt check

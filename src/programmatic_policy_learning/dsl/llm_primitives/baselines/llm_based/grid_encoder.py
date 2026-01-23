@@ -134,6 +134,7 @@ class GridStateEncoder:
     ) -> str:
         """Return per-cell lines like '(r,c) - Token Name', mirroring the ASCII
         layout."""
+
         def render(obj_dict: dict[str, list[tuple[int, int]]]) -> str:
             entries: list[tuple[tuple[int, int], str]] = []
             for token, coords in obj_dict.items():
@@ -161,5 +162,7 @@ class GridStateEncoder:
         )
 
         if action is not None:
-            sections.append(f"Action Taken: {action}: '{get_cell_type(objects, action)}'")
+            sections.append(
+                f"Action Taken: {action}: '{get_cell_type(objects, action)}'"
+            )
         return "\n\n".join(sections)
