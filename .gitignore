@@ -182,7 +182,7 @@ new_outputs/
 videos/
 
 # ignore job files
-*.slurm
+# *.slurm
 *.sh
 cc_jobs/
 bash_jobs/

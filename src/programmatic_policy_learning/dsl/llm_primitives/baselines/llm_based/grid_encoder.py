@@ -140,11 +140,12 @@ class GridStateEncoder:
             for token, coords in obj_dict.items():
                 if not coords:
                     continue
-                label = token.replace("_", " ").title()
+                label = token
                 for coord in coords:
                     entries.append((coord, label))
             entries.sort(key=lambda item: item[0])
-            return "\n".join(f"{coord} - {label}" for coord, label in entries)
+            return "\n".join(f"{coord} - '{label}'" for coord, label in entries)
+            # return "\n".join(f"{coord} - {label}" for coord, label in entries)
 
         def get_cell_type(
             d: dict[str, list[tuple[int, int]]], rc: tuple[int, int]
@@ -161,5 +162,7 @@ class GridStateEncoder:
         )
 
         if action is not None:
-            sections.append(f"Action Taken: {action}: {get_cell_type(objects, action)}")
+            sections.append(
+                f"Action Taken: {action}: '{get_cell_type(objects, action)}'"
+            )
         return "\n\n".join(sections)
