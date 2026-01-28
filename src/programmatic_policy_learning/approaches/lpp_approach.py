@@ -22,6 +22,7 @@ from programmatic_policy_learning.approaches.utils import (
     convert_dir_lists_to_tuples,
     load_hint_text,
     run_single_episode,
+    sample_transition_example,
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
@@ -205,12 +206,16 @@ def get_program_set(
         hint_text = load_hint_text(
             base_class_name, program_generation["encoding_method"], HINTS_ROOT
         )
-
+        
+        st, at, st1 = sample_transition_example(env_factory, base_class_name, "1", max_steps=40)
         features, payload = py_generator.generate(
             prompt_path=prompt_path,
             object_types=object_types,
             hint_text=hint_text,
             num_features=num_features,
+            state_t_example=st,
+            action_example=at,
+            state_t1_example=st1,
         )
         # program_prior_log_probs = [-4.0] * len(features)
 
@@ -355,6 +360,7 @@ def _generate_programs(
             break
         programs.append(program)
         program_prior_log_probs.append(prior)
+    print("INJA UMAD")
     return programs, program_prior_log_probs
 
 
@@ -420,8 +426,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation=self.program_generation,
             outer_feedback=outer_feedback,  # <-- feed into grammar generator
         )
-        logging.info(programs)
-        logging.info(program_prior_log_probs)
+        # logging.info(programs)
+        # logging.info(program_prior_log_probs)
         logging.info("Programs Generation is Done.")
         logging.info(len(programs))
 
@@ -433,6 +439,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         n = self.program_generation["num_features"]
         new = [f"f{i}(s, a)" for i in range(1, n + 1)]
         programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in new]
+        # programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in programs]
         X, y = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
@@ -460,6 +467,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
+        for each in plps:
+            print(each)
+            print("((((()))))")
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []

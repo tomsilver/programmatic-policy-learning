@@ -42,6 +42,9 @@ class PyFeatureGenerator:
         object_types: Sequence[str],
         hint_text: str,
         num_features: int,
+        state_t_example: str | None = None,
+        action_example: str | None = None,
+        state_t1_example: str | None = None,
     ) -> str:
         """Replace prompt placeholders with provided values."""
         rendered = (
@@ -49,10 +52,19 @@ class PyFeatureGenerator:
             .replace("${HINT_TEXT}", hint_text)
             .replace("${NUM_FEATURES}", str(num_features))
         )
+        if state_t_example is not None:
+            rendered = rendered.replace("${STATE_T_EXAMPLE}", state_t_example)
+        if action_example is not None:
+            rendered = rendered.replace("${ACTION_EXAMPLE}", action_example)
+        if state_t1_example is not None:
+            rendered = rendered.replace("${STATE_T1_EXAMPLE}", state_t1_example)
         if (
             "${OBJECT_TYPES}" in rendered
             or "${HINT_TEXT}" in rendered
             or "${NUM_FEATURES}" in rendered
+            or "${STATE_T_EXAMPLE}" in rendered
+            or "${ACTION_EXAMPLE}" in rendered
+            or "${STATE_T1_EXAMPLE}" in rendered
         ):
             raise ValueError("Prompt template still has unresolved variables.")
         return rendered
@@ -105,24 +117,34 @@ class PyFeatureGenerator:
         object_types: Sequence[str],
         hint_text: str,
         num_features: int,
+        state_t_example: str | None = None,
+        action_example: str | None = None,
+        state_t1_example: str | None = None,
         max_attempts: int = 3,
         reprompt_checks: list[RepromptCheck] | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
+        
         prompt_template = self.read_prompt(prompt_path)
         prompt = self.fill_prompt(
             prompt_template,
             object_types=object_types,
             hint_text=hint_text,
             num_features=num_features,
+            state_t_example=state_t_example,
+            action_example=action_example,
+            state_t1_example=state_t1_example,
         )
+        print(prompt)
         payload = self.query_llm(
             prompt,
             max_attempts=max_attempts,
             reprompt_checks=reprompt_checks,
         )
+        print(payload)
         feature_programs = self.parse_feature_programs(payload)
         if self.llm_client is not None:
             self.write_json("py_feature_payload.json", payload)
 
         return feature_programs, payload
+
