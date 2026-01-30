@@ -39,10 +39,12 @@ Where:
 
 Your code must not crash if tokens are not numeric.
 
+
 ## OBJECT TYPES (CELL VALUES)
 The set of possible cell values is:
 ${OBJECT_TYPES}
 Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
+
 
 ## DEMONSTRATION-BASED HINT
 
@@ -75,6 +77,7 @@ Generate exactly ${NUM_FEATURES} features named f1..f${NUM_FEATURES}.
 - Do NOT generate near-duplicates.
 - Avoid trivial always-true/always-false features.
 
+
 ## OUTPUT FORMAT (STRICT)
 Return ONLY valid JSON of the form:
 
@@ -97,6 +100,7 @@ Return ONLY valid JSON of the form:
 - The JSON must end immediately after the final closing brace '}'.
 - Do NOT use tuple‑unpacking in function parameters. (e.g., def cell((r,c))); only use simple parameter names like def cell(rc) and unpack inside the body if needed.
 
+
 ## PYTHON SOURCE RULES (STRICT)
 For each feature object's "source" string:
 - It must define exactly one function with the same name as "name" (e.g., def f7(s, a): ...).
@@ -108,6 +112,8 @@ For each feature object's "source" string:
 - Must validate bounds for any neighbor access.
 - Runtime should be reasonable: O(H*W) or O(H*W*constant) is fine.
 
+
 ## ACTION PARSING (MUST IMPLEMENT IN EACH FUNCTION)
 Inside each function:
-- Assume a is a tuple (r,c). If a is not a length-2 tuple/list of ints, return False.
+- Assume a is a tuple (r,c). If a is not length-2, return False. Then parse coordinates with: try: r=int(a[0]); c=int(a[1]) except: return False.
+- Do NOT require isinstance(r, int) / isinstance(c, int); np.int64 etc. must be accepted via int(...) casting.

@@ -1,0 +1,101 @@
+# SYSTEM:
+You output ONLY valid JSON. No markdown, no extra text.
+
+# USER:
+I am debugging LPP. Do NOT propose new features.
+Hardcode EXACTLY these features using my existing DSL helper functions:
+- out_of_bounds, shifted, cell_is_value, at_cell_with_value, at_action_cell, scanning
+(They already exist at runtime exactly as defined in my code.)
+
+State/action conventions:
+- s is obs (np.ndarray-like), indexable as s[r][c]
+- a is the action cell tuple (r,c)
+- Then define: cell = (r,c) and call the DSL helpers.
+
+Return ONLY valid JSON with this schema:
+{
+  "claims": [{"id":"C1","text":"Hardcoded DSL-equivalent features for reproducing the old policy."}],
+  "features": [
+    {"id":"f1","name":"f1","description":"...","coverage":["C1"],"source":"def f1(s,a): ..."},
+    ...
+  ]
+}
+
+Output EXACTLY 8 features f1..f8. Each "source" must define exactly one function, no imports, no global vars.
+
+The features must be EXACTLY these DSL expressions (same semantics):
+
+f1:
+at_action_cell(
+  lambda cell,o: shifted((1,0), lambda cell,o: cell_is_value(stf.DRAWN, cell, o), cell, o),
+  a, s
+)
+
+f2:
+at_action_cell(
+  lambda cell,o: cell_is_value(stf.EMPTY, cell, o),
+  a, s
+)
+
+f3:
+at_action_cell(
+  lambda cell,o: shifted((0,-1), lambda cell,o: cell_is_value(stf.RED, cell, o), cell, o),
+  a, s
+)
+
+f4:
+at_action_cell(
+  lambda cell,o: shifted((0,1), lambda cell,o: cell_is_value(stf.RED, cell, o), cell, o),
+  a, s
+)
+
+f5:
+at_action_cell(
+  lambda cell,o: scanning(
+      (-1,0),
+      lambda cell,o: cell_is_value(stf.FALLING, cell, o),
+      lambda cell,o: cell_is_value(stf.DRAWN, cell, o),
+      cell, o
+  ),
+  a, s
+)
+
+f6:
+at_action_cell(
+  lambda cell,o: scanning(
+      (-1,0),
+      lambda cell,o: cell_is_value(stf.FALLING, cell, o),
+      lambda cell,o: cell_is_value(stf.STATIC, cell, o),
+      cell, o
+  ),
+  a, s
+)
+
+f7:
+at_action_cell(
+  lambda cell,o: scanning(
+      (1,0),
+      lambda cell,o: cell_is_value(stf.STATIC, cell, o),
+      lambda cell,o: cell_is_value(stf.EMPTY, cell, o),
+      cell, o
+  ),
+  a, s
+)
+
+f8:
+at_cell_with_value(
+  stf.DRAWN,
+  lambda cell,o: scanning(
+      (-1,-1),
+      lambda cell,o: cell_is_value(None, cell, o),
+      lambda cell,o: cell_is_value(stf.RED, cell, o),
+      cell, o
+  ),
+  a, s
+)
+
+IMPORTANT:
+
+- Use s as obs argument.
+- Do not add any other claims or features.
+- Output exactly f1..f8.

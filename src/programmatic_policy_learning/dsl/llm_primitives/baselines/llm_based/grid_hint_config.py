@@ -64,6 +64,7 @@ SYMBOL_MAPS = {
         "red_token": "R",
         "static_token": "S",
         "advance_token": "A",
+        "drawn_token": "D",
     },
     "CheckmateTactic": {
         "empty": ".",

@@ -13,9 +13,10 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
     grid_encoder,
     grid_hint_config,
 )
-from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor import (
-    collect_full_episode,
+from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
+    hint_extractor,
 )
+
 
 def run_single_episode(
     env: Any,
@@ -90,7 +91,6 @@ def convert_dir_lists_to_tuples(programs: list[str]) -> list[str]:
     return [_DIR_LIST_RE.sub(repl, p) for p in programs]
 
 
-
 def sample_transition_example(
     env_factory: Callable[[int], Any],
     env_name: str,
@@ -100,7 +100,9 @@ def sample_transition_example(
     """Sample a single (s_t, a_t, s_t1) example and format with encoding."""
     expert = get_grid_expert(env_name)
     env = env_factory(0)
-    traj = collect_full_episode(env, expert, max_steps=max_steps, sample_count=None)
+    traj = hint_extractor.collect_full_episode(
+        env, expert, max_steps=max_steps, sample_count=None
+    )
     env.close()
     if not traj:
         raise ValueError("No trajectory data collected.")
@@ -142,7 +144,7 @@ def sample_transition_example(
     if encoding_method == "1":
         state_t = list_literal(obs_t)
         state_t1 = list_literal(obs_t1)
-        state_t1 +=  f"\nToken meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}"
+        state_t1 += f"\nToken meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}"
     else:
         state_t = listing(obs_t)
         state_t1 = listing(obs_t1)

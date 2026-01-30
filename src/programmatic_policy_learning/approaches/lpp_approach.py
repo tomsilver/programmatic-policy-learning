@@ -46,6 +46,9 @@ from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
 from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
     PyFeatureGenerator,
 )
+from programmatic_policy_learning.dsl.llm_primitives.utils import (
+    JSONStructureRepromptCheck,
+)
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     GridInput,
     LocalProgram,
@@ -54,7 +57,10 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     make_ablated_dsl,
     make_dsl,
 )
-from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+from programmatic_policy_learning.dsl.state_action_program import (
+    StateActionProgram,
+    set_dsl_functions,
+)
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
@@ -123,7 +129,7 @@ def build_py_feature_functions(
         ]
         if not func_names:
             raise ValueError("Expected at least one function definition in feature.")
-        # module_globals: dict[str, Any] = {}
+
         module_globals = dict(dsl_functions)
         exec(source, module_globals)  # pylint: disable=exec-used
         for name in func_names:
@@ -142,6 +148,7 @@ def get_program_set(
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
     outer_feedback: str | None = None,
+    seed: int = 0,
 ) -> tuple[list, list, dict]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -198,7 +205,9 @@ def get_program_set(
         cache = SQLite3PretrainedLargeModelCache(cache_path)
         llm_client = OpenAIModel("gpt-4.1", cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
+        batch_prompt_path = program_generation.get("py_feature_gen_batch_prompt")
         num_features = program_generation["num_features"]
+        num_batches = program_generation.get("num_batches")
         env = env_factory(0)
         object_types = env.get_object_types()
         # object_types = grid_hint_config.SALIENT_TOKENS[base_class_name]
@@ -206,16 +215,22 @@ def get_program_set(
         hint_text = load_hint_text(
             base_class_name, program_generation["encoding_method"], HINTS_ROOT
         )
-        
-        st, at, st1 = sample_transition_example(env_factory, base_class_name, "1", max_steps=40)
+
+        st, at, st1 = sample_transition_example(
+            env_factory, base_class_name, "1", max_steps=40
+        )
         features, payload = py_generator.generate(
             prompt_path=prompt_path,
+            batch_prompt_path=batch_prompt_path,
             object_types=object_types,
             hint_text=hint_text,
             num_features=num_features,
+            num_batches=num_batches,
             state_t_example=st,
             action_example=at,
             state_t1_example=st1,
+            seed=seed,
+            reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
         )
         # program_prior_log_probs = [-4.0] * len(features)
 
@@ -360,7 +375,6 @@ def _generate_programs(
             break
         programs.append(program)
         program_prior_log_probs.append(prior)
-    print("INJA UMAD")
     return programs, program_prior_log_probs
 
 
@@ -424,7 +438,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
-            outer_feedback=outer_feedback,  # <-- feed into grammar generator
+            outer_feedback=outer_feedback,
+            seed=self.seed_num,
         )
         # logging.info(programs)
         # logging.info(program_prior_log_probs)
@@ -434,12 +449,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
         )
+
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
         n = self.program_generation["num_features"]
         new = [f"f{i}(s, a)" for i in range(1, n + 1)]
         programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in new]
-        # programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in programs]
         X, y = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
@@ -447,6 +462,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict,
             dsl_functions,
         )
+        self._assert_features_fire(X, programs_sa)
         logging.info(X)
         logging.info(y)
         if X is None:
@@ -467,9 +483,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
-        for each in plps:
-            print(each)
-            print("((((()))))")
+        self._log_plp_violation_counts(plps, demonstrations, dsl_functions, top_k=10)
+
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []
@@ -477,6 +492,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
+
         logging.info(particle_log_probs)
         map_idx = np.argmax(particle_log_probs).squeeze()
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
@@ -500,6 +516,53 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             policy = LPPPolicy([StateActionProgram("False")], [1.0])
 
         return policy
+
+    @staticmethod
+    def _log_plp_violation_counts(
+        plps: list[StateActionProgram],
+        demonstrations: Any,
+        dsl_functions: dict[str, Any],
+        top_k: int = 10,
+    ) -> None:
+        """Log how many demo steps each PLP fails (False on expert action)."""
+        set_dsl_functions(dsl_functions)
+        counts: list[tuple[int, StateActionProgram]] = []
+        total_steps = len(demonstrations.steps)
+        for plp in plps:
+            violations = 0
+            for obs, action in demonstrations.steps:
+                try:
+                    if not plp(obs, action):
+                        violations += 1
+                except Exception:  # pylint: disable=broad-exception-caught
+                    violations += 1
+            counts.append((violations, plp))
+
+        counts.sort(key=lambda item: item[0])
+        logging.info("PLP violation counts (lower is better):")
+        for violations, plp in counts[:top_k]:
+            rate = (violations / total_steps) if total_steps else 0.0
+            logging.info(
+                "violations=%d/%d (%.2f%%) | plp=%s",
+                violations,
+                total_steps,
+                100.0 * rate,
+                plp,
+            )
+
+    @staticmethod
+    def _assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
+        """Assert that every feature fires at least once across all
+        examples."""
+        if X is None:
+            raise AssertionError("X is None; cannot validate feature coverage.")
+        if X.shape[1] == 0:
+            raise AssertionError("No features found in X.")
+        totals = np.asarray(X.sum(axis=0)).ravel()
+        dead_idxs = np.where(totals == 0)[0].tolist()
+        if dead_idxs:
+            dead = [str(programs[i]) for i in dead_idxs[:20]]
+            print(f"{len(dead_idxs)} features never fire. Examples: {dead}")
 
     def test_policy_on_envs(
         self,

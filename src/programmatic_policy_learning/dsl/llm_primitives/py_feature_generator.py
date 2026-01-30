@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -69,6 +70,58 @@ class PyFeatureGenerator:
             raise ValueError("Prompt template still has unresolved variables.")
         return rendered
 
+    def _extract_descriptions(self, payload: dict[str, Any]) -> list[str]:
+        """Extract feature descriptions from a payload."""
+        features = payload.get("features")
+        if not isinstance(features, list):
+            return []
+        descriptions: list[str] = []
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            desc = feature.get("description", "")
+            if not isinstance(desc, str):
+                continue
+            cleaned = " ".join(desc.strip().split())
+            if cleaned:
+                descriptions.append(cleaned)
+        return descriptions
+
+    def fill_batch_prompt(
+        self,
+        template: str,
+        object_types: Sequence[str],
+        hint_text: str,
+        existing_descriptions: Sequence[str],
+        batch_size: int,
+        start_index: int,
+    ) -> str:
+        """Fill batch prompt with base placeholders plus existing feature
+        info."""
+        rendered = template
+        rendered = rendered.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
+        rendered = rendered.replace("${HINT_TEXT}", hint_text)
+        rendered = rendered.replace("${BATCH_SIZE}", str(batch_size))
+        rendered = rendered.replace("${START_INDEX}", str(start_index))
+
+        if "${EXISTING_FEATURE_DOCSTRINGS}" in rendered:
+            if existing_descriptions:
+                desc_block = "\n".join(f"- {d}" for d in existing_descriptions)
+            else:
+                desc_block = "None"
+            rendered = rendered.replace("${EXISTING_FEATURE_DOCSTRINGS}", desc_block)
+
+        unresolved = [
+            "${OBJECT_TYPES}",
+            "${HINT_TEXT}",
+            "${EXISTING_FEATURE_DOCSTRINGS}",
+            "${BATCH_SIZE}",
+            "${START_INDEX}",
+        ]
+        if any(token in rendered for token in unresolved):
+            raise ValueError("Batch prompt template still has unresolved variables.")
+        return rendered
+
     def query_llm(
         self,
         prompt: str,
@@ -114,37 +167,92 @@ class PyFeatureGenerator:
     def generate(
         self,
         prompt_path: str | Path,
+        batch_prompt_path: str | Path | None,
         object_types: Sequence[str],
         hint_text: str,
         num_features: int,
+        num_batches: int | None,
         state_t_example: str | None = None,
         action_example: str | None = None,
         state_t1_example: str | None = None,
         max_attempts: int = 3,
+        seed: int = 0,
         reprompt_checks: list[RepromptCheck] | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
-        
-        prompt_template = self.read_prompt(prompt_path)
-        prompt = self.fill_prompt(
-            prompt_template,
-            object_types=object_types,
-            hint_text=hint_text,
-            num_features=num_features,
-            state_t_example=state_t_example,
-            action_example=action_example,
-            state_t1_example=state_t1_example,
-        )
-        print(prompt)
-        payload = self.query_llm(
-            prompt,
-            max_attempts=max_attempts,
-            reprompt_checks=reprompt_checks,
-        )
-        print(payload)
-        feature_programs = self.parse_feature_programs(payload)
+
+        if num_batches is None or num_batches <= 0:
+            num_batches = 1
+        num_batches = min(num_batches, num_features)
+        batch_size = math.ceil(num_features / num_batches)
+
+        all_programs: list[str] = []
+        all_descriptions: list[str] = []
+        batch_payloads: list[dict[str, Any]] = []
+
+        for batch_idx in range(num_batches):
+            if batch_idx == 0:
+                current_prompt_path = prompt_path
+            else:
+                if batch_prompt_path is None:
+                    raise ValueError(
+                        "batch_prompt_path is required when batch_size < num_features."
+                    )
+                current_prompt_path = batch_prompt_path
+
+            remaining = num_features - batch_idx * batch_size
+            current_batch_size = min(batch_size, remaining)
+
+            prompt_template = self.read_prompt(current_prompt_path)
+            if batch_idx == 0:
+                prompt = self.fill_prompt(
+                    prompt_template,
+                    object_types=object_types,
+                    hint_text=hint_text,
+                    num_features=current_batch_size,
+                    state_t_example=state_t_example,
+                    action_example=action_example,
+                    state_t1_example=state_t1_example,
+                )
+            else:
+                prompt = self.fill_batch_prompt(
+                    prompt_template,
+                    object_types=object_types,
+                    hint_text=hint_text,
+                    existing_descriptions=all_descriptions,
+                    batch_size=current_batch_size,
+                    start_index=len(all_programs) + 1,
+                )
+            prompt = f"{prompt}\n\nSEED: {seed}\n"
+
+            payload = self.query_llm(
+                prompt,
+                max_attempts=max_attempts,
+                reprompt_checks=reprompt_checks,
+            )
+            feature_programs = self.parse_feature_programs(payload)
+            all_descriptions.extend(self._extract_descriptions(payload))
+            all_programs.extend(feature_programs)
+            batch_payloads.append(payload)
+
+            if self.llm_client is not None:
+                self.write_json(
+                    f"py_feature_payload_batch_{batch_idx + 1}.json", payload
+                )
+
+        combined_payload: dict[str, Any] = {
+            "features": [
+                {"id": f"f{i + 1}", "name": f"f{i + 1}", "source": src}
+                for i, src in enumerate(all_programs)
+            ],
+            "descriptions": all_descriptions,
+            "batches": batch_payloads,
+            "batch_size": batch_size,
+            "num_batches": num_batches,
+            "total_features": len(all_programs),
+        }
         if self.llm_client is not None:
-            self.write_json("py_feature_payload.json", payload)
-
-        return feature_programs, payload
-
+            self.write_json("py_feature_payload.json", combined_payload)
+        print(combined_payload)
+        print(all_programs)
+        return all_programs, combined_payload

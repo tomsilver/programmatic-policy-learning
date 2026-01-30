@@ -37,6 +37,16 @@ def collect_demo(
     expert.reset(obs, info)
     while True:
         action = expert.step()
+        # assert isinstance(
+        #     obs, np.ndarray
+        # ), f"Expected obs to be np.ndarray, got {type(obs).__name__}"
+        # assert (
+        #     obs.ndim == 2
+        # ), f"Expected obs to be 2D, got shape {getattr(obs, 'shape', None)}"
+        # assert isinstance(
+        #     action, tuple
+        # ), f"Expected action to be tuple, got {type(action).__name__}"
+        # assert len(action) == 2, f"Expected action to be length-2 tuple, got {action}"
         obs_list.append(obs)
         act_list.append(action)
         step_out = env.step(action)

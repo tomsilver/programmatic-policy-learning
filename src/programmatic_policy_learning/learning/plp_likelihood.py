@@ -96,8 +96,8 @@ def compute_likelihood_plps(
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
     # for each in plps:
-        # logging.info(each)
-        # logging.info("***")
+    # logging.info(each)
+    # logging.info("***")
     # logging.info("PLPS printed")
 
     # Prepare DSL serialization

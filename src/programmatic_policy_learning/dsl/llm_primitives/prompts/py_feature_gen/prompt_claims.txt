@@ -33,7 +33,6 @@ Each feature will be called like:
 
 Where:
 - s is a NumPy 2D array (shape HxW).
-  - You MUST NOT import numpy.
   - You may treat s like a nested list: use s[r][c], len(s), len(s[0]).
   - Cells contain values (strings/ints/objects) comparable by equality.
 - a is always a tuple: a = (r, c)
@@ -46,7 +45,6 @@ ${OBJECT_TYPES}
 Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
 
 ## DEMONSTRATION-BASED HINT
-
 The following hint summarizes expert decision patterns from demonstrations. Use it to bias feature generation toward relevant relations.
 
 For reference, expert demonstrations consist of transitions of the form (s_t, a_t, s_{t+1}), where:
@@ -64,9 +62,18 @@ ${ACTION_EXAMPLE}
 Next state s_{t+1}:
 ${STATE_T1_EXAMPLE}
 
-HINT:
 The following is the inferred decision-making hint:
 ${HINT_TEXT}
+
+## HINT COMPILATION REQUIREMENT (STRICT)
+You must treat the hint as a set of testable atomic claims and ensure coverage.
+
+Step 1: Decompose the HINT_TEXT into a number of atomic claims (C1..Ck). Each claim must be something that could be checked from (s, a) only.
+Step 2: Generate features so that EVERY claim Ci is covered by at least one feature.
+Step 3: For EACH claim Ci, ensure you generate:
+  - at least one discriminator feature (a property expected to be True or False for expert-chosen actions)
+Step 4: Add a "coverage" list field to each feature that lists which claim ids it supports, e.g., ["C2","C5"].
+Step 5: All claims must be covered across the whole library. If you cannot cover a claim using only (s,a), you must still include it but mark it as "UNOBSERVABLE_FROM_(s,a)" and do NOT generate features for it.
 
 
 ## FEATURE GENERATION REQUEST
@@ -76,7 +83,6 @@ Generate exactly ${NUM_FEATURES} features named f1..f${NUM_FEATURES}.
 - Do NOT generate near-duplicates.
 - Avoid trivial always-true/always-false features.
 - At least some features should capture multi-step spatial relationships rather than single-cell checks.
-
 
 A feature may represent:
 - a local property at the action cell,
@@ -91,15 +97,27 @@ Some features may encode existential or universal conditions, such as whether th
 Return ONLY valid JSON of the form:
 
 {
+  "claims": [
+    {"id": "C1", "text": "<atomic claim derived from the hint>"},
+    ...
+  ],
   "features": [
     {
       "id": "f1",
       "name": "f1",
+      "description": "<short one-sentence or keyword-style explanation of what this feature checks>",
+      "coverage": ["C1", "C3"],
       "source": "<python source code as a single string>"
+  
     },
     ...
   ]
 }
+
+- In addition to the Python source code, each feature must include a short natural-language explanation describing, in one sentence or a few keywords, the general pattern it represents.
+This explanation is for documentation and analysis only and does not affect execution.
+- Each feature object MUST include a "coverage" field listing claim ids like ["C1","C4"].
+
 
 ### STRICT OUTPUT RULES (MUST FOLLOW):
 - Output MUST be a single JSON object and MUST parse with json.loads().
@@ -108,6 +126,9 @@ Return ONLY valid JSON of the form:
 - You must output exactly ${NUM_FEATURES} feature objects, with ids and names f1..f${NUM_FEATURES}.
 - The JSON must end immediately after the final closing brace '}'.
 - Do NOT use tuple‑unpacking in function parameters. (e.g., def cell((r,c))); only use simple parameter names like def cell(rc) and unpack inside the body if needed.
+- Each feature object MUST include a "description" field.
+- The description must be a short explanation (one sentence or a few keywords).
+
 
 ## PYTHON SOURCE RULES (STRICT)
 For each feature object's "source" string:
@@ -122,4 +143,5 @@ For each feature object's "source" string:
 
 ## ACTION PARSING (MUST IMPLEMENT IN EACH FUNCTION)
 Inside each function:
-- Assume a is a tuple (r,c). If a is not a length-2 tuple/list of ints, return False.
+- Assume a is a tuple (r,c). If a is not length-2, return False. Then parse coordinates with: try: r=int(a[0]); c=int(a[1]) except: return False.
+- Do NOT require isinstance(r, int) / isinstance(c, int); np.int64 etc. must be accepted via int(...) casting.

@@ -205,7 +205,6 @@ def run(
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
-    input(prompt)
     query = Query(
         prompt, hyperparameters={"temperature": 0.0, "seed": seed}
     )  # "top_p": 1.0
