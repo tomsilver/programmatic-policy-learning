@@ -46,17 +46,17 @@ def run_single_episode(
     return total_reward
 
 
-def load_hint_text(env_name: str, encoding_method: str, hints_root: str | Path) -> str:
+def load_hint_text(env_name: str, encoding_method: str, structured_hint:bool, hints_root: str | Path) -> str:
     """Load the latest hint text for an environment/encoding pair."""
-    hint_dir = Path(hints_root) / env_name / encoding_method
+    hint_type = "structured" if structured_hint else "simple"    
+    hint_dir = Path(hints_root) / env_name / encoding_method / hint_type
     if not hint_dir.exists():
         raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
     hint_files = sorted(hint_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
     if not hint_files:
         raise FileNotFoundError(f"No hint files found in {hint_dir}")
     latest_file = hint_files[-1]
-    print(latest_file)
-    input()
+
     raw_text = latest_file.read_text(encoding="utf-8").strip()
 
     try:

@@ -225,7 +225,7 @@ class PyFeatureGenerator:
                     start_index=len(all_programs) + 1,
                 )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
-
+            print(prompt)
             payload = self.query_llm(
                 prompt,
                 max_attempts=max_attempts,

@@ -111,7 +111,7 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
-    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "exp_hints"
+    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "final_hints"
 )
 
 
@@ -186,7 +186,7 @@ def get_program_set(
         object_types = env.get_object_types()
         generator = LLMFeatureGenerator(llm_client)
         hint_text = load_hint_text(
-            base_class_name, program_generation["encoding_method"], HINTS_ROOT
+            base_class_name, program_generation["encoding_method"], HINTS_ROOT, program_generation["hint_structured"]
         )
 
         features, payload = generator.generate(
@@ -213,7 +213,7 @@ def get_program_set(
         # object_types = grid_hint_config.SALIENT_TOKENS[base_class_name]
         py_generator = PyFeatureGenerator(llm_client)
         hint_text = load_hint_text(
-            base_class_name, program_generation["encoding_method"], HINTS_ROOT
+            base_class_name, program_generation["encoding_method"], HINTS_ROOT, program_generation["hint_structured"]
         )
 
         st, at, st1 = sample_transition_example(

@@ -17,3 +17,4 @@ program_generation:
   removed_primitive: ""
   num_features: 100
   encoding_method: "enc_4"
+  hint_structured: True
