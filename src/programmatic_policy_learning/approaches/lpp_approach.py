@@ -229,7 +229,7 @@ def get_program_set(
             state_t_example=st,
             action_example=at,
             state_t1_example=st1,
-            seed=seed,
+            _seed=seed,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
         )
         # program_prior_log_probs = [-4.0] * len(features)

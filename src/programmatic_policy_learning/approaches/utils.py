@@ -55,6 +55,8 @@ def load_hint_text(env_name: str, encoding_method: str, hints_root: str | Path) 
     if not hint_files:
         raise FileNotFoundError(f"No hint files found in {hint_dir}")
     latest_file = hint_files[-1]
+    print(latest_file)
+    input()
     raw_text = latest_file.read_text(encoding="utf-8").strip()
 
     try:

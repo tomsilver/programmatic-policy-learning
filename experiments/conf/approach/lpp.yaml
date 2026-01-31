@@ -11,8 +11,8 @@ program_generation:
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
   feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt_v1_1.txt" #prompt_v1_1
-  py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v1.txt"
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt_v1_0.txt" #prompt_v1_1
+  py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 2
   removed_primitive: ""
   num_features: 100

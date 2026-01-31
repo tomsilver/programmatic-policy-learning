@@ -127,11 +127,12 @@ class PyFeatureGenerator:
         prompt: str,
         max_attempts: int = 3,
         reprompt_checks: list[RepromptCheck] | None = None,
+        seed: int = 0,
     ) -> dict[str, Any]:
         """Query the LLM and return parsed JSON payload."""
         if self.llm_client is None:
             raise ValueError("LLM client is not initialized.")
-        query = Query(prompt)
+        query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
         response = query_with_reprompts(
             self.llm_client,
             query,
@@ -176,7 +177,7 @@ class PyFeatureGenerator:
         action_example: str | None = None,
         state_t1_example: str | None = None,
         max_attempts: int = 3,
-        seed: int = 0,
+        _seed: int = 0,
         reprompt_checks: list[RepromptCheck] | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
@@ -223,12 +224,13 @@ class PyFeatureGenerator:
                     batch_size=current_batch_size,
                     start_index=len(all_programs) + 1,
                 )
-            prompt = f"{prompt}\n\nSEED: {seed}\n"
+            prompt = f"{prompt}\n\nSEED: {_seed}\n"
 
             payload = self.query_llm(
                 prompt,
                 max_attempts=max_attempts,
                 reprompt_checks=reprompt_checks,
+                seed=_seed,
             )
             feature_programs = self.parse_feature_programs(payload)
             all_descriptions.extend(self._extract_descriptions(payload))

@@ -89,7 +89,7 @@ def video_to_data_urls(
 
 
 # pylint: disable=line-too-long
-def build_demo_hint_prompt(num_frames: int) -> str:
+def build_demo_hint_prompt(num_traj: int) -> str:
     """Build the VLM prompt for extracting DSL-relevant hints from visual
     demonstrations."""
     return f"""
@@ -100,7 +100,7 @@ Each demonstration consists of:
 - The action a_t, given as a clicked cell location (row, col)
 - An image of the state s_t+1 (after deterministic transition)
 
-You will be shown {num_frames} demonstrations in sequence.
+You will be shown {num_traj} demonstrations in sequence.
 
 ----
 Your task:
@@ -148,9 +148,58 @@ NOTE:
 # """
 
 
-def describe_five_videos(
+def build_structural_prompt(num_frames: int) -> str:
+    """Build the VLM prompt for structural hints from video frames."""
+    return f"""
+You are given expert demonstrations from a grid-based environment as IMAGE FRAMES.
+
+Each demonstration consists of:
+- An image of the state s_t (before action)
+- The action a_t, given as a clicked cell location (row, col), 0-indexed
+- An image of the state s_t+1 (after deterministic transition)
+
+You will be shown {num_frames} demonstrations in sequence.
+
+----
+Your task:
+Infer the expert’s strategy for selecting action a in state s from the demonstrations.
+
+IMPORTANT RULES
+- Use ONLY evidence from the demonstrations. Do NOT use outside knowledge about the game.
+- Do NOT narrate individual steps. Extract general rules that hold across demos.
+- Express rules as testable predicates over (s, a).
+- Prefer rules that generalize; ignore demo-specific coincidences.
+- When you are uncertain, say so and give the simplest consistent rule.
+
+Helpful language:
+- Use relative positions to the action cell: same row/col, above/below, left/right, diagonals, adjacency.
+- If a rule depends on patterns along a direction, describe it using phrases like:
+  “first hit”, “blocked by”, “before reaching”, “until”, “closest in that direction”.
+
+Output EXACTLY the following 3 sections and nothing else:
+
+1) POLICY RULES (8–15 bullets):
+- Write each rule as a predicate over (s, a).
+- Use relative positions anchored at the action cell (r,c).
+- After each bullet, add “(seen in ~N/{num_frames} demos)”.
+- If multiple modes exist, include separate bullets for each mode.
+
+2) COUNTERFACTUAL DISTRACTORS (5 bullets):
+- Write patterns that often appear near the chosen action but where the expert does NOT click.
+- Same predicate style.
+- After each bullet, add “(seen in ~N/{num_frames} demos)”.
+
+3) GAME DYNAMICS (5–10 bullets):
+- Describe deterministic transition patterns you can infer from s_t → s_t+1.
+- Focus on consistent mechanisms: movement, falling, blocking, collisions, redraw/erase, spawning, etc.
+- Keep each bullet short and testable.
+"""
+
+
+def describe_videos(
     video_paths: list[str],
     model: str = "gpt-4.1",
+    num_traj: int = 4,
     max_frames_per_video: int = 12,
     sample_every_n_frames: int = 15,
 ) -> str:
@@ -159,7 +208,8 @@ def describe_five_videos(
     client = OpenAI()
 
     content: list[dict[str, Any]] = [
-        {"type": "input_text", "text": build_demo_hint_prompt(4)}
+        {"type": "input_text", "text": build_demo_hint_prompt(num_traj)}
+        # {"type": "input_text", "text": build_structural_prompt(num_traj)}
     ]
 
     # Build multi-video content
@@ -206,20 +256,24 @@ def describe_five_videos(
 
 
 if __name__ == "__main__":
-    env_name = "TwoPileNim"
-    paths = [f"videos/expert_demonstration_{env_name}_{i}.mp4" for i in range(4)]
+    env_name = "StopTheFall"
+    num_demos = 4
+    paths = [
+        f"videos/expert_demonstration_{env_name}_{i}.mp4" for i in range(num_demos)
+    ]
 
-    text = describe_five_videos(
+    text = describe_videos(
         paths,
         model="gpt-4.1",
+        num_traj=num_demos,
         max_frames_per_video=10,
         sample_every_n_frames=12,
     )
 
     # Generate a timestamped filename
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    num_demos = len(paths)
-    output_dir = "videos/output"
+
+    output_dir = os.path.join("videos", "output", env_name)
     os.makedirs(output_dir, exist_ok=True)
     output_file = f"{output_dir}/{timestamp}_{num_demos}_demos_{env_name}.txt"
 

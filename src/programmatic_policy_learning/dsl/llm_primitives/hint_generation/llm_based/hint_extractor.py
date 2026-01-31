@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import random
-import time
+
+# import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -104,12 +105,24 @@ def collect_full_episode(
 # ---------------------------------------------------------------------
 
 
-def build_hint_prompt_v1(trajectories_text: str) -> str:
+def build_hint_prompt_v1(
+    trajectories_text: str, env_name: str, encoding_method: str
+) -> str:
     """Build the LLM prompt for extracting strategy hints from demonstrations.
 
     trajectories_text:
         A human-readable representation of expert trajectories
         (ASCII, object-based, etc.)
+    """
+    place_holder = ""
+    token_map_text = _format_token_map(_build_token_map(env_name))
+
+    if encoding_method == "1":
+        place_holder = f"""TOKEN MAP:
+    At the very end, output a instruction named TOKEN_MAP that maps the raw grid characters to canonical names.
+    Use EXACTLY this format (no extra keys, no commentary):
+    
+    {token_map_text}
     """
     return f"""
 You are given expert demonstrations from a grid-based environment.
@@ -127,6 +140,9 @@ Your task:
 Based on the demonstrations, describe the strategy the expert is using to take action a 
 given state s. Explain it in one paragraph. No extra output.
 In another paragraph, describe the dynamics of the game that you've observed.
+
+----
+{place_holder}
 """
 
 
@@ -157,6 +173,116 @@ In another paragraph, describe the dynamics of the game that you've observed.
 
 # Explain the decision making rule, how action a is selected in state s.
 # """
+
+
+def _build_token_map(env_name: str) -> dict[str, str]:
+    token_to_canonical = {
+        "StopTheFall": {
+            "empty": "stf.EMPTY",
+            "red_token": "stf.RED",
+            "static_token": "stf.STATIC",
+            "falling_token": "stf.FALLING",
+            "drawn_token": "stf.DRAWN",
+            "advance_token": "stf.ADVANCE",
+        },
+        "TwoPileNim": {
+            "empty": "tpn.EMPTY",
+            "token": "tpn.TOKEN",
+        },
+        "ReachForTheStar": {
+            "empty": "rfts.EMPTY",
+            "agent": "rfts.AGENT",
+            "star": "rfts.STAR",
+            "left_arrow": "rfts.LEFT_ARROW",
+            "right_arrow": "rfts.RIGHT_ARROW",
+            "drawn": "rfts.DRAWN",
+        },
+        "Chase": {
+            "empty": "ec.EMPTY",
+            "agent": "ec.AGENT",
+            "target": "ec.TARGET",
+            "wall": "ec.WALL",
+            "drawn": "ec.DRAWN",
+            "left_arrow": "ec.LEFT_ARROW",
+            "right_arrow": "ec.RIGHT_ARROW",
+            "up_arrow": "ec.UP_ARROW",
+            "down_arrow": "ec.DOWN_ARROW",
+        },
+        "CheckmateTactic": {
+            "empty": "ct.EMPTY",
+            "black_king": "ct.BLACK_KING",
+            "white_king": "ct.WHITE_KING",
+            "white_queen": "ct.WHITE_QUEEN",
+            "highlighted_white_king": "ct.HIGHLIGHTED_WHITE_KING",
+            "highlighted_white_queen": "ct.HIGHLIGHTED_WHITE_QUEEN",
+        },
+    }
+    try:
+        mapping = token_to_canonical[env_name]
+    except KeyError as exc:
+        raise KeyError(f"No TOKEN_MAP configured for {env_name}") from exc
+
+    symbol_map = grid_hint_config.get_symbol_map(env_name)
+    token_map: dict[str, str] = {}
+    for token_name, char in symbol_map.items():
+        canonical = mapping.get(token_name)
+        if canonical is None:
+            raise KeyError(
+                f"Missing canonical token mapping for {env_name}: {token_name}"
+            )
+        token_map[char] = canonical
+    return token_map
+
+
+def _format_token_map(token_map: dict[str, str]) -> str:
+    items = sorted(token_map.items(), key=lambda item: item[0])
+    lines = ["TOKEN_MAP = {"]
+    for key, value in items:
+        lines.append(f'  "{key}": "{value}",')
+    if len(lines) > 1:
+        lines[-1] = lines[-1].rstrip(",")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def build_hint_structured(
+    trajectories_text: str, env_name: str, encoding_method: str
+) -> str:
+    """Build structural hints."""
+    place_holder = ""
+    token_map_text = _format_token_map(_build_token_map(env_name))
+    if encoding_method == "1":
+        place_holder = f"""4) TOKEN MAP (required, last section):
+At the very end, output an instruction named TOKEN_MAP that maps the raw grid characters to canonical names.
+Use EXACTLY this format (no extra keys, no commentary):
+
+{token_map_text}"""
+    return f"""
+You are given expert demonstrations from a grid-based environment.
+
+Each demonstration consists of transitions (s_t, a_t, s_t+1) where a_t = (row, col).
+
+DEMONSTRATIONS:
+{trajectories_text}
+
+TASK:
+Infer the expert’s decision rule for choosing action a from state s.
+
+OUTPUT (no extra text):
+
+1) POLICY RULES (8–15 bullets):
+Write rules as testable predicates over (s, a). Use relative positions to the action cell and directions (up/down/left/right/diagonals).
+If a rule depends on patterns “along a direction”, describe it using phrases like “first hit”, “blocked by”, “before reaching”, or “until”.
+After each bullet, add “(seen in ~N/M demos)”.
+
+2) COUNTERFACTUAL DISTRACTORS (5 bullets):
+Write patterns that often appear near the chosen action but where the expert does NOT click. Use the same predicate style.
+
+3) GAME DYNAMICS (5–10 bullets):
+Describe deterministic transition patterns you can infer from s_t → s_t+1 (movement, falling, barriers, redraw, etc.).
+
+{place_holder}
+"""
 
 
 def build_hint_prompt_v2(trajectories_text: str) -> str:
@@ -218,23 +344,21 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 """
 
 
-#     return f"""
-# You are given expert demonstrations from a grid-based environment.
-
-# Each demonstration consists of:
-# - State s_t (before action)
-# - Action a_t (clicked cell: row, col)
-# - State s_t+1 (after deterministic transition)
-
-# DEMONSTRATIONS:
-# {trajectories_text}
-
-
-def extract_hints(llm_client: PretrainedLargeModel, trajectories_text: str) -> str:
+def extract_hints(
+    llm_client: PretrainedLargeModel,
+    trajectories_text: str,
+    env_name: str,
+    seed: int,
+    encoding_method: str,
+    structured: bool,
+) -> str:
     """Query the LLM and return parsed hint JSON."""
-    prompt = build_hint_prompt_v1(trajectories_text)
-    logging.info(prompt)
-    query = Query(prompt)
+    if structured:
+        prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
+    else:
+        prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
+    prompt = f"{prompt}\n\nSEED: {seed}\n"
+    query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
         llm_client,
@@ -272,6 +396,8 @@ def save_hints(
     env_name: str,
     seed: int,
     encoding_method: str,
+    num_demos: int,
+    flag: bool,
     out_dir: Path | str = "hints",
     filename: str | None = None,
 ) -> Path:
@@ -281,9 +407,13 @@ def save_hints(
     """
     out_dir = Path(out_dir) / env_name / f"enc_{encoding_method}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    filename = filename or f"hints_seed{seed}_{timestamp}.json"
+    # timestamp = time.strftime("%Y%m%d_%H%M%S")
+    if flag:
+        filename = filename or f"structured/hints_seed{seed}_{num_demos}.json"
+    else:
+        filename = filename or f"simple/hints_seed{seed}_{num_demos}.json"
     out_path = out_dir / filename
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(hints, str):
         out_path.write_text(hints, encoding="utf-8")
     else:
@@ -475,67 +605,84 @@ Output ONLY valid JSON following this schema:
 
 def main() -> None:
     """Entry point for running hint and DSL extraction."""
-    num_initial_states = 3
-    env_name = "TwoPileNim"
-    encoding_method = "4"
     max_steps_per_traj = 40
     seed = 0
-    _configure_rng(seed)
-
-    expert = get_grid_expert(env_name)
-    trajectories: list[list[tuple[Any, Any, Any]]] = []
-    object_types: Sequence[str] | None = None
-    for init_idx in range(num_initial_states):
-        env = env_factory(init_idx, env_name)
-        traj = collect_full_episode(env, expert, sample_count=None)
-        env.close()
-        object_types = env.get_object_types()
-        trajectories.append(traj)
-
-    if object_types is None:
-        raise RuntimeError("No object types collected from environments.")
-
-    symbol_map = grid_hint_config.get_symbol_map(env_name)
-
-    enc_cfg = grid_encoder.GridStateEncoderConfig(
-        symbol_map=symbol_map,
-        empty_token="empty",
-        coordinate_style="rc",
-    )
-    encoder = grid_encoder.GridStateEncoder(enc_cfg)
-    analyzer = transition_analyzer.GenericTransitionAnalyzer()
-
-    all_traj_texts = []
-
-    for idx, traj in enumerate(trajectories):
-        text = trajectory_serializer.trajectory_to_text(
-            traj,
-            encoder=encoder,
-            analyzer=analyzer,
-            salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
-            encoding_method=encoding_method,
-            max_steps=max_steps_per_traj,
-        )
-        all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
-
-    combined_text = "\n\n".join(all_traj_texts)
-
     cache_path = Path("cache.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4.1", cache)
-    hints = extract_hints(llm_client, combined_text)
-    # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
-    # output = extract_dsl(llm_client, dsl_prompt)
 
-    path = save_hints(
-        hints,
-        env_name=env_name,
-        seed=seed,
-        encoding_method=encoding_method,
-        out_dir="exp_hints",
-    )
-    logging.info(f"Hints saved to {path}")
+    env_names = [
+        "Chase",
+        "TwoPileNim",
+        "ReachForTheStar",
+        "StopTheFall",
+        "CheckmateTactic",
+    ]
+    encoding_methods = ["1", "4"]
+    num_initial_states = 5
+    structured_modes = [True, False]
+
+    for env_name in env_names:
+        for encoding_method in encoding_methods:
+            for structured in structured_modes:
+                _configure_rng(seed)
+                expert = get_grid_expert(env_name)
+                trajectories: list[list[tuple[Any, Any, Any]]] = []
+                object_types: Sequence[str] | None = None
+                for init_idx in range(num_initial_states):
+                    env = env_factory(init_idx, env_name)
+                    traj = collect_full_episode(env, expert, sample_count=None)
+                    env.close()
+                    object_types = env.get_object_types()
+                    trajectories.append(traj)
+
+                if object_types is None:
+                    raise RuntimeError("No object types collected from environments.")
+
+                symbol_map = grid_hint_config.get_symbol_map(env_name)
+                enc_cfg = grid_encoder.GridStateEncoderConfig(
+                    symbol_map=symbol_map,
+                    empty_token="empty",
+                    coordinate_style="rc",
+                )
+                encoder = grid_encoder.GridStateEncoder(enc_cfg)
+                analyzer = transition_analyzer.GenericTransitionAnalyzer()
+
+                all_traj_texts = []
+                for idx, traj in enumerate(trajectories):
+                    text = trajectory_serializer.trajectory_to_text(
+                        traj,
+                        encoder=encoder,
+                        analyzer=analyzer,
+                        salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
+                        encoding_method=encoding_method,
+                        max_steps=max_steps_per_traj,
+                    )
+                    all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
+
+                combined_text = "\n\n".join(all_traj_texts)
+                hints = extract_hints(
+                    llm_client,
+                    combined_text,
+                    env_name,
+                    seed,
+                    encoding_method,
+                    structured,
+                )
+                # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
+                # output = extract_dsl(llm_client, dsl_prompt)
+
+                path = save_hints(
+                    hints,
+                    env_name=env_name,
+                    seed=seed,
+                    encoding_method=encoding_method,
+                    num_demos=num_initial_states,
+                    flag=structured,
+                    out_dir="final_hints",
+                )
+                logging.info(f"Hints saved to {path}")
 
 
 if __name__ == "__main__":
