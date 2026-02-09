@@ -31,6 +31,7 @@ def run_approach_on_maze(
         action = approach.step()
         obs, rew, done, _, info = env.step(action)
         reward = float(rew)
+        env.render()
         approach.update(obs, reward, done, info)
         if done:
             goal_reached = True
@@ -253,11 +254,11 @@ def main(cfg: DictConfig) -> None:
     ax.grid(axis="y", alpha=0.3)
 
     # Add value labels on bars
-    for bars in [bars1, bars2]:
-        for bar in bars:
-            height = bar.get_height()
+    for bar_container in [bars1, bars2]:
+        for rect in bar_container:
+            height = rect.get_height()
             ax.text(
-                bar.get_x() + bar.get_width() / 2.0,
+                rect.get_x() + rect.get_width() / 2.0,
                 height,
                 f"{int(height)}",
                 ha="center",
@@ -295,11 +296,11 @@ def main(cfg: DictConfig) -> None:
     ax.grid(axis="y", alpha=0.3)
 
     # Add value labels on bars
-    for bars in [bars1, bars2]:
-        for bar in bars:
-            height = bar.get_height()
+    for bar_container in [bars1, bars2]:
+        for rect in bar_container:
+            height = rect.get_height()
             ax.text(
-                bar.get_x() + bar.get_width() / 2.0,
+                rect.get_x() + rect.get_width() / 2.0,
                 height,
                 f"{int(height)}",
                 ha="center",

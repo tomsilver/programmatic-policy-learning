@@ -1,0 +1,66 @@
+LLM PPL MazeEnv Baseline Results
+================================================================================
+
+Max steps per trial: 150
+Outer margin: 10
+
+================================================================================
+EXPERIMENT: Mazes with Obstacles (from data/mazes/)
+================================================================================
+Success rate: 0.0% (0/10)
+
+Detailed Results:
+--------------------------------------------------------------------------------
+Trial    Maze                 Goal            Reached    Steps   
+--------------------------------------------------------------------------------
+1        maze1_10x10          (9, 9)          False      150     
+1        maze1_15x15          (14, 14)        False      150     
+1        maze2_10x10          (9, 9)          False      150     
+1        maze2_15x15          (14, 14)        False      150     
+1        maze3_10x10          (9, 9)          False      150     
+1        maze3_15x15          (14, 14)        False      150     
+1        maze4_10x10          (9, 9)          False      150     
+1        maze4_15x15          (14, 14)        False      150     
+1        maze5_10x10          (9, 9)          False      150     
+1        maze5_15x15          (14, 14)        False      150     
+
+================================================================================
+EXPERIMENT: Empty Inner Maze (7x7 all 0s, with wall border)
+================================================================================
+Success rate: 0.0% (0/10)
+
+Detailed Results:
+--------------------------------------------------------------------------------
+Trial    Maze                 Goal            Reached    Steps   
+--------------------------------------------------------------------------------
+1        empty_inner_7x7      (6, 6)          False      150     
+2        empty_inner_7x7      (6, 6)          False      150     
+3        empty_inner_7x7      (6, 6)          False      150     
+4        empty_inner_7x7      (6, 6)          False      150     
+5        empty_inner_7x7      (6, 6)          False      150     
+6        empty_inner_7x7      (6, 6)          False      150     
+7        empty_inner_7x7      (6, 6)          False      150     
+8        empty_inner_7x7      (6, 6)          False      150     
+9        empty_inner_7x7      (6, 6)          False      150     
+10       empty_inner_7x7      (6, 6)          False      150     
+
+================================================================================
+EXPERIMENT: Completely Empty Grid (no obstacles)
+================================================================================
+Success rate: 100.0% (10/10)
+
+Detailed Results:
+--------------------------------------------------------------------------------
+Trial    Maze                 Goal            Reached    Steps   
+--------------------------------------------------------------------------------
+1        completely_empty     (6, 6)          True       23      
+2        completely_empty     (6, 6)          True       12      
+3        completely_empty     (6, 6)          True       11      
+4        completely_empty     (6, 6)          True       23      
+5        completely_empty     (6, 6)          True       11      
+6        completely_empty     (6, 6)          True       10      
+7        completely_empty     (6, 6)          True       14      
+8        completely_empty     (6, 6)          True       11      
+9        completely_empty     (6, 6)          True       5       
+10       completely_empty     (6, 6)          True       8       
+
