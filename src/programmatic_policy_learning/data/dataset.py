@@ -118,10 +118,10 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
     """Evaluate a program on a state-action pair."""
     try:
         result = eval("lambda s, a: " + prog, _WORKER_DSL)(s, a)
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
+        logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Result: {result}")
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.debug(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
+        logging.info(f"Program: {prog}, Input: (s={s}, a={a}), Exception: {e}")
         return None
 
 
@@ -162,10 +162,8 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     s, a = fn_input
 
     if _WORKER_PROGRAMS is None:
-        raise RuntimeError(
-            "_WORKER_PROGRAMS is not initialized.\
-            Ensure worker_init is called before using worker_eval_example."
-        )
+        raise RuntimeError("_WORKER_PROGRAMS is not initialized.\
+            Ensure worker_init is called before using worker_eval_example.")
 
     results = []
     for f in _WORKER_PROGRAMS:
@@ -210,7 +208,6 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
 
     X = lil_matrix((num_data, num_programs), dtype=bool)
-
     # Combine the context initialization into a single block to avoid redefinition
     try:
         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
@@ -221,7 +218,6 @@ def run_all_programs_on_single_demonstration(
 
     num_workers = allowed_cpus()
     num_workers = max(1, min(num_workers, len(fn_inputs)))
-
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]

@@ -1,0 +1,140 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+## Environment description:
+
+- The environment is a grid world of the game 'ReachForTheStar'.
+- The observation `obs` is a 2D Python NumPy array (rows × columns).
+  - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
+- Each cell contains exactly one of the following symbols:
+
+  - 'empty'
+  - 'agent'
+  - 'star'
+  - 'drawn'
+  - 'left_arrow'
+  - 'right_arrow'
+
+## Game Dynamics and Rules
+
+- The game takes place on a 2D grid representing a vertical navigation environment.
+- There are two key entities:
+  - **Agent**: the controllable character.
+  - **Star**: a fixed goal location that the agent must reach.
+- The agent occupies exactly one grid cell at all times.
+- The star occupies exactly one grid cell and does not move.
+- The environment may include structural elements (represented implicitly via `drawn` cells) that affect movement feasibility.
+
+### Movement and Interaction Mechanics
+
+- On each step, the agent selects a target cell `(row, col)` as its action.
+- The environment interprets the selected cell and determines whether and how the agent moves.
+- Movement is constrained by the environment’s internal rules, which may include gravity-like effects, support requirements, or blocking structures.
+- Selecting an unreachable or invalid cell results in no movement.
+- The agent cannot move arbitrarily in all directions at all times; movement feasibility depends on the surrounding grid configuration.
+
+### Directional Cues
+
+- Arrow cells (`left_arrow`, `right_arrow`) appear in the grid and serve as **implicit directional guidance**.
+- These arrows do not constitute actions themselves but correlate with movement directions that are often viable or successful in the current configuration.
+- The agent may use the spatial arrangement of arrow cells as hints about which movements are likely to succeed.
+
+### Objective and Termination
+
+- The objective is to guide the agent to the star’s location.
+- The episode ends successfully when the agent reaches the star cell.
+- The episode continues indefinitely until success or until externally terminated by the environment.
+- There are no explicit penalties or rewards provided to the policy other than episode termination.
+
+### Interaction Constraints and Implications
+
+- The policy does not have access to the environment’s physics, gravity rules, or movement constraints.
+- The policy must infer feasible actions purely from the spatial layout of the grid.
+- Progress toward the star often requires:
+  - Horizontal positioning before vertical ascent,
+  - Utilizing stable structures beneath the agent,
+  - Respecting the environment’s implicit movement constraints.
+- All legality checks, movement execution, and termination conditions are handled internally by the environment.
+
+
+--
+
+## Action space:
+
+The policy must return a tuple (row, column) corresponding to a cell in the grid.
+
+- (row, column) must be a valid cell location within the grid bounds.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines how selecting a cell affects the agent’s movement.
+- Selecting an invalid or unreachable cell has no effect.
+
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (ReachForTheStar)
+
+- Clicking a reachable adjacent or supported cell causes the agent to attempt movement.
+- The environment determines whether the selected cell is reachable
+  (e.g., supported by a staircase or structure).
+- Arrow cells act as directional cues but do not correspond to explicit actions.
+- Clicking an unreachable cell has no effect.
+
+--
+
+## Task Description
+Task:
+Guide the agent to reach the star cell.
+The episode ends successfully when the agent reaches the star.
+
+--
+
+## Expert-Derived Hints
+
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
+
+{}
+
+--
+
+## Output Format Constraint
+
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
+
+The code must define a function with the following signature:
+
+```python
+def policy(obs):
+    ...
+    return action
+```
+
+Where `action` is:
+- a tuple (row, col)
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+Do not include any text outside the code block.
+
+--
+
+## Notes on ReachForTheStar Assumptions 
+
+- No ReachForTheStar-specific helper functions are provided.
+- The policy must infer the agent and target locations directly from the grid observation.
+- Arrow cells are treated as directional cues but do not correspond to explicit actions.
+- The policy does not have access to the environment’s transition dynamics.
+- All movement and interaction semantics are defined by the environment.

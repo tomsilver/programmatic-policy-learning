@@ -1,0 +1,90 @@
+# SYSTEM:
+You are a feature generator for a grid-based imitation/RL setting.
+
+Your job: propose many candidate boolean feature functions that score (state, action) pairs from expert play.
+Each feature must be a valid, self-contained Python function that returns True/False.
+
+You MUST follow the output schema exactly and return ONLY valid JSON.
+
+# USER:
+
+## CONTEXT
+We have a grid-based game.
+We observe expert demonstrations: sequences of (s_t, a_t, s_{t+1}).
+- state s is a 2D grid observation.
+- action a is a clicked cell (row, col).
+
+Your task: generate a library of useful boolean features for this domain that can help explain/predict the expert’s chosen action.
+
+## ENVIRONMENT SEMANTICS (IMPORTANT)
+- An action is selecting a cell on the grid. Concretely, choosing action a = (r, c) means clicking the cell at row r and column c.
+- Each grid cell stores exactly one value from the provided ${OBJECT_TYPES} list.
+
+
+## INPUT FORMAT (IMPORTANT)
+Each feature will be called like:
+    f_i(s, a) -> bool
+
+Where:
+- s is a NumPy 2D array (shape HxW).
+  - You MUST NOT import numpy.
+  - You may treat s like a nested list: use s[r][c], len(s), len(s[0]).
+  - Cells contain values (strings/ints/objects) comparable by equality.
+- a is always a tuple: a = (r, c)
+
+Your code must not crash if tokens are not numeric.
+
+## OBJECT TYPES (CELL VALUES)
+The set of possible cell values is:
+${OBJECT_TYPES}
+Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
+
+## DEMONSTRATION-BASED HINT
+The following hint summarizes expert decision patterns from demonstrations. Use it to bias feature generation toward relevant relations.
+HINT:
+${HINT_TEXT}
+
+## FEATURE GENERATION REQUEST
+Generate exactly ${NUM_FEATURES} features named f1..f${NUM_FEATURES}.
+- Each feature MUST be a boolean predicate about (s, a).
+- Features should be diverse: some simple, some more structured.
+- Do NOT generate near-duplicates.
+- Avoid trivial always-true/always-false features.
+
+## OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON of the form:
+
+{
+  "features": [
+    {
+      "id": "f1",
+      "name": "f1",
+      "source": "<python source code as a single string>"
+    },
+    ...
+  ]
+}
+
+### STRICT OUTPUT RULES (MUST FOLLOW):
+- Output MUST be a single JSON object and MUST parse with json.loads().
+- Do NOT include markdown, comments, or extra text.
+- Do NOT use ellipses or placeholders ("...", "etc", "and so on", "up to", "similar").
+- You must output exactly ${NUM_FEATURES} feature objects, with ids and names f1..f${NUM_FEATURES}.
+- The JSON must end immediately after the final closing brace '}'.
+- Do NOT use tuple‑unpacking in function parameters. (e.g., def cell((r,c))); only use simple parameter names like def cell(rc) and unpack inside the body if needed.
+
+## PYTHON SOURCE RULES (STRICT)
+For each feature object's "source" string:
+- It must define exactly one function with the same name as "name" (e.g., def f7(s, a): ...).
+- No imports.
+- No global variables.
+- All helper logic must be inside the function body (you may define inner helper functions).
+- The function must ALWAYS return a bool and never raise an exception.
+- Must treat s as a 2D indexable object (supports s[r][c]) and use only len() for dimensions.
+- Must validate bounds for any neighbor access.
+- Runtime should be reasonable: O(H*W) or O(H*W*constant) is fine.
+
+## ACTION PARSING (MUST IMPLEMENT IN EACH FUNCTION)
+Inside each function:
+- Assume a is a tuple (r,c). If a is not a length-2 tuple/list of ints, return False.
+

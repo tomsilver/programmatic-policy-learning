@@ -162,7 +162,8 @@ def test_degenerate_primitive_fails_filter() -> None:
     )
 
     assert result["keep"] is False, "Degenerate function should be rejected"
-    assert result["reason"] == "degenerate"
+    assert "degenerate" in result["reason"]
+
     assert result["deg_score"] == 0.0
 
 

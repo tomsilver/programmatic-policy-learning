@@ -159,7 +159,7 @@ def create_grammar(
         rules={
             START: (
                 [
-                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", s)"],
+                    ["at_cell_with_value(", VALUE, ",", LOCAL_PROGRAM, ", a, s)"],
                     ["at_action_cell(", LOCAL_PROGRAM, ", a, s)"],
                 ],
                 [0.5, 0.5],
@@ -248,32 +248,49 @@ def create_grammar(
     return grammar
 
 
-def get_dsl_functions_dict(removed_primitive: str | None = None) -> dict[str, Any]:
+def get_dsl_functions_dict(
+    removed_primitive: str | None = None, mode: str | None = "single"
+) -> dict[str, Any]:
     """Return all grid_v1 DSL primitives as a dictionary.
 
     If there is a removed_primitive, remove it and then return it.
     """
-
-    DSL_FUNCTIONS = {
-        "cell_is_value": cell_is_value,
-        "shifted": shifted,
-        "at_cell_with_value": at_cell_with_value,
-        "at_action_cell": at_action_cell,
-        "scanning": scanning,
-        "out_of_bounds": out_of_bounds,
-        "START": START,
-        "CONDITION": CONDITION,
-        "LOCAL_PROGRAM": LOCAL_PROGRAM,
-        "DIRECTION": DIRECTION,
-        "POSITIVE_NUM": POSITIVE_NUM,
-        "NEGATIVE_NUM": NEGATIVE_NUM,
-        "VALUE": VALUE,
-        "ec": ec,
-        "ct": ct,
-        "rfts": rfts,
-        "stf": stf,
-        "tpn": tpn,
-    }
+    if mode == "single":
+        DSL_FUNCTIONS = {
+            "cell_is_value": cell_is_value,
+            "shifted": shifted,
+            "at_cell_with_value": at_cell_with_value,
+            "at_action_cell": at_action_cell,
+            "scanning": scanning,
+            "out_of_bounds": out_of_bounds,
+            "START": START,
+            "CONDITION": CONDITION,
+            "LOCAL_PROGRAM": LOCAL_PROGRAM,
+            "DIRECTION": DIRECTION,
+            "POSITIVE_NUM": POSITIVE_NUM,
+            "NEGATIVE_NUM": NEGATIVE_NUM,
+            "VALUE": VALUE,
+            "ec": ec,
+            "ct": ct,
+            "rfts": rfts,
+            "stf": stf,
+            "tpn": tpn,
+        }
+    else:  # full
+        DSL_FUNCTIONS = {
+            "START": START,
+            "CONDITION": CONDITION,
+            "LOCAL_PROGRAM": LOCAL_PROGRAM,
+            "DIRECTION": DIRECTION,
+            "POSITIVE_NUM": POSITIVE_NUM,
+            "NEGATIVE_NUM": NEGATIVE_NUM,
+            "VALUE": VALUE,
+            "ec": ec,
+            "ct": ct,
+            "rfts": rfts,
+            "stf": stf,
+            "tpn": tpn,
+        }
     if removed_primitive:
         del DSL_FUNCTIONS[removed_primitive]
     return DSL_FUNCTIONS

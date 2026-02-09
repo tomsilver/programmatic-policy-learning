@@ -1,0 +1,63 @@
+You are given a JSON object describing:
+- a list of proposed DSL functions (under the key "proposal")
+- an associated grammar that references these functions (under the key "updated_grammar")
+
+Your task is to FILTER this DSL by removing redundant or conceptually overlapping functions,
+while preserving the overall structure and schema of the input JSON.
+
+GOAL:
+- Reduce the DSL to a small, high-quality set of core functions (≈5–6)
+- Remove functions that are:
+  - duplicates
+  - near-duplicates in semantics
+  - operating at the same conceptual level where only one representative is needed
+  - compositional or expressible using other remaining functions
+
+IMPORTANT: This is a **global structural edit**, not a local list edit.
+
+---
+
+FILTERING RULES:
+
+1. FUNCTION REMOVAL
+- Decide which functions to remove based on conceptual redundancy or overlap.
+- You must NOT invent new functions.
+- You must NOT modify the definition of kept functions.
+
+2. GLOBAL CONSISTENCY
+For every function that is removed:
+- Remove its entire entry from the "proposal" list.
+- Remove its name from:
+  - "updated_grammar.terminals"
+  - any production rules where it appears
+- Remove or simplify any grammar productions that reference it.
+- Do NOT leave dangling references.
+
+3. GRAMMAR PRESERVATION
+- Keep the grammar valid and well-formed.
+- Nonterminals may remain even if they become unused.
+- Do NOT introduce new productions.
+- Only delete or prune existing ones as needed.
+
+4. REMOVED FUNCTIONS LOG
+- Add a new top-level key:
+  "removed_ones"
+- Its value must be a list of strings:
+  the names of all functions that were removed.
+
+---
+
+OUTPUT FORMAT (STRICT):
+
+- Return ONLY valid JSON.
+- The output JSON must contain:
+  - "proposal" (filtered)
+  - "updated_grammar" (filtered and consistent)
+  - "removed_ones" (list of function names)
+- Preserve all other fields and formatting as much as possible.
+- Do NOT include explanations, comments, or extra text.
+
+---
+
+INPUT JSON:
+<PASTE THE JSON HERE>

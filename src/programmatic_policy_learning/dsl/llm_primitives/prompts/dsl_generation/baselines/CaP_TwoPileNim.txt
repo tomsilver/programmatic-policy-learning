@@ -1,0 +1,109 @@
+## System Prompt
+You are an expert programmer and problem solver.
+Your task is to write a correct and general policy in Python.
+You may define helper functions if needed.
+Return only executable Python code.
+
+--
+
+Environment description:
+
+- The environment is a grid-based implementation of the game 'Nim'.
+- The observation `obs` is a 2D Python NumPy array (rows × columns).
+  - Do not use boolean checks such as `if obs`, `if not obs`, or `obs == []`. 
+- Each cell contains one of the following values:
+  - 'empty'
+  - 'token'
+
+
+## Game Dynamics and Rules (TwoPileNim)
+
+- The grid encodes a two-pile Nim position using **two token columns** (two vertical stacks of `'token'`).
+- **Each pile corresponds to one column**: the number of `'token'` cells in that column is the pile size.
+- The game is **turn-based**. On each agent turn, the policy selects exactly one action `(row, col)`.
+
+### Action meaning
+- The action `(row, col)` indicates choosing **pile `col`** and removing tokens according to the selected **row**.
+- A move is legal only if the selected `(row, col)` corresponds to a location in a token-stack column that results in removing **at least one** token from that pile.
+- Intuitively: selecting a cell in a pile column removes tokens **from that cell and all tokens “below it” in the same column** (i.e., it reduces the pile to the tokens strictly above the selected cell).  
+  - Selecting higher rows removes fewer tokens; selecting lower rows removes more tokens.
+
+### Terminal condition and winner
+- The game ends when **no `'token'` cells remain in the grid** (both piles are empty).
+- The player who makes the move that leaves the grid with **no remaining tokens** wins (standard normal-play Nim).
+
+### Optimal play objective
+- The optimal strategy is the standard Nim strategy: on your turn, make a move that leaves the opponent a **losing position** (for two piles, this corresponds to leaving the piles with **equal sizes**, when possible).
+
+--
+
+## Action semantics
+
+- The policy must return a tuple (row, col) corresponding to a valid cell location in the grid. The returned action (row, col) should mean: col -> which pile, row -> how many tokens to remove.
+- Selecting a cell represents choosing that cell as the agent’s action.
+- The environment defines which actions are legal and how selecting a cell affects the game state.
+- Selecting a cell that does not correspond to a legal action has no effect.
+
+## Action Interpretation (Click Semantics)
+
+In this environment, actions are expressed by selecting (clicking) a cell in the grid.
+The meaning of a click is environment-dependent and is interpreted by the environment,
+not by the policy itself.
+
+The policy does NOT directly specify movement directions, rule logic, or outcomes.
+It only selects a grid cell, and the environment determines the resulting effect.
+
+### Click Semantics (TwoPileNim)
+
+- Clicking a cell containing a 'token' selects that pile and removes tokens.
+- The column of the clicked cell determines which pile is chosen.
+- The row of the clicked cell determines how many tokens are removed.
+- Clicking an empty cell has no effect.
+- All turn-taking and win conditions are handled by the environment.
+
+--
+
+## Task Description
+Task:
+Play the game optimally and win by forcing the opponent into a losing position.
+The policy should follow the optimal Nim strategy whenever possible.
+
+--
+
+## Expert-Derived Hints
+
+Below is a consolidated description of the agent’s demonstrated decision-making strategy, inferred from multiple expert trajectories. The statements summarize consistent behaviors observed across rollouts and are intended to guide policy synthesis, not to prescribe explicit rules or primitives.
+
+{}
+
+--
+
+## Output Format Constraint
+
+Return ONLY the Python code for the policy, wrapped in a Markdown fenced code block
+that starts with ```python and ends with ```.
+
+The code must define a function with the following signature:
+
+```python
+def policy(obs):
+    ...
+    return action
+```
+
+Where `action` is:
+- a tuple (row, col)
+
+You may define helper functions inside the code.
+Do not use external libraries.
+Do not include explanations, comments, or markdown.
+Return only executable Python code.
+Do not include any text outside the code block.
+
+--
+
+## Notes on Nim Assumptions
+
+- No Nim-specific helper functions are provided.
+- The policy must infer pile structure directly from the grid observation.
+- The policy selects actions by choosing grid cells; all legality, turn-taking, and termination logic is handled by the environment.

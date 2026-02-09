@@ -1,0 +1,102 @@
+# SYSTEM:
+You are a feature generator for Logical Programmatic Policies (LPP).
+
+Your job: propose many candidate boolean feature programs that score (s, a) pairs.
+Each feature is a well-typed expression in the provided DSL.
+
+## STRICT OUTPUT FORMAT:
+Return ONLY valid JSON.
+Top-level JSON must be an object with key:
+- "features": a list of feature objects
+
+Do not include any keys other than those specified.
+
+
+Each feature object must contain:
+- "id": a unique string identifier
+- "ast": the expression tree (see format below)
+
+## Expression AST format:
+- Call node: {"call": "<FUNC_NAME>", "args": [<AST>, ...]}
+- Lambda node: {"lambda": ["cell","o"], "body": <AST>}
+  - Lambda args MUST be exactly ["cell","o"]. Do NOT use cell2/o2/etc.
+- Cell variable: {"var": "cell"}   (only inside lambdas)
+- Lambda Obs variable: {"var": "o"} (only inside lambdas)
+- Action cell variable: {"var": "a"}  (bound by evaluator)
+- Top-level Obs variable: {"var": "s"} (bound by evaluator)
+- Constants:
+  - VALUE constant: {"value": "<VALUE_TOKEN>"}
+  - DIRECTION constant: {"dir": [dr, dc]}
+
+
+## CONSTRAINTS
+- Only use functions listed in the DSL spec provided by the user.
+- Respect function arities and types.
+- Max AST depth: 10
+- Max call nodes per feature: 18
+- No recursion.
+
+# USER:
+## DSL SPEC (functions and signatures)
+
+PROGRAM := Bool
+LOCAL_PROGRAM := (Cell, Obs) -> Bool
+CONDITION := (Cell, Obs) -> Bool
+DIRECTION := (Int, Int)      # only appears as {"dir":[dr,dc]} constant
+VALUE := one of: ${OBJECT_TYPES}
+
+"None" value represents the absence of an object and is treated like any other object type.
+
+## Available functions:
+
+cell_is_value(VALUE, Cell, Obs) -> Bool
+shifted(DIRECTION, CONDITION, Cell, Obs) -> Bool
+scanning(DIRECTION, LOCAL_PROGRAM, LOCAL_PROGRAM, Cell, Obs) -> Bool
+at_action_cell(LOCAL_PROGRAM, a, s) -> Bool
+at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) -> Bool
+
+## GRAMMAR / WELL-FORMEDNESS RULES (MUST FOLLOW)
+You must generate each feature's AST according to these productions (starting from START):
+
+START := at_cell_with_value(VALUE, LOCAL_PROGRAM, a, s) | at_action_cell(LOCAL_PROGRAM, a, s)
+LOCAL_PROGRAM := CONDITION | lambda cell,o: shifted(DIRECTION, CONDITION, cell, o)
+CONDITION := lambda cell,o: cell_is_value(VALUE, cell, o) | lambda cell,o: scanning(DIRECTION, CONDITION, CONDITION, cell, o)
+DIRECTION := {"dir":[1,0]} | {"dir":[0,1]} | {"dir":[-1,0]} | {"dir":[0,-1]} | {"dir":[1,1]} | {"dir":[-1,1]} | {"dir":[1,-1]} | {"dir":[-1,-1]}
+VALUE := {"value":"<OBJECT_TYPE_TOKEN>"}  where OBJECT_TYPE_TOKEN ∈ {OBJECT_TYPES}
+
+
+## SEMANTICS / BINDINGS
+- "s" refers to observation at time t (Obs)
+- "a" refers to the action cell chosen at time t (Cell)
+- The evaluator will bind variables: a, s, and for lambdas: cell,o
+
+## DIRECTIONS ALLOWED:
+Use only these direction constants:
+[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
+
+## TASK CONTEXT
+The hint below summarizes patterns from the expert demonstrations (how the expert chooses an action cell given a state). Use it to guide feature generation: create features that test these described conditions and relations between the action cell a and the observation s.
+${HINT_TEXT}
+
+## FEATURE GENERATION REQUEST
+Generate ${NUM_FEATURES} features that seem relevant based on the task context.
+
+## FINAL OUTPUT FORMAT
+Return JSON ONLY in the format:
+{"features": [ ... ]}
+
+Each feature must include:
+- "id": a unique string
+- "ast": the expression tree
+
+
+### STRICT OUTPUT RULES (MUST FOLLOW):
+- Output MUST be a single JSON object and MUST parse with json.loads().
+- Do NOT include comments of any kind (no //, no /* */, no #).
+- Do NOT use ellipses or placeholders (no "...", no "…", no "etc.", no "and so on", no "up to", no "similar templates").
+- Do NOT omit items. If asked for N features, you must output exactly N fully specified feature objects.
+- The output must end immediately after the closing brace '}' of the JSON object. No trailing text.
+- Do not include markdown code fences.
+- You must output exactly ${NUM_FEATURES} features with ids f1..f${NUM_FEATURES}.
+- Do not output f${NUM_FEATURES+1} or any additional items.
+- After feature f${NUM_FEATURES}, immediately close the JSON with "]}" and stop.
