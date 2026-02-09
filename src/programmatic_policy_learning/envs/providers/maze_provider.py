@@ -122,10 +122,15 @@ class MazeEnv(gym.Env):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[tuple[int, int], dict]:
         super().reset(seed=seed)
-        # Start in outer void above the maze
-        r = np.random.randint(self.row_min, -1)
-        c = np.random.randint(self.col_min, self.col_max + 1)
-        self.agent_pos = (r, c)
+        # Start anywhere in outer void (not inside the maze or wall border)
+        outer_positions = []
+        for r in range(self.row_min, self.row_max + 1):
+            for c in range(self.col_min, self.col_max + 1):
+                # Check if position is in the outer void (outside wall border)
+                if r < -1 or r > self.inner_h or c < -1 or c > self.inner_w:
+                    outer_positions.append((r, c))
+        idx = self.np_random.choice(len(outer_positions))
+        self.agent_pos = outer_positions[idx]
         info = self._get_info()
         return self.agent_pos, info
 
