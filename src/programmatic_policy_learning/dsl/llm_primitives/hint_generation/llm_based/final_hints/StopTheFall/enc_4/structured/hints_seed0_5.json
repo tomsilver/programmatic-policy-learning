@@ -5,13 +5,13 @@
 - When a 'falling_token' is above a contiguous vertical stack of 'red_token's, clear the 'red_token's in that column, one by one, from top to bottom, to create a path (seen in ~4/5 demos).
 - If the cell below the 'falling_token' is already 'empty', skip to the next non-empty cell below and clear it (seen in ~5/5 demos).
 - When the 'falling_token' is directly above a 'static_token' or 'advance_token', clear the 'advance_token' to allow the 'falling_token' to reach the goal (seen in ~5/5 demos).
-- Only select cells in the same column as the 'falling_token' (never left/right of the vertical path) (seen in ~5/5 demos).
+- During path-clearing steps, select cells in the same column as the falling_token; however, the terminal action may be clicking an advance_token anywhere on the grid (seen in ~5/5 demos).
 - When the lowest cell in the column is an 'advance_token', select it as the final action in the sequence (seen in ~5/5 demos).
 - Do not select cells that are already 'empty' unless they are directly in the vertical path and are the next step for the 'falling_token' to descend (seen in ~5/5 demos).
-- Ignore all cells not in the vertical path beneath the 'falling_token', even if they are adjacent horizontally or diagonally (seen in ~5/5 demos).
+- Ignore cells outside the vertical path beneath the falling_token except for advance_token cells, which are valid targets regardless of column (seen in ~5/5 demos).
 - If multiple 'red_token's are stacked, clear them sequentially from top to bottom, never skipping a 'red_token' in the path (seen in ~4/5 demos).
 - Never select 'static_token' cells unless they are at the bottom row and are the only way to reach the 'advance_token' (seen in ~0/5 demos; i.e., static_tokens are not cleared).
-- The action sequence always terminates on the 'advance_token' at the bottom of the column (seen in ~5/5 demos).
+- The episode terminates by clicking an advance_token; its location is not necessarily in the falling_token’s column (it can appear elsewhere, e.g., bottom-right), and clicking it ends the episode (seen in ~5/5 demos).
 
 2) COUNTERFACTUAL DISTRACTORS
 

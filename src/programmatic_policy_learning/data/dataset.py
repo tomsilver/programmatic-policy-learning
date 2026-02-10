@@ -29,8 +29,113 @@ def allowed_cpus() -> int:
     return multiprocessing.cpu_count()
 
 
+import random
+from collections import defaultdict
+from typing import Any, List, Tuple
+
+Coord = Tuple[int, int]
+
+
+def sample_negative_actions_stratified(
+    state,
+    expert_action: Coord,
+    K: int = 30,
+    rng: random.Random | None = None,
+    include_nearby: int = 8,
+) -> List[Coord]:
+    """Stratified negative sampling over cell *tokens* + some nearby negatives.
+
+    - Tries to include negatives from as many token-types as possible.
+    - Adds a few "nearby" negatives around the expert action (harder negatives).
+    - Falls back to uniform sampling if buckets are small.
+
+    Returns: list of (r,c) coords (excluding expert_action).
+    """
+    if rng is None:
+        rng = random.Random(0)
+
+    h = state.shape[0]
+    w = state.shape[1]
+
+    # 1) bucket all coords (except expert) by token value at that cell
+    buckets = defaultdict(list)  # token -> list[Coord]
+    all_coords: List[Coord] = []
+
+    er, ec = expert_action
+    for r in range(h):
+        for c in range(w):
+            if (r, c) == (er, ec):
+                continue
+            tok = state[r, c]  # works for np arrays
+            buckets[tok].append((r, c))
+            all_coords.append((r, c))
+
+    if not all_coords:
+        return []
+
+    # 2) Build a "nearby" pool (hard negatives)
+    nearby: List[Coord] = []
+    for dr in (-2, -1, 0, 1, 2):
+        for dc in (-2, -1, 0, 1, 2):
+            if dr == 0 and dc == 0:
+                continue
+            rr, cc = er + dr, ec + dc
+            if 0 <= rr < h and 0 <= cc < w and (rr, cc) != (er, ec):
+                nearby.append((rr, cc))
+    rng.shuffle(nearby)
+
+    picked: List[Coord] = []
+    picked_set = set()
+
+    def add_coord(rc: Coord):
+        if rc not in picked_set and rc != (er, ec):
+            picked.append(rc)
+            picked_set.add(rc)
+
+    # 3) Take some nearby first (if requested)
+    for rc in nearby[:include_nearby]:
+        add_coord(rc)
+        if len(picked) >= K:
+            return picked[:K]
+
+    # 4) Round-robin across token buckets to cover "all available ones"
+    #    (as many distinct tokens as possible)
+    token_keys = list(buckets.keys())
+    rng.shuffle(token_keys)
+
+    # Prepare shuffled lists so we sample without replacement per bucket
+    for t in token_keys:
+        rng.shuffle(buckets[t])
+
+    idx = 0
+    while len(picked) < K and token_keys:
+        t = token_keys[idx % len(token_keys)]
+        if buckets[t]:
+            add_coord(buckets[t].pop())
+        else:
+            # remove empty bucket
+            token_keys.remove(t)
+            continue
+        idx += 1
+        if idx > 10_000:  # safety
+            break
+
+    # 5) If still short, fill uniformly from anywhere
+    if len(picked) < K:
+        remaining = [rc for rc in all_coords if rc not in picked_set]
+        rng.shuffle(remaining)
+        for rc in remaining:
+            add_coord(rc)
+            if len(picked) >= K:
+                break
+
+    return picked[:K]
+
+
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
+    *,
+    data_imbalance: dict[str, Any] | None = None,
 ) -> tuple[
     list[tuple[np.ndarray, tuple[int, int]]],
     list[tuple[np.ndarray, tuple[int, int]]],
@@ -55,17 +160,38 @@ def extract_examples_from_demonstration_item(
     positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = [(state, action)]
     negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
 
-    for r in range(state.shape[0]):
-        for c in range(state.shape[1]):
-            if (r, c) == action:
-                continue
-            negative_examples.append((state, (r, c)))
+    if data_imbalance and data_imbalance.get("enabled", False):
+        method = data_imbalance.get("method", "")
+        if method == "downsample_majority":
+            k = int(data_imbalance.get("K", 10))
+            if k < 0:
+                raise ValueError("data_imbalance.K must be >= 0")
+            rng = random.Random(0)  # or pass seed from config
+            neg_coords = sample_negative_actions_stratified(
+                state=state,
+                expert_action=action,
+                K=k,
+                rng=rng,
+                include_nearby=8,
+            )
+            for rc in neg_coords:
+                negative_examples.append((state, rc))
+        else:
+            raise ValueError(f"Unknown data_imbalance.method: {method}")
+    else:
+        for r in range(state.shape[0]):
+            for c in range(state.shape[1]):
+                if (r, c) == action:
+                    continue
+                negative_examples.append((state, (r, c)))
 
     return positive_examples, negative_examples
 
 
 def extract_examples_from_demonstration(
     demonstration: Trajectory[np.ndarray, tuple[int, int]],
+    *,
+    data_imbalance: dict[str, Any] | None = None,
 ) -> tuple[
     list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
 ]:
@@ -89,7 +215,9 @@ def extract_examples_from_demonstration(
 
     for demonstration_item in demonstration.steps:
         demo_positive_examples, demo_negative_examples = (
-            extract_examples_from_demonstration_item(demonstration_item)
+            extract_examples_from_demonstration_item(
+                demonstration_item, data_imbalance=data_imbalance
+            )
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
@@ -181,14 +309,18 @@ def run_all_programs_on_single_demonstration(
     programs: list[StateActionProgram] | list[str],
     demo_traj: Trajectory[np.ndarray, tuple[int, int]],
     dsl_functions: dict,
+    *,
+    data_imbalance: dict[str, Any] | None = None,
+    return_examples: bool = False,
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-) -> tuple[Any, np.ndarray]:
+) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
-        demo_traj
+        demo_traj, data_imbalance=data_imbalance
     )
+
     fn_inputs = positive_examples + negative_examples
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
     base_dsl, module_map = _split_dsl(dsl_functions)
@@ -208,6 +340,7 @@ def run_all_programs_on_single_demonstration(
     num_programs = len(program_strs)
 
     X = lil_matrix((num_data, num_programs), dtype=bool)
+
     # Combine the context initialization into a single block to avoid redefinition
     try:
         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
@@ -215,7 +348,6 @@ def run_all_programs_on_single_demonstration(
     except (ValueError, RuntimeError):
         ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
         # macOS/Windows fallback (spawn)
-
     num_workers = allowed_cpus()
     num_workers = max(1, min(num_workers, len(fn_inputs)))
     for p_start in range(0, num_programs, program_interval):
@@ -231,7 +363,8 @@ def run_all_programs_on_single_demonstration(
             batch_rows_list = list(results_iter)
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
-    return X.tocsr(), np.array(y, dtype=np.uint8)
+    examples = fn_inputs if return_examples else None
+    return X.tocsr(), np.array(y, dtype=np.uint8), examples
 
 
 def run_all_programs_on_demonstrations(
@@ -240,16 +373,24 @@ def run_all_programs_on_demonstrations(
     programs: list,
     demo_dict: dict[int, Trajectory],
     dsl_functions: dict,
-) -> tuple[Any | None, np.ndarray | None]:
+    *,
+    data_imbalance: dict[str, Any] | None = None,
+    return_examples: bool = False,
+) -> tuple[
+    Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
+]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
+    examples_all: list[tuple[np.ndarray, tuple[int, int]]] = []
     for demo_number in demo_numbers:
-        demo_X, demo_y = run_all_programs_on_single_demonstration(
+        demo_X, demo_y, demo_examples = run_all_programs_on_single_demonstration(
             base_class_name,
             demo_number,
             programs,
             demo_dict[demo_number],
             dsl_functions,
+            data_imbalance=data_imbalance,
+            return_examples=return_examples,
         )
 
         if X is None:
@@ -258,4 +399,6 @@ def run_all_programs_on_demonstrations(
         else:
             X = vstack([X, demo_X])
             y = np.concatenate([y, demo_y])
-    return X, y
+        if return_examples and demo_examples:
+            examples_all.extend(demo_examples)
+    return X, y, (examples_all if return_examples else None)

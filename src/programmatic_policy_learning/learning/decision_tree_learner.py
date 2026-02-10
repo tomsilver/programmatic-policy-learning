@@ -81,6 +81,20 @@ def learn_single_batch_decision_trees(
     for seed in range(num_dts):
         clf = DecisionTreeClassifier(random_state=seed)
         clf.fit(X_i, y)
+        # logging.info(
+        #     "Trained DT seed=%d | nodes=%d depth=%d | train_acc=%.3f",
+        #     seed,
+        #     clf.tree_.node_count,
+        #     clf.tree_.max_depth,
+        #     clf.score(X_i, y),
+        # )
+        # from sklearn.tree import export_text
+
+        # feature_names = [f"f{i}" for i in range(X_i.shape[1])]  # or your program names
+        # logging.info("DT tree:\n%s", export_text(clf, feature_names=feature_names, max_depth=10))
+
+        # input()
+
         clfs.append(clf)
     return clfs
 

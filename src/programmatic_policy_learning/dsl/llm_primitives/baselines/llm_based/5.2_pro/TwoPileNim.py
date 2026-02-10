@@ -1,0 +1,38 @@
+def policy(obs):
+    """
+    Rule:
+    - Prefer clicking a 'token' cell whose row contains at least one 'empty' cell in a different column
+      (i.e., a token that is not fully paired/filled across its row).
+    - Among such candidates, choose the one with the largest row index; break ties by smallest column index.
+    - If no such candidate exists, click the bottom-most 'token' (largest row index), tie-breaking by smallest column.
+    - If there are no tokens, return (0, 0).
+    """
+    n_rows, n_cols = obs.shape
+    TOKEN, EMPTY = "token", "empty"
+
+    candidates = []
+    any_tokens = []
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if obs[r, c] == TOKEN:
+                any_tokens.append((r, c))
+                row_has_empty_elsewhere = False
+                for c2 in range(n_cols):
+                    if c2 != c and obs[r, c2] == EMPTY:
+                        row_has_empty_elsewhere = True
+                        break
+                if row_has_empty_elsewhere:
+                    candidates.append((r, c))
+
+    if candidates:
+        r_max = max(rc[0] for rc in candidates)
+        best = min((rc for rc in candidates if rc[0] == r_max), key=lambda x: x[1])
+        return best
+
+    if any_tokens:
+        r_max = max(rc[0] for rc in any_tokens)
+        best = min((rc for rc in any_tokens if rc[0] == r_max), key=lambda x: x[1])
+        return best
+
+    return (0, 0)

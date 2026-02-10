@@ -21,48 +21,10 @@ class GridStateEncoder:
         """Store the encoder configuration."""
         self.cfg = cfg
 
-    def to_ascii(
-        self, obs_t: np.ndarray, action: tuple[int, int], step_index: int
-    ) -> str:
-        """Render the current/next grid plus a binary action mask."""
-
-        def render(obs: np.ndarray) -> str:
-            rows: list[str] = []
-            for r in range(obs.shape[0]):
-                row_chars = []
-                for c in range(obs.shape[1]):
-                    token = obs[r, c]
-                    char = self.cfg.symbol_map.get(token, "?")
-                    row_chars.append(char)
-                rows.append(",".join(row_chars))
-            return "\n".join(rows)
-
-        def render_action_mask(shape: tuple[int, ...]) -> str:
-            mask = np.zeros(shape, dtype=int)
-            mask[action] = 1
-            rows = [",".join(str(cell) for cell in mask[r]) for r in range(shape[0])]
-            return "\n".join(rows)
-
-        token_name = obs_t[action]
-        token_symbol = self.cfg.symbol_map.get(token_name, "?")
-
-        ascii_grid = f"*** Step {step_index} ***\nObservation (s_{step_index}):\n"
-        ascii_grid += render(obs_t)
-
-        ascii_grid += (
-            f"\n\nAction: Click cell {action}, containing "
-            f"a '{token_name}' token represented by '{token_symbol}'."
-        )
-
-        ascii_grid += "\n\n=== ACTION MASK ===\n"
-
-        ascii_grid += render_action_mask(obs_t.shape)
-        return ascii_grid
-
     def to_ascii_list_literal(
         self,
         obs_t: np.ndarray,
-        action: tuple[int, int],
+        action: tuple[int, int] | None,
         step_index: int,
     ) -> str:
         """Render the grid using list-of-lists literals, mirroring
@@ -76,7 +38,7 @@ class GridStateEncoder:
                 entries: list[str] = []
                 for c in range(obs.shape[1]):
                     token = obs[r, c]
-                    if mark_action and (r, c) == action:
+                    if mark_action and action is not None and (r, c) == action:
                         char = "*"
                         assert char not in self.cfg.symbol_map.values()
                     else:
@@ -96,20 +58,22 @@ class GridStateEncoder:
             indented_rows = "\n".join(f"  {row}" for row in row_blocks)
             return f"[\n{indented_rows}\n]"
 
-        token_name = obs_t[action]
-        token_symbol = self.cfg.symbol_map.get(token_name, "?")
-
         ascii_grid = f"*** Step {step_index} ***\nObservation (s_{step_index}):\n"
         ascii_grid += build_literal(obs_t, mark_action=False)
 
-        ascii_grid += (
-            f"\n\nAction: Click cell {action}, containing "
-            f"a '{token_name}' token represented by '{token_symbol}'."
-        )
+        if action is None:
+            ascii_grid += "\n\nAction: None (terminal state)."
+        else:
+            token_name = obs_t[action]
+            token_symbol = self.cfg.symbol_map.get(token_name, "?")
 
-        ascii_grid += "\n\n=== ACTION MASK ===\n"
-        ascii_grid += build_mask_literal(obs_t.shape)
+            ascii_grid += (
+                f"\n\nAction: Click cell {action}, containing "
+                f"a '{token_name}' token represented by '{token_symbol}'."
+            )
 
+            ascii_grid += "\n\n=== ACTION MASK ===\n"
+            ascii_grid += build_mask_literal(obs_t.shape)
         return ascii_grid
 
     def extract_objects(

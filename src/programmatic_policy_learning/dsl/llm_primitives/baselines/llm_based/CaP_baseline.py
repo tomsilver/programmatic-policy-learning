@@ -192,6 +192,7 @@ def run(
     all_traj_texts = []
 
     for i, traj in enumerate(trajectories):
+        # text = trajectory_serializer.trajectory_to_diff_text(
         text = trajectory_serializer.trajectory_to_text(
             traj,
             encoder=encoder,
@@ -204,6 +205,7 @@ def run(
 
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
+    input(prompt)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     query = Query(
         prompt, hyperparameters={"temperature": 0.0, "seed": seed}
@@ -301,7 +303,7 @@ def _parse_cli_args() -> argparse.Namespace:
         "--eval-env-nums",
         nargs="*",
         type=int,
-        default=[11, 12, 13, 14, 15, 16, 17, 18, 19],
+        default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
         help="Optional list of environment indices for post-generation evaluation.",
     )
     parser.add_argument(
@@ -359,7 +361,7 @@ def _strip_code_block(text: str) -> str:
 def _compile_policy_function(code: str, function_name: str) -> Callable[[Any], Any]:
     """Compile Python code defining `function_name` into a callable."""
 
-    globals_dict: dict[str, Any] = {}
+    globals_dict: dict[str, Any] = {"np": np}
     locals_dict: dict[str, Any] = {}
     exec(code, globals_dict, locals_dict)  # pylint: disable=exec-used
 
@@ -552,9 +554,61 @@ def _prepare_results_for_plot(
     return labels, expert_means, expert_cis, cap_means, cap_cis
 
 
+def manual_eval(final_code):
+    args = _parse_cli_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    code_str = _strip_code_block(final_code)
+    policy_fn = _compile_policy_function(code_str, "policy")
+    env_builder = lambda idx: env_factory(idx, args.env)
+    run_expert = 1
+    cap_results, expert_results = _evaluate_policy_function(
+        policy_fn,
+        env_builder,
+        args.eval_env_nums,
+        args.eval_max_steps,
+        env_name=args.env,
+        run_expert=run_expert,
+    )
+    print(cap_results)
+    # print(expert_results)
+    exit()
+
+
 def main() -> None:
     """Batch entry-point mirroring run_code_as_policies."""
+    final_code = """
+def policy(obs):
+    n_rows, n_cols = obs.shape
+    TOKEN, EMPTY = "token", "empty"
 
+    candidates = []
+    any_tokens = []
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if obs[r, c] == TOKEN:
+                any_tokens.append((r, c))
+                row_has_empty_elsewhere = False
+                for c2 in range(n_cols):
+                    if c2 != c and obs[r, c2] == EMPTY:
+                        row_has_empty_elsewhere = True
+                        break
+                if row_has_empty_elsewhere:
+                    candidates.append((r, c))
+
+    if candidates:
+        r_max = max(rc[0] for rc in candidates)
+        best = min((rc for rc in candidates if rc[0] == r_max), key=lambda x: x[1])
+        return best
+
+    if any_tokens:
+        r_max = max(rc[0] for rc in any_tokens)
+        best = min((rc for rc in any_tokens if rc[0] == r_max), key=lambda x: x[1])
+        return best
+
+    return (0, 0)
+    """
+    manual_eval(final_code)
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []
@@ -618,7 +672,6 @@ def main() -> None:
                     "policy_file": str(policy_path),
                 }
             )
-
             if args.eval_env_nums:
                 code_str = _strip_code_block(final_code)
                 policy_fn = _compile_policy_function(code_str, args.function_name)

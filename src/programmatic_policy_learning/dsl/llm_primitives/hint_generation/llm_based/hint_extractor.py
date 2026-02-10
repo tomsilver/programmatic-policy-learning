@@ -79,7 +79,6 @@ def collect_full_episode(
         obs = obs_next
         if term or trunc:
             break
-
     if sample_count is None or sample_count >= len(trajectory):
         return trajectory
     if sample_count <= 0:
@@ -358,6 +357,8 @@ def extract_hints(
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
+    print(prompt)
+    input()
     query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
@@ -610,18 +611,18 @@ def main() -> None:
     cache_path = Path("cache.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_client = OpenAIModel("gpt-4.1", cache)
+    llm_client = OpenAIModel("gpt-4o-mini", cache)
 
     env_names = [
-        "Chase",
-        "TwoPileNim",
+        # "Chase",
+        # "TwoPileNim",
         "ReachForTheStar",
-        "StopTheFall",
-        "CheckmateTactic",
+        # "StopTheFall"
+        # "CheckmateTactic"
     ]
-    encoding_methods = ["1", "4"]
-    num_initial_states = 5
-    structured_modes = [True, False]
+    encoding_methods = ["1"]  # "1",
+    num_initial_states = 10
+    structured_modes = [True]
 
     for env_name in env_names:
         for encoding_method in encoding_methods:
@@ -651,16 +652,23 @@ def main() -> None:
 
                 all_traj_texts = []
                 for idx, traj in enumerate(trajectories):
-                    text = trajectory_serializer.trajectory_to_text(
+                    text = trajectory_serializer.trajectory_to_diff_text(
                         traj,
                         encoder=encoder,
-                        analyzer=analyzer,
-                        salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
-                        encoding_method=encoding_method,
                         max_steps=max_steps_per_traj,
                     )
-                    all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
 
+                    # text = trajectory_serializer.trajectory_to_text(
+                    #     traj,
+                    #     encoder=encoder,
+                    #     analyzer=analyzer,
+                    #     salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
+                    #     encoding_method=encoding_method,
+                    #     max_steps=max_steps_per_traj,
+                    # )
+                    all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
+                print(all_traj_texts)
+                input()
                 combined_text = "\n\n".join(all_traj_texts)
                 hints = extract_hints(
                     llm_client,

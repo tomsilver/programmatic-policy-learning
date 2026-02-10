@@ -1,0 +1,58 @@
+1) What the action (row, col) means in this environment
+A. Clicking an arrow button (> < ^ v) moves the agent A
+When the click is on one of the arrow tokens in the “control strip” (usually a bottom row), A shifts by one cell in that direction (if not blocked).
+- Example (Trajectory 1): repeated clicks on < move A left step-by-step:
+    - A at (5,5) → (5,4) → (5,3) → (5,2) → (5,1)
+- Example (Trajectory 0): repeated clicks on > move A right; repeated clicks on ^ move A up.
+So: arrow clicks = movement actions for A.
+
+B. Clicking an empty cell . places a * (“trap/marker”) there
+Whenever the expert clicks an empty . cell, the next state shows a * at that location.
+- Trajectory 2, Step 2 → Step 3: click (1,4) which is . and it becomes *.
+- Trajectory 0, Step 2 → Step 3: click (3,6) which is . and it becomes *.
+So: empty-cell click = place an object * at that cell (looks like a trap/obstacle/marker).
+
+C. Clicking a wall # acts like a “wait / advance time” (no placement, no A move)
+In many demos the expert repeatedly clicks (0,0) which is a wall. During these steps:
+- A does not change position.
+- No * is created.
+- But T does move.
+
+So: wall click = effectively “do nothing” for A, but progresses the environment one tick.
+
+2) How T moves
+T appears to move autonomously by 1 cell per time step (per click), following a deterministic path that “turns” at obstacles/borders.
+
+You can see it doing “go straight then turn” behavior:
+- Trajectory 3: T goes right along row 6, then down along the right edge.
+- Trajectory 1: T goes left until it reaches the wall boundary, then continues upward, etc.
+- Trajectory 0: T slides right along a corridor.
+
+So: each action advances time, and T moves one step along a fixed rule/path.
+
+3) What the expert is trying to do (likely objective)
+
+The expert tends to:
+1. Wait (wall clicks) until T reaches a “good” location,
+2. Place a * on an empty cell that is right next to / just ahead of T’s route,
+3. Move A with arrow buttons toward T (or toward the area around * and T).
+
+That combination strongly suggests the goal is something like:
+- intercept/catch/stop T (possibly using * as a trap or block),
+- and/or navigate A to T at the right time.
+
+Even without the explicit reward definition, the consistent “place * near T then steer A” pattern is the tell.
+
+4) A compact “expert policy” you can imitate
+
+A simple policy that matches these demonstrations:
+
+1. If T is not yet in a trap-friendly corridor/spot:
+- → click a wall (wait) to advance T along its route.
+
+2. If T is approaching a chokepoint / corridor / adjacency with an empty square:
+- → click an empty cell . that is adjacent to T or one step ahead of T to place *.
+
+3. Then move A toward the interception point using arrows:
+- choose the arrow that reduces Manhattan distance from A to either T or the placed *,
+- occasionally “wait” to sync timing if T is moving.

@@ -7,7 +7,7 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Any, Callable, Generator, Sequence, TypeVar, cast
+from typing import Any, Callable, Generator, List, Sequence, Tuple, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -111,7 +111,12 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
-    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "final_hints"
+    REPO_ROOT
+    / "dsl"
+    / "llm_primitives"
+    / "hint_generation"
+    / "llm_based"
+    / "final_hints"
 )
 
 
@@ -123,6 +128,7 @@ def build_py_feature_functions(
     strings."""
     functions: dict[str, Any] = {}
     for source in feature_programs:
+
         tree = ast.parse(source)
         func_names = [
             node.name for node in tree.body if isinstance(node, ast.FunctionDef)
@@ -186,7 +192,10 @@ def get_program_set(
         object_types = env.get_object_types()
         generator = LLMFeatureGenerator(llm_client)
         hint_text = load_hint_text(
-            base_class_name, program_generation["encoding_method"], HINTS_ROOT, program_generation["hint_structured"]
+            base_class_name,
+            program_generation["encoding_method"],
+            program_generation["hint_structured"],
+            HINTS_ROOT,
         )
 
         features, payload = generator.generate(
@@ -213,7 +222,10 @@ def get_program_set(
         # object_types = grid_hint_config.SALIENT_TOKENS[base_class_name]
         py_generator = PyFeatureGenerator(llm_client)
         hint_text = load_hint_text(
-            base_class_name, program_generation["encoding_method"], HINTS_ROOT, program_generation["hint_structured"]
+            base_class_name,
+            program_generation["encoding_method"],
+            program_generation["hint_structured"],
+            HINTS_ROOT,
         )
 
         st, at, st1 = sample_transition_example(
@@ -231,9 +243,9 @@ def get_program_set(
             state_t1_example=st1,
             _seed=seed,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
+            offline_json_path=program_generation["offline_json_path"],
         )
         # program_prior_log_probs = [-4.0] * len(features)
-
         dsl_fns = get_dsl_functions_dict()
         dsl_fns.update(
             build_py_feature_functions(features, dsl_fns)
@@ -378,6 +390,110 @@ def _generate_programs(
     return programs, program_prior_log_probs
 
 
+def _format_one_example(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    rows = []
+    for r in range(s.shape[0]):
+        row = ", ".join(repr(str(x)) for x in s[r])
+        rows.append(f"[{row}]")
+    grid = "\n".join(f"  {row}" for row in rows)
+    r, c = int(a[0]), int(a[1])
+    cell = s[r, c] if 0 <= r < s.shape[0] and 0 <= c < s.shape[1] else "OOB"
+    return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
+
+
+def build_collision_repair_prompt(
+    pos_indices: List[int],
+    neg_indices: List[int],
+    examples: List[Tuple[np.ndarray, Tuple[int, int]]],
+    *,
+    env_name: str | None = None,
+    existing_feature_summary: str | None = None,
+    max_per_label: int = 5,
+) -> str:
+    if not pos_indices or not neg_indices:
+        raise ValueError(
+            "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
+        )
+
+    pos_indices = pos_indices[:max_per_label]
+    neg_indices = neg_indices[:max_per_label]
+
+    pos_blocks = []
+    for idx in pos_indices:
+        s, a = examples[idx]
+        pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
+
+    neg_blocks = []
+    for idx in neg_indices:
+        s, a = examples[idx]
+        neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
+
+    env_line = f"ENV: {env_name}\n\n" if env_name else ""
+    feat_line = ""
+    if existing_feature_summary:
+        feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
+
+    prompt = f"""
+SYSTEM:
+You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
+Your task is to REPAIR representational failures in an existing feature set.
+
+{env_line}CONTEXT:
+- Observation s is a 2D grid (list of lists of tokens).
+- Action a is a clicked cell coordinate (row, col).
+- Each feature is a Python function f(s, a) -> bool.
+- Features must generalize across board sizes and positions.
+- Features depend ONLY on (s, a). No history.
+
+{feat_line}COLLISION EVIDENCE:
+All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
+yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+POSITIVE EXAMPLES (label = 1):
+{chr(10).join(pos_blocks)}
+
+NEGATIVE EXAMPLES (label = 0):
+{chr(10).join(neg_blocks)}
+
+TASK:
+Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
+
+Each proposed feature must:
+1) Be True for most positives and False for most negatives (or vice versa) within this bucket
+2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
+3) Be board-size invariant (no hard-coded coordinates)
+4) Use ONLY (s, a)
+5) Return a boolean
+
+DO NOT:
+- Hard-code exact positions
+- Memorize these examples
+- Use random logic
+- Output anything other than JSON
+
+OUTPUT FORMAT (STRICT JSON ONLY):
+
+{{
+  "features": [
+    {{
+      "id": "f_new_1",
+      "name": "short_descriptive_name",
+      "source": "def f_new_1(s, a):\\n    <python code>\\n"
+    }}
+  ]
+}}
+""".strip()
+    # print(prompt)
+    # input("HHMMM")
+    return prompt
+
+
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that learns a logical programmatic policy from data."""
 
@@ -430,6 +546,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
+
+        def constant_feature_cols(X_csr):
+            n = X_csr.shape[0]  # num examples
+            # nnz per column = how many rows have a nonzero entry in that feature
+            col_nnz = np.asarray(X_csr.getnnz(axis=0)).ravel()
+            all_zero = np.where(col_nnz == 0)[0]
+            all_one = np.where(col_nnz == n)[0]  # only valid if X is truly binary 0/1
+            return all_zero, all_one, col_nnz
+
         outer_feedback = None
         programs, program_prior_log_probs, dsl_functions = get_program_set(
             self.num_programs,
@@ -441,8 +566,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             outer_feedback=outer_feedback,
             seed=self.seed_num,
         )
-        # logging.info(programs)
-        # logging.info(program_prior_log_probs)
+
         logging.info("Programs Generation is Done.")
         logging.info(len(programs))
 
@@ -452,27 +576,84 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
-        n = self.program_generation["num_features"]
-        new = [f"f{i}(s, a)" for i in range(1, n + 1)]
+        # n = self.program_generation["num_features"]
+        total_features = len(programs)
+        new = [f"f{i}(s, a)" for i in range(1, total_features + 1)]  # check space
         programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in new]
-        X, y = run_all_programs_on_demonstrations(
+        # programs_sa: list[StateActionProgram] = [StateActionProgram(p) for p in programs]
+        X, y, examples = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
             programs_sa,
             demo_dict,
             dsl_functions,
+            data_imbalance=(self.program_generation or {}).get("data_imbalance"),
+            return_examples=True,
         )
-        self._assert_features_fire(X, programs_sa)
-        logging.info(X)
-        logging.info(y)
+        print(len(examples))
+
         if X is None:
             raise ValueError(
                 "X is None. Ensure the program execution results are valid."
             )
+        print("prev shape", X.shape)
+        print(len(y))
+        all_zero, all_one, col_nnz = constant_feature_cols(X)
+        print("n_examples:", X.shape[0], "n_features:", X.shape[1])
+        print("#all-zero features:", len(all_zero), "indices:", all_zero[:30])
+        print("#all-one features:", len(all_one), "indices:", all_one[:30])
+        remove = np.unique(np.concatenate([all_zero, all_one]))
+        if remove.size > 0:
+            keep_mask = np.ones(X.shape[1], dtype=bool)
+            keep_mask[remove] = False
+            X = X[:, keep_mask]
+            programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+            if program_prior_log_probs is not None:
+                program_prior_log_probs = [
+                    lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+                ]
+            print("Filtered constant features. New X shape:", X.shape)
 
-        # Convert y to list[bool] - short term fix
+        print("after shape", X.shape)
+
+        collision_groups = self._log_feature_collisions(
+            X,
+            y,
+            examples,
+        )
+        if collision_groups and examples is not None:
+            best_group = max(collision_groups, key=lambda g: g["max_occur"])
+            prompt = build_collision_repair_prompt(
+                pos_indices=best_group["pos"],
+                neg_indices=best_group["neg"],
+                examples=examples,
+                env_name=self.base_class_name,
+                existing_feature_summary=None,
+                max_per_label=5,
+            )
+            logging.info("Collision repair prompt built (len=%d).", len(prompt))
+
+        n = X.shape[0]
+        print("N", n)
+        freq = col_nnz / n  # fraction of examples where feature is on
+
+        rare = np.where(freq <= 0.05)[0]  # almost always 0
+        common = np.where(freq >= 0.95)[0]  # almost always 1
+        print("Almost-always-0:", len(rare))
+        print("Almost-always-1:", len(common))
+        self._assert_features_fire(X, programs_sa)
+
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
-        # Convert programs to list[StateActionProgram] - short term fix
+
+        pos = sum(y_bool)
+        neg = len(y_bool) - pos
+        logging.info(
+            "y: n=%d pos=%d (%.2f%%) neg=%d",
+            len(y_bool),
+            pos,
+            100 * pos / len(y_bool),
+            neg,
+        )
 
         plps, plp_priors = learn_plps(
             X,
@@ -483,8 +664,26 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
-        self._log_plp_violation_counts(plps, demonstrations, dsl_functions, top_k=10)
 
+        print(len(plps))
+
+        filtered: list[tuple[StateActionProgram, float]] = []
+        for plp, prior in zip(plps, plp_priors):
+            if str(plp).strip() == "False":
+                continue
+            filtered.append((plp, prior))
+        if filtered:
+            plps, plp_priors = zip(*filtered)
+            plps, plp_priors = list(plps), list(plp_priors)
+        else:
+            plps, plp_priors = [], []
+
+        # IGNORE = self._log_plp_violation_counts(plps, demonstrations, dsl_functions, top_k=50)
+        # for each in IGNORE:
+        #     print(each)
+        #     print("****")
+        # print(len(IGNORE))
+        # plps = IGNORE
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []
@@ -492,9 +691,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
+        print(len(likelihoods))
 
         logging.info(particle_log_probs)
         map_idx = np.argmax(particle_log_probs).squeeze()
+        print(map_idx)
+        # map_idx = 0
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])
 
@@ -518,29 +720,112 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return policy
 
     @staticmethod
+    def _log_feature_collisions(
+        X: Any,
+        y: np.ndarray | None,
+        examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    ) -> list[dict[str, Any]]:
+        """Log collisions where identical feature vectors have different
+        labels."""
+        if y is None:
+            logging.info("Collision check skipped: y is None.")
+            return []
+        if X is None or X.shape[0] == 0:
+            logging.info("Collision check skipped: empty X.")
+            return []
+
+        labels = y.astype(int).flatten().tolist()
+        collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
+        seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
+
+        for i in range(X.shape[0]):
+            row = X.getrow(i)
+            dense = row.toarray().ravel().astype(np.uint8)
+            key = dense.tobytes()
+            label = labels[i]
+            if key in seen:
+                prev_idx, prev_label = seen[key]
+                if prev_label != label:
+                    collisions.append((prev_idx, i, prev_label))
+            else:
+                seen[key] = (i, label)
+
+        if collisions:
+            logging.info("Feature collisions found: %d", len(collisions))
+            for prev_idx, cur_idx, prev_label in collisions:
+                logging.info(
+                    "Collision: row %d(label=%d) vs row %d(label=%d)",
+                    prev_idx,
+                    prev_label,
+                    cur_idx,
+                    labels[cur_idx],
+                )
+            return LogicProgrammaticPolicyApproach._group_collision_indices(
+                collisions, labels
+            )
+        else:
+            logging.info("No feature collisions found.")
+            return []
+
+    @staticmethod
+    def _group_collision_indices(
+        collisions: list[tuple[int, int, int]],
+        labels: list[int],
+    ) -> list[dict[str, Any]]:
+        """Group collisions into pos/neg index lists and compute max_occur."""
+        groups: dict[int, dict[str, set[int]]] = {}
+        for prev_idx, cur_idx, prev_label in collisions:
+            cur_label = labels[cur_idx]
+            if prev_label == cur_label:
+                continue
+            if prev_label == 1:
+                pos_idx, neg_idx = prev_idx, cur_idx
+            else:
+                pos_idx, neg_idx = cur_idx, prev_idx
+            entry = groups.setdefault(pos_idx, {"pos": set(), "neg": set()})
+            entry["pos"].add(pos_idx)
+            entry["neg"].add(neg_idx)
+
+        out: list[dict[str, Any]] = []
+        for pos_idx, data in groups.items():
+            pos_list = sorted(data["pos"])
+            neg_list = sorted(data["neg"])
+            max_occur = max(len(pos_list), len(neg_list))
+            out.append({"pos": pos_list, "neg": neg_list, "max_occur": max_occur})
+        return out
+
+    @staticmethod
     def _log_plp_violation_counts(
         plps: list[StateActionProgram],
         demonstrations: Any,
         dsl_functions: dict[str, Any],
         top_k: int = 10,
-    ) -> None:
+    ) -> list[StateActionProgram]:
         """Log how many demo steps each PLP fails (False on expert action)."""
         set_dsl_functions(dsl_functions)
         counts: list[tuple[int, StateActionProgram]] = []
         total_steps = len(demonstrations.steps)
+        print(total_steps)
+        print(len(plps))
+
         for plp in plps:
             violations = 0
+            all_obs = []
+            all_acts = []
             for obs, action in demonstrations.steps:
                 try:
                     if not plp(obs, action):
                         violations += 1
+                        all_obs.append(obs)
+                        all_acts.append(action)
                 except Exception:  # pylint: disable=broad-exception-caught
+                    print("EXCEPTION")
                     violations += 1
-            counts.append((violations, plp))
+            counts.append((violations, plp, all_obs, all_acts))
 
         counts.sort(key=lambda item: item[0])
         logging.info("PLP violation counts (lower is better):")
-        for violations, plp in counts[:top_k]:
+        for violations, plp, obs_all, act_all in counts[:top_k]:
             rate = (violations / total_steps) if total_steps else 0.0
             logging.info(
                 "violations=%d/%d (%.2f%%) | plp=%s",
@@ -549,6 +834,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 100.0 * rate,
                 plp,
             )
+            for idx, item in enumerate(obs_all):
+                print(item)
+                actionn = act_all[idx]
+                print(actionn)
+                print(item[actionn])
+        return [plp for _, plp, _, _ in counts[:top_k]]
 
     @staticmethod
     def _assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
@@ -561,7 +852,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         totals = np.asarray(X.sum(axis=0)).ravel()
         dead_idxs = np.where(totals == 0)[0].tolist()
         if dead_idxs:
-            dead = [str(programs[i]) for i in dead_idxs[:20]]
+            dead = [str(programs[i]) for i in dead_idxs]  #:20
             print(f"{len(dead_idxs)} features never fire. Examples: {dead}")
 
     def test_policy_on_envs(

@@ -1,10 +1,17 @@
 """Utils for Testing LPP Approach."""
 
+from __future__ import annotations
+
 import json
+import logging
 import re
+import textwrap
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
@@ -46,9 +53,11 @@ def run_single_episode(
     return total_reward
 
 
-def load_hint_text(env_name: str, encoding_method: str, structured_hint:bool, hints_root: str | Path) -> str:
+def load_hint_text(
+    env_name: str, encoding_method: str, structured_hint: bool, hints_root: str | Path
+) -> str:
     """Load the latest hint text for an environment/encoding pair."""
-    hint_type = "structured" if structured_hint else "simple"    
+    hint_type = "structured" if structured_hint else "simple"
     hint_dir = Path(hints_root) / env_name / encoding_method / hint_type
     if not hint_dir.exists():
         raise FileNotFoundError(f"Missing hint directory: {hint_dir}")
@@ -154,3 +163,315 @@ def sample_transition_example(
     action_token = obs_t[action]
     action_text = f"{action}: '{action_token}'"
     return state_t, action_text, state_t1
+
+
+# @dataclass(frozen=True)
+# class FeatureKeyBucket:
+#     """Rows that share the exact same feature vector (same key)."""
+
+#     key: bytes
+#     indices: Tuple[int, ...]
+
+#     @property
+#     def size(self) -> int:
+#         return len(self.indices)
+
+
+# @dataclass(frozen=True)
+# class CollisionBucket:
+#     """A feature-key bucket that contains mixed labels (i.e., a true
+#     collision)."""
+
+#     key: bytes
+#     indices: Tuple[int, ...]
+#     num_pos: int
+#     num_neg: int
+
+#     @property
+#     def size(self) -> int:
+#         return len(self.indices)
+
+
+# def _row_key_from_sparse(X: Any, i: int) -> bytes:
+#     """Stable key for row i (feature vector)."""
+#     row = X.getrow(i)
+#     dense = row.toarray().ravel().astype(np.uint8)
+#     return dense.tobytes()
+
+
+# # ---------------------------
+# # 1) Group ONLY by feature similarity (key)
+# # ---------------------------
+
+
+# def bucket_by_feature_key(X: Any) -> List[FeatureKeyBucket]:
+#     """Group rows by identical feature vectors (feature similarity).
+
+#     Returns all buckets (including pure buckets).
+#     """
+#     if X is None or X.shape[0] == 0:
+#         return []
+
+#     buckets: Dict[bytes, List[int]] = {}
+#     for i in range(X.shape[0]):
+#         key = _row_key_from_sparse(X, i)
+#         buckets.setdefault(key, []).append(i)
+
+#     out = [FeatureKeyBucket(key=k, indices=tuple(v)) for k, v in buckets.items()]
+#     out.sort(key=lambda b: b.size, reverse=True)
+
+#     return out
+
+
+# def collision_buckets_from_key_buckets(
+#     key_buckets: List[FeatureKeyBucket],
+#     y: np.ndarray,
+# ) -> List[CollisionBucket]:
+#     """From feature-key buckets, keep ONLY those that are true collisions
+#     (contain both labels)."""
+#     labels = y.astype(int).flatten()
+
+#     collisions: List[CollisionBucket] = []
+#     for b in key_buckets:
+#         labs = labels[list(b.indices)]
+#         num_pos = int(np.sum(labs == 1))
+#         num_neg = int(np.sum(labs == 0))
+#         if num_pos > 0 and num_neg > 0:
+#             collisions.append(
+#                 CollisionBucket(
+#                     key=b.key,
+#                     indices=b.indices,
+#                     num_pos=num_pos,
+#                     num_neg=num_neg,
+#                 )
+#             )
+
+#     collisions.sort(key=lambda b: b.size, reverse=True)
+#     return collisions
+
+
+# def select_largest_collision_bucket(
+#     X: Any,
+#     y: np.ndarray,
+# ) -> Optional[CollisionBucket]:
+#     """Choose the largest COLLIDING feature-key bucket (mixed labels)."""
+#     key_buckets = bucket_by_feature_key(X)
+#     print(key_buckets)
+#     collisions = collision_buckets_from_key_buckets(key_buckets, y)
+#     print(collisions)
+#     input("HERE")
+#     return collisions[0] if collisions else None
+
+
+# # ---------------------------
+# # 2) Sampling for prompt (still within ONE bucket)
+# # ---------------------------
+
+
+# def sample_examples_from_bucket(
+#     bucket: CollisionBucket,
+#     y: np.ndarray,
+#     max_per_label: int = 5,
+#     seed: int = 0,
+# ) -> Tuple[List[int], List[int]]:
+#     """Sample up to max_per_label positives and negatives from THIS ONE bucket.
+
+#     Returns (pos_indices, neg_indices).
+#     """
+#     rng = np.random.default_rng(seed)
+#     labels = y.astype(int).flatten()
+
+#     pos = [i for i in bucket.indices if int(labels[i]) == 1]
+#     neg = [i for i in bucket.indices if int(labels[i]) == 0]
+
+#     # Shuffle deterministically and take first k
+#     if len(pos) > max_per_label:
+#         pos = [pos[i] for i in rng.permutation(len(pos))[:max_per_label]]
+#     if len(neg) > max_per_label:
+#         neg = [neg[i] for i in rng.permutation(len(neg))[:max_per_label]]
+
+#     return pos, neg
+
+
+# # ---------------------------
+# # 3) Prompt building
+# # ---------------------------
+
+
+# def _to_py_token(x: Any) -> Any:
+#     try:
+#         return x.item()
+#     except Exception:
+#         return x
+
+
+# def _format_grid_for_llm(grid: np.ndarray) -> str:
+#     rows = []
+#     for r in grid:
+#         rows.append("  " + str([_to_py_token(x) for x in r]))
+#     return "[\n" + "\n".join(rows) + "\n]"
+
+
+# def _format_one_example(
+#     s: np.ndarray,
+#     a: Tuple[int, int],
+#     label: int,
+#     idx: int,
+# ) -> str:
+#     r, c = int(a[0]), int(a[1])
+#     clicked = _to_py_token(s[r][c])
+#     return textwrap.dedent(f"""
+#     Example idx={idx} (label={label}):
+#     Observation (s):
+#     {_format_grid_for_llm(s)}
+
+#     Action (a): click cell (row={r}, col={c}), clicked_value={clicked}
+#     """).strip()
+
+
+# def build_collision_repair_prompt(
+#     examples: List[Tuple[np.ndarray, Tuple[int, int]]],
+#     y: np.ndarray,
+#     bucket: CollisionBucket,
+#     pos_indices: List[int],
+#     neg_indices: List[int],
+#     env_name: Optional[str] = None,
+#     existing_feature_summary: Optional[str] = None,
+# ) -> str:
+#     if not pos_indices or not neg_indices:
+#         raise ValueError(
+#             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
+#         )
+
+#     pos_blocks = []
+#     for idx in pos_indices:
+#         s, a = examples[idx]
+#         pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
+
+#     neg_blocks = []
+#     for idx in neg_indices:
+#         s, a = examples[idx]
+#         neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
+
+#     env_line = f"ENV: {env_name}\n" if env_name else ""
+#     feat_line = ""
+#     if existing_feature_summary:
+#         feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
+
+#     prompt = f"""
+# SYSTEM:
+# You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
+# Your task is to REPAIR representational failures in an existing feature set.
+
+# {env_line}CONTEXT:
+# - Observation s is a 2D grid (list of lists of tokens).
+# - Action a is a clicked cell coordinate (row, col).
+# - Each feature is a Python function f(s, a) -> bool.
+# - Features must generalize across board sizes and positions.
+# - Features depend ONLY on (s, a). No history.
+
+# {feat_line}COLLISION EVIDENCE:
+# All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
+# yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+# Collision bucket stats:
+# - bucket_size = {bucket.size}
+# - num_pos_in_bucket = {bucket.num_pos}
+# - num_neg_in_bucket = {bucket.num_neg}
+
+# POSITIVE EXAMPLES (label = 1):
+# {chr(10).join(pos_blocks)}
+
+# NEGATIVE EXAMPLES (label = 0):
+# {chr(10).join(neg_blocks)}
+
+# TASK:
+# Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
+
+# Each proposed feature must:
+# 1) Be True for most positives and False for most negatives (or vice versa) within this bucket
+# 2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
+# 3) Be board-size invariant (no hard-coded coordinates)
+# 4) Use ONLY (s, a)
+# 5) Return a boolean
+
+# DO NOT:
+# - Hard-code exact positions
+# - Memorize these examples
+# - Use random logic
+# - Output anything other than JSON
+
+# OUTPUT FORMAT (STRICT JSON ONLY):
+
+# {{
+#   "features": [
+#     {{
+#       "id": "f_new_1",
+#       "name": "short_descriptive_name",
+#       "source": "def f_new_1(s, a):\\n    <python code>\\n"
+#     }}
+#   ]
+# }}
+# """.strip()
+
+#     return prompt
+
+
+# # ---------------------------
+# # 4) Convenience: go from (X,y,examples) -> prompt (largest colliding bucket)
+# # ---------------------------
+
+
+# def build_prompt_for_largest_collision_bucket(
+#     X: Any,
+#     y: np.ndarray,
+#     examples: List[Tuple[np.ndarray, Tuple[int, int]]],
+#     max_per_label: int = 5,
+#     seed: int = 0,
+#     env_name: Optional[str] = None,
+#     existing_feature_summary: Optional[str] = None,
+# ) -> Optional[str]:
+#     bucket = select_largest_collision_bucket(X, y)
+#     if bucket is None:
+#         return None
+
+#     pos_idx, neg_idx = sample_examples_from_bucket(
+#         bucket, y, max_per_label=max_per_label, seed=seed
+#     )
+#     return build_collision_repair_prompt(
+#         examples=examples,
+#         y=y,
+#         bucket=bucket,
+#         pos_indices=pos_idx,
+#         neg_indices=neg_idx,
+#         env_name=env_name,
+#         existing_feature_summary=existing_feature_summary,
+#     )
+
+
+# # ---------------------------
+# # 5) Optional logging helper
+# # ---------------------------
+
+
+# def log_collision_summary_and_prompt_info(
+#     X: Any,
+#     y: np.ndarray,
+#     max_buckets_to_log: int = 5,
+# ) -> None:
+#     key_buckets = bucket_by_feature_key(X)
+#     collisions = collision_buckets_from_key_buckets(key_buckets, y)
+
+#     if not collisions:
+#         logging.info("No feature collisions found.")
+#         return
+
+#     logging.info("Collision buckets found: %d", len(collisions))
+#     for i, b in enumerate(collisions[:max_buckets_to_log]):
+#         logging.info(
+#             "CollisionBucket[%d]: size=%d pos=%d neg=%d",
+#             i,
+#             b.size,
+#             b.num_pos,
+#             b.num_neg,
+#         )

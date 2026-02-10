@@ -1,7 +1,7 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # Use a list, Hydra will convert to tuple if needed
-program_generation_step_size: 1
+demo_numbers: [0, 1 , 2, 3, 4, 5, 6, 7, 8, 9, 10] # Use a list, Hydra will convert to tuple if needed
+program_generation_step_size: 100
 num_programs: 10000
 num_dts: 5 #5
 max_num_particles: 25 #25
@@ -11,10 +11,16 @@ program_generation:
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
   feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt_v1_0.txt" #prompt_v1_1
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt_v1_1.txt" #prompt_v1_1
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
-  num_batches: 2
+  num_batches: 1
   removed_primitive: ""
-  num_features: 100
-  encoding_method: "enc_4"
-  hint_structured: True
+  num_features: 19526 #18764
+  encoding_method: "enc_1"
+  hint_structured: False
+  offline_json_path: "expanded_rfts_1000.json" #expanded_features
+  data_imbalance:
+    enabled: false
+    method: downsample_majority
+    K: 10
+

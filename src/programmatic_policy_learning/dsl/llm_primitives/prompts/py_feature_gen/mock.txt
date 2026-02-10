@@ -21,7 +21,7 @@ Return ONLY valid JSON with this schema:
   ]
 }
 
-Output EXACTLY 8 features f1..f8. Each "source" must define exactly one function, no imports, no global vars.
+Output EXACTLY 17 features f1..f17. Each "source" must define exactly one function, no imports, no global vars.
 
 The features must be EXACTLY these DSL expressions (same semantics):
 
@@ -44,58 +44,45 @@ at_action_cell(
 )
 
 f4:
-at_action_cell(
-  lambda cell,o: shifted((0,1), lambda cell,o: cell_is_value(stf.RED, cell, o), cell, o),
-  a, s
+at_action_cell( 
+    lambda cell,o : shifted( ( 1 , 0) , lambda cell,o : cell_is_value( stf.DRAWN , cell, o) , cell, o) , 
+    a, s
 )
 
 f5:
-at_action_cell(
-  lambda cell,o: scanning(
-      (-1,0),
-      lambda cell,o: cell_is_value(stf.FALLING, cell, o),
-      lambda cell,o: cell_is_value(stf.DRAWN, cell, o),
-      cell, o
-  ),
-  a, s
+at_action_cell( 
+    lambda cell,o : cell_is_value( stf.EMPTY , cell, o) , 
+    a, s
 )
 
 f6:
-at_action_cell(
-  lambda cell,o: scanning(
-      (-1,0),
-      lambda cell,o: cell_is_value(stf.FALLING, cell, o),
-      lambda cell,o: cell_is_value(stf.STATIC, cell, o),
-      cell, o
-  ),
-  a, s
-)
+at_action_cell( lambda cell,o : shifted( (0, -1 ) , lambda cell,o : cell_is_value( stf.RED , cell, o) , cell, o) , a, s)
 
-f7:
-at_action_cell(
-  lambda cell,o: scanning(
-      (1,0),
-      lambda cell,o: cell_is_value(stf.STATIC, cell, o),
-      lambda cell,o: cell_is_value(stf.EMPTY, cell, o),
-      cell, o
-  ),
-  a, s
-)
+f7: 
+at_action_cell( lambda cell,o : shifted( (0, 1 ) , lambda cell,o : cell_is_value( stf.RED , cell, o) , cell, o) , a, s)
 
-f8:
-at_cell_with_value(
-  stf.DRAWN,
-  lambda cell,o: scanning(
-      (-1,-1),
-      lambda cell,o: cell_is_value(None, cell, o),
-      lambda cell,o: cell_is_value(stf.RED, cell, o),
-      cell, o
-  ),
-  a, s
-)
+f8: at_action_cell( lambda cell,o : shifted( ( 1 , 0) , lambda cell,o : cell_is_value( stf.DRAWN , cell, o) , cell, o) , a, s)
+
+f9: at_action_cell( lambda cell,o : cell_is_value( stf.ADVANCE , cell, o) , a, s)
+f10: 
+at_cell_with_value( stf.DRAWN , lambda cell,o : scanning( ( -1 , -1 ) , lambda cell,o : cell_is_value( None , cell, o) , lambda cell,o : cell_is_value( stf.RED , cell, o) , cell, o) , a, s)
+f11: 
+at_cell_with_value( stf.DRAWN , lambda cell,o : scanning( ( -1 , 1 ) , lambda cell,o : cell_is_value( stf.RED , cell, o) , lambda cell,o : cell_is_value( stf.ADVANCE , cell, o) , cell, o) , a, s)
+f12: 
+at_action_cell( lambda cell,o : shifted( ( 1 , 0) , lambda cell,o : cell_is_value( stf.DRAWN , cell, o) , cell, o) , a, s)
+f13: 
+at_action_cell( lambda cell,o : cell_is_value( stf.ADVANCE , cell, o) , a, s)
+f14: 
+at_action_cell( lambda cell,o : scanning( ( -1 , 0) , lambda cell,o : cell_is_value( stf.FALLING , cell, o) , lambda cell,o : cell_is_value( stf.DRAWN , cell, o) , cell, o) , a, s)
+f15:
+at_action_cell( lambda cell,o : scanning( ( 1 , 0) , lambda cell,o : cell_is_value( stf.STATIC , cell, o) , lambda cell,o : cell_is_value( stf.EMPTY , cell, o) , cell, o) , a, s)
+f16:
+at_action_cell( lambda cell,o : cell_is_value( stf.EMPTY , cell, o) , a, s)
+f17:
+at_action_cell( lambda cell,o : scanning( ( -1 , 0) , lambda cell,o : cell_is_value( stf.FALLING , cell, o) , lambda cell,o : cell_is_value( stf.STATIC , cell, o) , cell, o) , a, s)
 
 IMPORTANT:
 
 - Use s as obs argument.
 - Do not add any other claims or features.
-- Output exactly f1..f8.
+- Output exactly f1..f17.
