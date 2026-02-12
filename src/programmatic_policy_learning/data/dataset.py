@@ -37,7 +37,7 @@ Coord = Tuple[int, int]
 
 
 def sample_negative_actions_stratified(
-    state,
+    state: np.ndarray,
     expert_action: Coord,
     K: int = 30,
     rng: random.Random | None = None,
@@ -87,7 +87,7 @@ def sample_negative_actions_stratified(
     picked: List[Coord] = []
     picked_set = set()
 
-    def add_coord(rc: Coord):
+    def add_coord(rc: Coord) -> None:
         if rc not in picked_set and rc != (er, ec):
             picked.append(rc)
             picked_set.add(rc)

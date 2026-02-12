@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import math
+
+# import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -166,7 +167,7 @@ class PyFeatureGenerator:
             programs.append(source.replace("\\n", "\n"))  # LATER REMOVE
         return programs
 
-    def generate(
+    def generate(  # pylint: disable=unused-argument
         self,
         prompt_path: str | Path,
         batch_prompt_path: str | Path | None,
@@ -259,9 +260,11 @@ class PyFeatureGenerator:
         # if self.llm_client is not None:
         #     self.write_json("py_feature_payload.json", combined_payload)
         # return all_programs, combined_payload
+        if offline_json_path is None:
+            raise ValueError("offline_json_path is required when running offline.")
         payload_text = Path(offline_json_path).read_text(encoding="utf-8")
         payload = json.loads(payload_text)
         feature_programs = self.parse_feature_programs(payload)
 
-        print(feature_programs)
+        # print(feature_programs)
         return feature_programs, payload

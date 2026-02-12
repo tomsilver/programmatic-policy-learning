@@ -66,6 +66,7 @@ warn_unreachable = true
 exclude = ["venv/*", ".venv/*", 
 "src/programmatic_policy_learning/dsl/llm_primitives/outputs", 
 "src/programmatic_policy_learning/dsl/llm_primitives/new_outputs", 
+"src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/5.2_pro/.*",
 "experiments/jobs/cc_jobs/.*",
 "outputs/"
 ]
@@ -79,4 +80,3 @@ module = [
     "cloudpickle.*",
 ]
 ignore_missing_imports = true
-

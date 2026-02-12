@@ -343,6 +343,109 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 """
 
 
+def build_new_hint_structured(
+    trajectories_text: str, env_name: str, encoding_method: str
+) -> str:
+    p = """
+# Hint-Extractor Prompt
+
+## ROLE
+You are a “policy-hint extractor” for grid-world imitation learning.
+You will NOT generate code or features.
+Your job is to infer **what kinds of observable predicates over (s, a)** are needed to explain the expert’s action choices, *without naming feature families explicitly*.
+
+## INPUT
+You are given multiple expert demonstrations consisting of transitions (s_t, a_t, s_{t+1}).
+- s is a 2D grid of tokens (characters shown).
+- a is a clicked cell (row, col).
+- The environment is deterministic.
+- The expert’s action selection depends only on s (not on hidden state).
+
+## OUTPUT (STRICT)
+Return ONLY a JSON object with exactly these keys:
+{
+  "action_choice_hints": [ ... ],
+  "negative_evidence_hints": [ ... ],
+  "transition_hints": [ ... ],
+  "template_constraints": { ... }
+}
+No extra text. No markdown. No commentary.
+
+## WHAT TO EXTRACT
+
+### A) action_choice_hints (10–16 strings)
+Each string describes a **predicate schema** over (s, a) that seems necessary to decide whether a candidate action cell is good.
+Rules:
+- Do NOT mention specific raw token characters (., A, D, F, R, S).
+- Do NOT mention exact coordinates.
+- Prefer describing relations using:
+  - “same row/column”
+  - “within K steps”
+  - “nearest / first encountered along a direction”
+  - “exists / for all”
+  - “blocked by / before reaching boundary”
+  - “contiguous segment / run”
+  - “region: top/bottom band”
+- Each hint must be actionable enough to suggest a feature-template pattern.
+
+### B) negative_evidence_hints (6–10 strings)
+“Distractor patterns”: things that look correlated with chosen actions but are NOT sufficient.
+Same style rules as above.
+
+### C) transition_hints (6–12 strings)
+Describe deterministic dynamics inferred from s_t → s_{t+1} that matter for action choice.
+Rules:
+- Describe transitions as general rules.
+- Refer to tokens by *roles* (e.g., “advance control”, “moving token”, “drawn trace”, “static floor”, “obstacle”) instead of raw characters.
+
+### D) template_constraints (object)
+Constraints for the *feature-template generator* to avoid combinatorial blow-up while keeping expressivity.
+Return:
+{
+  "max_templates_suggested": <int between 30 and 60>,
+  "diversity_requirements": [
+     "....", "...."
+  ],
+  "placeholder_usage_limits": [
+     "....", "...."
+  ],
+  "avoidances": [
+     "....", "...."
+  ]
+}
+
+Rules:
+- Include at least 2 constraints that limit instantiation explosion.
+- Include at least 2 constraints that enforce diversity.
+- Include at least 2 avoidances that prevent trivial/overfit templates.
+
+## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
+1) Compare chosen actions vs nearby plausible alternative cells.
+2) Identify what information about the grid the expert seems to use:
+   - alignment with long structures
+   - constraints by obstacles/support
+   - nearest/first-hit patterns along directions
+   - dependence on global distribution of roles
+3) Output the minimal predicate schemas that could separate chosen actions from non-chosen ones.
+
+## DEMONSTRATIONS
+<<DEMONSTRATIONS>>
+
+## TOKEN MAP (FOR REFERENCE ONLY; DO NOT MENTION RAW TOKENS IN OUTPUT TEXT)
+TOKEN_MAP = {
+  ".": "stf.EMPTY",
+  "A": "stf.ADVANCE",
+  "D": "stf.DRAWN",
+  "F": "stf.FALLING",
+  "R": "stf.RED",
+  "S": "stf.STATIC"
+}
+
+SEED: 0
+"""
+    return p.replace("<<DEMONSTRATIONS>>", f"{trajectories_text}\n")
+
+
 def extract_hints(
     llm_client: PretrainedLargeModel,
     trajectories_text: str,
@@ -354,6 +457,7 @@ def extract_hints(
     """Query the LLM and return parsed hint JSON."""
     if structured:
         prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
+        # prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
@@ -614,9 +718,9 @@ def main() -> None:
     llm_client = OpenAIModel("gpt-4o-mini", cache)
 
     env_names = [
-        # "Chase",
+        "Chase",
         # "TwoPileNim",
-        "ReachForTheStar",
+        # "ReachForTheStar",
         # "StopTheFall"
         # "CheckmateTactic"
     ]
@@ -667,8 +771,8 @@ def main() -> None:
                     #     max_steps=max_steps_per_traj,
                     # )
                     all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
-                print(all_traj_texts)
-                input()
+                # print(all_traj_texts)
+                # input()
                 combined_text = "\n\n".join(all_traj_texts)
                 hints = extract_hints(
                     llm_client,

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
-import textwrap
-from collections.abc import Callable
-from dataclasses import dataclass
+import signal
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from types import FrameType
+from typing import Any, Callable, Generator
 
 import numpy as np
 
@@ -22,6 +23,10 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
 )
 from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
     hint_extractor,
+)
+from programmatic_policy_learning.dsl.state_action_program import (
+    StateActionProgram,
+    set_dsl_functions,
 )
 
 
@@ -165,313 +170,543 @@ def sample_transition_example(
     return state_t, action_text, state_t1
 
 
-# @dataclass(frozen=True)
-# class FeatureKeyBucket:
-#     """Rows that share the exact same feature vector (same key)."""
-
-#     key: bytes
-#     indices: Tuple[int, ...]
-
-#     @property
-#     def size(self) -> int:
-#         return len(self.indices)
-
-
-# @dataclass(frozen=True)
-# class CollisionBucket:
-#     """A feature-key bucket that contains mixed labels (i.e., a true
-#     collision)."""
-
-#     key: bytes
-#     indices: Tuple[int, ...]
-#     num_pos: int
-#     num_neg: int
-
-#     @property
-#     def size(self) -> int:
-#         return len(self.indices)
-
-
-# def _row_key_from_sparse(X: Any, i: int) -> bytes:
-#     """Stable key for row i (feature vector)."""
-#     row = X.getrow(i)
-#     dense = row.toarray().ravel().astype(np.uint8)
-#     return dense.tobytes()
-
-
-# # ---------------------------
-# # 1) Group ONLY by feature similarity (key)
-# # ---------------------------
-
-
-# def bucket_by_feature_key(X: Any) -> List[FeatureKeyBucket]:
-#     """Group rows by identical feature vectors (feature similarity).
-
-#     Returns all buckets (including pure buckets).
-#     """
-#     if X is None or X.shape[0] == 0:
-#         return []
-
-#     buckets: Dict[bytes, List[int]] = {}
-#     for i in range(X.shape[0]):
-#         key = _row_key_from_sparse(X, i)
-#         buckets.setdefault(key, []).append(i)
-
-#     out = [FeatureKeyBucket(key=k, indices=tuple(v)) for k, v in buckets.items()]
-#     out.sort(key=lambda b: b.size, reverse=True)
-
-#     return out
-
-
-# def collision_buckets_from_key_buckets(
-#     key_buckets: List[FeatureKeyBucket],
-#     y: np.ndarray,
-# ) -> List[CollisionBucket]:
-#     """From feature-key buckets, keep ONLY those that are true collisions
-#     (contain both labels)."""
-#     labels = y.astype(int).flatten()
-
-#     collisions: List[CollisionBucket] = []
-#     for b in key_buckets:
-#         labs = labels[list(b.indices)]
-#         num_pos = int(np.sum(labs == 1))
-#         num_neg = int(np.sum(labs == 0))
-#         if num_pos > 0 and num_neg > 0:
-#             collisions.append(
-#                 CollisionBucket(
-#                     key=b.key,
-#                     indices=b.indices,
-#                     num_pos=num_pos,
-#                     num_neg=num_neg,
-#                 )
-#             )
-
-#     collisions.sort(key=lambda b: b.size, reverse=True)
-#     return collisions
-
-
-# def select_largest_collision_bucket(
-#     X: Any,
-#     y: np.ndarray,
-# ) -> Optional[CollisionBucket]:
-#     """Choose the largest COLLIDING feature-key bucket (mixed labels)."""
-#     key_buckets = bucket_by_feature_key(X)
-#     print(key_buckets)
-#     collisions = collision_buckets_from_key_buckets(key_buckets, y)
-#     print(collisions)
-#     input("HERE")
-#     return collisions[0] if collisions else None
-
-
-# # ---------------------------
-# # 2) Sampling for prompt (still within ONE bucket)
-# # ---------------------------
-
-
-# def sample_examples_from_bucket(
-#     bucket: CollisionBucket,
-#     y: np.ndarray,
-#     max_per_label: int = 5,
-#     seed: int = 0,
-# ) -> Tuple[List[int], List[int]]:
-#     """Sample up to max_per_label positives and negatives from THIS ONE bucket.
-
-#     Returns (pos_indices, neg_indices).
-#     """
-#     rng = np.random.default_rng(seed)
-#     labels = y.astype(int).flatten()
-
-#     pos = [i for i in bucket.indices if int(labels[i]) == 1]
-#     neg = [i for i in bucket.indices if int(labels[i]) == 0]
-
-#     # Shuffle deterministically and take first k
-#     if len(pos) > max_per_label:
-#         pos = [pos[i] for i in rng.permutation(len(pos))[:max_per_label]]
-#     if len(neg) > max_per_label:
-#         neg = [neg[i] for i in rng.permutation(len(neg))[:max_per_label]]
-
-#     return pos, neg
-
-
-# # ---------------------------
-# # 3) Prompt building
-# # ---------------------------
-
-
-# def _to_py_token(x: Any) -> Any:
-#     try:
-#         return x.item()
-#     except Exception:
-#         return x
-
-
-# def _format_grid_for_llm(grid: np.ndarray) -> str:
-#     rows = []
-#     for r in grid:
-#         rows.append("  " + str([_to_py_token(x) for x in r]))
-#     return "[\n" + "\n".join(rows) + "\n]"
-
-
-# def _format_one_example(
-#     s: np.ndarray,
-#     a: Tuple[int, int],
-#     label: int,
-#     idx: int,
-# ) -> str:
-#     r, c = int(a[0]), int(a[1])
-#     clicked = _to_py_token(s[r][c])
-#     return textwrap.dedent(f"""
-#     Example idx={idx} (label={label}):
-#     Observation (s):
-#     {_format_grid_for_llm(s)}
-
-#     Action (a): click cell (row={r}, col={c}), clicked_value={clicked}
-#     """).strip()
-
-
-# def build_collision_repair_prompt(
-#     examples: List[Tuple[np.ndarray, Tuple[int, int]]],
-#     y: np.ndarray,
-#     bucket: CollisionBucket,
-#     pos_indices: List[int],
-#     neg_indices: List[int],
-#     env_name: Optional[str] = None,
-#     existing_feature_summary: Optional[str] = None,
-# ) -> str:
-#     if not pos_indices or not neg_indices:
-#         raise ValueError(
-#             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
-#         )
-
-#     pos_blocks = []
-#     for idx in pos_indices:
-#         s, a = examples[idx]
-#         pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
-
-#     neg_blocks = []
-#     for idx in neg_indices:
-#         s, a = examples[idx]
-#         neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
-
-#     env_line = f"ENV: {env_name}\n" if env_name else ""
-#     feat_line = ""
-#     if existing_feature_summary:
-#         feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
-
-#     prompt = f"""
-# SYSTEM:
-# You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
-# Your task is to REPAIR representational failures in an existing feature set.
-
-# {env_line}CONTEXT:
-# - Observation s is a 2D grid (list of lists of tokens).
-# - Action a is a clicked cell coordinate (row, col).
-# - Each feature is a Python function f(s, a) -> bool.
-# - Features must generalize across board sizes and positions.
-# - Features depend ONLY on (s, a). No history.
-
-# {feat_line}COLLISION EVIDENCE:
-# All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
-# yet the expert labels differ. Therefore, the current features are provably insufficient.
-
-# Collision bucket stats:
-# - bucket_size = {bucket.size}
-# - num_pos_in_bucket = {bucket.num_pos}
-# - num_neg_in_bucket = {bucket.num_neg}
-
-# POSITIVE EXAMPLES (label = 1):
-# {chr(10).join(pos_blocks)}
-
-# NEGATIVE EXAMPLES (label = 0):
-# {chr(10).join(neg_blocks)}
-
-# TASK:
-# Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
-
-# Each proposed feature must:
-# 1) Be True for most positives and False for most negatives (or vice versa) within this bucket
-# 2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
-# 3) Be board-size invariant (no hard-coded coordinates)
-# 4) Use ONLY (s, a)
-# 5) Return a boolean
-
-# DO NOT:
-# - Hard-code exact positions
-# - Memorize these examples
-# - Use random logic
-# - Output anything other than JSON
-
-# OUTPUT FORMAT (STRICT JSON ONLY):
-
-# {{
-#   "features": [
-#     {{
-#       "id": "f_new_1",
-#       "name": "short_descriptive_name",
-#       "source": "def f_new_1(s, a):\\n    <python code>\\n"
-#     }}
-#   ]
-# }}
-# """.strip()
-
-#     return prompt
-
-
-# # ---------------------------
-# # 4) Convenience: go from (X,y,examples) -> prompt (largest colliding bucket)
-# # ---------------------------
-
-
-# def build_prompt_for_largest_collision_bucket(
-#     X: Any,
-#     y: np.ndarray,
-#     examples: List[Tuple[np.ndarray, Tuple[int, int]]],
-#     max_per_label: int = 5,
-#     seed: int = 0,
-#     env_name: Optional[str] = None,
-#     existing_feature_summary: Optional[str] = None,
-# ) -> Optional[str]:
-#     bucket = select_largest_collision_bucket(X, y)
-#     if bucket is None:
-#         return None
-
-#     pos_idx, neg_idx = sample_examples_from_bucket(
-#         bucket, y, max_per_label=max_per_label, seed=seed
-#     )
-#     return build_collision_repair_prompt(
-#         examples=examples,
-#         y=y,
-#         bucket=bucket,
-#         pos_indices=pos_idx,
-#         neg_indices=neg_idx,
-#         env_name=env_name,
-#         existing_feature_summary=existing_feature_summary,
-#     )
-
-
-# # ---------------------------
-# # 5) Optional logging helper
-# # ---------------------------
-
-
-# def log_collision_summary_and_prompt_info(
-#     X: Any,
-#     y: np.ndarray,
-#     max_buckets_to_log: int = 5,
-# ) -> None:
-#     key_buckets = bucket_by_feature_key(X)
-#     collisions = collision_buckets_from_key_buckets(key_buckets, y)
-
-#     if not collisions:
-#         logging.info("No feature collisions found.")
-#         return
-
-#     logging.info("Collision buckets found: %d", len(collisions))
-#     for i, b in enumerate(collisions[:max_buckets_to_log]):
-#         logging.info(
-#             "CollisionBucket[%d]: size=%d pos=%d neg=%d",
-#             i,
-#             b.size,
-#             b.num_pos,
-#             b.num_neg,
-#         )
+def log_feature_collisions(
+    X: Any,
+    y: np.ndarray | None,
+    examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+) -> list[dict[str, Any]]:
+    """Log collisions where identical feature vectors have different labels."""
+    if y is None:
+        logging.info("Collision check skipped: y is None.")
+        return []
+    if X is None or X.shape[0] == 0:
+        logging.info("Collision check skipped: empty X.")
+        return []
+
+    labels = y.astype(int).flatten().tolist()
+    collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
+    seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
+
+    for i in range(X.shape[0]):
+        row = X.getrow(i)
+        dense = row.toarray().ravel().astype(np.uint8)
+        key = dense.tobytes()
+        label = labels[i]
+        if key in seen:
+            prev_idx, prev_label = seen[key]
+            if prev_label != label:
+                collisions.append((prev_idx, i, prev_label))
+        else:
+            seen[key] = (i, label)
+
+    if collisions:
+        logging.info("Feature collisions found: %d", len(collisions))
+        for prev_idx, cur_idx, prev_label in collisions:
+            logging.info(
+                "Collision: row %d(label=%d) vs row %d(label=%d)",
+                prev_idx,
+                prev_label,
+                cur_idx,
+                labels[cur_idx],
+            )
+        return group_collision_indices(collisions, labels)
+    else:
+        logging.info("No feature collisions found.")
+        return []
+
+
+def group_collision_indices(
+    collisions: list[tuple[int, int, int]],
+    labels: list[int],
+) -> list[dict[str, Any]]:
+    """Group collisions into pos/neg index lists and compute max_occur."""
+    groups: dict[int, dict[str, set[int]]] = {}
+    for prev_idx, cur_idx, prev_label in collisions:
+        cur_label = labels[cur_idx]
+        if prev_label == cur_label:
+            continue
+        if prev_label == 1:
+            pos_idx, neg_idx = prev_idx, cur_idx
+        else:
+            pos_idx, neg_idx = cur_idx, prev_idx
+        entry = groups.setdefault(pos_idx, {"pos": set(), "neg": set()})
+        entry["pos"].add(pos_idx)
+        entry["neg"].add(neg_idx)
+
+    out: list[dict[str, Any]] = []
+    for pos_idx, data in groups.items():
+        pos_list = sorted(data["pos"])
+        neg_list = sorted(data["neg"])
+        max_occur = max(len(pos_list), len(neg_list))
+        out.append({"pos": pos_list, "neg": neg_list, "max_occur": max_occur})
+    return out
+
+
+def log_plp_violation_counts(
+    plps: list[StateActionProgram],
+    demonstrations: Any,
+    dsl_functions: dict[str, Any],
+    top_k: int = 10,
+) -> list[StateActionProgram]:
+    """Log how many demo steps each PLP fails (False on expert action)."""
+    set_dsl_functions(dsl_functions)
+    counts: list[tuple[int, StateActionProgram, list[Any], list[Any]]] = []
+    total_steps = len(demonstrations.steps)
+    print(total_steps)
+    print(len(plps))
+
+    for plp in plps:
+        violations = 0
+        all_obs = []
+        all_acts = []
+        for obs, action in demonstrations.steps:
+            try:
+                if not plp(obs, action):
+                    violations += 1
+                    all_obs.append(obs)
+                    all_acts.append(action)
+            except Exception:  # pylint: disable=broad-exception-caught
+                print("EXCEPTION")
+                violations += 1
+        counts.append((violations, plp, all_obs, all_acts))
+
+    counts.sort(key=lambda item: item[0])
+    logging.info("PLP violation counts (lower is better):")
+    for violations, plp, obs_all, act_all in counts[:top_k]:
+        rate = (violations / total_steps) if total_steps else 0.0
+        logging.info(
+            "violations=%d/%d (%.2f%%) | plp=%s",
+            violations,
+            total_steps,
+            100.0 * rate,
+            plp,
+        )
+        # for idx, item in enumerate(obs_all):
+        #     print(item)
+        #     actionn = act_all[idx]
+        #     print(actionn)
+        #     print(item[actionn])
+    return [plp for _, plp, _, _ in counts[:top_k]]
+
+
+def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
+    """Assert that every feature fires at least once across all examples."""
+    if X is None:
+        raise AssertionError("X is None; cannot validate feature coverage.")
+    if X.shape[1] == 0:
+        raise AssertionError("No features found in X.")
+    totals = np.asarray(X.sum(axis=0)).ravel()
+    dead_idxs = np.where(totals == 0)[0].tolist()
+    if dead_idxs:
+        dead = [str(programs[i]) for i in dead_idxs]  #:20
+        print(f"{len(dead_idxs)} features never fire. Examples: {dead}")
+
+
+def _format_one_example(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    rows = []
+    for r in range(s.shape[0]):
+        row = ", ".join(repr(str(x)) for x in s[r])
+        rows.append(f"[{row}]")
+    grid = "\n".join(f"  {row}" for row in rows)
+    r, c = int(a[0]), int(a[1])
+    cell = s[r, c] if 0 <= r < s.shape[0] and 0 <= c < s.shape[1] else "OOB"
+    return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
+
+
+def build_collision_repair_prompt(
+    pos_indices: list[int],
+    neg_indices: list[int],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    *,
+    env_name: str | None = None,
+    existing_feature_summary: str | None = None,
+    max_per_label: int = 5,
+) -> str:
+    if not pos_indices or not neg_indices:
+        raise ValueError(
+            "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
+        )
+
+    pos_indices = pos_indices[:max_per_label]
+    neg_indices = neg_indices[:max_per_label]
+
+    pos_blocks = []
+    for idx in pos_indices:
+        s, a = examples[idx]
+        pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
+
+    neg_blocks = []
+    for idx in neg_indices:
+        s, a = examples[idx]
+        neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
+
+    env_line = f"ENV: {env_name}\n\n" if env_name else ""
+    feat_line = ""
+    if existing_feature_summary:
+        feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
+
+    prompt = f"""
+SYSTEM:
+You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
+Your task is to REPAIR representational failures in an existing feature set.
+
+{env_line}CONTEXT:
+- Observation s is a 2D grid (list of lists of tokens).
+- Action a is a clicked cell coordinate (row, col).
+- Each feature is a Python function f(s, a) -> bool.
+- Features must generalize across board sizes and positions.
+- Features depend ONLY on (s, a). No history.
+
+{feat_line}COLLISION EVIDENCE:
+All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
+yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+POSITIVE EXAMPLES (label = 1):
+{chr(10).join(pos_blocks)}
+
+NEGATIVE EXAMPLES (label = 0):
+{chr(10).join(neg_blocks)}
+
+TASK:
+Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
+
+Each proposed feature must:
+1) Be True for most positives and False for most negatives (or vice versa) within this bucket
+2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
+3) Be board-size invariant (no hard-coded coordinates)
+4) Use ONLY (s, a)
+5) Return a boolean
+
+DO NOT:
+- Hard-code exact positions
+- Memorize these examples
+- Use random logic
+- Output anything other than JSON
+
+OUTPUT FORMAT (STRICT JSON ONLY):
+
+{{
+  "features": [
+    {{
+      "id": "f_new_1",
+      "name": "short_descriptive_name",
+      "source": "def f_new_1(s, a):\\n    <python code>\\n"
+    }}
+  ]
+}}
+""".strip()
+    # print(prompt)
+    # input("HHMMM")
+    return prompt
+
+
+def _strip_outer_parens(expr: str) -> str:
+    expr = expr.strip()
+    while expr.startswith("(") and expr.endswith(")"):
+        depth = 0
+        valid_wrap = True
+        for i, ch in enumerate(expr):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and i != len(expr) - 1:
+                    valid_wrap = False
+                    break
+        if depth != 0 or not valid_wrap:
+            break
+        expr = expr[1:-1].strip()
+    return expr
+
+
+def _split_top_level_or(expr: str) -> list[str]:
+    expr = _strip_outer_parens(expr)
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and expr[i : i + 2] == "or":
+            prev_ok = (i == 0) or (not (expr[i - 1].isalnum() or expr[i - 1] == "_"))
+            next_ok = (i + 2 == len(expr)) or (
+                not (expr[i + 2].isalnum() or expr[i + 2] == "_")
+            )
+            if prev_ok and next_ok:
+                part = expr[last:i].strip()
+                if part:
+                    parts.append(part)
+                i += 2
+                last = i
+                continue
+        i += 1
+    tail = expr[last:].strip()
+    if tail:
+        parts.append(tail)
+    return parts if parts else [expr]
+
+
+def _extract_clause_features(clause: str) -> list[str]:
+    return sorted(
+        set(re.findall(r"\b(f\d+)\s*\(\s*s\s*,\s*a\s*\)", clause, flags=re.IGNORECASE))
+    )
+
+
+def _safe_eval_bool(expr: str, locals_map: dict[str, bool]) -> bool:
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return False
+
+    allowed_nodes = (
+        ast.Expression,
+        ast.BoolOp,
+        ast.UnaryOp,
+        ast.Name,
+        ast.Constant,
+        ast.And,
+        ast.Or,
+        ast.Not,
+        ast.Load,
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            return False
+        if isinstance(node, ast.Name) and node.id not in locals_map:
+            return False
+        if isinstance(node, ast.Constant) and not isinstance(node.value, bool):
+            return False
+    try:
+        return bool(
+            eval(compile(tree, "<expr>", "eval"), {"__builtins__": {}}, locals_map)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
+
+
+def build_dnf_failure_payload(
+    policy_str: str,
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    y: list[bool] | np.ndarray,
+    feature_fns: dict[str, Callable[[Any, Any], bool]],
+    max_bad_clauses: int = 5,
+    max_examples: int = 5,
+    include_feature_values: bool = True,
+) -> dict[str, Any]:
+    clauses = _split_top_level_or(policy_str)
+    clause_features = [_extract_clause_features(c) for c in clauses]
+    all_features = sorted({f for feats in clause_features for f in feats})
+
+    y_arr = np.asarray(y).astype(bool).ravel()
+    n = min(len(examples), y_arr.size)
+    if n == 0:
+        return {"policy": policy_str, "error": "no examples"}
+
+    feature_values: dict[int, dict[str, bool]] = {}
+    for idx in range(n):
+        s, a = examples[idx]
+        values: dict[str, bool] = {}
+        for fname in all_features:
+            fn = feature_fns.get(fname)
+            if fn is None:
+                values[fname] = False
+                continue
+            try:
+                values[fname] = bool(fn(s, a))
+            except Exception:  # pylint: disable=broad-exception-caught
+                values[fname] = False
+        feature_values[idx] = values
+
+    fires = np.zeros((n, len(clauses)), dtype=bool)
+    for ci, clause in enumerate(clauses):
+        clause_expr = re.sub(
+            r"\b(f\d+)\s*\(\s*s\s*,\s*a\s*\)", r"\1", clause, flags=re.IGNORECASE
+        )
+        clause_features_set = set(clause_features[ci])
+        for i in range(n):
+            local_vals = {
+                k: v for k, v in feature_values[i].items() if k in clause_features_set
+            }
+            fires[i, ci] = _safe_eval_bool(clause_expr, local_vals)
+
+    pred = fires.any(axis=1)
+    fp_indices = np.where((pred == 1) & (y_arr[:n] == 0))[0].tolist()
+    fn_indices = np.where((pred == 0) & (y_arr[:n] == 1))[0].tolist()
+
+    clause_stats: list[dict[str, Any]] = []
+    for ci, clause in enumerate(clauses):
+        fired = fires[:, ci]
+        fires_pos = int(np.sum(fired & y_arr[:n]))
+        fires_neg = int(np.sum(fired & (~y_arr[:n])))
+        denom = fires_pos + fires_neg
+        precision = float(fires_pos / denom) if denom > 0 else 0.0
+        tp_ids = [int(i) for i in np.where(fired & y_arr[:n])[0][:max_examples]]
+        fp_ids = [int(i) for i in np.where(fired & (~y_arr[:n]))[0][:max_examples]]
+        clause_stats.append(
+            {
+                "clause_id": ci,
+                "clause": clause,
+                "fires_pos": fires_pos,
+                "fires_neg": fires_neg,
+                "precision": precision,
+                "num_fires": denom,
+                "tp_example_ids": tp_ids,
+                "fp_example_ids": fp_ids,
+                "features": clause_features[ci],
+            }
+        )
+
+    clause_stats.sort(key=lambda d: (-d["fires_neg"], d["precision"]))
+    bad_clauses = clause_stats[:max_bad_clauses]
+
+    fp_examples = []
+    for idx in fp_indices[:max_examples]:
+        fired_clause_ids = np.where(fires[idx])[0].tolist()
+        fp_examples.append(
+            {
+                "example_id": int(idx),
+                "label": 0,
+                "fired_clause_ids": fired_clause_ids,
+            }
+        )
+
+    fn_examples = [
+        {"example_id": int(idx), "label": 1} for idx in fn_indices[:max_examples]
+    ]
+
+    payload: dict[str, Any] = {
+        "policy": policy_str,
+        "num_examples": int(n),
+        "num_clauses": int(len(clauses)),
+        "fp_count": int(len(fp_indices)),
+        "fn_count": int(len(fn_indices)),
+        "bad_clauses": bad_clauses,
+        "fp_examples": fp_examples,
+        "fn_examples": fn_examples,
+    }
+
+    if include_feature_values and (fp_examples or fn_examples):
+        bad_features = sorted({f for c in bad_clauses for f in c["features"]})
+        example_ids = [e["example_id"] for e in fp_examples] + [
+            e["example_id"] for e in fn_examples
+        ]
+        feature_table: dict[int, dict[str, bool]] = {}
+        for idx in example_ids:
+            feature_table[idx] = {
+                f: feature_values[idx].get(f, False) for f in bad_features
+            }
+        payload["feature_values"] = feature_table
+
+    return payload
+
+
+def build_dnf_failure_prompt(
+    payload: dict[str, Any],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    max_examples: int = 5,
+) -> str:
+    """Create a prompt for repairing a DNF policy given failure payload."""
+    policy = payload.get("policy", "")
+    bad_clauses = payload.get("bad_clauses", [])[:max_examples]
+    fp_examples = payload.get("fp_examples", [])[:max_examples]
+    fn_examples = payload.get("fn_examples", [])[:max_examples]
+    feature_values = payload.get("feature_values", {})
+
+    def _format_example(idx: int) -> str:
+        if idx < 0 or idx >= len(examples):
+            return f"[example_id={idx}] <missing>"
+        obs, action = examples[idx]
+        return f"[example_id={idx}] action={action} obs={obs}"
+
+    lines: list[str] = []
+    lines.append("You are an expert feature-library designer for LPP (DNF policies).")
+    lines.append("We learned the following DNF policy that fails on training data.")
+    lines.append("")
+    lines.append("POLICY:")
+    lines.append(policy)
+    lines.append("")
+    lines.append("TASK:")
+    lines.append(
+        "Propose new boolean feature functions fNN(s, a) or edits to existing "
+        "features to fix the failures. You may add, modify, or replace features."
+    )
+    lines.append("")
+
+    if bad_clauses:
+        lines.append("WORST CLAUSES (by false positives / low precision):")
+        for c in bad_clauses:
+            lines.append(
+                f"- clause_id={c['clause_id']} fires_pos={c['fires_pos']} "
+                f"fires_neg={c['fires_neg']} precision={c['precision']:.3f} "
+                f"num_fires={c['num_fires']} clause={c['clause']}"
+            )
+        lines.append("")
+
+    if fp_examples:
+        lines.append("FALSE POSITIVES (policy predicts 1 but label=0):")
+        for e in fp_examples:
+            idx = int(e["example_id"])
+            lines.append(_format_example(idx))
+            lines.append(f"  fired_clauses={e.get('fired_clause_ids', [])}")
+            if feature_values:
+                lines.append(f"  feature_values={feature_values.get(idx, {})}")
+        lines.append("")
+
+    if fn_examples:
+        lines.append("FALSE NEGATIVES (policy predicts 0 but label=1):")
+        for e in fn_examples:
+            idx = int(e["example_id"])
+            lines.append(_format_example(idx))
+            if feature_values:
+                lines.append(f"  feature_values={feature_values.get(idx, {})}")
+        lines.append("")
+
+    lines.append("Return a compact list of proposed feature functions.")
+    return "\n".join(lines)
+
+
+class CustomTimeoutError(Exception):
+    """Custom exception raised when a time limit is exceeded.
+
+    This exception is used to indicate that a block of code has exceeded
+    the allowed time limit set by the `time_limit` context manager.
+    """
+
+
+@contextmanager
+def time_limit(seconds: int) -> Generator[None, None, None]:
+    """Context manager to enforce a time limit on a block of code.
+
+    Args:
+        seconds (int): The maximum number of seconds to allow the block to run.
+
+    Raises:
+        CustomTimeoutError: If the time limit is exceeded.
+    """
+
+    def handler(signum: int, frame: FrameType | None) -> None:
+        """Signal handler to raise a CustomTimeoutError when the alarm is
+        triggered.
+
+        Args:
+            signum (int): The signal number.
+            frame (FrameType | None): The current stack frame (unused).
+        """
+        raise CustomTimeoutError(f"Timed out after {seconds} seconds")
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)

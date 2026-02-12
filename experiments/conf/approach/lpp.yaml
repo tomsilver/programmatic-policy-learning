@@ -7,7 +7,7 @@ num_dts: 5 #5
 max_num_particles: 25 #25
 start_symbol: 0
 program_generation:
-  strategy: "py_feature_gen"  # Options: "py_feature_gen" "fixed_grid_v1", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
+  strategy: "fixed_grid_v1"  # Options: "py_feature_gen" "fixed_grid_v1", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
   feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
@@ -15,10 +15,10 @@ program_generation:
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1
   removed_primitive: ""
-  num_features: 19526 #18764
+  num_features: 125 #18764
   encoding_method: "enc_1"
   hint_structured: False
-  offline_json_path: "expanded_rfts_1000.json" #expanded_features
+  offline_json_path: "test.json" #expanded_features
   data_imbalance:
     enabled: false
     method: downsample_majority

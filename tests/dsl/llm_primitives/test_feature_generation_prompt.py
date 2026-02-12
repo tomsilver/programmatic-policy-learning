@@ -61,7 +61,10 @@ def _read_prompt(path: Path) -> str:
 def _fill_prompt(template: str, object_types: tuple[str, ...]) -> str:
     rendered = (
         template.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
-        .replace("${HINT_TEXT}", load_hint_text(ENV_NAME, ENCODING_METHOD, HINTS_ROOT))
+        .replace(
+            "${HINT_TEXT}",
+            load_hint_text(ENV_NAME, ENCODING_METHOD, False, HINTS_ROOT),
+        )
         .replace("${NUM_FEATURES}", str(NUM_FEATURES))
     )
     if (

@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import random
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -554,14 +555,15 @@ def _prepare_results_for_plot(
     return labels, expert_means, expert_cis, cap_means, cap_cis
 
 
-def manual_eval(final_code):
+def manual_eval(final_code: str) -> None:
+    """Evaluate a compiled policy function and print results."""
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     code_str = _strip_code_block(final_code)
     policy_fn = _compile_policy_function(code_str, "policy")
     env_builder = lambda idx: env_factory(idx, args.env)
-    run_expert = 1
-    cap_results, expert_results = _evaluate_policy_function(
+    run_expert = True
+    cap_results, _expert_results = _evaluate_policy_function(
         policy_fn,
         env_builder,
         args.eval_env_nums,
@@ -570,8 +572,7 @@ def manual_eval(final_code):
         run_expert=run_expert,
     )
     print(cap_results)
-    # print(expert_results)
-    exit()
+    sys.exit()
 
 
 def main() -> None:

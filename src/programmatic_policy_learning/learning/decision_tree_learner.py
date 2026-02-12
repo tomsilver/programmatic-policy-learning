@@ -90,10 +90,13 @@ def learn_single_batch_decision_trees(
         # )
         # from sklearn.tree import export_text
 
-        # feature_names = [f"f{i}" for i in range(X_i.shape[1])]  # or your program names
-        # logging.info("DT tree:\n%s", export_text(clf, feature_names=feature_names, max_depth=10))
-
-        # input()
+        # feature_names = [
+        #     f"f{i}" for i in range(X_i.shape[1])
+        # ]  # or your program names
+        # logging.info(
+        #     "DT tree:\n%s",
+        #     export_text(clf, feature_names=feature_names, max_depth=10),
+        # )
 
         clfs.append(clf)
     return clfs
@@ -154,7 +157,7 @@ def get_disjunctive_program(
     """Combine conjunctive programs into a disjunctive StateActionProgram."""
 
     if len(conjunctive_programs) == 0:
-        return StateActionProgram("False")  # BUG?
+        return StateActionProgram("False")
 
     program = ""
 
