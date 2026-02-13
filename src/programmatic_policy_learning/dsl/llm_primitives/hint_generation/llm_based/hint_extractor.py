@@ -346,6 +346,7 @@ AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc
 def build_new_hint_structured(
     trajectories_text: str, env_name: str, encoding_method: str
 ) -> str:
+    """Build hints in a structured way."""
     p = """
 # Hint-Extractor Prompt
 
@@ -457,7 +458,9 @@ def extract_hints(
     """Query the LLM and return parsed hint JSON."""
     if structured:
         prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
-        # prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
+        # prompt = build_new_hint_structured(
+        #     trajectories_text, env_name, encoding_method
+        # )
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"

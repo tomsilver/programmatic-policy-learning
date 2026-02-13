@@ -210,9 +210,9 @@ def log_feature_collisions(
                 labels[cur_idx],
             )
         return group_collision_indices(collisions, labels)
-    else:
-        logging.info("No feature collisions found.")
-        return []
+
+    logging.info("No feature collisions found.")
+    return []
 
 
 def group_collision_indices(

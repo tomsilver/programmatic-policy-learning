@@ -5,6 +5,8 @@ import inspect
 import logging
 import multiprocessing
 import os
+import random
+from collections import defaultdict
 from importlib import import_module
 from typing import Any
 
@@ -29,11 +31,7 @@ def allowed_cpus() -> int:
     return multiprocessing.cpu_count()
 
 
-import random
-from collections import defaultdict
-from typing import Any, List, Tuple
-
-Coord = Tuple[int, int]
+Coord = tuple[int, int]
 
 
 def sample_negative_actions_stratified(
@@ -42,7 +40,7 @@ def sample_negative_actions_stratified(
     K: int = 30,
     rng: random.Random | None = None,
     include_nearby: int = 8,
-) -> List[Coord]:
+) -> list[Coord]:
     """Stratified negative sampling over cell *tokens* + some nearby negatives.
 
     - Tries to include negatives from as many token-types as possible.
@@ -59,7 +57,7 @@ def sample_negative_actions_stratified(
 
     # 1) bucket all coords (except expert) by token value at that cell
     buckets = defaultdict(list)  # token -> list[Coord]
-    all_coords: List[Coord] = []
+    all_coords: list[Coord] = []
 
     er, ec = expert_action
     for r in range(h):
@@ -74,7 +72,7 @@ def sample_negative_actions_stratified(
         return []
 
     # 2) Build a "nearby" pool (hard negatives)
-    nearby: List[Coord] = []
+    nearby: list[Coord] = []
     for dr in (-2, -1, 0, 1, 2):
         for dc in (-2, -1, 0, 1, 2):
             if dr == 0 and dc == 0:
@@ -84,7 +82,7 @@ def sample_negative_actions_stratified(
                 nearby.append((rr, cc))
     rng.shuffle(nearby)
 
-    picked: List[Coord] = []
+    picked: list[Coord] = []
     picked_set = set()
 
     def add_coord(rc: Coord) -> None:

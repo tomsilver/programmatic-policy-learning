@@ -69,7 +69,9 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 
-# from programmatic_policy_learning.learning.prior_calculation import priors_from_features
+# from programmatic_policy_learning.learning.prior_calculation import (
+#     priors_from_features,
+# )
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
 _ObsType = TypeVar("_ObsType")
@@ -210,7 +212,7 @@ def get_program_set(
             state_t1_example=st1,
             _seed=seed,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
-            offline_json_path=program_generation["offline_json_path"],
+            loading=program_generation.get("loading"),
         )
         program_prior_log_probs = [-4.0] * len(features)
         dsl_fns = get_dsl_functions_dict()

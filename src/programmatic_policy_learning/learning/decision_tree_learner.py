@@ -50,7 +50,7 @@ def learn_plps(
     logging.info(f"Total programs: {num_programs}")
 
     for i in range(0, num_programs, program_generation_step_size):
-        logging.info(f"Learning plps with {i} programs")
+        logging.info(f"Learning plps with {i+1} programs")
         for clf in learn_single_batch_decision_trees(y, num_dts, X[:, : i + 1]):
             plp, plp_prior_log_prob = extract_plp_from_dt(
                 clf, programs, program_prior_log_probs, dsl_functions

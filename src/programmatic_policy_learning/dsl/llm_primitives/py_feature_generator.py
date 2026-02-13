@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-
-# import math
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -181,90 +180,95 @@ class PyFeatureGenerator:
         max_attempts: int = 3,
         _seed: int = 0,
         reprompt_checks: list[RepromptCheck] | None = None,
-        offline_json_path: str | None = None,
+        loading: dict[str, Any] | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
+        load_offline = bool(loading and loading.get("offline", 0))
+        offline_json_path = loading.get("offline_json_path") if loading else None
 
-        # if num_batches is None or num_batches <= 0:
-        #     num_batches = 1
-        # num_batches = min(num_batches, num_features)
-        # batch_size = math.ceil(num_features / num_batches)
+        if not load_offline:
+            if num_batches is None or num_batches <= 0:
+                num_batches = 1
+            num_batches = min(num_batches, num_features)
+            batch_size = math.ceil(num_features / num_batches)
 
-        # all_programs: list[str] = []
-        # all_descriptions: list[str] = []
-        # batch_payloads: list[dict[str, Any]] = []
+            all_programs: list[str] = []
+            all_descriptions: list[str] = []
+            batch_payloads: list[dict[str, Any]] = []
 
-        # for batch_idx in range(num_batches):
-        #     if batch_idx == 0:
-        #         current_prompt_path = prompt_path
-        #     else:
-        #         if batch_prompt_path is None:
-        #             raise ValueError(
-        #                 "batch_prompt_path is required when batch_size < num_features."
-        #             )
-        #         current_prompt_path = batch_prompt_path
+            for batch_idx in range(num_batches):
+                if batch_idx == 0:
+                    current_prompt_path = prompt_path
+                else:
+                    if batch_prompt_path is None:
+                        raise ValueError(
+                            "batch_prompt_path is required when batch_size < "
+                            "num_features."
+                        )
+                    current_prompt_path = batch_prompt_path
 
-        #     remaining = num_features - batch_idx * batch_size
-        #     current_batch_size = min(batch_size, remaining)
+                remaining = num_features - batch_idx * batch_size
+                current_batch_size = min(batch_size, remaining)
 
-        #     prompt_template = self.read_prompt(current_prompt_path)
-        #     if batch_idx == 0:
-        #         prompt = self.fill_prompt(
-        #             prompt_template,
-        #             object_types=object_types,
-        #             hint_text=hint_text,
-        #             num_features=current_batch_size,
-        #             state_t_example=state_t_example,
-        #             action_example=action_example,
-        #             state_t1_example=state_t1_example,
-        #         )
+                prompt_template = self.read_prompt(current_prompt_path)
+                if batch_idx == 0:
+                    prompt = self.fill_prompt(
+                        prompt_template,
+                        object_types=object_types,
+                        hint_text=hint_text,
+                        num_features=current_batch_size,
+                        state_t_example=state_t_example,
+                        action_example=action_example,
+                        state_t1_example=state_t1_example,
+                    )
 
-        #     else:
-        #         prompt = self.fill_batch_prompt(
-        #             prompt_template,
-        #             object_types=object_types,
-        #             hint_text=hint_text,
-        #             existing_descriptions=all_descriptions,
-        #             batch_size=current_batch_size,
-        #             start_index=len(all_programs) + 1,
-        #         )
-        #     prompt = f"{prompt}\n\nSEED: {_seed}\n"
-        #     print(prompt)
-        #     payload = self.query_llm(
-        #         prompt,
-        #         max_attempts=max_attempts,
-        #         reprompt_checks=reprompt_checks,
-        #         seed=_seed,
-        #     )
-        #     feature_programs = self.parse_feature_programs(payload)
-        #     all_descriptions.extend(self._extract_descriptions(payload))
-        #     all_programs.extend(feature_programs)
-        #     batch_payloads.append(payload)
+                else:
+                    prompt = self.fill_batch_prompt(
+                        prompt_template,
+                        object_types=object_types,
+                        hint_text=hint_text,
+                        existing_descriptions=all_descriptions,
+                        batch_size=current_batch_size,
+                        start_index=len(all_programs) + 1,
+                    )
+                prompt = f"{prompt}\n\nSEED: {_seed}\n"
+                print(prompt)
+                payload = self.query_llm(
+                    prompt,
+                    max_attempts=max_attempts,
+                    reprompt_checks=reprompt_checks,
+                    seed=_seed,
+                )
+                feature_programs = self.parse_feature_programs(payload)
+                all_descriptions.extend(self._extract_descriptions(payload))
+                all_programs.extend(feature_programs)
+                batch_payloads.append(payload)
 
-        #     if self.llm_client is not None:
-        #         self.write_json(
-        #             f"py_feature_payload_batch_{batch_idx + 1}.json", payload
-        #         )
+                if self.llm_client is not None:
+                    self.write_json(
+                        f"py_feature_payload_batch_{batch_idx + 1}.json", payload
+                    )
 
-        # combined_payload: dict[str, Any] = {
-        #     "features": [
-        #         {"id": f"f{i + 1}", "name": f"f{i + 1}", "source": src}
-        #         for i, src in enumerate(all_programs)
-        #     ],
-        #     "descriptions": all_descriptions,
-        #     "batches": batch_payloads,
-        #     "batch_size": batch_size,
-        #     "num_batches": num_batches,
-        #     "total_features": len(all_programs),
-        # }
-        # if self.llm_client is not None:
-        #     self.write_json("py_feature_payload.json", combined_payload)
-        # return all_programs, combined_payload
+            combined_payload: dict[str, Any] = {
+                "features": [
+                    {"id": f"f{i + 1}", "name": f"f{i + 1}", "source": src}
+                    for i, src in enumerate(all_programs)
+                ],
+                "descriptions": all_descriptions,
+                "batches": batch_payloads,
+                "batch_size": batch_size,
+                "num_batches": num_batches,
+                "total_features": len(all_programs),
+            }
+            if self.llm_client is not None:
+                self.write_json("py_feature_payload.json", combined_payload)
+            return all_programs, combined_payload
+
+        # offline mode
         if offline_json_path is None:
             raise ValueError("offline_json_path is required when running offline.")
         payload_text = Path(offline_json_path).read_text(encoding="utf-8")
         payload = json.loads(payload_text)
         feature_programs = self.parse_feature_programs(payload)
-
         # print(feature_programs)
         return feature_programs, payload
