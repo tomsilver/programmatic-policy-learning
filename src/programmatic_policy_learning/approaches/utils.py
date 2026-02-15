@@ -710,3 +710,51 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         yield
     finally:
         signal.alarm(0)
+
+
+import numpy as np
+from scipy.sparse import csr_matrix
+
+def _gini_from_counts(pos: int, n: int) -> float:
+    if n <= 0:
+        return 0.0
+    p = pos / n
+    q = 1.0 - p
+    return 1.0 - (p * p + q * q)
+
+def gini_gain_per_feature(X: csr_matrix, y_bool: list[bool]) -> np.ndarray:
+    """
+    Returns gain[j] for each feature column j, assuming X is binary (0/1).
+    Works efficiently for CSR.
+    """
+    y = np.asarray(y_bool, dtype=np.int8)  # 1 for pos, 0 for neg
+    N = X.shape[0]
+    P = int(y.sum())
+
+    g_parent = _gini_from_counts(P, N)
+
+    # N1: number of ones in each column (since X is 0/1)
+    N1 = np.asarray(X.sum(axis=0)).ravel().astype(np.int64)  # shape (F,)
+
+    # P1: number of positives among those ones in each column
+    # Multiply each row by y, then sum columns -> counts of pos where feature fires.
+    Xy = X.multiply(y[:, None])
+    P1 = np.asarray(Xy.sum(axis=0)).ravel().astype(np.int64)
+
+    N0 = N - N1
+    P0 = P - P1
+
+    # Compute child ginis (avoid divide-by-zero cases)
+    g1 = np.zeros_like(N1, dtype=np.float64)
+    g0 = np.zeros_like(N1, dtype=np.float64)
+
+    mask1 = N1 > 0
+    mask0 = N0 > 0
+
+    g1[mask1] = 1.0 - ( (P1[mask1] / N1[mask1])**2 + ((N1[mask1] - P1[mask1]) / N1[mask1])**2 )
+    g0[mask0] = 1.0 - ( (P0[mask0] / N0[mask0])**2 + ((N0[mask0] - P0[mask0]) / N0[mask0])**2 )
+
+    g_split = (N0 / N) * g0 + (N1 / N) * g1
+    gain = g_parent - g_split
+
+    return gain

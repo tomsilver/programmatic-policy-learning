@@ -28,6 +28,7 @@ from programmatic_policy_learning.approaches.utils import (
     log_plp_violation_counts,
     run_single_episode,
     sample_transition_example,
+    gini_gain_per_feature,
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
@@ -532,16 +533,34 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ############ END OF ANALYSIS ############
         #########################################
 
+        gain = gini_gain_per_feature(X, y_bool)
+        ranked_cols = np.argsort(-gain)  # descending
+        print(ranked_cols)
+        X_ranked = X[:, ranked_cols]
+        programs_ranked = [programs_sa[i] for i in ranked_cols]
+        priors_ranked = [program_prior_log_probs[i] for i in ranked_cols]
+
         plps, plp_priors = learn_plps(
-            X,
+            X_ranked,
             y_bool,
-            programs_sa,
-            program_prior_log_probs,
+            programs_ranked,
+            priors_ranked,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
             dsl_functions=dsl_functions,
         )
+        # plps, plp_priors = learn_plps(
+        #     X,
+        #     y_bool,
+        #     programs_sa,
+        #     program_prior_log_probs,
+        #     num_dts=self.num_dts,
+        #     program_generation_step_size=self.program_generation_step_size,
+        #     dsl_functions=dsl_functions,
+        # )
 
+        plp_priors = [-4.0] * len(plps)
+        print("LEN BEFORE FILTERING FALSE", len(plps))
         filtered: list[tuple[StateActionProgram, float]] = []
         for plp, prior in zip(plps, plp_priors):
             if str(plp).strip() == "False":
@@ -554,9 +573,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         else:
             plps, plp_priors = [], []
 
+        print("LEN AFETR FILTERING FALSE", len(plps))
+
         valid_plps = log_plp_violation_counts(
-            plps, demonstrations, dsl_functions, top_k=50
+            plps, demonstrations, dsl_functions, top_k=200
         )
+        print("LEN AFETR filtering violations", len(valid_plps))
+
         plps = valid_plps
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
