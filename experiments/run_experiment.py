@@ -324,4 +324,9 @@ if __name__ == "__main__":
     try:
         _main()  # pylint: disable=no-value-for-parameter
     except BaseException as e:  # pylint: disable=broad-exception-caught
-        logging.error(str(e))
+        logging.exception(
+            "Unhandled exception in run_experiment (%s): %s",
+            type(e).__name__,
+            e,
+        )
+        raise

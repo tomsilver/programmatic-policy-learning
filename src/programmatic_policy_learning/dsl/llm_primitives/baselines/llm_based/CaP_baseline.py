@@ -555,28 +555,8 @@ def _prepare_results_for_plot(
     return labels, expert_means, expert_cis, cap_means, cap_cis
 
 
-def manual_eval(final_code: str) -> None:
+def manual_eval() -> None:
     """Evaluate a compiled policy function and print results."""
-    args = _parse_cli_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    code_str = _strip_code_block(final_code)
-    policy_fn = _compile_policy_function(code_str, "policy")
-    env_builder = lambda idx: env_factory(idx, args.env)
-    run_expert = True
-    cap_results, _expert_results = _evaluate_policy_function(
-        policy_fn,
-        env_builder,
-        args.eval_env_nums,
-        args.eval_max_steps,
-        env_name=args.env,
-        run_expert=run_expert,
-    )
-    print(cap_results)
-    sys.exit()
-
-
-def main() -> None:
-    """Batch entry-point mirroring run_code_as_policies."""
     final_code = """
 def policy(obs):
     n_rows, n_cols = obs.shape
@@ -609,7 +589,28 @@ def policy(obs):
 
     return (0, 0)
     """
-    manual_eval(final_code)
+    args = _parse_cli_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    code_str = _strip_code_block(final_code)
+    policy_fn = _compile_policy_function(code_str, "policy")
+    env_builder = lambda idx: env_factory(idx, args.env)
+    run_expert = True
+    cap_results, _expert_results = _evaluate_policy_function(
+        policy_fn,
+        env_builder,
+        args.eval_env_nums,
+        args.eval_max_steps,
+        env_name=args.env,
+        run_expert=run_expert,
+    )
+    print(cap_results)
+    sys.exit()
+
+
+def main() -> None:
+    """Batch entry-point mirroring run_code_as_policies."""
+    #  manual_eval() if we want to test a script manually (offline mode)
+
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []

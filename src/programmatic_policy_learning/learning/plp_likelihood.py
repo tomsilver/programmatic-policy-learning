@@ -119,8 +119,6 @@ def _compute_likelihood_worker(
     #                 if plp(obs, (r, c)):
     #                     size += 1
     #         ll += np.log(1.0 / size)
-    #         # print(obs, action)
-    #         # print(size)
     #     results.append(ll if valid else -np.inf)
     return results
 

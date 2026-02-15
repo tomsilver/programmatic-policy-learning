@@ -232,7 +232,7 @@ class PyFeatureGenerator:
                         start_index=len(all_programs) + 1,
                     )
                 prompt = f"{prompt}\n\nSEED: {_seed}\n"
-                print(prompt)
+                logging.info(prompt)
                 payload = self.query_llm(
                     prompt,
                     max_attempts=max_attempts,
@@ -270,5 +270,5 @@ class PyFeatureGenerator:
         payload_text = Path(offline_json_path).read_text(encoding="utf-8")
         payload = json.loads(payload_text)
         feature_programs = self.parse_feature_programs(payload)
-        # print(feature_programs)
+        # logging.info(feature_programs)
         return feature_programs, payload

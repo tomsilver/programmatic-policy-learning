@@ -16,7 +16,7 @@ program_generation:
   encoding_method: "enc_1"
   loading:
     offline: 1 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "test_stf.json"
+    offline_json_path: "expanded_features.json"
   data_imbalance:
     enabled: false
     method: downsample_majority

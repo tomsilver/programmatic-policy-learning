@@ -1,13 +1,7 @@
 # Programmatic Policy Learning (LPP-Focused README)
 
 This repository contains multiple programmatic policy learning approaches.  
-This README is focused on the LPP work and the recent contributions around:
-
-- LPP reimplementation and integration into this codebase
-- GGG strategic grid environments
-- LLM/VLM-assisted feature and hint generation
-
-LPP here refers to a logical programmatic policy pipeline inspired by the Few-Shot Bayesian imitation learning line of work, where candidate logical features/programs are learned from demonstrations and composed into executable policies.
+This README is focused on the LPP work that refers to a logical programmatic policy pipeline inspired by the "Few-Shot Bayesian Imitation Learning with Logical Program Policies" paper, where logical policies are learned from a few expert demonstrations.
 
 ## Installation
 
@@ -61,14 +55,6 @@ Run with offline LLM JSON payload (through py-feature generation path):
 
 ```bash
 python3 experiments/run_experiment.py env=ggg_stf approach=lpp seed=0 \
-  approach.program_generation.loading.offline=1 \
-  approach.program_generation.loading.offline_json_path=test_stf.json
-```
-
-Sweep version of offline run:
-
-```bash
-python3 experiments/run_experiment.py -m env=ggg_stf approach=lpp seed='range(0,5)' \
   approach.program_generation.loading.offline=1 \
   approach.program_generation.loading.offline_json_path=test_stf.json
 ```
@@ -141,22 +127,24 @@ GGG environments in this repo:
 - `feature_generator.py` (legacy feature generation path)
 - `py_feature_generator.py` (current main feature generation path)
 
-#### `llm_primitives/baselines/`
+#### `llm_primitives/hint_generation/`
 
-LLM baseline:
-- `src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py`
-- CLI args are defined in `_parse_cli_args`.
-- Example command:
+**LLM-based**:
+- `hint_generation/llm_based/hint_extractor.py`
+- Purpose: extract compact hint text from demonstrations first, then use hints in later generation stages (instead of embedding long demos directly in one big prompt).
+
+
+##### Structured vs Unstructured hint extraction:
+- Structured: Fixed multi-section output
+- Unstructured: Free-form two-paragraph response
+- Set main parameters inside main (env_names, encoding_methods, num_initial_states, structured_modes), then run extractor:
+
+Run extractor:
 
 ```bash
-python -m programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.CaP_baseline \
-  --env StopTheFall --encodings 4 --seeds 0
+python -m programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor
 ```
-
-Note:
-- The current `main()` includes a `manual_eval(...)` debug call before batch flow. If you want full batch execution, remove/disable that debug call.
-
-VLM baseline:
+**VLM-based**:
 - `src/programmatic_policy_learning/dsl/llm_primitives/baselines/vlm_based/video_frames_hint_extractor.py`
 - Update `env_name` (and paths if needed) in `__main__`, then run:
 
@@ -175,7 +163,7 @@ Current work uses `py_feature_gen` prompts to request executable Python feature 
 
 #### `llm_primitives/hint_generation/`
 
-LLM-based:
+**LLM-based**:
 - `hint_generation/llm_based/hint_extractor.py`
 - `hint_generation/llm_based/hint_aggregator.py`
 - Purpose: extract compact hint text from demonstrations first, then use hints in later generation stages (instead of embedding long demos directly in one big prompt).
@@ -192,7 +180,7 @@ Run aggregator:
 python -m programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_aggregator
 ```
 
-VLM-based:
+**VLM-based**:
 - `hint_generation/vlm_based/video_frames_hint_extractor.py`
 - Edit `env_name` in `__main__` and run:
 
@@ -273,21 +261,11 @@ Tests mirror source subsystems:
 
 Use provider-backed envs when env construction needs custom logic or external repos.
 
-Current providers in `EnvRegistry`:
+Current providers related to this project in `EnvRegistry`:
 - `ggg`
 - `prbench`
-- `maze`
 
 For new provider integration:
 1. Add env yaml under `experiments/conf/env/`.
 2. Add provider function in `src/programmatic_policy_learning/envs/providers/`.
 3. Register provider in `src/programmatic_policy_learning/envs/registry.py`.
-
-## Contribution Summary (LPP Track)
-
-This LPP track contributes:
-- end-to-end `lpp_approach` integration in Hydra experiment flow
-- GGG-focused programmatic imitation pipeline
-- LLM/VLM hint and feature generation modules
-- py-feature generation workflow with offline replay support
-- supporting DSL, policy, and dataset pipeline updates

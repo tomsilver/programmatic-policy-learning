@@ -341,6 +341,7 @@ def run_all_programs_on_single_demonstration(
 
     # Combine the context initialization into a single block to avoid redefinition
     try:
+
         ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
         # linux
     except (ValueError, RuntimeError):

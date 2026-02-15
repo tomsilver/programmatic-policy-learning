@@ -23,12 +23,12 @@ from programmatic_policy_learning.approaches.utils import (
     build_dnf_failure_payload,
     build_dnf_failure_prompt,
     convert_dir_lists_to_tuples,
+    gini_gain_per_feature,
     load_hint_text,
     log_feature_collisions,
     log_plp_violation_counts,
     run_single_episode,
     sample_transition_example,
-    gini_gain_per_feature,
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
@@ -445,7 +445,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
 
-        if self.program_generation["strategy"] == "py_feature_generation":
+        if self.program_generation["strategy"] == "py_feature_gen":
             # n = self.program_generation["num_features"]
             total_features = len(programs)
             programs = [
@@ -476,9 +476,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ##########################################
 
         all_zero, all_one, col_nnz = constant_feature_cols(X)
-        print("n_examples:", X.shape[0], "n_features:", X.shape[1])
-        print("#all-zero features:", len(all_zero), "indices:", all_zero[:30])
-        print("#all-one features:", len(all_one), "indices:", all_one[:30])
+        logging.info(f"n_examples={X.shape[0]} n_features={X.shape[1]}")
+        logging.info(f"#all-zero features={len(all_zero)} indices={all_zero[:30]}")
+        logging.info(f"#all-one features={len(all_one)} indices={all_one[:30]}")
 
         # remove = np.unique(np.concatenate([all_zero, all_one]))
         # if remove.size > 0:
@@ -490,7 +490,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         #         program_prior_log_probs = [
         #             lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
         #         ]
-        #     print("Filtered constant features. New X shape:", X.shape)
+        #     logging.info("Filtered constant features. New X shape:", X.shape)
 
         collision_groups = log_feature_collisions(
             X,
@@ -507,26 +507,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 existing_feature_summary=None,
                 max_per_label=5,
             )
-            logging.info("Collision repair prompt built (len=%d).", len(prompt))
+            logging.info(f"Collision repair prompt built (len={len(prompt)}).")
 
         n = X.shape[0]
-        print("N", n)
+        logging.info(f"N={n}")
         freq = col_nnz / n  # fraction of examples where feature is on
         rare = np.where(freq <= 0.05)[0]  # almost always 0
         common = np.where(freq >= 0.95)[0]  # almost always 1
-        print("Almost-always-0:", len(rare))
-        print("Almost-always-1:", len(common))
+        logging.info(f"Almost-always-0={len(rare)}")
+        logging.info(f"Almost-always-1={len(common)}")
         assert_features_fire(X, programs_sa)
         y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
 
         pos = sum(y_bool)
         neg = len(y_bool) - pos
         logging.info(
-            "y: n=%d pos=%d (%.2f%%) neg=%d",
-            len(y_bool),
-            pos,
-            100 * pos / len(y_bool),
-            neg,
+            f"y: n={len(y_bool)} pos={pos} ({100 * pos / len(y_bool):.2f}%) neg={neg}"
         )
 
         #########################################
@@ -535,7 +531,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         gain = gini_gain_per_feature(X, y_bool)
         ranked_cols = np.argsort(-gain)  # descending
-        print(ranked_cols)
         X_ranked = X[:, ranked_cols]
         programs_ranked = [programs_sa[i] for i in ranked_cols]
         priors_ranked = [program_prior_log_probs[i] for i in ranked_cols]
@@ -560,7 +555,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         # )
 
         plp_priors = [-4.0] * len(plps)
-        print("LEN BEFORE FILTERING FALSE", len(plps))
+        logging.info(f"LEN BEFORE FILTERING FALSE={len(plps)}")
         filtered: list[tuple[StateActionProgram, float]] = []
         for plp, prior in zip(plps, plp_priors):
             if str(plp).strip() == "False":
@@ -573,12 +568,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         else:
             plps, plp_priors = [], []
 
-        print("LEN AFETR FILTERING FALSE", len(plps))
+        logging.info(f"LEN AFTER FILTERING FALSE={len(plps)}")
 
         valid_plps = log_plp_violation_counts(
             plps, demonstrations, dsl_functions, top_k=200
         )
-        print("LEN AFETR filtering violations", len(valid_plps))
+        logging.info(f"LEN AFTER filtering violations={len(valid_plps)}")
 
         plps = valid_plps
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
@@ -598,16 +593,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, self.max_num_particles
         )
-        print(top_particles)
-        print(top_particle_log_probs)
-        print(len(top_particles))
         policy: LPPPolicy
         if len(top_particle_log_probs) > 0:
             top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
                 top_particle_log_probs
             )
             top_particle_probs = np.exp(top_particle_log_probs)
-            logging.info("top_particle_probs: %s", top_particle_probs)
+            logging.info(f"top_particle_probs: {top_particle_probs}")
             policy = LPPPolicy(top_particles, top_particle_probs)
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]

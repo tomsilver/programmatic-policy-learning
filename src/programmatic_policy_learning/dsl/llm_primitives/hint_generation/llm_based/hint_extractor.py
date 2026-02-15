@@ -28,7 +28,6 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
     grid_encoder,
     grid_hint_config,
     trajectory_serializer,
-    transition_analyzer,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
@@ -123,26 +122,10 @@ def build_hint_prompt_v1(
     
     {token_map_text}
     """
-    return f"""
-You are given expert demonstrations from a grid-based environment.
-
-Each demonstration consists of:
-- State s_t (before action)
-- Action a_t (clicked cell: row, col)
-- State s_t+1 (after deterministic transition)
-
-DEMONSTRATIONS:
-{trajectories_text}
-
-----
-Your task:
-Based on the demonstrations, describe the strategy the expert is using to take action a 
-given state s. Explain it in one paragraph. No extra output.
-In another paragraph, describe the dynamics of the game that you've observed.
-
-----
-{place_holder}
-"""
+    template = _load_hint_prompt_template("hint_prompt_v1.txt")
+    return template.replace("<<DEMONSTRATIONS>>", trajectories_text).replace(
+        "<<PLACE_HOLDER>>", place_holder
+    )
 
 
 # Extract **abstract, reusable decision-time predicates/features**
@@ -244,6 +227,23 @@ def _format_token_map(token_map: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _load_hint_prompt_template(filename: str) -> str:
+    prompt_dir = Path(__file__).resolve().parent / "hint_gen_prompt"
+    prompt_path = prompt_dir / filename
+    return prompt_path.read_text(encoding="utf-8")
+
+
+def build_hint_prompt_prev(trajectories_text: str) -> str:
+    """Build the LLM prompt for extracting strategy hints from demonstrations.
+
+    trajectories_text:
+        A human-readable representation of expert trajectories
+        (ASCII, object-based, etc.)
+    """
+    template = _load_hint_prompt_template("hint_prompt_prev.txt")
+    return template.replace("<<DEMONSTRATIONS>>", trajectories_text)
+
+
 def build_hint_structured(
     trajectories_text: str, env_name: str, encoding_method: str
 ) -> str:
@@ -256,195 +256,18 @@ At the very end, output an instruction named TOKEN_MAP that maps the raw grid ch
 Use EXACTLY this format (no extra keys, no commentary):
 
 {token_map_text}"""
-    return f"""
-You are given expert demonstrations from a grid-based environment.
-
-Each demonstration consists of transitions (s_t, a_t, s_t+1) where a_t = (row, col).
-
-DEMONSTRATIONS:
-{trajectories_text}
-
-TASK:
-Infer the expert’s decision rule for choosing action a from state s.
-
-OUTPUT (no extra text):
-
-1) POLICY RULES (8–15 bullets):
-Write rules as testable predicates over (s, a). Use relative positions to the action cell and directions (up/down/left/right/diagonals).
-If a rule depends on patterns “along a direction”, describe it using phrases like “first hit”, “blocked by”, “before reaching”, or “until”.
-After each bullet, add “(seen in ~N/M demos)”.
-
-2) COUNTERFACTUAL DISTRACTORS (5 bullets):
-Write patterns that often appear near the chosen action but where the expert does NOT click. Use the same predicate style.
-
-3) GAME DYNAMICS (5–10 bullets):
-Describe deterministic transition patterns you can infer from s_t → s_t+1 (movement, falling, barriers, redraw, etc.).
-
-{place_holder}
-"""
-
-
-def build_hint_prompt_v2(trajectories_text: str) -> str:
-    """Build the LLM prompt for extracting strategy hints from demonstrations.
-
-    trajectories_text:
-        A human-readable representation of expert trajectories
-        (ASCII, object-based, etc.)
-    """
-    return f"""
-## SYSTEM
-You are given expert demonstrations from a grid-based environment.
-
-Your task is to analyze the demonstrations and infer what kinds of
-state-level queries or relational measurements would be necessary
-to reproduce the expert’s behavior.
-
-Do NOT assume any predefined object roles or game semantics.
-Do NOT invent rules not supported by the demonstrations.
-
-## INPUT
-Each demonstration consists of:
-- a grid observation (before action),
-- a clicked cell (row, col),
-- the resulting grid after a deterministic transition.
-
-## TASK
-Based on the demonstrations, describe at a high level:
-
-- What kinds of information about the grid state must be measurable
-  in order to explain the expert’s action choices.
-- What kinds of spatial, relational, or temporal relationships
-  appear to matter.
-- What kinds of distinctions between action effects are required
-  (e.g., actions that change state directionally vs. actions that do not).
-
-IMPORTANT:
-- Do NOT define persistent entity types or value-classes (no “the movable entity”, no “type A/B”, no placeholders like V1/V2).
-- Do NOT track identities across time (avoid phrasing like “the same object moves”).
-- Describe requirements only in terms of observable transition statistics and action-effect signatures.
-- Each bullet must start with: “We need the ability to …”
-
-Express your answer in terms of **needed functions, relations, or measurements**
-over the grid (e.g., distance between cells satisfying some property,
-relative position of selected cells, whether an action produces a directional change).
-
-Do NOT name or infer object roles (e.g., agent, target).
-Do NOT name specific grid symbols or controls.
-Do NOT write code.
-Do NOT propose a DSL or formal grammar.
-
-Be concise and factual.
-If something is uncertain, explicitly state the uncertainty.
-
-## DEMONSTRATIONS
-{trajectories_text}\n
-
-AGAIN DOUBLE CHECK THE RESPONSE AND AVOID OBJECT TYPES (such as agent, wall, etc.)
-"""
+    template = _load_hint_prompt_template("hint_structured.txt")
+    return template.replace("<<DEMONSTRATIONS>>", trajectories_text).replace(
+        "<<PLACE_HOLDER>>", place_holder
+    )
 
 
 def build_new_hint_structured(
-    trajectories_text: str, env_name: str, encoding_method: str
+    trajectories_text: str, _env_name: str, _encoding_method: str
 ) -> str:
     """Build hints in a structured way."""
-    p = """
-# Hint-Extractor Prompt
-
-## ROLE
-You are a “policy-hint extractor” for grid-world imitation learning.
-You will NOT generate code or features.
-Your job is to infer **what kinds of observable predicates over (s, a)** are needed to explain the expert’s action choices, *without naming feature families explicitly*.
-
-## INPUT
-You are given multiple expert demonstrations consisting of transitions (s_t, a_t, s_{t+1}).
-- s is a 2D grid of tokens (characters shown).
-- a is a clicked cell (row, col).
-- The environment is deterministic.
-- The expert’s action selection depends only on s (not on hidden state).
-
-## OUTPUT (STRICT)
-Return ONLY a JSON object with exactly these keys:
-{
-  "action_choice_hints": [ ... ],
-  "negative_evidence_hints": [ ... ],
-  "transition_hints": [ ... ],
-  "template_constraints": { ... }
-}
-No extra text. No markdown. No commentary.
-
-## WHAT TO EXTRACT
-
-### A) action_choice_hints (10–16 strings)
-Each string describes a **predicate schema** over (s, a) that seems necessary to decide whether a candidate action cell is good.
-Rules:
-- Do NOT mention specific raw token characters (., A, D, F, R, S).
-- Do NOT mention exact coordinates.
-- Prefer describing relations using:
-  - “same row/column”
-  - “within K steps”
-  - “nearest / first encountered along a direction”
-  - “exists / for all”
-  - “blocked by / before reaching boundary”
-  - “contiguous segment / run”
-  - “region: top/bottom band”
-- Each hint must be actionable enough to suggest a feature-template pattern.
-
-### B) negative_evidence_hints (6–10 strings)
-“Distractor patterns”: things that look correlated with chosen actions but are NOT sufficient.
-Same style rules as above.
-
-### C) transition_hints (6–12 strings)
-Describe deterministic dynamics inferred from s_t → s_{t+1} that matter for action choice.
-Rules:
-- Describe transitions as general rules.
-- Refer to tokens by *roles* (e.g., “advance control”, “moving token”, “drawn trace”, “static floor”, “obstacle”) instead of raw characters.
-
-### D) template_constraints (object)
-Constraints for the *feature-template generator* to avoid combinatorial blow-up while keeping expressivity.
-Return:
-{
-  "max_templates_suggested": <int between 30 and 60>,
-  "diversity_requirements": [
-     "....", "...."
-  ],
-  "placeholder_usage_limits": [
-     "....", "...."
-  ],
-  "avoidances": [
-     "....", "...."
-  ]
-}
-
-Rules:
-- Include at least 2 constraints that limit instantiation explosion.
-- Include at least 2 constraints that enforce diversity.
-- Include at least 2 avoidances that prevent trivial/overfit templates.
-
-## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
-1) Compare chosen actions vs nearby plausible alternative cells.
-2) Identify what information about the grid the expert seems to use:
-   - alignment with long structures
-   - constraints by obstacles/support
-   - nearest/first-hit patterns along directions
-   - dependence on global distribution of roles
-3) Output the minimal predicate schemas that could separate chosen actions from non-chosen ones.
-
-## DEMONSTRATIONS
-<<DEMONSTRATIONS>>
-
-## TOKEN MAP (FOR REFERENCE ONLY; DO NOT MENTION RAW TOKENS IN OUTPUT TEXT)
-TOKEN_MAP = {
-  ".": "stf.EMPTY",
-  "A": "stf.ADVANCE",
-  "D": "stf.DRAWN",
-  "F": "stf.FALLING",
-  "R": "stf.RED",
-  "S": "stf.STATIC"
-}
-
-SEED: 0
-"""
-    return p.replace("<<DEMONSTRATIONS>>", f"{trajectories_text}\n")
+    template = _load_hint_prompt_template("new_hint_structured.txt")
+    return template.replace("<<DEMONSTRATIONS>>", trajectories_text)
 
 
 def extract_hints(
@@ -465,7 +288,6 @@ def extract_hints(
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     print(prompt)
-    input()
     query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
@@ -755,16 +577,15 @@ def main() -> None:
                     coordinate_style="rc",
                 )
                 encoder = grid_encoder.GridStateEncoder(enc_cfg)
-                analyzer = transition_analyzer.GenericTransitionAnalyzer()
-
                 all_traj_texts = []
                 for idx, traj in enumerate(trajectories):
+                    # NEW VERSION OF ENC 1
                     text = trajectory_serializer.trajectory_to_diff_text(
                         traj,
                         encoder=encoder,
                         max_steps=max_steps_per_traj,
                     )
-
+                    # ENC 1 - 4
                     # text = trajectory_serializer.trajectory_to_text(
                     #     traj,
                     #     encoder=encoder,
@@ -774,8 +595,7 @@ def main() -> None:
                     #     max_steps=max_steps_per_traj,
                     # )
                     all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
-                # print(all_traj_texts)
-                # input()
+
                 combined_text = "\n\n".join(all_traj_texts)
                 hints = extract_hints(
                     llm_client,

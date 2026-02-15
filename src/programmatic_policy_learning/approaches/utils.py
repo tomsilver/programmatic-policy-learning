@@ -13,6 +13,7 @@ from types import FrameType
 from typing import Any, Callable, Generator
 
 import numpy as np
+from scipy.sparse import csr_matrix
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
@@ -173,7 +174,7 @@ def sample_transition_example(
 def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
-    examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    _examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
 ) -> list[dict[str, Any]]:
     """Log collisions where identical feature vectors have different labels."""
     if y is None:
@@ -252,8 +253,7 @@ def log_plp_violation_counts(
     set_dsl_functions(dsl_functions)
     counts: list[tuple[int, StateActionProgram, list[Any], list[Any]]] = []
     total_steps = len(demonstrations.steps)
-    print(total_steps)
-    print(len(plps))
+    logging.info(total_steps)
 
     for plp in plps:
         violations = 0
@@ -266,13 +266,13 @@ def log_plp_violation_counts(
                     all_obs.append(obs)
                     all_acts.append(action)
             except Exception:  # pylint: disable=broad-exception-caught
-                print("EXCEPTION")
+                logging.info("EXCEPTION")
                 violations += 1
         counts.append((violations, plp, all_obs, all_acts))
 
     counts.sort(key=lambda item: item[0])
     logging.info("PLP violation counts (lower is better):")
-    for violations, plp, obs_all, act_all in counts[:top_k]:
+    for violations, plp, _, _ in counts[:top_k]:
         rate = (violations / total_steps) if total_steps else 0.0
         logging.info(
             "violations=%d/%d (%.2f%%) | plp=%s",
@@ -282,10 +282,10 @@ def log_plp_violation_counts(
             plp,
         )
         # for idx, item in enumerate(obs_all):
-        #     print(item)
+        #     logging.info(item)
         #     actionn = act_all[idx]
-        #     print(actionn)
-        #     print(item[actionn])
+        #     logging.info(actionn)
+        #     logging.info(item[actionn])
     return [plp for _, plp, _, _ in counts[:top_k]]
 
 
@@ -299,7 +299,7 @@ def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
     dead_idxs = np.where(totals == 0)[0].tolist()
     if dead_idxs:
         dead = [str(programs[i]) for i in dead_idxs]  #:20
-        print(f"{len(dead_idxs)} features never fire. Examples: {dead}")
+        logging.info(f"{len(dead_idxs)} features never fire. Examples: {dead}")
 
 
 def _format_one_example(
@@ -309,6 +309,7 @@ def _format_one_example(
     label: int,
     idx: int,
 ) -> str:
+    """Format one labeled (state, action) example for prompt text."""
     rows = []
     for r in range(s.shape[0]):
         row = ", ".join(repr(str(x)) for x in s[r])
@@ -328,6 +329,8 @@ def build_collision_repair_prompt(
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
 ) -> str:
+    """Build an LLM prompt that proposes features to resolve label
+    collisions."""
     if not pos_indices or not neg_indices:
         raise ValueError(
             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
@@ -401,8 +404,6 @@ OUTPUT FORMAT (STRICT JSON ONLY):
   ]
 }}
 """.strip()
-    # print(prompt)
-    # input("HHMMM")
     return prompt
 
 
@@ -463,6 +464,7 @@ def _extract_clause_features(clause: str) -> list[str]:
 
 
 def _safe_eval_bool(expr: str, locals_map: dict[str, bool]) -> bool:
+    """Safely evaluate a boolean expression over known local variables."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError:
@@ -503,6 +505,8 @@ def build_dnf_failure_payload(
     max_examples: int = 5,
     include_feature_values: bool = True,
 ) -> dict[str, Any]:
+    """Build structured diagnostics for false positive/negative DNF
+    behavior."""
     clauses = _split_top_level_or(policy_str)
     clause_features = [_extract_clause_features(c) for c in clauses]
     all_features = sorted({f for feats in clause_features for f in feats})
@@ -712,9 +716,6 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         signal.alarm(0)
 
 
-import numpy as np
-from scipy.sparse import csr_matrix
-
 def _gini_from_counts(pos: int, n: int) -> float:
     if n <= 0:
         return 0.0
@@ -722,9 +723,10 @@ def _gini_from_counts(pos: int, n: int) -> float:
     q = 1.0 - p
     return 1.0 - (p * p + q * q)
 
+
 def gini_gain_per_feature(X: csr_matrix, y_bool: list[bool]) -> np.ndarray:
-    """
-    Returns gain[j] for each feature column j, assuming X is binary (0/1).
+    """Returns gain[j] for each feature column j, assuming X is binary (0/1).
+
     Works efficiently for CSR.
     """
     y = np.asarray(y_bool, dtype=np.int8)  # 1 for pos, 0 for neg
@@ -751,8 +753,12 @@ def gini_gain_per_feature(X: csr_matrix, y_bool: list[bool]) -> np.ndarray:
     mask1 = N1 > 0
     mask0 = N0 > 0
 
-    g1[mask1] = 1.0 - ( (P1[mask1] / N1[mask1])**2 + ((N1[mask1] - P1[mask1]) / N1[mask1])**2 )
-    g0[mask0] = 1.0 - ( (P0[mask0] / N0[mask0])**2 + ((N0[mask0] - P0[mask0]) / N0[mask0])**2 )
+    g1[mask1] = 1.0 - (
+        (P1[mask1] / N1[mask1]) ** 2 + ((N1[mask1] - P1[mask1]) / N1[mask1]) ** 2
+    )
+    g0[mask0] = 1.0 - (
+        (P0[mask0] / N0[mask0]) ** 2 + ((N0[mask0] - P0[mask0]) / N0[mask0]) ** 2
+    )
 
     g_split = (N0 / N) * g0 + (N1 / N) * g1
     gain = g_parent - g_split

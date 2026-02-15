@@ -64,6 +64,7 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 warn_unreachable = true
 exclude = ["venv/*", ".venv/*", 
+"build/.*",
 "src/programmatic_policy_learning/dsl/llm_primitives/outputs", 
 "src/programmatic_policy_learning/dsl/llm_primitives/new_outputs", 
 "src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/5.2_pro/.*",

@@ -4,9 +4,15 @@ from typing import Any
 
 import gymnasium as gym
 import numpy as np
-import pygame
 from gymnasium import Env, spaces
 from omegaconf import DictConfig
+
+
+def _load_pygame() -> Any:
+    """Import pygame lazily to avoid side effects in non-maze runs."""
+    import pygame  # pylint: disable=import-outside-toplevel
+
+    return pygame
 
 
 class MazeEnv(gym.Env):
@@ -70,7 +76,10 @@ class MazeEnv(gym.Env):
         self.agent_pos = (0, 0)  # properly initialized in reset()
 
         # --- Rendering setup ---
+        self._pygame: Any | None = None
         if enable_render:
+            pygame = _load_pygame()
+            self._pygame = pygame
             pygame.init()
             self.cell_size = 30
             self.clock = pygame.time.Clock()
@@ -185,6 +194,9 @@ class MazeEnv(gym.Env):
     def render(self) -> None:
         if not self.enable_render:
             return
+        if self._pygame is None:
+            raise RuntimeError("pygame is not initialized for rendering.")
+        pygame = self._pygame
 
         # keep macOS window responsive
         for event in pygame.event.get():
@@ -227,8 +239,8 @@ class MazeEnv(gym.Env):
         self.clock.tick(30)
 
     def close(self) -> None:
-        if self.enable_render:
-            pygame.quit()
+        if self.enable_render and self._pygame is not None:
+            self._pygame.quit()
 
 
 def create_maze_env(env_config: DictConfig) -> Env:
