@@ -598,6 +598,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, self.max_num_particles
         )
+        print(top_particles)
+        print(top_particle_log_probs)
+        print(len(top_particles))
         policy: LPPPolicy
         if len(top_particle_log_probs) > 0:
             top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
