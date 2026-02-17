@@ -285,7 +285,7 @@ def extract_hints(
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
-    print(prompt)
+    # print(prompt)
     query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(

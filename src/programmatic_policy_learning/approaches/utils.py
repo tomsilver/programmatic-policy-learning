@@ -368,7 +368,7 @@ def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
     totals = np.asarray(X.sum(axis=0)).ravel()
     dead_idxs = np.where(totals == 0)[0].tolist()
     if dead_idxs:
-        dead = [str(programs[i]) for i in dead_idxs]  #:20
+        dead = [str(programs[i]) for i in dead_idxs[:10]]  #:20
         logging.info(f"{len(dead_idxs)} features never fire. Examples: {dead}")
 
 

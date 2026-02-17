@@ -6,8 +6,10 @@ num_programs: 10000 #for fixed
 num_dts: 5
 max_num_particles: 25
 start_symbol: 0 # for fixed dsl/grammar
-normalize_plp_actions: true
-permissive_filter_enabled: true
+dt_splitter: random
+cc_alpha: 0.0
+normalize_plp_actions: false
+permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
 program_generation:
@@ -20,9 +22,9 @@ program_generation:
   encoding_method: "enc_1"
   loading:
     offline: 1 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "expanded_chase_4.1_append.json" #expanded_stf_notemp_5.2
+    offline_json_path: "features_stf_hint_only_4.1.json" #expanded_stf_notemp_5.2
   data_imbalance:
-    enabled: false
+    enabled: true
     method: downsample_majority
     K: 10
   

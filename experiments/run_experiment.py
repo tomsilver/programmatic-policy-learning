@@ -245,6 +245,10 @@ def evaluate_all(cfg: DictConfig) -> None:
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
+    logging.info(
+        "Approach config (cfg.approach):\n%s",
+        OmegaConf.to_yaml(cfg.approach, resolve=True),
+    )
 
     if cfg.eval.mode == 1:
         evaluate_all(cfg)

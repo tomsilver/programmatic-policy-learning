@@ -76,6 +76,8 @@ from programmatic_policy_learning.learning.plp_likelihood import compute_likelih
 # )
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
+# from programmatic_policy_learning.utils import manage_cache
+
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[int | None], Any]
@@ -118,6 +120,10 @@ def build_py_feature_functions(
     return functions
 
 
+# cache_dir = 'cache_hybrid'
+
+
+# @manage_cache(cache_dir, ['.pkl', '.pkl', 'pkl'])
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -386,6 +392,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         permissive_filter_enabled: bool = False,
         permissive_filter_max_avg_frac: float | None = None,
         permissive_filter_max_avg_count: int | None = None,
+        dt_splitter: str = "random",
+        cc_alpha: float = 0.0,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -408,6 +416,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.permissive_filter_enabled = permissive_filter_enabled
         self.permissive_filter_max_avg_frac = permissive_filter_max_avg_frac
         self.permissive_filter_max_avg_count = permissive_filter_max_avg_count
+        self.dt_splitter = dt_splitter
+        self.cc_alpha = cc_alpha
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -551,6 +561,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             priors_ranked,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
+            dt_splitter=self.dt_splitter,
+            cc_alpha=self.cc_alpha,
             dsl_functions=dsl_functions,
         )
         # plps, plp_priors = learn_plps(
@@ -649,12 +661,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
 
-        logging.info(particle_log_probs)
+        # logging.info(particle_log_probs)
         probs_arr = np.asarray(particle_log_probs)
         max_val = probs_arr.max()
         max_indices = np.flatnonzero(probs_arr == max_val)
         map_idx = int(np.random.choice(max_indices))
-        logging.info(map_idx)
+        logging.info(map_idx)  # MAYBE MIXTURE?
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])
 
