@@ -65,6 +65,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
 )
 from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
+    set_dsl_functions,
 )
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
@@ -381,6 +382,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         env_specs: dict[str, Any] | None = None,
         start_symbol: int = 0,
         program_generation: dict[str, Any] | None = None,
+        normalize_plp_actions: bool = False,
+        permissive_filter_enabled: bool = False,
+        permissive_filter_max_avg_frac: float | None = None,
+        permissive_filter_max_avg_count: int | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -399,6 +404,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
         self.program_generation = program_generation
+        self.normalize_plp_actions = normalize_plp_actions
+        self.permissive_filter_enabled = permissive_filter_enabled
+        self.permissive_filter_max_avg_frac = permissive_filter_max_avg_frac
+        self.permissive_filter_max_avg_count = permissive_filter_max_avg_count
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -562,20 +571,76 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 continue
             filtered.append((plp, prior))
         if filtered:
-            filtered_plps, filtered_priors = zip(*filtered)
-            plps = list(filtered_plps)
-            plp_priors = list(filtered_priors)
+            filtered_plps_tuple, filtered_priors_tuple = zip(*filtered)
+            plps = list(filtered_plps_tuple)
+            plp_priors = list(filtered_priors_tuple)
         else:
             plps, plp_priors = [], []
 
         logging.info(f"LEN AFTER FILTERING FALSE={len(plps)}")
 
-        valid_plps = log_plp_violation_counts(
-            plps, demonstrations, dsl_functions, top_k=200
-        )
+        valid_plps = log_plp_violation_counts(plps, demonstrations, dsl_functions)
         logging.info(f"LEN AFTER filtering violations={len(valid_plps)}")
 
         plps = valid_plps
+
+        if self.permissive_filter_enabled:
+            if (
+                self.permissive_filter_max_avg_frac is None
+                and self.permissive_filter_max_avg_count is None
+            ):
+                logging.info(
+                    "Permissive PLP filter enabled but no thresholds provided; skipping."
+                )
+            else:
+                set_dsl_functions(dsl_functions)
+                permissive_filtered_plps: list[StateActionProgram] = []
+                total_steps = len(demonstrations.steps)
+                logging.info(
+                    "Applying permissive PLP filter on %d PLPs over %d steps.",
+                    len(plps),
+                    total_steps,
+                )
+                for plp in plps:
+                    total_allowed = 0
+                    total_frac = 0.0
+                    valid = True
+                    for obs, _ in demonstrations.steps:
+                        try:
+                            rows, cols = obs.shape[:2]
+                            n_actions = rows * cols
+                            allowed = 0
+                            for r in range(rows):
+                                for c in range(cols):
+                                    if plp(obs, (r, c)):
+                                        allowed += 1
+                            total_allowed += allowed
+                            total_frac += (allowed / n_actions) if n_actions else 0.0
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            valid = False
+                            break
+                    if not valid or total_steps == 0:
+                        continue
+                    avg_allowed = total_allowed / total_steps
+                    avg_frac = total_frac / total_steps
+                    if (
+                        self.permissive_filter_max_avg_count is not None
+                        and avg_allowed > self.permissive_filter_max_avg_count
+                    ):
+                        continue
+                    if (
+                        self.permissive_filter_max_avg_frac is not None
+                        and avg_frac > self.permissive_filter_max_avg_frac
+                    ):
+                        continue
+                    permissive_filtered_plps.append(plp)
+                logging.info(
+                    "Permissive PLP filter kept %d/%d PLPs.",
+                    len(permissive_filtered_plps),
+                    len(plps),
+                )
+                plps = permissive_filtered_plps
+
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []
@@ -585,7 +650,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             particle_log_probs.append(prior + likelihood)
 
         logging.info(particle_log_probs)
-        map_idx = np.argmax(particle_log_probs).squeeze()
+        probs_arr = np.asarray(particle_log_probs)
+        max_val = probs_arr.max()
+        max_indices = np.flatnonzero(probs_arr == max_val)
+        map_idx = int(np.random.choice(max_indices))
         logging.info(map_idx)
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])
@@ -600,12 +668,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             top_particle_probs = np.exp(top_particle_log_probs)
             logging.info(f"top_particle_probs: {top_particle_probs}")
-            policy = LPPPolicy(top_particles, top_particle_probs)
+            # policy = LPPPolicy(top_particles, top_particle_probs)
+            policy = LPPPolicy(
+                top_particles,
+                top_particle_probs,
+                normalize_plp_actions=self.normalize_plp_actions,
+            )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
         else:
             logging.info("no nontrivial particles found")
-            policy = LPPPolicy([StateActionProgram("False")], [1.0])
+            # policy = LPPPolicy([StateActionProgram("False")], [1.0])
+            policy = LPPPolicy(
+                [StateActionProgram("False")],
+                [1.0],
+                normalize_plp_actions=self.normalize_plp_actions,
+            )
 
         if os.getenv("DEBUG_LPP_FEEDBACK", "0").strip().lower() in {
             "1",

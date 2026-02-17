@@ -79,7 +79,16 @@ def learn_single_batch_decision_trees(
     clfs = []
 
     for seed in range(num_dts):
-        clf = DecisionTreeClassifier(random_state=seed)
+        # clf = DecisionTreeClassifier(random_state=seed)
+        clf = DecisionTreeClassifier(
+            random_state=seed,
+            splitter="random",
+            class_weight="balanced",
+            max_depth=None,
+            min_samples_leaf=1,
+            ccp_alpha=0.0,
+        )
+
         clf.fit(X_i, y)
         # logging.info(
         #     "Trained DT seed=%d | nodes=%d depth=%d | train_acc=%.3f",

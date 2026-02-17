@@ -280,10 +280,8 @@ def extract_hints(
 ) -> str:
     """Query the LLM and return parsed hint JSON."""
     if structured:
-        prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
-        # prompt = build_new_hint_structured(
-        #     trajectories_text, env_name, encoding_method
-        # )
+        # prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
+        prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
@@ -540,13 +538,13 @@ def main() -> None:
     cache_path = Path("cache.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_client = OpenAIModel("gpt-4o-mini", cache)
+    llm_client = OpenAIModel("gpt-4.1", cache)
 
     env_names = [
-        "Chase",
+        # "Chase",
         # "TwoPileNim",
         # "ReachForTheStar",
-        # "StopTheFall"
+        "StopTheFall"
         # "CheckmateTactic"
     ]
     encoding_methods = ["1"]  # "1",
@@ -615,7 +613,7 @@ def main() -> None:
                     encoding_method=encoding_method,
                     num_demos=num_initial_states,
                     flag=structured,
-                    out_dir="final_hints",
+                    out_dir="new_hints",
                 )
                 logging.info(f"Hints saved to {path}")
 

@@ -1,5 +1,7 @@
 """Utils for Testing LPP Approach."""
 
+# pylint: disable=import-outside-toplevel
+
 from __future__ import annotations
 
 import ast
@@ -30,6 +32,15 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
+GymnasiumEnvType: type | None = None
+GymnasiumRecordVideoType: type | None = None
+try:
+    from gymnasium import Env as GymnasiumEnvType
+    from gymnasium.wrappers import RecordVideo as GymnasiumRecordVideoType
+except Exception:  # pylint: disable=broad-exception-caught
+    GymnasiumEnvType = None
+    GymnasiumRecordVideoType = None
+
 
 def run_single_episode(
     env: Any,
@@ -40,21 +51,82 @@ def run_single_episode(
 ) -> float:
     """Run a single episode in the environment using the given policy."""
 
+    record_frames: list[Any] | None = None
     if record_video:
-        env.start_recording_video(video_out_path=video_out_path)
+        if hasattr(env, "start_recording_video"):
+            env.start_recording_video(video_out_path=video_out_path)
+        else:
+            if video_out_path is None:
+                raise ValueError("video_out_path is required when using RecordVideo.")
+            out_path = Path(video_out_path)
+            base_env = env
+            # Unwrap common wrapper chains (GGGEnvWithTypes -> GymToGymnasium -> gym env)
+            while hasattr(base_env, "env"):
+                base_env = getattr(base_env, "env")
+            if hasattr(base_env, "_env"):
+                base_env = getattr(base_env, "_env")
 
-    obs, _ = env.reset()
+            if (
+                GymnasiumEnvType is not None
+                and GymnasiumRecordVideoType is not None
+                and isinstance(base_env, GymnasiumEnvType)
+            ):
+                env = GymnasiumRecordVideoType(  # type: ignore[operator]
+                    base_env,
+                    video_folder=str(out_path.parent),
+                    name_prefix=out_path.stem,
+                    episode_trigger=lambda _: True,
+                )
+            else:
+                # Fallback: manual frame capture for legacy gym envs.
+                record_frames = []
+
+    reset_out = env.reset()
+    if isinstance(reset_out, tuple) and len(reset_out) == 2:
+        obs, _ = reset_out
+    else:
+        obs = reset_out
+    if record_frames is not None and hasattr(env, "render"):
+        try:
+            frame = env.render()
+            if frame is not None:
+                record_frames.append(frame)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
     total_reward = 0.0
     for _ in range(max_num_steps):
         action = policy(obs)
-        new_obs, reward, done, _, _ = env.step(action)
+        step_out = env.step(action)
+        if isinstance(step_out, tuple) and len(step_out) == 4:
+            new_obs, reward, done, _ = step_out
+            terminated, truncated = done, False
+        else:
+            new_obs, reward, terminated, truncated, _ = step_out
         total_reward += reward
 
         obs = new_obs
+        if record_frames is not None and hasattr(env, "render"):
+            try:
+                frame = env.render()
+                if frame is not None:
+                    record_frames.append(frame)
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
 
-        if done:
+        if terminated or truncated:
             break
     env.close()
+
+    if record_frames is not None and video_out_path is not None:
+        try:
+            import imageio.v2 as imageio  # type: ignore
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            raise RuntimeError(
+                "Manual video recording requires imageio. "
+                "Install with `pip install imageio`."
+            ) from e
+        if record_frames:
+            imageio.mimsave(video_out_path, record_frames, fps=10)
 
     return total_reward
 
@@ -247,13 +319,11 @@ def log_plp_violation_counts(
     plps: list[StateActionProgram],
     demonstrations: Any,
     dsl_functions: dict[str, Any],
-    top_k: int = 10,
 ) -> list[StateActionProgram]:
     """Log how many demo steps each PLP fails (False on expert action)."""
     set_dsl_functions(dsl_functions)
     counts: list[tuple[int, StateActionProgram, list[Any], list[Any]]] = []
     total_steps = len(demonstrations.steps)
-    logging.info(total_steps)
 
     for plp in plps:
         violations = 0
@@ -272,7 +342,7 @@ def log_plp_violation_counts(
 
     counts.sort(key=lambda item: item[0])
     logging.info("PLP violation counts (lower is better):")
-    for violations, plp, _, _ in counts[:top_k]:
+    for violations, plp, _, _ in counts[:10]:
         rate = (violations / total_steps) if total_steps else 0.0
         logging.info(
             "violations=%d/%d (%.2f%%) | plp=%s",
@@ -286,7 +356,7 @@ def log_plp_violation_counts(
         #     actionn = act_all[idx]
         #     logging.info(actionn)
         #     logging.info(item[actionn])
-    return [plp for _, plp, _, _ in counts[:top_k]]
+    return [plp for _, plp, _, _ in counts]
 
 
 def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
@@ -404,6 +474,7 @@ OUTPUT FORMAT (STRICT JSON ONLY):
   ]
 }}
 """.strip()
+    print(prompt)
     return prompt
 
 

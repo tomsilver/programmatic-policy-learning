@@ -67,7 +67,7 @@ def _compute_likelihood_worker(
 
         # hyperparams
         eps = 1e-4  # "slip" prob when expert action is not allowed by PLP
-        beta = 2.0  # >1 penalizes permissiveness more strongly
+        beta = 3.0  # >1 penalizes permissiveness more strongly
 
         for obs, action in demonstrations.steps:
             rows, cols = obs.shape[:2]
