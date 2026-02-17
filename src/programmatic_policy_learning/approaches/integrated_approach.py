@@ -235,17 +235,34 @@ def synthesize_policy_with_planner_access(
         Your policy should be both effective (reach the goal) and efficient (minimize
         unnecessary computation). Consider the following:
 
-        Use the A* planner with get_next_state for the entire journey. The
-        get_next_state function already handles all walls and borders correctly
-        (returning the same state if a move is blocked), so A* will find a
-        valid path from any starting position through the entrance and maze
-        to the goal. Plan once and cache the result.
+        Your policy should be both effective (reach the goal) and efficient (minimize
+        unnecessary computation). Consider the following:
+
+        - A reactive policy (simple rules based on observation and goal) is computationally
+            cheap and should be preferred when the path to the goal is straightforward, e.g.,
+            when there are no obstacles or constraints between the current state and the goal.
+        - The A* planner is powerful but expensive. It should only be invoked when the
+            situation genuinely requires search, e.g., when there are obstacles, constraints,
+            or complex structure that a simple reactive rule cannot handle.
+        - A good policy uses reactive control when it can and only falls back to planning
+            when it must. Think about what conditions in the observation indicate that
+            planning is necessary versus when a simple rule suffices.
+        - IMPORTANT: If you cache a plan, always track the expected next observation
+            alongside it (see the example above). A cached plan is only valid if the
+            current obs matches where the plan expects you to be. If you use reactive
+            control for some steps and then switch to a cached plan, the plan will be
+            wrong because it was computed from a different state. Either replan from the
+            current obs, or only cache a plan when you will follow it without interruption.
+        - The function must ALWAYS return a valid action integer. Never return None.
+        - When you call run_astar, store cumulative search metrics on the function
+            so they can be inspected externally. See the example above for how to
+            accumulate `_policy.total_num_evals` and `_policy.total_num_expansions`.
 
         Return only the function; do not give example usages.
         """
     )
     # Insert instructions for different approaches here. For example:
-    
+
     # Pure Planning: Always Plans
     # Use the A* planner with get_next_state for the entire journey. The
     # get_next_state function already handles all walls and borders correctly
