@@ -1,6 +1,7 @@
 """Utils for Testing LPP Approach."""
 
 # pylint: disable=import-outside-toplevel
+# pylint: disable=line-too-long
 
 from __future__ import annotations
 
@@ -390,6 +391,81 @@ def _format_one_example(
     return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
 
 
+def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
+    lines = ["LEGEND:"]
+    for token, char in symbol_map.items():
+        lines.append(f"  {char} = {token}")
+    if "empty" in symbol_map:
+        lines.append("  * = action cell")
+    else:
+        lines.append("  * = action cell")
+    return "\n".join(lines)
+
+
+def _format_one_example_ascii(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+    symbol_map: dict[str, str],
+) -> str:
+    """Format one labeled (state, action) example using ASCII token codes."""
+    h, w = s.shape[0], s.shape[1]
+    code_width = max((len(code) for code in symbol_map.values()), default=1)
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s[r, c] if in_bounds else "OOB"
+    action_code = "*" * code_width
+
+    rows = []
+    for rr in range(h):
+        row_codes = []
+        for cc in range(w):
+            tok = str(s[rr, cc])
+            code = symbol_map.get(tok, "?").rjust(code_width)
+            if in_bounds and rr == r and cc == c:
+                code = action_code
+            row_codes.append(f"'{code}'")
+        rows.append("  [" + ", ".join(row_codes) + "]")
+    grid = "\n".join(rows)
+
+    return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
+
+
+def _format_one_example_coords(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    """Format one labeled (state, action) example using coordinate lists."""
+    s_str = s.astype(str)
+    h, w = s_str.shape[0], s_str.shape[1]
+    tokens, counts = np.unique(s_str, return_counts=True)
+    bg_idx = int(np.argmax(counts)) if tokens.size else -1
+    background = tokens[bg_idx] if bg_idx >= 0 else ""
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s_str[r, c] if in_bounds else "OOB"
+
+    lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
+    if background:
+        lines.append(f"background={background}")
+
+    for tok in tokens:
+        if tok == background:
+            continue
+        coords = np.argwhere(s_str == tok)
+        coord_text = ", ".join(f"({rr}, {cc})" for rr, cc in coords)
+        lines.append(f"{tok}: {coord_text}")
+
+    return "\n".join(lines)
+
+
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
@@ -398,6 +474,7 @@ def build_collision_repair_prompt(
     env_name: str | None = None,
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
+    collision_feedback_enc: str = "enc_1",
 ) -> str:
     """Build an LLM prompt that proposes features to resolve label
     collisions."""
@@ -406,75 +483,174 @@ def build_collision_repair_prompt(
             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
         )
 
-    pos_indices = pos_indices[:max_per_label]
-    neg_indices = neg_indices[:max_per_label]
+    rng = np.random.default_rng()
+    if len(pos_indices) > max_per_label:
+        pos_indices = rng.choice(
+            pos_indices, size=max_per_label, replace=False
+        ).tolist()
+    if len(neg_indices) > max_per_label:
+        neg_indices = rng.choice(
+            neg_indices, size=max_per_label, replace=False
+        ).tolist()
+
+    use_ascii = collision_feedback_enc == "enc_1"
+    if collision_feedback_enc not in {"enc_1", "enc_2"}:
+        raise ValueError("collision_feedback_enc must be 'enc_1' or 'enc_2'")
+
+    symbol_map: dict[str, str] = {}
+    legend_block = ""
+    if use_ascii and env_name:
+        symbol_map = grid_hint_config.get_symbol_map(env_name)
+        legend_block = _format_ascii_legend(symbol_map) + "\n\n"
 
     pos_blocks = []
     for idx in pos_indices:
         s, a = examples[idx]
-        pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
+        if use_ascii:
+            pos_blocks.append(
+                _format_one_example_ascii(
+                    s, a, label=1, idx=idx, symbol_map=symbol_map
+                )
+            )
+        else:
+            pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
 
     neg_blocks = []
     for idx in neg_indices:
         s, a = examples[idx]
-        neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
+        if use_ascii:
+            neg_blocks.append(
+                _format_one_example_ascii(
+                    s, a, label=0, idx=idx, symbol_map=symbol_map
+                )
+            )
+        else:
+            neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
-    env_line = f"ENV: {env_name}\n\n" if env_name else ""
-    feat_line = ""
-    if existing_feature_summary:
-        feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
-
+    N_NEW = "N_NEW"
+    TOKEN = "TOKEN"
+    DRs = "DRs"
+    K = "K"
     prompt = f"""
-SYSTEM:
-You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
-Your task is to REPAIR representational failures in an existing feature set.
+## SYSTEM
 
-{env_line}CONTEXT:
-- Observation s is a 2D grid (list of lists of tokens).
-- Action a is a clicked cell coordinate (row, col).
-- Each feature is a Python function f(s, a) -> bool.
-- Features must generalize across board sizes and positions.
-- Features depend ONLY on (s, a). No history.
+You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
 
-{feat_line}COLLISION EVIDENCE:
-All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
+Your job:
+Given evidence of feature collisions, propose NEW boolean feature templates f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
+
+A feature collision means:
+All provided examples have IDENTICAL feature vectors under the current feature set (same feature-key),
+yet labels differ. Therefore, the current features are provably insufficient.
+
+You must propose new feature families that break this indistinguishability.
+
+---
+
+## ENVIRONMENT
+
+- Grid observation s is a 2D list of tokens (strings).
+- Action a is a clicked cell coordinate: a = (row, col).
+- a may contain numpy integers.
+
+Every feature MUST begin with this exact validation logic:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+No imports. Only Python built-ins.
+
+---
+
+## TOKEN RESTRICTIONS (CRITICAL)
+
+You MUST NOT use:
+- any raw token characters like '.', '#', '*', etc.
+- any constants like rfts.EMPTY, rfts.LEFT_ARROW, etc.
+
+You MUST use ONLY these placeholders inside feature code:
+- ${TOKEN}  (single token placeholder)
+- ${DRs}    (list of (dr, dc) tuples placeholder)
+- ${K}      (small positive integer placeholder)
+
+No other placeholders. No token lists. No multiple distinct token placeholders.
+Each feature may use at most 3 placeholders total.
+
+---
+
+## COLLISION EVIDENCE
+
+All examples below produce IDENTICAL feature vectors under the current feature set,
 yet the expert labels differ. Therefore, the current features are provably insufficient.
 
-POSITIVE EXAMPLES (label = 1):
-{chr(10).join(pos_blocks)}
+NOTE: Each bucket below may require different features to resolve.
 
-NEGATIVE EXAMPLES (label = 0):
-{chr(10).join(neg_blocks)}
+BUCKET 1
+POSITIVE EXAMPLE (label = 1):
+{legend_block}{pos_blocks[0] if pos_blocks else ""}
 
-TASK:
-Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
+NEGATIVE EXAMPLE (label = 0):
+{neg_blocks[0] if neg_blocks else ""}
 
-Each proposed feature must:
-1) Be True for most positives and False for most negatives (or vice versa) within this bucket
-2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
-3) Be board-size invariant (no hard-coded coordinates)
-4) Use ONLY (s, a)
-5) Return a boolean
+BUCKET 2
+POSITIVE EXAMPLE (label = 1):
+{pos_blocks[1] if len(pos_blocks) > 1 else ""}
 
-DO NOT:
-- Hard-code exact positions
-- Memorize these examples
-- Use random logic
-- Output anything other than JSON
+NEGATIVE EXAMPLE (label = 0):
+{neg_blocks[1] if len(neg_blocks) > 1 else ""}
 
-OUTPUT FORMAT (STRICT JSON ONLY):
+---
+
+## TASK
+
+1) Carefully compare the POSITIVE vs NEGATIVE examples.
+2) Identify structural distinctions that are NOT captured by typical local templates.
+3) Propose NEW feature templates that can separate (at least some of) the positives from negatives in THIS bucket.
+
+Important:
+- Do NOT generate near-duplicates of the same adjacency/scan/count family.
+- Prefer features that capture *relational structure*.
+- Do NOT overfit to board size. No hard-coded row numbers.
+
+---
+
+## OUTPUT FORMAT (STRICT)
+
+You MUST output ONLY valid JSON, directly parsable by json.loads().
+No markdown. No prose.
+
+Return exactly this structure:
 
 {{
   "features": [
     {{
-      "id": "f_new_1",
-      "name": "short_descriptive_name",
-      "source": "def f_new_1(s, a):\\n    <python code>\\n"
-    }}
+      "id": "f101",
+      "name": "f101",
+      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
+      "source": "def f101(s, a):\\n    ...\\n"
+    }},
+    ...
   ]
 }}
-""".strip()
-    print(prompt)
+
+Rules:
+- ids/names must be sequential: f101, f102, ...
+- Provide EXACTLY {N_NEW} new features.
+- Each "source" must be a valid Python function string with \\n escaped newlines.
+- Every feature must return True/False.
+- Every feature must include the exact action validation boilerplate shown above.
+- Use only ${TOKEN}, ${DRs}, ${K} placeholders.
+
+FINAL CHECK:
+- No raw tokens '.', 'A', 'D', 'F', 'R', 'S' appear in code.
+- No stf.* appears in code.
+- Output is valid JSON only.
+
+"""
     return prompt
 
 

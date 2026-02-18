@@ -1,0 +1,48 @@
+{
+  "action_choice_hints": [
+    "The candidate cell is in the same row as a cell with a moving token.",
+    "The candidate cell is the nearest unblocked cell in a given direction from a moving token.",
+    "There exists a contiguous segment of empty cells between the candidate cell and a static obstacle.",
+    "The candidate cell is within K steps of a boundary in a given direction.",
+    "The candidate cell is the first cell after a drawn trace along a column.",
+    "The candidate cell is not blocked by any obstacle when moving from a moving token along a straight line.",
+    "There exists a drawn trace in the same column as the candidate cell.",
+    "The candidate cell is adjacent to a region containing a static obstacle.",
+    "The candidate cell is in the bottom band of the grid.",
+    "The candidate cell is the only available cell in its row not blocked by an obstacle.",
+    "The candidate cell is the first empty cell encountered when scanning from the top of its column.",
+    "There exists a moving token in the same column as the candidate cell.",
+    "The candidate cell is not part of a contiguous run of obstacles.",
+    "The candidate cell is within a region bounded by static obstacles on both sides.",
+    "The candidate cell is the only cell in its column that is not adjacent to a drawn trace.",
+    "The candidate cell is the nearest cell to a moving token that is not blocked by a static obstacle."
+  ],
+  "transition_hints": [
+    "When a moving token is selected, it advances to the next unblocked cell in a specified direction.",
+    "Selecting a cell with a moving token causes a drawn trace to appear along the path traversed.",
+    "If a moving token encounters a static obstacle, it stops before the obstacle.",
+    "Selecting an empty cell does not change the state unless it is in the path of a moving token.",
+    "Drawn traces remain static after being created and do not move.",
+    "Static obstacles do not change state regardless of actions.",
+    "Moving tokens only move along unblocked, contiguous empty cells.",
+    "If a moving token reaches the boundary, it stops at the last available cell.",
+    "Selecting a cell not aligned with a moving token does not trigger any movement.",
+    "Drawn traces are only created along the path of a moving token's movement.",
+    "Multiple moving tokens act independently; only the selected one moves.",
+    "Cells with static obstacles block the movement of moving tokens."
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include templates that reference both row and column relations.",
+      "Ensure at least one template uses nearest/first-encountered logic along a direction."
+    ],
+    "placeholder_usage_limits": [
+      "Limit templates with more than two placeholders to at most 10.",
+      "Restrict templates that use global grid properties to no more than 5."
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of a single token type in a cell.",
+      "Avoid templates that rely solely on absolute coordinates or grid positions."
+    ]
+  }
+}

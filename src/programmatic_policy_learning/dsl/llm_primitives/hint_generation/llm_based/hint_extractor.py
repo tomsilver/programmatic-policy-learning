@@ -543,8 +543,8 @@ def main() -> None:
     env_names = [
         # "Chase",
         # "TwoPileNim",
-        # "ReachForTheStar",
-        "StopTheFall"
+        "ReachForTheStar",
+        # "StopTheFall"
         # "CheckmateTactic"
     ]
     encoding_methods = ["1"]  # "1",

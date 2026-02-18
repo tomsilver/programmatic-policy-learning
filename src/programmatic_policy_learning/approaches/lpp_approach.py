@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
+from hydra.core.hydra_config import HydraConfig
 from gymnasium.spaces import Space
 
 # from omegaconf import DictConfig
@@ -394,6 +395,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         permissive_filter_max_avg_count: int | None = None,
         dt_splitter: str = "random",
         cc_alpha: float = 0.0,
+        collision_feedback_enc: str = "enc_1",
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -418,6 +420,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.permissive_filter_max_avg_count = permissive_filter_max_avg_count
         self.dt_splitter = dt_splitter
         self.cc_alpha = cc_alpha
+        self.collision_feedback_enc = collision_feedback_enc
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -517,6 +520,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             examples,
         )
         if collision_groups and examples is not None:
+            ranked_groups = sorted(
+                collision_groups, key=lambda g: g["max_occur"], reverse=True
+            )
+            logging.info("Collision groups (top 5 by max_occur):")
+            for rank, group in enumerate(ranked_groups[:5], start=1):
+                pos_list = group["pos"]
+                neg_list = group["neg"]
+                logging.info(
+                    "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
+                    rank,
+                    group["max_occur"],
+                    len(pos_list),
+                    len(neg_list),
+                    pos_list[:5],
+                    neg_list[:10],
+                )
             best_group = max(collision_groups, key=lambda g: g["max_occur"])
             prompt = build_collision_repair_prompt(
                 pos_indices=best_group["pos"],
@@ -524,9 +543,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 examples=examples,
                 env_name=self.base_class_name,
                 existing_feature_summary=None,
-                max_per_label=5,
+                max_per_label=2,
+                collision_feedback_enc=self.collision_feedback_enc,
             )
-            logging.info(f"Collision repair prompt built (len={len(prompt)}).")
+            try:
+                output_dir = Path(HydraConfig.get().runtime.output_dir)
+            except Exception:  # pylint: disable=broad-exception-caught
+                output_dir = Path.cwd()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            prefix = "collision_prompr_"
+            existing = sorted(output_dir.glob(f"{prefix}*.txt"))
+            next_idx = len(existing) + 1
+            out_path = output_dir / f"{prefix}{next_idx}.txt"
+            out_path.write_text(prompt, encoding="utf-8")
+            logging.info("Collision repair prompt written to %s", out_path)
 
         n = X.shape[0]
         logging.info(f"N={n}")
