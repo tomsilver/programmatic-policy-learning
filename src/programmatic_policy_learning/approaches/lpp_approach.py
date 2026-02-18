@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
-from hydra.core.hydra_config import HydraConfig
 from gymnasium.spaces import Space
+from hydra.core.hydra_config import HydraConfig
 
 # from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
@@ -427,6 +427,54 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         random.seed(self.seed_num)
         np.random.seed(self.seed_num)
 
+    def _handle_collision_feedback(
+        self,
+        collision_groups: list[dict[str, Any]],
+        examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    ) -> None:
+        if not collision_groups or examples is None:
+            return
+        ranked_groups = sorted(
+            collision_groups, key=lambda g: g["max_occur"], reverse=True
+        )
+        logging.info("Collision groups (top 5 by max_occur):")
+        for rank, group in enumerate(ranked_groups[:5], start=1):
+            pos_list = group["pos"]
+            neg_list = group["neg"]
+            logging.info(
+                "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
+                rank,
+                group["max_occur"],
+                len(pos_list),
+                len(neg_list),
+                pos_list[:5],
+                neg_list[:10],
+            )
+        best_group = ranked_groups[0]
+        second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
+        prompt = build_collision_repair_prompt(
+            pos_indices=best_group["pos"],
+            neg_indices=best_group["neg"],
+            examples=examples,
+            env_name=self.base_class_name,
+            existing_feature_summary=None,
+            max_per_label=5,
+            collision_feedback_enc=self.collision_feedback_enc,
+            pos_indices_2=second_group["pos"] if second_group else None,
+            neg_indices_2=second_group["neg"] if second_group else None,
+        )
+        try:
+            output_dir = Path(HydraConfig.get().runtime.output_dir)
+        except Exception:  # pylint: disable=broad-exception-caught
+            output_dir = Path.cwd()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        prefix = "collision_prompr_"
+        existing = sorted(output_dir.glob(f"{prefix}*.txt"))
+        next_idx = len(existing) + 1
+        out_path = output_dir / f"{prefix}{next_idx}.txt"
+        out_path.write_text(prompt, encoding="utf-8")
+        logging.info("Collision repair prompt written to %s", out_path)
+
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
         self._policy = self._train_policy()
@@ -519,47 +567,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             y,
             examples,
         )
-        if collision_groups and examples is not None:
-            ranked_groups = sorted(
-                collision_groups, key=lambda g: g["max_occur"], reverse=True
-            )
-            logging.info("Collision groups (top 5 by max_occur):")
-            for rank, group in enumerate(ranked_groups[:5], start=1):
-                pos_list = group["pos"]
-                neg_list = group["neg"]
-                logging.info(
-                    "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
-                    rank,
-                    group["max_occur"],
-                    len(pos_list),
-                    len(neg_list),
-                    pos_list[:5],
-                    neg_list[:10],
-                )
-            best_group = ranked_groups[0]
-            second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
-            prompt = build_collision_repair_prompt(
-                pos_indices=best_group["pos"],
-                neg_indices=best_group["neg"],
-                examples=examples,
-                env_name=self.base_class_name,
-                existing_feature_summary=None,
-                max_per_label=5,
-                collision_feedback_enc=self.collision_feedback_enc,
-                pos_indices_2=second_group["pos"] if second_group else None,
-                neg_indices_2=second_group["neg"] if second_group else None,
-            )
-            try:
-                output_dir = Path(HydraConfig.get().runtime.output_dir)
-            except Exception:  # pylint: disable=broad-exception-caught
-                output_dir = Path.cwd()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            prefix = "collision_prompr_"
-            existing = sorted(output_dir.glob(f"{prefix}*.txt"))
-            next_idx = len(existing) + 1
-            out_path = output_dir / f"{prefix}{next_idx}.txt"
-            out_path.write_text(prompt, encoding="utf-8")
-            logging.info("Collision repair prompt written to %s", out_path)
+        self._handle_collision_feedback(collision_groups, examples)
 
         n = X.shape[0]
         logging.info(f"N={n}")
