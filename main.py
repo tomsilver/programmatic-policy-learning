@@ -266,7 +266,14 @@ def main() -> None:
     with open(args.in_json, "r", encoding="utf-8") as f:
         template_payload = json.load(f)
 
-    TOKENS = ["stf.EMPTY", "stf.ADVANCE", "stf.DRAWN", "stf.FALLING", "stf.RED", "stf.STATIC"]
+    TOKENS = [
+        "stf.EMPTY",
+        "stf.ADVANCE",
+        "stf.DRAWN",
+        "stf.FALLING",
+        "stf.RED",
+        "stf.STATIC",
+    ]
     # TOKENS = [
     #     "rfts.DRAWN",
     #     "rfts.STAR",
@@ -297,18 +304,18 @@ def main() -> None:
         (-1, -1),
     ]
     DIRS4 = [
-        (1, 0),    # Down
-        (-1, 0),   # Up
-        (0, 1),    # Right
-        (0, -1),   # Left
+        (1, 0),  # Down
+        (-1, 0),  # Up
+        (0, 1),  # Right
+        (0, -1),  # Left
     ]
     HORIZONTAL = [
-        (0, 1),    # Right
-        (0, -1),   # Left
+        (0, 1),  # Right
+        (0, -1),  # Left
     ]
     VERTICAL = [
-        (1, 0),    # Down
-        (-1, 0),   # Up
+        (1, 0),  # Down
+        (-1, 0),  # Up
     ]
     KS = [1, 2, 3]
     DR_LISTS = [DIRS8, DIRS4, HORIZONTAL, VERTICAL]

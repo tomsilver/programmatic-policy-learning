@@ -475,6 +475,8 @@ def build_collision_repair_prompt(
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
     collision_feedback_enc: str = "enc_1",
+    pos_indices_2: list[int] | None = None,
+    neg_indices_2: list[int] | None = None,
 ) -> str:
     """Build an LLM prompt that proposes features to resolve label
     collisions."""
@@ -508,9 +510,7 @@ def build_collision_repair_prompt(
         s, a = examples[idx]
         if use_ascii:
             pos_blocks.append(
-                _format_one_example_ascii(
-                    s, a, label=1, idx=idx, symbol_map=symbol_map
-                )
+                _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
         else:
             pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
@@ -520,17 +520,51 @@ def build_collision_repair_prompt(
         s, a = examples[idx]
         if use_ascii:
             neg_blocks.append(
-                _format_one_example_ascii(
-                    s, a, label=0, idx=idx, symbol_map=symbol_map
-                )
+                _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
             )
         else:
             neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
+
+    pos_blocks_2: list[str] = []
+    neg_blocks_2: list[str] = []
+    if pos_indices_2 and neg_indices_2:
+        for idx in pos_indices_2:
+            s, a = examples[idx]
+            if use_ascii:
+                pos_blocks_2.append(
+                    _format_one_example_ascii(
+                        s, a, label=1, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            else:
+                pos_blocks_2.append(_format_one_example_coords(s, a, label=1, idx=idx))
+        for idx in neg_indices_2:
+            s, a = examples[idx]
+            if use_ascii:
+                neg_blocks_2.append(
+                    _format_one_example_ascii(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            else:
+                neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
     N_NEW = "N_NEW"
     TOKEN = "TOKEN"
     DRs = "DRs"
     K = "K"
+    bucket2_block = ""
+    if pos_blocks_2 or neg_blocks_2:
+        bucket2_block = f"""
+
+BUCKET 2
+POSITIVE EXAMPLE (label = 1):
+{pos_blocks_2[0] if pos_blocks_2 else ""}
+
+NEGATIVE EXAMPLES (label = 0):
+{chr(10).join(neg_blocks_2[:5])}
+"""
+
     prompt = f"""
 ## SYSTEM
 
@@ -593,15 +627,10 @@ BUCKET 1
 POSITIVE EXAMPLE (label = 1):
 {legend_block}{pos_blocks[0] if pos_blocks else ""}
 
-NEGATIVE EXAMPLE (label = 0):
-{neg_blocks[0] if neg_blocks else ""}
+NEGATIVE EXAMPLES (label = 0):
+{chr(10).join(neg_blocks[:5])}
 
-BUCKET 2
-POSITIVE EXAMPLE (label = 1):
-{pos_blocks[1] if len(pos_blocks) > 1 else ""}
-
-NEGATIVE EXAMPLE (label = 0):
-{neg_blocks[1] if len(neg_blocks) > 1 else ""}
+{bucket2_block}
 
 ---
 

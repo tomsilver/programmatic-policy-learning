@@ -536,15 +536,18 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     pos_list[:5],
                     neg_list[:10],
                 )
-            best_group = max(collision_groups, key=lambda g: g["max_occur"])
+            best_group = ranked_groups[0]
+            second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
             prompt = build_collision_repair_prompt(
                 pos_indices=best_group["pos"],
                 neg_indices=best_group["neg"],
                 examples=examples,
                 env_name=self.base_class_name,
                 existing_feature_summary=None,
-                max_per_label=2,
+                max_per_label=5,
                 collision_feedback_enc=self.collision_feedback_enc,
+                pos_indices_2=second_group["pos"] if second_group else None,
+                neg_indices_2=second_group["neg"] if second_group else None,
             )
             try:
                 output_dir = Path(HydraConfig.get().runtime.output_dir)
