@@ -73,7 +73,6 @@ def create_kinder_env(
 
     # Use instance_num to create different env instances if needed
     if instance_num is not None:
-        env_id = kwargs["id"]
         # For kinder envs, instance_num maps to seed for reset
         env = kinder.make(**kwargs)
     else:

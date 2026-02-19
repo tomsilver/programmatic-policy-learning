@@ -4,7 +4,7 @@ Records a video of the rollout.
 
 Usage::
 
-    python experiments/scripts/run_motion2d_rollout.py                        # default p1
+    python experiments/scripts/run_motion2d_rollout.py # default p0
     python experiments/scripts/run_motion2d_rollout.py --passages 5
     python experiments/scripts/run_motion2d_rollout.py --passages 3 --seed 0
 """
@@ -12,10 +12,13 @@ Usage::
 import argparse
 from pathlib import Path
 
+import gymnasium as gym
 import kinder
 import numpy as np
+from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
 
 from programmatic_policy_learning.approaches.experts.motion2d_experts import (
+    Motion2DRejectionSamplingExpert,
     create_motion2d_expert,
 )
 
@@ -47,39 +50,69 @@ def print_obs(obs: np.ndarray) -> None:
         passage_y = (gap_bottom + gap_top) / 2
 
         print(f"Passage {i}: wall_x={wall_x:.4f}")
-        print(f"  Bottom obstacle: y={bot_y:.4f}, height={bot_h:.4f}, "
-              f"y-range=[{bot_y:.4f}, {bot_y + bot_h:.4f}]")
-        print(f"  Top    obstacle: y={top_y:.4f}, height={top_h:.4f}, "
-              f"y-range=[{top_y:.4f}, {top_y + top_h:.4f}]")
-        print(f"  Gap: [{gap_bottom:.4f}, {gap_top:.4f}], "
-              f"center={passage_y:.4f}")
+        print(
+            f"  Bottom obstacle: y={bot_y:.4f}, height={bot_h:.4f}, "
+            f"y-range=[{bot_y:.4f}, {bot_y + bot_h:.4f}]"
+        )
+        print(
+            f"  Top    obstacle: y={top_y:.4f}, height={top_h:.4f}, "
+            f"y-range=[{top_y:.4f}, {top_y + top_h:.4f}]"
+        )
+        print(f"  Gap: [{gap_bottom:.4f}, {gap_top:.4f}], " f"center={passage_y:.4f}")
 
 
 def save_video(frames: list[np.ndarray], path: str) -> None:
     """Strip alpha channel if present and save frames as mp4."""
     clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
-
-    from moviepy import ImageSequenceClip
-
     clip = ImageSequenceClip(clean, fps=20)
     clip.write_videofile(path, codec="libx264", logger=None)
     print(f"\nVideo saved to: {path}  ({len(clean)} frames)")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Motion2D rollout with expert.")
-    parser.add_argument("--passages", type=int, default=0,
-                        help="Number of wall passages (0-5, default: 1)")
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-
-    env_id = f"kinder/Motion2D-p{args.passages}-v0"
-
+def make_env(
+    env_id: str, seed: int
+) -> tuple[gym.Env, np.ndarray, Motion2DRejectionSamplingExpert]:
+    """Create the environment, reset it, and build the expert."""
     kinder.register_all_environments()
-
     env = kinder.make(env_id, render_mode="rgb_array")
-    obs, _ = env.reset(seed=args.seed)
-    expert = create_motion2d_expert(env.action_space, seed=args.seed)
+    obs, _ = env.reset(seed=seed)
+    assert isinstance(env.action_space, gym.spaces.Box)
+    expert = create_motion2d_expert(env.action_space, seed=seed)
+    return env, obs, expert
+
+
+def run_rollout(
+    env: gym.Env,
+    obs: np.ndarray,
+    expert: Motion2DRejectionSamplingExpert,
+) -> tuple[list[np.ndarray], float, int, bool]:
+    """Execute the rollout loop and return (frames, reward, steps,
+    terminated)."""
+    frames: list[np.ndarray] = []
+    total_reward = 0.0
+
+    for step in range(_MAX_STEPS):
+        raw: np.ndarray | list[np.ndarray] | None = env.render()
+        if raw is not None:
+            frames.append(np.asarray(raw))
+
+        action = expert(obs)
+        obs, reward, terminated, truncated, _ = env.step(action)
+        total_reward += float(reward)
+
+        if terminated or truncated:
+            raw = env.render()
+            if raw is not None:
+                frames.append(np.asarray(raw))
+            return frames, total_reward, step, terminated
+
+    return frames, total_reward, _MAX_STEPS, False
+
+
+def main(args: argparse.Namespace) -> None:
+    """Run the expert rollout and save a video."""
+    env_id = f"kinder/Motion2D-p{args.passages}-v0"
+    env, obs, expert = make_env(env_id, args.seed)
 
     print(f"Env: {env_id}")
     print(f"Observation space: {env.observation_space}")
@@ -89,31 +122,14 @@ def main() -> None:
     print_obs(obs)
     print()
 
-    frames: list[np.ndarray] = []
-    total_reward = 0.0
+    frames, total_reward, steps, terminated = run_rollout(env, obs, expert)
+    env.close()
 
-    for step in range(_MAX_STEPS):
-        frame = env.render()
-        if frame is not None:
-            frames.append(frame)
-
-        action = expert(obs)
-        obs, reward, terminated, truncated, _ = env.step(action)
-        total_reward += reward
-
-        if terminated or truncated:
-            frame = env.render()
-            if frame is not None:
-                frames.append(frame)
-            print(f"\nDone at step {step}!")
-            print(f"Total reward: {total_reward:.1f}")
-            print(f"Terminated: {terminated}, Truncated: {truncated}")
-            break
+    if terminated:
+        print(f"\nDone at step {steps}!")
     else:
         print(f"\nReached max steps ({_MAX_STEPS}) without termination")
-        print(f"Total reward: {total_reward:.1f}")
-
-    env.close()
+    print(f"Total reward: {total_reward:.1f}")
 
     if frames:
         video_dir = Path("videos")
@@ -124,5 +140,18 @@ def main() -> None:
         )
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Run Motion2D rollout with expert.")
+    parser.add_argument(
+        "--passages",
+        type=int,
+        default=0,
+        help="Number of wall passages (0-5, default: 0)",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    main(parse_args())

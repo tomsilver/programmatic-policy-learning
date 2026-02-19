@@ -170,7 +170,8 @@ def f_2(s: Obs, a: Act) -> bool:
 
 
 class Motion2DRejectionSamplingExpert:
-    """Expert that samples random actions and accepts those satisfying f_1 ∧ f_2.
+    """Expert that samples random actions and accepts those satisfying f_1 ∧
+    f_2.
 
     Parameters
     ----------
