@@ -2,6 +2,9 @@ name: CI Checks
 
 on: [push]
 
+env:
+  UV_LOCK_TIMEOUT: 600
+
 jobs:
   autoformat:
     runs-on: ubuntu-latest
