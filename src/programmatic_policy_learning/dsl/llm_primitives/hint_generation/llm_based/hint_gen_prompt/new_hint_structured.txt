@@ -91,5 +91,3 @@ TOKEN_MAP = {
   "R": "stf.RED",
   "S": "stf.STATIC"
 }
-
-SEED: 0

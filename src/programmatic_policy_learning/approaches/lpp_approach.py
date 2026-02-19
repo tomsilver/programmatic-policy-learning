@@ -10,6 +10,7 @@ from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
+from hydra.core.hydra_config import HydraConfig
 
 # from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
@@ -65,6 +66,7 @@ from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
 )
 from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
+    set_dsl_functions,
 )
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
@@ -74,6 +76,8 @@ from programmatic_policy_learning.learning.plp_likelihood import compute_likelih
 #     priors_from_features,
 # )
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+
+# from programmatic_policy_learning.utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -117,6 +121,10 @@ def build_py_feature_functions(
     return functions
 
 
+# cache_dir = 'cache_hybrid'
+
+
+# @manage_cache(cache_dir, ['.pkl', '.pkl', 'pkl'])
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -381,6 +389,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         env_specs: dict[str, Any] | None = None,
         start_symbol: int = 0,
         program_generation: dict[str, Any] | None = None,
+        normalize_plp_actions: bool = False,
+        permissive_filter_enabled: bool = False,
+        permissive_filter_max_avg_frac: float | None = None,
+        permissive_filter_max_avg_count: int | None = None,
+        dt_splitter: str = "random",
+        cc_alpha: float = 0.0,
+        collision_feedback_enc: str = "enc_1",
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -399,11 +414,66 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
         self.program_generation = program_generation
+        self.normalize_plp_actions = normalize_plp_actions
+        self.permissive_filter_enabled = permissive_filter_enabled
+        self.permissive_filter_max_avg_frac = permissive_filter_max_avg_frac
+        self.permissive_filter_max_avg_count = permissive_filter_max_avg_count
+        self.dt_splitter = dt_splitter
+        self.cc_alpha = cc_alpha
+        self.collision_feedback_enc = collision_feedback_enc
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
         random.seed(self.seed_num)
         np.random.seed(self.seed_num)
+
+    def _handle_collision_feedback(
+        self,
+        collision_groups: list[dict[str, Any]],
+        examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    ) -> None:
+        if not collision_groups or examples is None:
+            return
+        ranked_groups = sorted(
+            collision_groups, key=lambda g: g["max_occur"], reverse=True
+        )
+        logging.info("Collision groups (top 5 by max_occur):")
+        for rank, group in enumerate(ranked_groups[:5], start=1):
+            pos_list = group["pos"]
+            neg_list = group["neg"]
+            logging.info(
+                "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
+                rank,
+                group["max_occur"],
+                len(pos_list),
+                len(neg_list),
+                pos_list[:5],
+                neg_list[:10],
+            )
+        best_group = ranked_groups[0]
+        second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
+        prompt = build_collision_repair_prompt(
+            pos_indices=best_group["pos"],
+            neg_indices=best_group["neg"],
+            examples=examples,
+            env_name=self.base_class_name,
+            existing_feature_summary=None,
+            max_per_label=5,
+            collision_feedback_enc=self.collision_feedback_enc,
+            pos_indices_2=second_group["pos"] if second_group else None,
+            neg_indices_2=second_group["neg"] if second_group else None,
+        )
+        try:
+            output_dir = Path(HydraConfig.get().runtime.output_dir)
+        except Exception:  # pylint: disable=broad-exception-caught
+            output_dir = Path.cwd()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        prefix = "collision_prompr_"
+        existing = sorted(output_dir.glob(f"{prefix}*.txt"))
+        next_idx = len(existing) + 1
+        out_path = output_dir / f"{prefix}{next_idx}.txt"
+        out_path.write_text(prompt, encoding="utf-8")
+        logging.info("Collision repair prompt written to %s", out_path)
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -497,17 +567,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             y,
             examples,
         )
-        if collision_groups and examples is not None:
-            best_group = max(collision_groups, key=lambda g: g["max_occur"])
-            prompt = build_collision_repair_prompt(
-                pos_indices=best_group["pos"],
-                neg_indices=best_group["neg"],
-                examples=examples,
-                env_name=self.base_class_name,
-                existing_feature_summary=None,
-                max_per_label=5,
-            )
-            logging.info(f"Collision repair prompt built (len={len(prompt)}).")
+        self._handle_collision_feedback(collision_groups, examples)
 
         n = X.shape[0]
         logging.info(f"N={n}")
@@ -542,6 +602,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             priors_ranked,
             num_dts=self.num_dts,
             program_generation_step_size=self.program_generation_step_size,
+            dt_splitter=self.dt_splitter,
+            cc_alpha=self.cc_alpha,
             dsl_functions=dsl_functions,
         )
         # plps, plp_priors = learn_plps(
@@ -562,20 +624,76 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 continue
             filtered.append((plp, prior))
         if filtered:
-            filtered_plps, filtered_priors = zip(*filtered)
-            plps = list(filtered_plps)
-            plp_priors = list(filtered_priors)
+            filtered_plps_tuple, filtered_priors_tuple = zip(*filtered)
+            plps = list(filtered_plps_tuple)
+            plp_priors = list(filtered_priors_tuple)
         else:
             plps, plp_priors = [], []
 
         logging.info(f"LEN AFTER FILTERING FALSE={len(plps)}")
 
-        valid_plps = log_plp_violation_counts(
-            plps, demonstrations, dsl_functions, top_k=200
-        )
+        valid_plps = log_plp_violation_counts(plps, demonstrations, dsl_functions)
         logging.info(f"LEN AFTER filtering violations={len(valid_plps)}")
 
         plps = valid_plps
+
+        if self.permissive_filter_enabled:
+            if (
+                self.permissive_filter_max_avg_frac is None
+                and self.permissive_filter_max_avg_count is None
+            ):
+                logging.info(
+                    "Permissive PLP filter enabled but no thresholds provided; skipping."
+                )
+            else:
+                set_dsl_functions(dsl_functions)
+                permissive_filtered_plps: list[StateActionProgram] = []
+                total_steps = len(demonstrations.steps)
+                logging.info(
+                    "Applying permissive PLP filter on %d PLPs over %d steps.",
+                    len(plps),
+                    total_steps,
+                )
+                for plp in plps:
+                    total_allowed = 0
+                    total_frac = 0.0
+                    valid = True
+                    for obs, _ in demonstrations.steps:
+                        try:
+                            rows, cols = obs.shape[:2]
+                            n_actions = rows * cols
+                            allowed = 0
+                            for r in range(rows):
+                                for c in range(cols):
+                                    if plp(obs, (r, c)):
+                                        allowed += 1
+                            total_allowed += allowed
+                            total_frac += (allowed / n_actions) if n_actions else 0.0
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            valid = False
+                            break
+                    if not valid or total_steps == 0:
+                        continue
+                    avg_allowed = total_allowed / total_steps
+                    avg_frac = total_frac / total_steps
+                    if (
+                        self.permissive_filter_max_avg_count is not None
+                        and avg_allowed > self.permissive_filter_max_avg_count
+                    ):
+                        continue
+                    if (
+                        self.permissive_filter_max_avg_frac is not None
+                        and avg_frac > self.permissive_filter_max_avg_frac
+                    ):
+                        continue
+                    permissive_filtered_plps.append(plp)
+                logging.info(
+                    "Permissive PLP filter kept %d/%d PLPs.",
+                    len(permissive_filtered_plps),
+                    len(plps),
+                )
+                plps = permissive_filtered_plps
+
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
         particles = []
@@ -584,9 +702,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
 
-        logging.info(particle_log_probs)
-        map_idx = np.argmax(particle_log_probs).squeeze()
-        logging.info(map_idx)
+        # logging.info(particle_log_probs)
+        probs_arr = np.asarray(particle_log_probs)
+        max_val = probs_arr.max()
+        max_indices = np.flatnonzero(probs_arr == max_val)
+        map_idx = int(np.random.choice(max_indices))
+        logging.info(map_idx)  # MAYBE MIXTURE?
         logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
         logging.info(particles[map_idx])
 
@@ -600,12 +721,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             top_particle_probs = np.exp(top_particle_log_probs)
             logging.info(f"top_particle_probs: {top_particle_probs}")
-            policy = LPPPolicy(top_particles, top_particle_probs)
+            # policy = LPPPolicy(top_particles, top_particle_probs)
+            policy = LPPPolicy(
+                top_particles,
+                top_particle_probs,
+                normalize_plp_actions=self.normalize_plp_actions,
+            )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
         else:
             logging.info("no nontrivial particles found")
-            policy = LPPPolicy([StateActionProgram("False")], [1.0])
+            # policy = LPPPolicy([StateActionProgram("False")], [1.0])
+            policy = LPPPolicy(
+                [StateActionProgram("False")],
+                [1.0],
+                normalize_plp_actions=self.normalize_plp_actions,
+            )
 
         if os.getenv("DEBUG_LPP_FEEDBACK", "0").strip().lower() in {
             "1",

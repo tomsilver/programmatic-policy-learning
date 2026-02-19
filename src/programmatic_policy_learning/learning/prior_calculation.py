@@ -6,7 +6,7 @@ import ast
 import inspect
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, List, Sequence, Union
+from typing import Any, Callable, Sequence, Union
 
 Feature = Union[str, Callable[..., Any]]
 
@@ -251,25 +251,25 @@ def feature_log_prior_from_complexity(
 
 
 # -----------------------------
-# List scoring + normalization
+# list scoring + normalization
 # -----------------------------
 
 
 def score_features_log_prior(
     features: Sequence[Feature], w: PriorWeights = PriorWeights()
-) -> List[float]:
+) -> list[float]:
     """
     Input:  [feature1, feature2, ...] (each is source string or callable)
     Output: [log_prior1, log_prior2, ...] aligned with input order
     """
-    out: List[float] = []
+    out: list[float] = []
     for feat in features:
         c = analyze_feature_complexity(feat)
         out.append(feature_log_prior_from_complexity(c, w=w))
     return out
 
 
-def normalize_log_scores_to_probs(log_scores: Sequence[float]) -> List[float]:
+def normalize_log_scores_to_probs(log_scores: Sequence[float]) -> list[float]:
     """Softmax over log-scores to get a proper prior distribution.
 
     Returns probabilities aligned with input order.
@@ -282,7 +282,7 @@ def normalize_log_scores_to_probs(log_scores: Sequence[float]) -> List[float]:
     return [v / z for v in exps]
 
 
-def probs_to_logprobs(probs: Sequence[float], eps: float = 1e-300) -> List[float]:
+def probs_to_logprobs(probs: Sequence[float], eps: float = 1e-300) -> list[float]:
     """Convert probabilities to log-probabilities (aligned with input order).
 
     eps avoids log(0).

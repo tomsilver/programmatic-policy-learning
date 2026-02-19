@@ -1,5 +1,8 @@
 """Utils for Testing LPP Approach."""
 
+# pylint: disable=import-outside-toplevel
+# pylint: disable=line-too-long
+
 from __future__ import annotations
 
 import ast
@@ -30,6 +33,15 @@ from programmatic_policy_learning.dsl.state_action_program import (
     set_dsl_functions,
 )
 
+GymnasiumEnvType: type | None = None
+GymnasiumRecordVideoType: type | None = None
+try:
+    from gymnasium import Env as GymnasiumEnvType
+    from gymnasium.wrappers import RecordVideo as GymnasiumRecordVideoType
+except Exception:  # pylint: disable=broad-exception-caught
+    GymnasiumEnvType = None
+    GymnasiumRecordVideoType = None
+
 
 def run_single_episode(
     env: Any,
@@ -40,21 +52,82 @@ def run_single_episode(
 ) -> float:
     """Run a single episode in the environment using the given policy."""
 
+    record_frames: list[Any] | None = None
     if record_video:
-        env.start_recording_video(video_out_path=video_out_path)
+        if hasattr(env, "start_recording_video"):
+            env.start_recording_video(video_out_path=video_out_path)
+        else:
+            if video_out_path is None:
+                raise ValueError("video_out_path is required when using RecordVideo.")
+            out_path = Path(video_out_path)
+            base_env = env
+            # Unwrap common wrapper chains (GGGEnvWithTypes -> GymToGymnasium -> gym env)
+            while hasattr(base_env, "env"):
+                base_env = getattr(base_env, "env")
+            if hasattr(base_env, "_env"):
+                base_env = getattr(base_env, "_env")
 
-    obs, _ = env.reset()
+            if (
+                GymnasiumEnvType is not None
+                and GymnasiumRecordVideoType is not None
+                and isinstance(base_env, GymnasiumEnvType)
+            ):
+                env = GymnasiumRecordVideoType(  # type: ignore[operator]
+                    base_env,
+                    video_folder=str(out_path.parent),
+                    name_prefix=out_path.stem,
+                    episode_trigger=lambda _: True,
+                )
+            else:
+                # Fallback: manual frame capture for legacy gym envs.
+                record_frames = []
+
+    reset_out = env.reset()
+    if isinstance(reset_out, tuple) and len(reset_out) == 2:
+        obs, _ = reset_out
+    else:
+        obs = reset_out
+    if record_frames is not None and hasattr(env, "render"):
+        try:
+            frame = env.render()
+            if frame is not None:
+                record_frames.append(frame)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
     total_reward = 0.0
     for _ in range(max_num_steps):
         action = policy(obs)
-        new_obs, reward, done, _, _ = env.step(action)
+        step_out = env.step(action)
+        if isinstance(step_out, tuple) and len(step_out) == 4:
+            new_obs, reward, done, _ = step_out
+            terminated, truncated = done, False
+        else:
+            new_obs, reward, terminated, truncated, _ = step_out
         total_reward += reward
 
         obs = new_obs
+        if record_frames is not None and hasattr(env, "render"):
+            try:
+                frame = env.render()
+                if frame is not None:
+                    record_frames.append(frame)
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
 
-        if done:
+        if terminated or truncated:
             break
     env.close()
+
+    if record_frames is not None and video_out_path is not None:
+        try:
+            import imageio.v2 as imageio  # type: ignore
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            raise RuntimeError(
+                "Manual video recording requires imageio. "
+                "Install with `pip install imageio`."
+            ) from e
+        if record_frames:
+            imageio.mimsave(video_out_path, record_frames, fps=10)
 
     return total_reward
 
@@ -247,13 +320,11 @@ def log_plp_violation_counts(
     plps: list[StateActionProgram],
     demonstrations: Any,
     dsl_functions: dict[str, Any],
-    top_k: int = 10,
 ) -> list[StateActionProgram]:
     """Log how many demo steps each PLP fails (False on expert action)."""
     set_dsl_functions(dsl_functions)
     counts: list[tuple[int, StateActionProgram, list[Any], list[Any]]] = []
     total_steps = len(demonstrations.steps)
-    logging.info(total_steps)
 
     for plp in plps:
         violations = 0
@@ -272,7 +343,7 @@ def log_plp_violation_counts(
 
     counts.sort(key=lambda item: item[0])
     logging.info("PLP violation counts (lower is better):")
-    for violations, plp, _, _ in counts[:top_k]:
+    for violations, plp, _, _ in counts[:10]:
         rate = (violations / total_steps) if total_steps else 0.0
         logging.info(
             "violations=%d/%d (%.2f%%) | plp=%s",
@@ -286,7 +357,7 @@ def log_plp_violation_counts(
         #     actionn = act_all[idx]
         #     logging.info(actionn)
         #     logging.info(item[actionn])
-    return [plp for _, plp, _, _ in counts[:top_k]]
+    return [plp for _, plp, _, _ in counts]
 
 
 def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
@@ -298,7 +369,7 @@ def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
     totals = np.asarray(X.sum(axis=0)).ravel()
     dead_idxs = np.where(totals == 0)[0].tolist()
     if dead_idxs:
-        dead = [str(programs[i]) for i in dead_idxs]  #:20
+        dead = [str(programs[i]) for i in dead_idxs[:10]]  #:20
         logging.info(f"{len(dead_idxs)} features never fire. Examples: {dead}")
 
 
@@ -320,6 +391,81 @@ def _format_one_example(
     return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
 
 
+def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
+    lines = ["LEGEND:"]
+    for token, char in symbol_map.items():
+        lines.append(f"  {char} = {token}")
+    if "empty" in symbol_map:
+        lines.append("  * = action cell")
+    else:
+        lines.append("  * = action cell")
+    return "\n".join(lines)
+
+
+def _format_one_example_ascii(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+    symbol_map: dict[str, str],
+) -> str:
+    """Format one labeled (state, action) example using ASCII token codes."""
+    h, w = s.shape[0], s.shape[1]
+    code_width = max((len(code) for code in symbol_map.values()), default=1)
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s[r, c] if in_bounds else "OOB"
+    action_code = "*" * code_width
+
+    rows = []
+    for rr in range(h):
+        row_codes = []
+        for cc in range(w):
+            tok = str(s[rr, cc])
+            code = symbol_map.get(tok, "?").rjust(code_width)
+            if in_bounds and rr == r and cc == c:
+                code = action_code
+            row_codes.append(f"'{code}'")
+        rows.append("  [" + ", ".join(row_codes) + "]")
+    grid = "\n".join(rows)
+
+    return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
+
+
+def _format_one_example_coords(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    """Format one labeled (state, action) example using coordinate lists."""
+    s_str = s.astype(str)
+    h, w = s_str.shape[0], s_str.shape[1]
+    tokens, counts = np.unique(s_str, return_counts=True)
+    bg_idx = int(np.argmax(counts)) if tokens.size else -1
+    background = tokens[bg_idx] if bg_idx >= 0 else ""
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s_str[r, c] if in_bounds else "OOB"
+
+    lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
+    if background:
+        lines.append(f"background={background}")
+
+    for tok in tokens:
+        if tok == background:
+            continue
+        coords = np.argwhere(s_str == tok)
+        coord_text = ", ".join(f"({rr}, {cc})" for rr, cc in coords)
+        lines.append(f"{tok}: {coord_text}")
+
+    return "\n".join(lines)
+
+
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
@@ -328,6 +474,9 @@ def build_collision_repair_prompt(
     env_name: str | None = None,
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
+    collision_feedback_enc: str = "enc_1",
+    pos_indices_2: list[int] | None = None,
+    neg_indices_2: list[int] | None = None,
 ) -> str:
     """Build an LLM prompt that proposes features to resolve label
     collisions."""
@@ -336,74 +485,201 @@ def build_collision_repair_prompt(
             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
         )
 
-    pos_indices = pos_indices[:max_per_label]
-    neg_indices = neg_indices[:max_per_label]
+    rng = np.random.default_rng()
+    if len(pos_indices) > max_per_label:
+        pos_indices = rng.choice(
+            pos_indices, size=max_per_label, replace=False
+        ).tolist()
+    if len(neg_indices) > max_per_label:
+        neg_indices = rng.choice(
+            neg_indices, size=max_per_label, replace=False
+        ).tolist()
+
+    use_ascii = collision_feedback_enc == "enc_1"
+    if collision_feedback_enc not in {"enc_1", "enc_2"}:
+        raise ValueError("collision_feedback_enc must be 'enc_1' or 'enc_2'")
+
+    symbol_map: dict[str, str] = {}
+    legend_block = ""
+    if use_ascii and env_name:
+        symbol_map = grid_hint_config.get_symbol_map(env_name)
+        legend_block = _format_ascii_legend(symbol_map) + "\n\n"
 
     pos_blocks = []
     for idx in pos_indices:
         s, a = examples[idx]
-        pos_blocks.append(_format_one_example(s, a, label=1, idx=idx))
+        if use_ascii:
+            pos_blocks.append(
+                _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
+            )
+        else:
+            pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
 
     neg_blocks = []
     for idx in neg_indices:
         s, a = examples[idx]
-        neg_blocks.append(_format_one_example(s, a, label=0, idx=idx))
+        if use_ascii:
+            neg_blocks.append(
+                _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
+            )
+        else:
+            neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
-    env_line = f"ENV: {env_name}\n\n" if env_name else ""
-    feat_line = ""
-    if existing_feature_summary:
-        feat_line = f"EXISTING FEATURES (summary):\n{existing_feature_summary}\n\n"
+    pos_blocks_2: list[str] = []
+    neg_blocks_2: list[str] = []
+    if pos_indices_2 and neg_indices_2:
+        for idx in pos_indices_2:
+            s, a = examples[idx]
+            if use_ascii:
+                pos_blocks_2.append(
+                    _format_one_example_ascii(
+                        s, a, label=1, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            else:
+                pos_blocks_2.append(_format_one_example_coords(s, a, label=1, idx=idx))
+        for idx in neg_indices_2:
+            s, a = examples[idx]
+            if use_ascii:
+                neg_blocks_2.append(
+                    _format_one_example_ascii(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            else:
+                neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
-    prompt = f"""
-SYSTEM:
-You are an expert feature-library designer for Logical Programmatic Policies (LPP) in grid-based games.
-Your task is to REPAIR representational failures in an existing feature set.
+    N_NEW = "N_NEW"
+    TOKEN = "TOKEN"
+    DRs = "DRs"
+    K = "K"
+    bucket2_block = ""
+    if pos_blocks_2 or neg_blocks_2:
+        bucket2_block = f"""
 
-{env_line}CONTEXT:
-- Observation s is a 2D grid (list of lists of tokens).
-- Action a is a clicked cell coordinate (row, col).
-- Each feature is a Python function f(s, a) -> bool.
-- Features must generalize across board sizes and positions.
-- Features depend ONLY on (s, a). No history.
-
-{feat_line}COLLISION EVIDENCE:
-All examples below produce IDENTICAL feature vectors under the current feature set (same feature-key),
-yet the expert labels differ. Therefore, the current features are provably insufficient.
-
-POSITIVE EXAMPLES (label = 1):
-{chr(10).join(pos_blocks)}
+BUCKET 2
+POSITIVE EXAMPLE (label = 1):
+{pos_blocks_2[0] if pos_blocks_2 else ""}
 
 NEGATIVE EXAMPLES (label = 0):
-{chr(10).join(neg_blocks)}
+{chr(10).join(neg_blocks_2[:5])}
+"""
 
-TASK:
-Propose new boolean feature functions that distinguish positives from negatives WITHIN THIS BUCKET.
+    prompt = f"""
+## SYSTEM
 
-Each proposed feature must:
-1) Be True for most positives and False for most negatives (or vice versa) within this bucket
-2) Capture a meaningful semantic distinction (safety, reachability, blocking, threat, progress, etc.)
-3) Be board-size invariant (no hard-coded coordinates)
-4) Use ONLY (s, a)
-5) Return a boolean
+You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
 
-DO NOT:
-- Hard-code exact positions
-- Memorize these examples
-- Use random logic
-- Output anything other than JSON
+Your job:
+Given evidence of feature collisions, propose NEW boolean feature templates f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
 
-OUTPUT FORMAT (STRICT JSON ONLY):
+A feature collision means:
+All provided examples have IDENTICAL feature vectors under the current feature set (same feature-key),
+yet labels differ. Therefore, the current features are provably insufficient.
+
+You must propose new feature families that break this indistinguishability.
+
+---
+
+## ENVIRONMENT
+
+- Grid observation s is a 2D list of tokens (strings).
+- Action a is a clicked cell coordinate: a = (row, col).
+- a may contain numpy integers.
+
+Every feature MUST begin with this exact validation logic:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+No imports. Only Python built-ins.
+
+---
+
+## TOKEN RESTRICTIONS (CRITICAL)
+
+You MUST NOT use:
+- any raw token characters like '.', '#', '*', etc.
+- any constants like rfts.EMPTY, rfts.LEFT_ARROW, etc.
+
+You MUST use ONLY these placeholders inside feature code:
+- ${TOKEN}  (single token placeholder)
+- ${DRs}    (list of (dr, dc) tuples placeholder)
+- ${K}      (small positive integer placeholder)
+
+No other placeholders. No token lists. No multiple distinct token placeholders.
+Each feature may use at most 3 placeholders total.
+
+---
+
+## COLLISION EVIDENCE
+
+All examples below produce IDENTICAL feature vectors under the current feature set,
+yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+NOTE: Each bucket below may require different features to resolve.
+
+BUCKET 1
+POSITIVE EXAMPLE (label = 1):
+{legend_block}{pos_blocks[0] if pos_blocks else ""}
+
+NEGATIVE EXAMPLES (label = 0):
+{chr(10).join(neg_blocks[:5])}
+
+{bucket2_block}
+
+---
+
+## TASK
+
+1) Carefully compare the POSITIVE vs NEGATIVE examples.
+2) Identify structural distinctions that are NOT captured by typical local templates.
+3) Propose NEW feature templates that can separate (at least some of) the positives from negatives in THIS bucket.
+
+Important:
+- Do NOT generate near-duplicates of the same adjacency/scan/count family.
+- Prefer features that capture *relational structure*.
+- Do NOT overfit to board size. No hard-coded row numbers.
+
+---
+
+## OUTPUT FORMAT (STRICT)
+
+You MUST output ONLY valid JSON, directly parsable by json.loads().
+No markdown. No prose.
+
+Return exactly this structure:
 
 {{
   "features": [
     {{
-      "id": "f_new_1",
-      "name": "short_descriptive_name",
-      "source": "def f_new_1(s, a):\\n    <python code>\\n"
-    }}
+      "id": "f101",
+      "name": "f101",
+      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
+      "source": "def f101(s, a):\\n    ...\\n"
+    }},
+    ...
   ]
 }}
-""".strip()
+
+Rules:
+- ids/names must be sequential: f101, f102, ...
+- Provide EXACTLY {N_NEW} new features.
+- Each "source" must be a valid Python function string with \\n escaped newlines.
+- Every feature must return True/False.
+- Every feature must include the exact action validation boilerplate shown above.
+- Use only ${TOKEN}, ${DRs}, ${K} placeholders.
+
+FINAL CHECK:
+- No raw tokens '.', 'A', 'D', 'F', 'R', 'S' appear in code.
+- No stf.* appears in code.
+- Output is valid JSON only.
+
+"""
     return prompt
 
 

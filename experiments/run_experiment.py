@@ -245,6 +245,10 @@ def evaluate_all(cfg: DictConfig) -> None:
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
+    logging.info(
+        "Approach config (cfg.approach):\n%s",
+        OmegaConf.to_yaml(cfg.approach, resolve=True),
+    )
 
     if cfg.eval.mode == 1:
         evaluate_all(cfg)
@@ -278,15 +282,26 @@ def _main(cfg: DictConfig) -> None:
 
         # Test the approach on new envs
         if hasattr(approach, "test_policy_on_envs"):
+            train_accuracies = approach.test_policy_on_envs(
+                base_class_name=cfg.env.make_kwargs.base_name,
+                test_env_nums=range(0, 11),
+                max_num_steps=50,
+                record_videos=False,
+                video_format="mp4",
+            )
+            logging.info(train_accuracies)
+            # logging.info(df["total_rewards"].iloc[0])
+            logging.info(sum(train_accuracies) / len(train_accuracies))
+
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
-                test_env_nums=range(11, 20),
+                test_env_nums=range(10, 20),
                 max_num_steps=50,
                 record_videos=False,
                 video_format="mp4",
             )
             logging.info(test_accuracies)
-            logging.info(df["total_rewards"].iloc[0])
+            # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(test_accuracies) / len(test_accuracies))
         else:
             logging.warning(

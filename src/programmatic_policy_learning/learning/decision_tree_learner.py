@@ -25,6 +25,8 @@ def learn_plps(
     program_prior_log_probs: list[float],
     num_dts: int = 5,
     program_generation_step_size: int = 10,
+    dt_splitter: str = "random",
+    cc_alpha: float = 0.0,
     dsl_functions: dict | None = None,
 ) -> tuple[list[StateActionProgram], list[float]]:
     """
@@ -51,7 +53,13 @@ def learn_plps(
 
     for i in range(0, num_programs, program_generation_step_size):
         logging.info(f"Learning plps with {i+1} programs")
-        for clf in learn_single_batch_decision_trees(y, num_dts, X[:, : i + 1]):
+        for clf in learn_single_batch_decision_trees(
+            y,
+            num_dts,
+            X[:, : i + 1],
+            dt_splitter=dt_splitter,
+            cc_alpha=cc_alpha,
+        ):
             plp, plp_prior_log_prob = extract_plp_from_dt(
                 clf, programs, program_prior_log_probs, dsl_functions
             )
@@ -62,7 +70,11 @@ def learn_plps(
 
 
 def learn_single_batch_decision_trees(
-    y: list[bool], num_dts: int, X_i: csr_matrix
+    y: list[bool],
+    num_dts: int,
+    X_i: csr_matrix,
+    dt_splitter: str = "random",
+    cc_alpha: float = 0.0,
 ) -> list[DecisionTreeClassifier]:
     """
     Parameters
@@ -79,7 +91,16 @@ def learn_single_batch_decision_trees(
     clfs = []
 
     for seed in range(num_dts):
-        clf = DecisionTreeClassifier(random_state=seed)
+        # clf = DecisionTreeClassifier(random_state=seed)
+        clf = DecisionTreeClassifier(
+            random_state=seed,
+            splitter=dt_splitter,
+            class_weight="balanced",
+            max_depth=None,
+            min_samples_leaf=1,
+            ccp_alpha=cc_alpha,
+        )
+
         clf.fit(X_i, y)
         # logging.info(
         #     "Trained DT seed=%d | nodes=%d depth=%d | train_acc=%.3f",
