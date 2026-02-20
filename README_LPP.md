@@ -264,8 +264,19 @@ Use provider-backed envs when env construction needs custom logic or external re
 Current providers related to this project in `EnvRegistry`:
 - `ggg`
 - `prbench`
+- `kinder`
 
 For new provider integration:
 1. Add env yaml under `experiments/conf/env/`.
 2. Add provider function in `src/programmatic_policy_learning/envs/providers/`.
 3. Register provider in `src/programmatic_policy_learning/envs/registry.py`.
+
+## Continuous Action Environments
+
+Continuous action environments are supported via the `kinder` provider.
+
+To run a rollout with the expert (using human-designed programmatic policies), use:
+
+```bash
+python experiments/scripts/run_motion2d_rollout.py --passages 1 --seed 0
+```

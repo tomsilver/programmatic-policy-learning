@@ -472,7 +472,7 @@ def build_collision_repair_prompt(
     examples: list[tuple[np.ndarray, tuple[int, int]]],
     *,
     env_name: str | None = None,
-    existing_feature_summary: str | None = None,
+    existing_feature_summary: str | None = None,  # pylint: disable=unused-argument
     max_per_label: int = 5,
     collision_feedback_enc: str = "enc_1",
     pos_indices_2: list[int] | None = None,

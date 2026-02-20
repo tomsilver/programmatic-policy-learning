@@ -764,7 +764,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     y=y_bool,
                     feature_fns=feature_fns,
                 )
-                prompt = build_dnf_failure_prompt(payload, examples)
+                prompt = build_dnf_failure_prompt(  # pylint: disable=unused-variable
+                    payload, examples
+                )
                 # logging.info("DEBUG_LPP_FEEDBACK payload: %s", payload)
                 # logging.info("DEBUG_LPP_FEEDBACK prompt:\n%s", prompt)
 

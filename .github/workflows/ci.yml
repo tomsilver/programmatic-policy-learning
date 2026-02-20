@@ -2,6 +2,9 @@ name: CI Checks
 
 on: [push]
 
+env:
+  UV_LOCK_TIMEOUT: "1200"
+
 jobs:
   autoformat:
     runs-on: ubuntu-latest
@@ -14,6 +17,7 @@ jobs:
           jupyter: true
       - name: Run isort to organize imports
         uses: isort/isort-action@master
+        
   linting:
     runs-on: ubuntu-latest
     strategy:
@@ -33,6 +37,7 @@ jobs:
     - name: Lint
       run: |
         uv run pytest . --pylint -m pylint --pylint-rcfile=.pylintrc
+        
   static-type-checking:
     runs-on: ubuntu-latest
     strategy:
@@ -52,6 +57,7 @@ jobs:
     - name: Mypy
       run: |
         uv run mypy .
+        
   unit-tests:
     runs-on: ubuntu-latest
     strategy:
