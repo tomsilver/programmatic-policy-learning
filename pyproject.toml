@@ -26,7 +26,8 @@ dependencies = [
    "stable-baselines3[extra]>=2.4.0,<3.0",
    "scikit-learn",
     "cloudpickle>=2.0.0",
-
+    "tqdm",
+    "types-tqdm",
 ]
 
 [project.optional-dependencies]

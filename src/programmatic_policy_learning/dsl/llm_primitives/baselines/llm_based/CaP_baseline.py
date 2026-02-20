@@ -23,6 +23,7 @@ from prpl_llm_utils.code import (
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
+from tqdm import tqdm
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
@@ -177,6 +178,9 @@ def run(
     # ------------------------------------------------------------
     # 2) Collect expert trajectories
     # ------------------------------------------------------------
+    logging.info(
+        "Collecting %d expert trajectories for %s ...", num_initial_states, env_name
+    )
     expert = get_grid_expert(env_name)
     trajectories: list[list[tuple[Any, Any, Any]]] = []
 
@@ -185,6 +189,7 @@ def run(
         traj = collect_full_episode(env, expert, sample_count=None)
         env.close()
         trajectories.append(traj)
+    logging.info("Collected %d trajectories.", len(trajectories))
 
     # ------------------------------------------------------------
     # 3) All trajectories hint extraction
@@ -205,12 +210,12 @@ def run(
         all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
 
     combined_text = "\n\n".join(all_traj_texts)
+    logging.info("Building prompt (encoding=%s) ...", encoding_method)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     query = Query(
-        prompt,  # , hyperparameters={"temperature": 0.0, "seed": seed}
+        prompt, hyperparameters={"temperature": 0.0, "seed": seed}
     )  # "top_p": 1.0
-    logging.info("LLM hyperparameters: %s", query.hyperparameters)
 
     # example demo for reprompt check
     env0 = env_factory(0, env_name)
@@ -225,13 +230,17 @@ def run(
             [action_space.contains],
         ),
     ]
+    logging.info("Querying LLM (%s) — this may take a while ...", llm_client.get_id())
+    start_time = time.time()
     response = query_with_reprompts(
         llm_client,
         query,
         reprompt_checks=reprompt_checks,
         max_attempts=5,
     )
-
+    elapsed_time = time.time() - start_time
+    logging.info("LLM response received in %.2f seconds.", elapsed_time)
+    logging.info("LLM response: %s", response.text[:100] + "...")
     final_code = response.text
     return final_code
 
@@ -266,7 +275,7 @@ def _parse_cli_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Use OpenAIResponsesModel instead of OpenAIModel. "
-            "This is required for response-style models like gpt5.2-pro."
+            "This is required for response-style models like gpt-5.2-pro."
         ),
     )
     parser.add_argument(
@@ -401,7 +410,7 @@ def _evaluate_policy_function(
     expert_results: list[bool] = []
     expert_fn = get_grid_expert(env_name) if run_expert else None
 
-    for env_idx in test_env_nums:
+    for env_idx in tqdm(test_env_nums, desc="Evaluating envs"):
         env = env_builder(env_idx)
 
         def safe_policy(obs: Any, *, _env: Any = env) -> Any:
@@ -619,6 +628,8 @@ def main() -> None:
     #  manual_eval() if we want to test a script manually (offline mode)
 
     args = _parse_cli_args()
+    logging.info("CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s",
+                 args.env, args.model, args.encodings, args.seeds)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
@@ -632,6 +643,7 @@ def main() -> None:
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
+            logging.info("--- env=%s  encoding=%s  seed=%d ---", args.env, encoding, seed)
             _configure_rng(seed)
             cache_base = args.cache_path
             cache_dir = (
@@ -645,7 +657,8 @@ def main() -> None:
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            use_response_model = args.use_response_model or args.model == "gpt5.2-pro"
+            use_response_model = args.use_response_model or args.model == "gpt-5.2-pro"
+            logging.info("Creating LLM client (use_response_model=%s) ...", use_response_model)
             if use_response_model:
                 response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
                 if response_cls is None:
@@ -657,6 +670,7 @@ def main() -> None:
                 client = response_cls(args.model, cache)
             else:
                 client = OpenAIModel(args.model, cache)
+            logging.info("LLM client created: %s", client.get_id())
             final_code = run(
                 client,
                 args.env,
@@ -769,4 +783,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+        force=True,
+    )
+    logging.info("CaP_baseline starting ...")
     main()
