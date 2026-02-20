@@ -127,6 +127,38 @@ GGG environments in this repo:
 - `feature_generator.py` (legacy feature generation path)
 - `py_feature_generator.py` (current main feature generation path)
 
+#### `llm_primitives/baselines/`
+Baseline Overview:
+
+`CaP_baseline.py` implements the Code‑as‑Policies (CaP) baseline for grid environments. It collects expert trajectories, serializes them into a structured text format (with optional encoding), prompts an LLM to synthesize a policy function, and optionally evaluates the generated policy (and the expert) across multiple test environments with success‑rate reporting and plots. Caching is supported via SQLite to avoid repeated LLM calls, and the baseline can run across multiple seeds and encodings to compare robustness.
+
+How to Run:
+
+```bash
+python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
+  --env StopTheFall \
+  --encodings 4 \
+  --seeds 0 1 2 \
+  --model gpt-4.1 \
+  --num-initial-states 4 \
+  --max-steps-per-traj 40 \
+  --eval-env-nums 0 1 2 3 4 \
+  --plot-results
+```
+
+Using gpt5.2-pro:
+
+```bash
+  python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
+  --env StopTheFall \
+  --encodings 4 \
+  --seeds 0 \
+  --model gpt5.2-pro \
+  --use-response-model
+```
+
+
+
 #### `llm_primitives/hint_generation/`
 
 **LLM-based**:
@@ -145,11 +177,11 @@ Run extractor:
 python -m programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor
 ```
 **VLM-based**:
-- `src/programmatic_policy_learning/dsl/llm_primitives/baselines/vlm_based/video_frames_hint_extractor.py`
+- `src/programmatic_policy_learning/dsl/llm_primitives/hint_generation/vlm_based/video_frames_hint_extractor.py`
 - Update `env_name` (and paths if needed) in `__main__`, then run:
 
 ```bash
-python src/programmatic_policy_learning/dsl/llm_primitives/baselines/vlm_based/video_frames_hint_extractor.py
+python src/programmatic_policy_learning/dsl/llm_primitives/hint_generation/vlm_based/video_frames_hint_extractor.py
 ```
 
 #### `llm_primitives/prompts/`

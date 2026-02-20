@@ -13,7 +13,7 @@ dependencies = [
    "numpy",
    "gymnasium[all]>=1.0.0",
    "prpl_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=prpl-utils",
-   "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=prpl-llm-utils",
+   "prpl_llm_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@b631689446529762276e006f880c5e01d46918f0#subdirectory=prpl-llm-utils",
    "tomsgeoms2d@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=toms-geoms-2d",
    "relational_structs@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=relational-structs",
    "prbench[geom2d]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@2fb2da808c5c3224dd9acb2826916102592926ce#subdirectory=prbench",
@@ -39,6 +39,9 @@ develop = [
     "pylint>=2.14.5",
     "pytest-pylint>=0.18.0",
     "pytest>=7.2.2",
+]
+kinder = [
+   "kinder[all]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=kinder",
 ]
 
 [tool.setuptools.packages.find]

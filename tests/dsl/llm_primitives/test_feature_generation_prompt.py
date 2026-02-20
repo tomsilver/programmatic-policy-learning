@@ -122,7 +122,6 @@ def test_query_prompt_llm_online() -> None:
     assert output_path.exists()
     assert output_path.read_text(encoding="utf-8").strip()
 
-    print(response_text)
     if response_text.startswith("```"):
         response_text = response_text.strip("`").lstrip("json").strip()
 

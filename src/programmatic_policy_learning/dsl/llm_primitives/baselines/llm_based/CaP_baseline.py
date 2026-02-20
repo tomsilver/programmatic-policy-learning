@@ -14,6 +14,7 @@ from typing import Any, Callable, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
+from prpl_llm_utils import models as llm_models
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.code import (
     FunctionOutputRepromptCheck,
@@ -261,6 +262,14 @@ def _parse_cli_args() -> argparse.Namespace:
         "--model",
         default="gpt-4.1",
         help="LLM identifier passed to OpenAIModel (default: gpt-4.1).",
+    )
+    parser.add_argument(
+        "--use-response-model",
+        action="store_true",
+        help=(
+            "Use OpenAIResponsesModel instead of OpenAIModel. "
+            "This is required for response-style models like gpt5.2-pro."
+        ),
     )
     parser.add_argument(
         "--num-initial-states",
@@ -638,7 +647,17 @@ def main() -> None:
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            client = OpenAIModel(args.model, cache)
+            use_response_model = args.use_response_model or args.model == "gpt5.2-pro"
+            if use_response_model:
+                response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
+                if response_cls is None:
+                    raise ImportError(
+                        "OpenAIResponsesModel is not available in prpl_llm_utils. "
+                        "Install/upgrade the package or disable --use-response-model."
+                    )
+                client = response_cls(args.model, cache)
+            else:
+                client = OpenAIModel(args.model, cache)
             final_code = run(
                 client,
                 args.env,
