@@ -14,12 +14,13 @@ from typing import Any, Callable, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
+from prpl_llm_utils import models as llm_models
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.code import (
     FunctionOutputRepromptCheck,
     SyntaxRepromptCheck,
 )
-from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel, OpenAIResponsesModel
+from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
@@ -648,7 +649,13 @@ def main() -> None:
             cache = SQLite3PretrainedLargeModelCache(cache_path)
             use_response_model = args.use_response_model or args.model == "gpt5.2-pro"
             if use_response_model:
-                client = OpenAIResponsesModel(args.model, cache)
+                response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
+                if response_cls is None:
+                    raise ImportError(
+                        "OpenAIResponsesModel is not available in prpl_llm_utils. "
+                        "Install/upgrade the package or disable --use-response-model."
+                    )
+                client = response_cls(args.model, cache)
             else:
                 client = OpenAIModel(args.model, cache)
             final_code = run(
