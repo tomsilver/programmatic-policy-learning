@@ -88,7 +88,6 @@ def _compute_likelihood_worker(
             #     continue
 
             expert_allowed = plp(obs, action)
-            # input()
             # Likelihood model:
             # - If expert action is allowed: (1-eps) * Uniform(allowed set)
             # - Else: eps * Uniform(disallowed set)

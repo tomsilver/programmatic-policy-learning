@@ -161,7 +161,6 @@ def run(
     function_name: str = "policy",
 ) -> str:
     """Collect multiple env trajectories and summarise hints via the LLM."""
-
     # ------------------------------------------------------------
     # 1) Setup encoder + analyzer
     # ------------------------------------------------------------
@@ -207,10 +206,9 @@ def run(
 
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
-    input(prompt)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     query = Query(
-        prompt, hyperparameters={"temperature": 0.0, "seed": seed}
+        prompt,  # , hyperparameters={"temperature": 0.0, "seed": seed}
     )  # "top_p": 1.0
     logging.info("LLM hyperparameters: %s", query.hyperparameters)
 
@@ -651,6 +649,7 @@ def main() -> None:
             if use_response_model:
                 response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
                 if response_cls is None:
+
                     raise ImportError(
                         "OpenAIResponsesModel is not available in prpl_llm_utils. "
                         "Install/upgrade the package or disable --use-response-model."
