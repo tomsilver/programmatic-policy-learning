@@ -263,6 +263,14 @@ def _parse_cli_args() -> argparse.Namespace:
         help="LLM identifier passed to OpenAIModel (default: gpt-4.1).",
     )
     parser.add_argument(
+        "--use-response-model",
+        action="store_true",
+        help=(
+            "Use ResponseOpenAIModel instead of OpenAIModel. "
+            "This is required for response-style models like gpt5.2-pro."
+        ),
+    )
+    parser.add_argument(
         "--num-initial-states",
         type=int,
         default=4,
@@ -638,7 +646,18 @@ def main() -> None:
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            client = OpenAIModel(args.model, cache)
+            use_response_model = args.use_response_model or args.model == "gpt5.2-pro"
+            if use_response_model:
+                try:
+                    from prpl_llm_utils.models import ResponseOpenAIModel
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    raise ImportError(
+                        "ResponseOpenAIModel is not available in prpl_llm_utils. "
+                        "Install/upgrade the package or disable --use-response-model."
+                    ) from exc
+                client = ResponseOpenAIModel(args.model, cache)
+            else:
+                client = OpenAIModel(args.model, cache)
             final_code = run(
                 client,
                 args.env,
