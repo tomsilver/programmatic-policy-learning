@@ -18,13 +18,12 @@ import kinder
 import numpy as np
 from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
 
-logging.basicConfig(level=logging.INFO)
-
 from programmatic_policy_learning.approaches.experts.motion2d_experts import (
     Motion2DRejectionSamplingExpert,
     create_motion2d_expert,
 )
 
+logging.basicConfig(level=logging.INFO)
 _MAX_STEPS = 500
 
 
@@ -55,14 +54,23 @@ def log_obs(obs: np.ndarray) -> None:
         logging.info("Passage %d: wall_x=%.4f", i, wall_x)
         logging.info(
             "  Bottom obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
-            bot_y, bot_h, bot_y, bot_y + bot_h,
+            bot_y,
+            bot_h,
+            bot_y,
+            bot_y + bot_h,
         )
         logging.info(
             "  Top    obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
-            top_y, top_h, top_y, top_y + top_h,
+            top_y,
+            top_h,
+            top_y,
+            top_y + top_h,
         )
         logging.info(
-            "  Gap: [%.4f, %.4f], center=%.4f", gap_bottom, gap_top, passage_y,
+            "  Gap: [%.4f, %.4f], center=%.4f",
+            gap_bottom,
+            gap_top,
+            passage_y,
         )
 
 
@@ -132,9 +140,7 @@ def main(args: argparse.Namespace) -> None:
     if terminated:
         logging.info("Done at step %d!", steps)
     else:
-        logging.warning(
-            "Reached max steps (%d) without termination", _MAX_STEPS
-        )
+        logging.warning("Reached max steps (%d) without termination", _MAX_STEPS)
     logging.info("Total reward: %.1f", total_reward)
 
     if frames:
