@@ -10,12 +10,15 @@ Usage::
 """
 
 import argparse
+import logging
 from pathlib import Path
 
 import gymnasium as gym
 import kinder
 import numpy as np
 from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
+
+logging.basicConfig(level=logging.INFO)
 
 from programmatic_policy_learning.approaches.experts.motion2d_experts import (
     Motion2DRejectionSamplingExpert,
@@ -25,12 +28,12 @@ from programmatic_policy_learning.approaches.experts.motion2d_experts import (
 _MAX_STEPS = 500
 
 
-def print_obs(obs: np.ndarray) -> None:
-    """Print a structured summary of the observation vector."""
-    print(f"Robot:     x={obs[0]:.4f}, y={obs[1]:.4f}, theta={obs[2]:.4f}")
-    print(f"           base_radius={obs[3]:.4f}")
-    print(f"Target:    x={obs[9]:.4f}, y={obs[10]:.4f}, theta={obs[11]:.4f}")
-    print(f"           width={obs[17]:.4f}, height={obs[18]:.4f}")
+def log_obs(obs: np.ndarray) -> None:
+    """Log a structured summary of the observation vector."""
+    logging.info("Robot:     x=%.4f, y=%.4f, theta=%.4f", obs[0], obs[1], obs[2])
+    logging.info("           base_radius=%.4f", obs[3])
+    logging.info("Target:    x=%.4f, y=%.4f, theta=%.4f", obs[9], obs[10], obs[11])
+    logging.info("           width=%.4f, height=%.4f", obs[17], obs[18])
 
     num_obstacles = (len(obs) - 19) // 10
     num_passages = num_obstacles // 2
@@ -49,16 +52,18 @@ def print_obs(obs: np.ndarray) -> None:
         gap_top = top_y
         passage_y = (gap_bottom + gap_top) / 2
 
-        print(f"Passage {i}: wall_x={wall_x:.4f}")
-        print(
-            f"  Bottom obstacle: y={bot_y:.4f}, height={bot_h:.4f}, "
-            f"y-range=[{bot_y:.4f}, {bot_y + bot_h:.4f}]"
+        logging.info("Passage %d: wall_x=%.4f", i, wall_x)
+        logging.info(
+            "  Bottom obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
+            bot_y, bot_h, bot_y, bot_y + bot_h,
         )
-        print(
-            f"  Top    obstacle: y={top_y:.4f}, height={top_h:.4f}, "
-            f"y-range=[{top_y:.4f}, {top_y + top_h:.4f}]"
+        logging.info(
+            "  Top    obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
+            top_y, top_h, top_y, top_y + top_h,
         )
-        print(f"  Gap: [{gap_bottom:.4f}, {gap_top:.4f}], " f"center={passage_y:.4f}")
+        logging.info(
+            "  Gap: [%.4f, %.4f], center=%.4f", gap_bottom, gap_top, passage_y,
+        )
 
 
 def save_video(frames: list[np.ndarray], path: str) -> None:
@@ -66,7 +71,7 @@ def save_video(frames: list[np.ndarray], path: str) -> None:
     clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
     clip = ImageSequenceClip(clean, fps=20)
     clip.write_videofile(path, codec="libx264", logger=None)
-    print(f"\nVideo saved to: {path}  ({len(clean)} frames)")
+    logging.info("Video saved to: %s  (%d frames)", path, len(clean))
 
 
 def make_env(
@@ -114,22 +119,23 @@ def main(args: argparse.Namespace) -> None:
     env_id = f"kinder/Motion2D-p{args.passages}-v0"
     env, obs, expert = make_env(env_id, args.seed)
 
-    print(f"Env: {env_id}")
-    print(f"Observation space: {env.observation_space}")
-    print(f"Action space: {env.action_space}")
-    print(f"Obs shape: {obs.shape}\n")
-    print("=== Initial Observation ===")
-    print_obs(obs)
-    print()
+    logging.info("Env: %s", env_id)
+    logging.info("Observation space: %s", env.observation_space)
+    logging.info("Action space: %s", env.action_space)
+    logging.info("Obs shape: %s", obs.shape)
+    logging.info("=== Initial Observation ===")
+    log_obs(obs)
 
     frames, total_reward, steps, terminated = run_rollout(env, obs, expert)
     env.close()
 
     if terminated:
-        print(f"\nDone at step {steps}!")
+        logging.info("Done at step %d!", steps)
     else:
-        print(f"\nReached max steps ({_MAX_STEPS}) without termination")
-    print(f"Total reward: {total_reward:.1f}")
+        logging.warning(
+            "Reached max steps (%d) without termination", _MAX_STEPS
+        )
+    logging.info("Total reward: %.1f", total_reward)
 
     if frames:
         video_dir = Path("videos")
