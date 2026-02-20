@@ -628,8 +628,13 @@ def main() -> None:
     #  manual_eval() if we want to test a script manually (offline mode)
 
     args = _parse_cli_args()
-    logging.info("CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s",
-                 args.env, args.model, args.encodings, args.seeds)
+    logging.info(
+        "CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s",
+        args.env,
+        args.model,
+        args.encodings,
+        args.seeds,
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
@@ -643,7 +648,9 @@ def main() -> None:
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
-            logging.info("--- env=%s  encoding=%s  seed=%d ---", args.env, encoding, seed)
+            logging.info(
+                "--- env=%s  encoding=%s  seed=%d ---", args.env, encoding, seed
+            )
             _configure_rng(seed)
             cache_base = args.cache_path
             cache_dir = (
@@ -658,7 +665,9 @@ def main() -> None:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
             use_response_model = args.use_response_model or args.model == "gpt-5.2-pro"
-            logging.info("Creating LLM client (use_response_model=%s) ...", use_response_model)
+            logging.info(
+                "Creating LLM client (use_response_model=%s) ...", use_response_model
+            )
             if use_response_model:
                 response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
                 if response_cls is None:
