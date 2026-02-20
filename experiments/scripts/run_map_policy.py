@@ -99,7 +99,7 @@ def main() -> None:
     )
     p.add_argument(
         "--test-env-nums",
-        default="11-19",
+        default="0-19",
         help="Env instances to test (e.g., '11-19' or '11,12,15').",
     )
     p.add_argument("--max-steps", type=int, default=50)
