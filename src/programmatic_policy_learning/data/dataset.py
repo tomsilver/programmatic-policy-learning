@@ -8,6 +8,7 @@ import os
 import random
 from collections import defaultdict
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 import cloudpickle
@@ -19,6 +20,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.cache_utils import manage_cache
 
 
 def allowed_cpus() -> int:
@@ -130,6 +132,40 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
+def sample_negative_actions_hard_negative(
+    state: np.ndarray,
+    expert_action: Coord,
+    K: int = 30,
+    rng: random.Random | None = None,
+) -> list[Coord]:
+    """Hard-negative sampling by proximity to the expert action.
+
+    Picks the K closest coordinates (by Manhattan distance) to the
+    expert action, excluding the expert action itself. Ties are shuffled
+    for variety.
+    """
+    if rng is None:
+        rng = random.Random(0)
+
+    h = state.shape[0]
+    w = state.shape[1]
+    er, ec = expert_action
+
+    candidates: list[Coord] = []
+    for r in range(h):
+        for c in range(w):
+            if (r, c) == (er, ec):
+                continue
+            candidates.append((r, c))
+
+    if not candidates:
+        return []
+
+    rng.shuffle(candidates)
+    candidates.sort(key=lambda rc: abs(rc[0] - er) + abs(rc[1] - ec))
+    return candidates[:K]
+
+
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
     *,
@@ -171,6 +207,19 @@ def extract_examples_from_demonstration_item(
                 K=k,
                 rng=rng,
                 include_nearby=8,
+            )
+            for rc in neg_coords:
+                negative_examples.append((state, rc))
+        elif method == "hard_negative":
+            k = int(data_imbalance.get("K", 10))
+            if k < 0:
+                raise ValueError("data_imbalance.K must be >= 0")
+            rng = random.Random(0)
+            neg_coords = sample_negative_actions_hard_negative(
+                state=state,
+                expert_action=action,
+                K=k,
+                rng=rng,
             )
             for rc in neg_coords:
                 negative_examples.append((state, rc))
@@ -255,6 +304,25 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
 
+CACHE_DIR = "cache"
+
+
+def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    base_class_name = str(args[0])
+    demo_number = int(args[1])
+    programs = args[2]
+    program_count = len(programs) if programs is not None else 0
+    data_imbalance = kwargs.get("data_imbalance") or {}
+    imbalance_method = data_imbalance.get("method", "none")
+    offline_path_name = kwargs.get("offline_path_name")
+    offline_tag = "none"
+    if offline_path_name:
+        offline_tag = Path(str(offline_path_name)).name
+    return (
+        f"{base_class_name}-demo{demo_number}-n{program_count}-"
+        f"imb{imbalance_method}-offline{offline_tag}"
+    )
+
 
 def worker_init(
     dsl_blob: bytes, module_map: dict[str, str], program_batch: list[str]
@@ -301,6 +369,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     return results
 
 
+@manage_cache(CACHE_DIR, [".npz", ".pkl", ".pkl"], key_fn=_cache_key_run_all_programs)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
@@ -310,6 +379,7 @@ def run_all_programs_on_single_demonstration(
     *,
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
+    offline_path_name: str | None = None,
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
@@ -375,6 +445,7 @@ def run_all_programs_on_demonstrations(
     *,
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
+    offline_path_name: str | None = None,
 ) -> tuple[
     Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
 ]:
@@ -390,6 +461,7 @@ def run_all_programs_on_demonstrations(
             dsl_functions,
             data_imbalance=data_imbalance,
             return_examples=return_examples,
+            offline_path_name=offline_path_name,
         )
 
         if X is None:
