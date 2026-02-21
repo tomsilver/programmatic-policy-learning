@@ -1,5 +1,7 @@
 """Serialize expert trajectories into textual hint blocks."""
 
+# pylint: disable=line-too-long
+
 from typing import Sequence
 
 import numpy as np
@@ -275,6 +277,7 @@ def _effect_summary(
         "- terminal: no",
     ]
 
+
 def trajectory_to_text(
     trajectory: Sequence[tuple[np.ndarray, tuple[int, int], np.ndarray]],
     *,
@@ -379,8 +382,8 @@ def trajectory_to_text(
                 ("left", 0, -1),
                 ("right", 0, 1),
             ):
-                tok, dist = _ray_feature(grid_t, background, r, c, dr, dc)
-                lines.append(f"- {name}: first_nonbackground={tok}, dist={dist}")
+                ray_tok, dist = _ray_feature(grid_t, background, r, c, dr, dc)
+                lines.append(f"- {name}: first_nonbackground={ray_tok}, dist={dist}")
             lines.append("")
             lines.append("DISTANCES_FROM_TARGET (Manhattan):")
             for tok in focus_tokens:
@@ -469,14 +472,14 @@ def trajectory_to_text(
             else:
                 focus_tokens = []
 
-            lines: list[str] = []
+            final_lines: list[str] = []
             h = len(grid_t)
             w = len(grid_t[0]) if h else 0
-            lines.append(f"== STATE s_{final_step_idx} ==")
-            lines.append("")
-            lines.append("BACKGROUND_TOKEN: " + background)
-            lines.append("")
-            lines.append("NON_EMPTY_BY_TOKEN:")
+            final_lines.append(f"== STATE s_{final_step_idx} ==")
+            final_lines.append("")
+            final_lines.append("BACKGROUND_TOKEN: " + background)
+            final_lines.append("")
+            final_lines.append("NON_EMPTY_BY_TOKEN:")
             for tok in non_bg_tokens:
                 coords = by_token.get(tok, [])
                 coord_list = _format_coord_list(coords, cap=40)
@@ -487,27 +490,27 @@ def trajectory_to_text(
                         coord_str = coord_list
                 else:
                     coord_str = coord_list
-                lines.append(f"- {tok} (count={len(coords)}): {coord_str}")
-            lines.append("")
-            lines.append(f"FOCUS_TOKENS: {focus_tokens}")
-            lines.append("")
-            lines.append("GLOBAL_RELATIONS:")
+                final_lines.append(f"- {tok} (count={len(coords)}): {coord_str}")
+            final_lines.append("")
+            final_lines.append(f"FOCUS_TOKENS: {focus_tokens}")
+            final_lines.append("")
+            final_lines.append("GLOBAL_RELATIONS:")
             token_counts = {t: counts[t] for t in focus_tokens}
-            lines.append(f"- token_counts: {token_counts}")
-            cc_lines: list[str] = []
+            final_lines.append(f"- token_counts: {token_counts}")
+            final_cc_lines: list[str] = []
             for tok in focus_tokens:
                 cnt = counts.get(tok, 0)
                 if 2 <= cnt <= 200:
                     comps, largest = _connected_components_count(grid_t, tok)
-                    cc_lines.append(
+                    final_cc_lines.append(
                         f"  - token={tok}: num_components={comps}, largest_size={largest}"
                     )
-            if cc_lines:
-                lines.append("- connected_components:")
-                lines.extend(cc_lines)
+            if final_cc_lines:
+                final_lines.append("- connected_components:")
+                final_lines.extend(final_cc_lines)
             else:
-                lines.append("- connected_components: none")
-            blocks.append("\n".join(lines))
+                final_lines.append("- connected_components: none")
+            blocks.append("\n".join(final_lines))
         else:
             tokens = list(dict.fromkeys([*salient_tokens, encoder.cfg.empty_token]))
             objs = encoder.extract_objects(final_obs, tokens)

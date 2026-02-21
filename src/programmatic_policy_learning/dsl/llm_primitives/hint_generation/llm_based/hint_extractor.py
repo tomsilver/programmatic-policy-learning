@@ -443,7 +443,7 @@ def main() -> None:
                     env_name=env_name,
                     seed=seed,
                     encoding_method=encoding_method,
-                    num_demos=num_initial_states,
+                    num_demos=len(num_initial_states),
                     flag=structured,
                     out_dir="new_hints",
                 )

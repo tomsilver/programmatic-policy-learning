@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar, cast
 
@@ -76,7 +77,6 @@ from programmatic_policy_learning.learning.prior_calculation import (
 )
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
-
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[int | None], Any]
@@ -117,6 +117,7 @@ def build_py_feature_functions(
                 raise ValueError(f"Feature function '{name}' is not callable.")
             functions[name] = fn
     return functions
+
 
 def get_program_set(
     num_programs: int,
@@ -520,7 +521,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         offline_path_name = None
         loading_cfg = (self.program_generation or {}).get("loading")
-        if hasattr(loading_cfg, "get") and loading_cfg.get("offline"):
+        if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
 
         X, y, examples = run_all_programs_on_demonstrations(

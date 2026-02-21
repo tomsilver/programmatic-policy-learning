@@ -379,7 +379,7 @@ def run_all_programs_on_single_demonstration(
     *,
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
-    offline_path_name: str | None = None,
+    offline_path_name: str | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
