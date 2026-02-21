@@ -1,0 +1,37 @@
+1) POLICY RULES
+
+- If the action is a click on an empty cell directly below a “star” token (with no blocking tokens in between), and there is a “drawn” token below the action cell (possibly at a distance), click repeatedly until the “drawn” column reaches the row just below the star. (seen in ~3/3 demos)
+- If the action is a click on an empty cell directly below a “star” token, and the cell below is already “drawn”, click once more to fill the current cell with “drawn” (completing the column up to the star). (seen in ~3/3 demos)
+- If the action is a click on an empty cell horizontally adjacent (right) to a vertical column of “drawn” tokens, and the cell below is “drawn”, click repeatedly to extend the “drawn” region horizontally (rightward) at the current row. (seen in ~3/3 demos)
+- If the action is a click on an empty cell diagonally up-right from a vertical “drawn” column, and the cell below is “drawn”, click repeatedly to extend the “drawn” region diagonally up-right. (seen in ~3/3 demos)
+- If the action is a click on an empty cell horizontally adjacent (right) to a “drawn” region, and the cell below is “drawn”, click until the “drawn” region is contiguous up to the desired width. (seen in ~3/3 demos)
+- If the action is a click on a “left_arrow” or “right_arrow” token, and the agent is not yet at the target “star”, click repeatedly to move the agent horizontally (left or right) or diagonally up toward the “star”. (seen in ~3/3 demos)
+- If the action is a click on a “left_arrow” or “right_arrow” token, and the agent is above a “drawn” path leading to the “star”, click repeatedly to move the agent along the “drawn” path toward the “star”. (seen in ~3/3 demos)
+- If the action is a click on a “left_arrow” or “right_arrow” token, and the agent is horizontally aligned with the “star”, click repeatedly to move the agent up the “drawn” path to the “star”. (seen in ~3/3 demos)
+- If the action is a click on a “left_arrow” or “right_arrow” token, and the agent is one cell below the “star”, click to move the agent onto the “star” (overwriting it). (seen in ~3/3 demos)
+- If the action is a click on a “right_arrow” token, and the agent is to the left of the “star”, click repeatedly to move the agent rightward along the “drawn” path. (seen in ~2/3 demos)
+- If the action is a click on a “left_arrow” token, and the agent is to the right of the “star”, click repeatedly to move the agent leftward along the “drawn” path. (seen in ~2/3 demos)
+- Never click on a cell that is already “drawn” or occupied by the agent, except when moving the agent onto the “star”. (seen in ~3/3 demos)
+- Only click on “arrow” tokens when the agent is not yet at the “star” and a “drawn” path exists. (seen in ~3/3 demos)
+- When the agent is adjacent to the “star” (horizontally or vertically), click the appropriate “arrow” to move onto the “star”. (seen in ~3/3 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- Empty cells that are not directly below a “star” and do not have a “drawn” token below are never clicked, even if adjacent to “drawn” regions.
+- “Arrow” tokens are not clicked if the agent is already at the “star” or if no “drawn” path exists between the agent and the “star”.
+- “Drawn” cells are never clicked, even if adjacent to the “star” or agent.
+- Empty cells above or beside the “star” (not below) are never clicked.
+- Empty cells far from any “star” or “drawn” region are never clicked.
+
+3) GAME DYNAMICS
+
+- Clicking an empty cell below a “star” creates a “drawn” token at the next available cell below the “star”, filling upward until the column is complete.
+- Clicking an empty cell horizontally or diagonally adjacent to a “drawn” region with “drawn” below extends the “drawn” region in that direction, filling in the path.
+- Clicking a “left_arrow” or “right_arrow” token moves the agent horizontally (left/right) or diagonally up (if possible) along the “drawn” path toward the “star”.
+- The agent cannot move through empty cells; it only moves along “drawn” paths or onto the “star”.
+- When the agent moves onto the “star”, the “star” is overwritten by the agent token.
+- Clicking on “arrow” tokens only affects the agent’s position; no other tokens are changed.
+- Clicking on empty cells that do not meet the “drawn” extension criteria has no effect.
+- Only one cell is changed per click when drawing; two cells are changed per click when moving the agent (old and new agent positions).
+- The environment is deterministic: the same action in the same state always produces the same result.
+- The agent always follows the shortest “drawn” path toward the “star” when “arrow” tokens are clicked.

@@ -27,7 +27,7 @@ No extra text. No markdown. No commentary.
 ### A) action_choice_hints (10–16 strings)
 Each string describes a **predicate schema** over (s, a) that seems necessary to decide whether a candidate action cell is good.
 Rules:
-- Do NOT mention specific raw token characters (., A, D, F, R, S).
+- Do NOT mention specific raw token characters (see TOKEN_MAP below).
 - Do NOT mention exact coordinates.
 - Prefer describing relations using:
   - “same row/column”
@@ -83,11 +83,4 @@ Rules:
 {trajectories_text}
 
 ## TOKEN MAP (FOR REFERENCE ONLY; DO NOT MENTION RAW TOKENS IN OUTPUT TEXT)
-TOKEN_MAP = {
-  ".": "stf.EMPTY",
-  "A": "stf.ADVANCE",
-  "D": "stf.DRAWN",
-  "F": "stf.FALLING",
-  "R": "stf.RED",
-  "S": "stf.STATIC"
-}
+<<TOKEN_MAP>>

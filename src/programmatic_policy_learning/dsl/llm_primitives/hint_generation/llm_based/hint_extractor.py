@@ -28,6 +28,7 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
     grid_encoder,
     grid_hint_config,
     trajectory_serializer,
+    transition_analyzer,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
@@ -263,11 +264,14 @@ Use EXACTLY this format (no extra keys, no commentary):
 
 
 def build_new_hint_structured(
-    trajectories_text: str, _env_name: str, _encoding_method: str
+    trajectories_text: str, env_name: str, _encoding_method: str
 ) -> str:
     """Build hints in a structured way."""
     template = _load_hint_prompt_template("new_hint_structured.txt")
-    return template.replace("<<DEMONSTRATIONS>>", trajectories_text)
+    token_map_text = _format_token_map(_build_token_map(env_name))
+    return template.replace("<<DEMONSTRATIONS>>", trajectories_text).replace(
+        "<<TOKEN_MAP>>", token_map_text
+    )
 
 
 def extract_hints(
@@ -280,8 +284,12 @@ def extract_hints(
 ) -> str:
     """Query the LLM and return parsed hint JSON."""
     if structured:
-        # prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
-        prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
+        prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
+        # print(prompt)
+        # input(prompt)
+        # prompt = build_new_hint_structured(
+        #     trajectories_text, env_name, encoding_method
+        # )
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
@@ -351,204 +359,24 @@ def save_hints(
     return out_path
 
 
-def build_dsl_generation_prompt_final(
-    hint_text: str,
-    grid_object_types: Sequence[str],
-    *,
-    min_primitives: int = 5,
-    max_primitives: int = 10,
-) -> str:
-    """DSL generation prompt."""
-
-    type_system = r"""
-Type system:
-- Obs := grid observation (2D grid of discrete values)
-- Cell := (int, int)                # (row, col)
-- Value := one of OBJECT_TYPES
-- Direction := (int, int)           # (dr, dc)
-- Bool := {True, False}
-
-Fixed nonterminals and denotations:
-- START: a Bool expression evaluated in environment {a: Cell, s: Obs}
-- LOCAL_PROGRAM: a function (Cell, Obs) -> Bool
-- CONDITION: a function (Cell, Obs) -> Bool
-- DIRECTION: a Direction constant
-- VALUE: a Value constant
-""".strip()
-
-    primitive_constraints = r"""
-Primitive constraints (binding):
-- Propose between MIN_PRIMITIVES and MAX_PRIMITIVES primitives.
-- EVERY primitive must:
-  (1) be executable Python,
-  (2) return Bool,
-  (3) take Cell and Obs as the LAST TWO arguments: (..., cell: Cell, obs: Obs) -> Bool
-  (4) may take additional typed args (Value, Direction, Int, Bool, Cell, (Cell,Obs)->Bool, etc.).
-- Names should be descriptive and generic; do NOT use domain-specific words (agent/target/wall/arrow/...).
-- Avoid redundancy: primitives should cover distinct families of checks.
-""".strip()
-
-    grammar_rules = r"""
-Grammar rules (binding):
-- You must output a full grammar with productions for:
-  START, LOCAL_PROGRAM, CONDITION, DIRECTION, VALUE.
-
-- Cross-links are allowed if type-correct:
-  e.g., START may expand to LOCAL_PROGRAM(a, s) or CONDITION(a, s),
-        LOCAL_PROGRAM may expand to CONDITION,
-        CONDITION may expand to LOCAL_PROGRAM, etc.
-  (You decide which links are useful, but they must be type-safe.)
-
-- Primitive uniqueness per nonterminal (very important):
-  Each primitive name may appear as a direct terminal application in the production list
-  of AT MOST ONE of {START, LOCAL_PROGRAM, CONDITION}.
-  (You can still use nonterminal cross-links to share structure instead of repeating primitives.)
-  Example: if "is_value" appears in CONDITION productions, it must not appear directly in START or LOCAL_PROGRAM productions.
-
-- START environment variables:
-  In START productions, use variables (a, s) (not (cell, obs)).
-  If you call a predicate of type (Cell,Obs)->Bool, you must pass (a, s) into it.
-""".strip()
-
-    recursion_constraints = r"""
-Recursion + productivity constraints (mandatory):
-1) Reachability: every nonterminal must be reachable from START.
-2) Productivity: the grammar must generate MANY distinct programs.
-   Include at least one productive recursive cycle involving CONDITION and/or LOCAL_PROGRAM,
-   where recursion strictly grows the expression (not CONDITION -> CONDITION).
-3) Termination: include base cases so derivations can end.
-4) Combinatorial growth: use boolean composition or other branching structure to yield many programs.
-""".strip()
-
-    output_schema = r"""
-Output ONLY valid JSON with this schema:
-
-{
-  "object_types": ["..."],
-
-  "types": {
-    "Obs": "...",
-    "Cell": "...",
-    "Value": "...",
-    "Direction": "...",
-    "Bool": "..."
-  },
-
-  "primitives": [
-    {
-      "name": "primitive_name",
-      "type": "(..., Cell, Obs) -> Bool",
-      "args": [
-        {"name": "...", "type": "Value|Direction|Int|Bool|Cell|(Cell,Obs)->Bool|..."},
-        {"name": "cell", "type": "Cell"},
-        {"name": "obs", "type": "Obs"}
-      ],
-      "description": "generic description; no domain-specific words",
-      "python_impl": "def primitive_name(..., cell, obs):\n    ...\n"
-    }
-  ],
-
-  "grammar": {
-    "nonterminals": ["START","LOCAL_PROGRAM","CONDITION","DIRECTION","VALUE"],
-    "start_symbol": "START",
-    "productions": {
-      "START": [
-        "... Bool expression using a,s and/or calling LOCAL_PROGRAM/CONDITION with (a,s) ...",
-        "..."
-      ],
-      "LOCAL_PROGRAM": [
-        "... expression of type (Cell,Obs)->Bool ...",
-        "..."
-      ],
-      "CONDITION": [
-        "... expression of type (Cell,Obs)->Bool ...",
-        "..."
-      ],
-      "DIRECTION": ["(1,0)", "(0,1)", "(-1,0)", "(0,-1)", "(1,1)", "(-1,1)", "(1,-1)", "(-1,-1)"],
-      "VALUE": ["<OBJECT_TYPES>"]
-    }
-  },
-
-  "sanity": {
-    "type_safe": true,
-    "all_nonterminals_reachable_from_start": true,
-    "has_productive_recursion": true,
-    "has_base_cases": true,
-    "num_primitives": "between MIN_PRIMITIVES and MAX_PRIMITIVES",
-    "all_primitives_return_bool": true,
-    "all_primitives_take_cell_obs_last": true,
-    "start_uses_a_s_only": true,
-    "primitive_used_in_only_one_nonterminal": true,
-    "no_redundant_primitives": true
-  },
-
-  "notes": ["optional"]
-}
-
-Hard constraints:
-- No text outside JSON.
-- Every primitive returns Bool and ends with (..., cell, obs).
-- In START productions, only (a,s) may appear as the state variables.
-- Each primitive appears in productions of at most one of START/LOCAL_PROGRAM/CONDITION.
-- Grammar must be type-correct and productively recursive.
-""".strip()
-
-    return f"""
-## SYSTEM
-You are an expert language designer for program synthesis systems.
-
-Your job: given a high-level hint extracted from expert demonstrations,
-propose:
-(1) 5–10 generic Boolean grid-game primitives (Python implementations),
-(2) a type-safe grammar over the fixed nonterminals START/LOCAL_PROGRAM/CONDITION/DIRECTION/VALUE,
-that is expressive and productively recursive (generates many programs).
-
-## INPUT 1: Level-1 hint (capability requirements)
-{hint_text}
-
-## INPUT 2: OBJECT_TYPES
-{json.dumps(list(grid_object_types))}
-
-## TYPE SYSTEM (binding)
-{type_system}
-
-MIN_PRIMITIVES = {min_primitives}
-MAX_PRIMITIVES = {max_primitives}
-
-## PRIMITIVE CONSTRAINTS (binding)
-{primitive_constraints}
-
-## GRAMMAR RULES (binding)
-{grammar_rules}
-
-## RECURSION / PRODUCTIVITY (binding)
-{recursion_constraints}
-
-## OUTPUT FORMAT
-Output ONLY valid JSON following this schema:
-
-{output_schema}
-""".strip()
-
-
 def main() -> None:
     """Entry point for running hint and DSL extraction."""
-    max_steps_per_traj = 40
+    max_steps_per_traj = 50
     seed = 0
-    cache_path = Path("cache.db")
+    cache_path = Path("hint_cache.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_client = OpenAIModel("gpt-4.1", cache)
 
     env_names = [
-        "Chase",
+        # "Chase",
         # "TwoPileNim",
-        # "ReachForTheStar",
+        "ReachForTheStar",
         # "StopTheFall"
         # "CheckmateTactic"
     ]
-    encoding_methods = ["1"]  # "1",
-    num_initial_states = 10
+    encoding_methods = ["5"]  # "1",
+    num_initial_states = [0, 2, 6]  # 4 9 deleted
     structured_modes = [True]
 
     for env_name in env_names:
@@ -558,7 +386,10 @@ def main() -> None:
                 expert = get_grid_expert(env_name)
                 trajectories: list[list[tuple[Any, Any, Any]]] = []
                 object_types: Sequence[str] | None = None
-                for init_idx in range(num_initial_states):
+                for init_idx in num_initial_states:
+                    print(
+                        f"Collecting trajectory for {env_name}, init_idx={init_idx}..."
+                    )
                     env = env_factory(init_idx, env_name)
                     traj = collect_full_episode(env, expert, sample_count=None)
                     env.close()
@@ -575,23 +406,24 @@ def main() -> None:
                     coordinate_style="rc",
                 )
                 encoder = grid_encoder.GridStateEncoder(enc_cfg)
+                analyzer = transition_analyzer.GenericTransitionAnalyzer()
                 all_traj_texts = []
                 for idx, traj in enumerate(trajectories):
                     # NEW VERSION OF ENC 1
-                    text = trajectory_serializer.trajectory_to_diff_text(
-                        traj,
-                        encoder=encoder,
-                        max_steps=max_steps_per_traj,
-                    )
-                    # ENC 1 - 4
-                    # text = trajectory_serializer.trajectory_to_text(
+                    # text = trajectory_serializer.trajectory_to_diff_text(
                     #     traj,
                     #     encoder=encoder,
-                    #     analyzer=analyzer,
-                    #     salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
-                    #     encoding_method=encoding_method,
                     #     max_steps=max_steps_per_traj,
                     # )
+                    # ENC 1 - 4
+                    text = trajectory_serializer.trajectory_to_text(
+                        traj,
+                        encoder=encoder,
+                        analyzer=analyzer,
+                        salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
+                        encoding_method=encoding_method,
+                        max_steps=max_steps_per_traj,
+                    )
                     all_traj_texts.append(f"\n---[TRAJECTORY {idx}]---\n{text}\n\n")
 
                 combined_text = "\n\n".join(all_traj_texts)
