@@ -33,6 +33,9 @@ class FeatureComplexity:
     assigns: int
     imports: int
     try_blocks: int
+    mod_ops: int  # counts '%' usage
+    floordiv_ops: int  # counts '//' usage
+    pow_ops: int  # counts '**' usage
 
 
 class _ComplexityVisitor(ast.NodeVisitor):
@@ -52,6 +55,9 @@ class _ComplexityVisitor(ast.NodeVisitor):
         self.assigns = 0
         self.imports = 0
         self.try_blocks = 0
+        self.mod_ops = 0
+        self.floordiv_ops = 0
+        self.pow_ops = 0
 
         self._depth = 0
         self.max_depth = 0
@@ -159,6 +165,16 @@ class _ComplexityVisitor(ast.NodeVisitor):
         self.try_blocks += 1
         self.generic_visit(node)
 
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        """Count specific arithmetic operators like %, //, **."""
+        if isinstance(node.op, ast.Mod):
+            self.mod_ops += 1
+        elif isinstance(node.op, ast.FloorDiv):
+            self.floordiv_ops += 1
+        elif isinstance(node.op, ast.Pow):
+            self.pow_ops += 1
+        self.generic_visit(node)
+
 
 def _extract_source(feature: Feature) -> str:
     """
@@ -197,6 +213,9 @@ def analyze_feature_complexity(feature: Feature) -> FeatureComplexity:
         assigns=v.assigns,
         imports=v.imports,
         try_blocks=v.try_blocks,
+        mod_ops=v.mod_ops,
+        floordiv_ops=v.floordiv_ops,
+        pow_ops=v.pow_ops,
     )
 
 
@@ -224,6 +243,9 @@ class PriorWeights:
     imports: float = 1.00  # strongly discourage
     try_blocks: float = 0.50  # discourage
     base: float = 0.0  # additive constant
+    mod_ops: float = 3.0
+    floordiv_ops: float = 1.5
+    pow_ops: float = 1.5
 
 
 def feature_log_prior_from_complexity(
