@@ -1,15 +1,15 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0,1 , 2, 3, 4, 5, 6, 7, 8, 9, 10]
+demo_numbers: [0,1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 program_generation_step_size: 10
-num_programs: 10000 #for fixed
+num_programs: 100 #for fixed
 num_dts: 5
 max_num_particles: 25
 start_symbol: 0 # for fixed dsl/grammar
 dt_splitter: random
 cc_alpha: 0.0
-normalize_plp_actions: false
-permissive_filter_enabled: false
+normalize_plp_actions: true
+permissive_filter_enabled: true
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
 collision_feedback_enc: "enc_1"
@@ -23,11 +23,11 @@ program_generation:
   encoding_method: "enc_1"
   loading:
     offline: 1 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "features_rfts_demo_only_4.1.json" #features_stf_hint_only_4.1 expanded_stf_notemp_5.2
+    offline_json_path: "test_stf.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   data_imbalance:
-    enabled: true
-    method: downsample_majority
-    K: 10
+    enabled: false
+    method: downsample_majority   # downsample_majority hard_negative
+    K: 5
   
   # NOTE: The fields below are legacy from earlier experiments.
   # They are not used by the current config unless you switch strategy.

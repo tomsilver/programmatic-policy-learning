@@ -48,7 +48,7 @@ def run_single_episode(
     policy: Callable[[Any], Any],
     record_video: bool = False,
     video_out_path: str | None = None,
-    max_num_steps: int = 100,
+    max_num_steps: int = 50,
 ) -> float:
     """Run a single episode in the environment using the given policy."""
 
@@ -185,7 +185,7 @@ def sample_transition_example(
     env_factory: Callable[[int], Any],
     env_name: str,
     encoding_method: str,
-    max_steps: int = 40,
+    max_steps: int = 50,
 ) -> tuple[str, str, str]:
     """Sample a single (s_t, a_t, s_t1) example and format with encoding."""
     expert = get_grid_expert(env_name)

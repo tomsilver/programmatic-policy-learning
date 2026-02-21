@@ -106,11 +106,11 @@ def main() -> None:
     p.add_argument("--video-dir", default="logs/map_policy_videos")
     p.add_argument("--video-format", default="mp4")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument(
-        "--normalize-plp-actions",
-        action="store_true",
-        help="Enable PLP action-mass normalization (penalize permissive PLPs).",
-    )
+    # p.add_argument(
+    #     "--normalize-plp-actions",
+    #     action="store_false",
+    #     help="Enable PLP action-mass normalization (penalize permissive PLPs).",
+    # )
     args = p.parse_args()
 
     random.seed(args.seed)
@@ -139,7 +139,7 @@ def main() -> None:
     policy: LPPPolicy = LPPPolicy(
         [plp],
         [1.0],
-        normalize_plp_actions=args.normalize_plp_actions,
+        # normalize_plp_actions=args.normalize_plp_actions,
     )
 
     video_dir = Path(args.video_dir)

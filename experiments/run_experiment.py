@@ -295,7 +295,7 @@ def _main(cfg: DictConfig) -> None:
 
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
-                test_env_nums=range(10, 20),
+                test_env_nums=range(11, 20),
                 max_num_steps=50,
                 record_videos=False,
                 video_format="mp4",
