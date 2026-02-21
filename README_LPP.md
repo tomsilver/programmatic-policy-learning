@@ -146,14 +146,14 @@ python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/C
   --plot-results
 ```
 
-Using gpt5.2-pro:
+Using gpt-5.2-pro:
 
 ```bash
   python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
   --env StopTheFall \
   --encodings 4 \
   --seeds 0 \
-  --model gpt5.2-pro \
+  --model gpt-5.2-pro \
   --use-response-model
 ```
 
