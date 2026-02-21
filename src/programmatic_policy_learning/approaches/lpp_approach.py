@@ -71,13 +71,11 @@ from programmatic_policy_learning.dsl.state_action_program import (
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
-
-# from programmatic_policy_learning.learning.prior_calculation import (
-#     priors_from_features,
-# )
+from programmatic_policy_learning.learning.prior_calculation import (
+    priors_from_features,
+)
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
-# from programmatic_policy_learning.utils import manage_cache
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -120,11 +118,6 @@ def build_py_feature_functions(
             functions[name] = fn
     return functions
 
-
-# cache_dir = 'cache_hybrid'
-
-
-# @manage_cache(cache_dir, ['.pkl', '.pkl', 'pkl'])
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -223,13 +216,12 @@ def get_program_set(
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
             loading=program_generation.get("loading"),
         )
-        program_prior_log_probs = [-4.0] * len(features)
         dsl_fns = get_dsl_functions_dict()
         dsl_fns.update(
             build_py_feature_functions(features, dsl_fns)
         )  # pylint: disable=exec-used
-        # out_dict = priors_from_features(features)
-        # program_prior_log_probs = out_dict["logprobs"]
+        out_dict = priors_from_features(features)
+        program_prior_log_probs = out_dict["logprobs"]
         return features, program_prior_log_probs, dsl_fns
 
     if strategy not in strategies:
@@ -526,6 +518,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             StateActionProgram(p) for p in programs
         ]
 
+        offline_path_name = None
+        loading_cfg = (self.program_generation or {}).get("loading")
+        if hasattr(loading_cfg, "get") and loading_cfg.get("offline"):
+            offline_path_name = loading_cfg.get("offline_json_path")
+
         X, y, examples = run_all_programs_on_demonstrations(
             self.base_class_name,
             self.demo_numbers,
@@ -534,6 +531,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dsl_functions,
             data_imbalance=(self.program_generation or {}).get("data_imbalance"),
             return_examples=True,
+            offline_path_name=offline_path_name,
         )
 
         if X is None:
@@ -550,17 +548,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info(f"#all-zero features={len(all_zero)} indices={all_zero[:30]}")
         logging.info(f"#all-one features={len(all_one)} indices={all_one[:30]}")
 
-        # remove = np.unique(np.concatenate([all_zero, all_one]))
-        # if remove.size > 0:
-        #     keep_mask = np.ones(X.shape[1], dtype=bool)
-        #     keep_mask[remove] = False
-        #     X = X[:, keep_mask]
-        #     programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
-        #     if program_prior_log_probs is not None:
-        #         program_prior_log_probs = [
-        #             lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
-        #         ]
-        #     logging.info("Filtered constant features. New X shape:", X.shape)
+        remove = np.unique(np.concatenate([all_zero, all_one]))
+        if remove.size > 0:
+            keep_mask = np.ones(X.shape[1], dtype=bool)
+            keep_mask[remove] = False
+            X = X[:, keep_mask]
+            programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+            if program_prior_log_probs is not None:
+                program_prior_log_probs = [
+                    lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+                ]
+            logging.info("Filtered constant features. New X shape: %s", X.shape)
 
         collision_groups = log_feature_collisions(
             X,
@@ -696,6 +694,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
         logging.info(f"LIKELIHOODS: {likelihoods}")
+        logging.info(f"PRIORS: {plp_priors}")
         particles = []
         particle_log_probs = []
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
