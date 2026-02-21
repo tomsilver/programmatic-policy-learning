@@ -571,6 +571,52 @@ def _prepare_results_for_plot(
     return labels, expert_means, expert_cis, cap_means, cap_cis
 
 
+def _load_eval_results_from_disk(
+    output_dir: Path,
+    env_name: str,
+    num_initial_states: int,
+    encodings: Sequence[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Read saved metadata JSONs and rebuild encoding_eval_results.
+
+    If *encodings* is None, auto-discover all ``encoding_*`` directories.
+    """
+    base_dir = output_dir / env_name / str(num_initial_states)
+    if encodings is not None:
+        enc_dirs = [(enc, base_dir / f"encoding_{enc}") for enc in encodings]
+    else:
+        enc_dirs = sorted(
+            (d.name.removeprefix("encoding_"), d)
+            for d in base_dir.iterdir()
+            if d.is_dir() and d.name.startswith("encoding_")
+        )
+    encoding_eval_results: dict[str, dict[str, Any]] = {}
+    for encoding, enc_dir in enc_dirs:
+        if not enc_dir.exists():
+            continue
+        enc_summary: dict[str, Any] = {"cap_runs": [], "expert_run": None}
+        for meta_file in sorted(enc_dir.glob("metadata_seed*.json")):
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if "evaluation" not in meta:
+                logging.warning("No evaluation in %s, skipping.", meta_file)
+                continue
+            cap = meta["evaluation"]["cap_results"]
+            expert = meta["evaluation"]["expert_results"]
+            if cap:
+                enc_summary["cap_runs"].append(cap)
+            if expert and enc_summary["expert_run"] is None:
+                enc_summary["expert_run"] = expert
+        if enc_summary["cap_runs"]:
+            encoding_eval_results[encoding] = enc_summary
+            logging.info(
+                "Loaded encoding %s: %d seed run(s), expert=%s",
+                encoding,
+                len(enc_summary["cap_runs"]),
+                enc_summary["expert_run"] is not None,
+            )
+    return encoding_eval_results
+
+
 def manual_eval() -> None:
     """Evaluate a compiled policy function and print results."""
     final_code = """
@@ -648,6 +694,19 @@ def main() -> None:
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
+            meta_path = encoding_dir / f"metadata_seed{seed}.json"
+            if meta_path.exists():
+                existing = json.loads(meta_path.read_text(encoding="utf-8"))
+                if existing["evaluation"]["cap_results"]:
+                    logging.info(
+                        "Skipping env=%s encoding=%s seed=%d — results already exist at %s",
+                        args.env,
+                        encoding,
+                        seed,
+                        meta_path,
+                    )
+                    continue
+
             logging.info(
                 "--- env=%s  encoding=%s  seed=%d ---", args.env, encoding, seed
             )
@@ -748,43 +807,54 @@ def main() -> None:
             logging.warning(
                 "Plotting requested but no evaluation environments were configured; skipping."
             )
-        elif not encoding_eval_results:
-            logging.warning(
-                "Plotting requested but no evaluation results were recorded; skipping."
-            )
         else:
-            (
-                labels,
-                expert_means,
-                expert_cis,
-                cap_means,
-                cap_cis,
-            ) = _prepare_results_for_plot(encoding_eval_results, args.encodings)
-            if labels:
-                plot_path = args.plot_path
-                if plot_path is None:
-                    plot_path = (
-                        args.output_dir
-                        / args.env
-                        / f"cap_vs_expert_{args.num_initial_states}.png"
-                    )
-                title = (
-                    f"{args.env}: Expert vs CaP "
-                    f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"
+            disk_results = _load_eval_results_from_disk(
+                args.output_dir,
+                args.env,
+                args.num_initial_states,
+            )
+            for enc, stats in disk_results.items():
+                if enc not in encoding_eval_results:
+                    encoding_eval_results[enc] = stats
+
+            if not encoding_eval_results:
+                logging.warning(
+                    "Plotting requested but no evaluation results were recorded in memory or on disk; skipping."
                 )
-                plot_expert_vs_cap(
+            else:
+                all_encodings = sorted(encoding_eval_results.keys())
+                (
                     labels,
                     expert_means,
                     expert_cis,
                     cap_means,
                     cap_cis,
-                    title=title,
-                    save_path=plot_path,
-                )
-            else:
-                logging.warning(
-                    "Plotting requested but no encodings had both CaP and expert results."
-                )
+                ) = _prepare_results_for_plot(encoding_eval_results, all_encodings)
+                if labels:
+                    plot_path = args.plot_path
+                    if plot_path is None:
+                        plot_path = (
+                            args.output_dir
+                            / args.env
+                            / f"cap_vs_expert_{args.num_initial_states}.png"
+                        )
+                    title = (
+                        f"{args.env}: Expert vs CaP "
+                        f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"
+                    )
+                    plot_expert_vs_cap(
+                        labels,
+                        expert_means,
+                        expert_cis,
+                        cap_means,
+                        cap_cis,
+                        title=title,
+                        save_path=plot_path,
+                    )
+                else:
+                    logging.warning(
+                        "Plotting requested but no encodings had both CaP and expert results."
+                    )
 
     manifest_path = args.output_dir / args.env / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
