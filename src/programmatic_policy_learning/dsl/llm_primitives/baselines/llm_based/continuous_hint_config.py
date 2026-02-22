@@ -190,12 +190,16 @@ def get_env_description(env_name: str, num_passages: int = 0) -> str:
             "starting position to a rectangular target region."
         )
         if num_passages > 0:
+            num_obstacles = 2 * num_passages
             base += (
-                f" There {'is' if num_passages == 1 else 'are'} "
-                f"{num_passages} rectangular wall obstacle"
+                f" There are {num_obstacles} rectangular wall obstacles "
+                "between the robot and the target.  Two obstacles that "
+                "share the same x-coordinate form a passage (narrow gap) "
+                "the robot must fit through."
+                f" Therefore, there {'is' if num_passages == 1 else 'are'} "
+                f"{num_passages} passage"
                 f"{'s' if num_passages > 1 else ''} between the robot and "
-                "the target, each with a narrow gap (passage) the robot must "
-                "fit through."
+                "the target in total."
             )
         base += (
             " The robot has a movable circular base, a retractable arm, and "
