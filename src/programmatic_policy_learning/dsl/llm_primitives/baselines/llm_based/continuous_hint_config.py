@@ -6,6 +6,7 @@ https://prpl.group/prbench-site/environments/motion2d/motion2d-p1.html
 
 from __future__ import annotations
 
+# pylint: disable=line-too-long
 # ---------------------------------------------------------------------------
 # Canonical environment-name mapping (case-insensitive → registered name)
 # ---------------------------------------------------------------------------
@@ -106,7 +107,6 @@ _OBSTACLE_FEATURE_NAMES = [
 
 
 def obs_field_names_for_motion2d(num_passages: int) -> list[str]:
-    # pylint: disable=line-too-long
     """Build the full observation field-name list for Motion2D-p{num_passages}.
 
     Each passage is made of two rectangular obstacles (bottom wall, top wall),
@@ -141,7 +141,6 @@ def obs_field_names_for_motion2d(num_passages: int) -> list[str]:
     'obstacle1_static', 'obstacle1_color_r', 'obstacle1_color_g', 'obstacle1_color_b',
     'obstacle1_z_order', 'obstacle1_width', 'obstacle1_height']
     """
-    # pylint: enable=line-too-long
     fields = list(_ROBOT_FIELDS) + list(_TARGET_FIELDS)
     for i in range(2 * num_passages):
         for feat in _OBSTACLE_FEATURE_NAMES:
@@ -211,17 +210,52 @@ def get_env_description(env_name: str, num_passages: int = 0) -> str:
     return env_name
 
 
-# Indices of the observation fields that are most relevant for policy design.
-# The LLM prompt can highlight these so the model focuses on decision-critical
-# state rather than cosmetic features (colours, z-order, etc.).
-SALIENT_OBS_INDICES: dict[str, list[int]] = {
-    "Motion2D": [
-        0,  # robot_x
-        1,  # robot_y
-        3,  # robot_base_radius
-        9,  # target_x
-        10,  # target_y
-        17,  # target_width
-        18,  # target_height
-    ],
-}
+_BASE_SALIENT_INDICES = [
+    0,  # robot_x
+    1,  # robot_y
+    3,  # robot_base_radius
+    9,  # target_x
+    10,  # target_y
+    17,  # target_width
+    18,  # target_height
+]
+
+# obstacle x, obstacle y, obstacle width, obstacle height
+_OBSTACLE_SALIENT_OFFSETS = [0, 1, 8, 9]
+
+_NUM_ROBOT_FIELDS = len(_ROBOT_FIELDS)
+_NUM_TARGET_FIELDS = len(_TARGET_FIELDS)
+_OBSTACLE_START = _NUM_ROBOT_FIELDS + _NUM_TARGET_FIELDS
+_FEATURES_PER_OBSTACLE = len(_OBSTACLE_FEATURE_NAMES)
+
+
+def salient_obs_indices_for_motion2d(num_passages: int) -> list[int]:
+    """Return decision-critical observation indices for Motion2D.
+
+    Always includes the base robot/target indices.  For each obstacle
+    (``2 * num_passages`` total), appends the x, y, width and height
+    indices while skipping cosmetic features (colour, z-order, etc.).
+
+    Parameters
+    ----------
+    num_passages : int
+        Number of narrow passages; each produces 2 wall obstacles.
+
+    Returns
+    -------
+    list[int]
+        Sorted observation indices.
+
+    Examples
+    --------
+    >>> salient_obs_indices_for_motion2d(0)
+    [0, 1, 3, 9, 10, 17, 18]
+    >>> salient_obs_indices_for_motion2d(1)
+    [0, 1, 3, 9, 10, 17, 18, 19, 20, 27, 28, 29, 30, 37, 38]
+    """
+    indices = list(_BASE_SALIENT_INDICES)
+    for i in range(2 * num_passages):
+        base = _OBSTACLE_START + i * _FEATURES_PER_OBSTACLE
+        for offset in _OBSTACLE_SALIENT_OFFSETS:
+            indices.append(base + offset)
+    return indices
