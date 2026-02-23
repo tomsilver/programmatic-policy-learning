@@ -659,12 +659,39 @@ def run_continuous(
 
 
 def _parse_cli_args() -> argparse.Namespace:
-    """Return CLI args for batch CaP experiments."""
+    """Return CLI args for batch CaP experiments.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed command-line arguments including ``env``, ``encodings``,
+        ``seeds``, ``model``, evaluation flags, and output paths.
+
+    Examples
+    --------
+    Typical invocation from the command line::
+
+        python CaP_baseline.py --env Motion2D --env-type continuous \\
+            --num-passages 1 --encodings 4 --seeds 0 \\
+            --model gpt-4.1 --eval-max-steps 500
+    """
 
     parser = argparse.ArgumentParser(
         description="Generate code-as-policies hints for multiple encodings/seeds."
     )
-    parser.add_argument("--env", required=True, help="Grid environment name.")
+    parser.add_argument("--env", required=True, help="Environment name.")
+    parser.add_argument(
+        "--env-type",
+        choices=["grid", "continuous"],
+        default="grid",
+        help="Environment type: grid (discrete, GGG) or continuous (Box, KinDER).",
+    )
+    parser.add_argument(
+        "--num-passages",
+        type=int,
+        default=1,
+        help="Number of wall passages (only used when --env-type=continuous).",
+    )
     parser.add_argument(
         "--encodings",
         nargs="+",
@@ -702,6 +729,18 @@ def _parse_cli_args() -> argparse.Namespace:
         type=int,
         default=40,
         help="Maximum trajectory length fed to the LLM.",
+    )
+    parser.add_argument(
+        "--skip-rate",
+        type=int,
+        default=5,
+        help="Sub-sampling rate for continuous trajectories (1 = no skipping).",
+    )
+    parser.add_argument(
+        "--collect-max-steps",
+        type=int,
+        default=500,
+        help="Maximum env steps when collecting expert trajectories (default 500).",
     )
     parser.add_argument(
         "--output-dir",
@@ -769,14 +808,44 @@ def _parse_cli_args() -> argparse.Namespace:
 
 
 def _configure_rng(seed: int) -> None:
-    """Seed Python/NumPy RNGs for deterministic rollouts."""
+    """Seed Python/NumPy RNGs for deterministic rollouts.
+
+    Parameters
+    ----------
+    seed : int
+        Random seed applied to both ``random`` and ``numpy.random``.
+
+    Examples
+    --------
+    >>> _configure_rng(42)
+    >>> random.random()  # deterministic after seeding
+    0.6394267984578837
+    """
 
     random.seed(seed)
     np.random.seed(seed)
 
 
 def _strip_code_block(text: str) -> str:
-    """Remove Markdown fences from code."""
+    """Remove Markdown fences from LLM-generated code.
+
+    Parameters
+    ----------
+    text : str
+        Raw LLM response that may be wrapped in ````` ```python ... ``` `````.
+
+    Returns
+    -------
+    str
+        Cleaned code string with fences removed.
+
+    Examples
+    --------
+    >>> _strip_code_block('```python\\ndef f(): pass\\n```')
+    'def f(): pass'
+    >>> _strip_code_block('def f(): pass')
+    'def f(): pass'
+    """
 
     text = text.strip()
     if "```" in text:
@@ -789,9 +858,36 @@ def _strip_code_block(text: str) -> str:
 
 
 def _compile_policy_function(code: str, function_name: str) -> Callable[[Any], Any]:
-    """Compile Python code defining `function_name` into a callable."""
+    """Compile Python code defining `function_name` into a callable.
 
-    globals_dict: dict[str, Any] = {"np": np}
+    The code is executed via ``exec()`` with ``np`` and ``math``
+    pre-imported in the global namespace.
+
+    Parameters
+    ----------
+    code : str
+        Python source code that defines a function named *function_name*.
+    function_name : str
+        Name of the function to extract after execution.
+
+    Returns
+    -------
+    Callable[[Any], Any]
+        The compiled policy function.
+
+    Raises
+    ------
+    RuntimeError
+        If *function_name* is not found or is not callable.
+
+    Examples
+    --------
+    >>> fn = _compile_policy_function('def policy(obs): return obs * 2', 'policy')
+    >>> fn(np.array([1.0, 2.0]))
+    array([2., 4.])
+    """
+
+    globals_dict: dict[str, Any] = {"np": np, "math": math}
     locals_dict: dict[str, Any] = {}
     exec(code, globals_dict, locals_dict)  # pylint: disable=exec-used
 
