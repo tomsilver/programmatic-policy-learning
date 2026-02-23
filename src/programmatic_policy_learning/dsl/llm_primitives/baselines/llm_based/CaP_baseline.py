@@ -332,6 +332,49 @@ def env_factory(
     )
 
 
+def continuous_env_factory(
+    env_name: str,
+    num_passages: int = 1,
+    seed: int | None = None,
+) -> tuple[Any, np.ndarray]:
+    """Create a KinDER environment, reset it with *seed*, and return (env,
+    obs). Currently only supports Motion2D with different numbers of
+    passages (explicity specified).
+
+    Unlike GGG environments (which use ``instance_num`` to load different
+    board layouts), KinDER environments vary initial states via
+    ``env.reset(seed=...)``.
+
+    Parameters
+    ----------
+    env_name : str
+        Environment family name (e.g. ``"Motion2D"``).
+    num_passages : int, optional
+        Number of wall passages for Motion2D variants (default 1).
+    seed : int | None, optional
+        Random seed passed to ``env.reset()``.
+
+    Returns
+    -------
+    tuple[Any, np.ndarray]
+        ``(env, initial_observation)`` pair.
+    """
+    env_name = continuous_hint_config.canonicalize_env_name(env_name)
+    kinder.register_all_environments()
+    if env_name == "Motion2D" and num_passages:
+        env_id = f"kinder/{env_name}-p{num_passages}-v0"
+    else:
+        raise ValueError(
+            f"Unsupported env_name={env_name!r} or num_passages={num_passages}. "
+            "Add a branch in continuous_env_factory()."
+        )
+    env = kinder.make(env_id)
+    assert isinstance(env.action_space, gymnasium.spaces.Box)
+    obs: np.ndarray
+    obs, _ = env.reset(seed=seed)
+    return env, obs
+
+
 def run(
     llm_client: PretrainedLargeModel,
     env_name: str,
