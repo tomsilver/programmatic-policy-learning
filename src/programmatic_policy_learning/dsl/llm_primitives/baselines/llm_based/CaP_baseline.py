@@ -573,7 +573,9 @@ def run_continuous(
     trajectories: list[list[tuple[Any, Any, Any]]] = []
     for init_idx in range(num_initial_states):
         env, obs0 = continuous_env_factory(env_name, num_passages, seed=seed + init_idx)
-        traj = collect_full_episode(env, expert, max_steps=collect_max_steps, start_obs=obs0)
+        traj = collect_full_episode(
+            env, expert, max_steps=collect_max_steps, start_obs=obs0
+        )
         env.close()
         trajectories.append(traj)
     logging.info("Collected %d trajectories.", len(trajectories))
@@ -1001,9 +1003,7 @@ def _evaluate_policy_function(
                 return _env.action_space.sample()
 
         guarded_policy = (
-            continuous_safe_policy
-            if env_type == "continuous"
-            else safe_policy
+            continuous_safe_policy if env_type == "continuous" else safe_policy
         )
         # NOTE (double-reset for continuous envs):
         # continuous_env_factory already calls env.reset(seed=idx), but
