@@ -197,3 +197,4 @@ final_prompts/
 
 # ignore output files
 *.out
+.cursor/
