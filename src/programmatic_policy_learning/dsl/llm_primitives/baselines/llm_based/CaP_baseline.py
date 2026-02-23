@@ -338,8 +338,8 @@ def continuous_env_factory(
     seed: int | None = None,
 ) -> tuple[Any, np.ndarray]:
     """Create a KinDER environment, reset it with *seed*, and return (env,
-    obs). Currently only supports Motion2D with different numbers of
-    passages (explicity specified).
+    obs). Currently only supports Motion2D with different numbers of passages
+    (explicity specified).
 
     Unlike GGG environments (which use ``instance_num`` to load different
     board layouts), KinDER environments vary initial states via
@@ -488,7 +488,174 @@ def run(
     logging.info("LLM response received in %.2f seconds.", elapsed_time)
     logging.info("LLM response: %s", response.text[:100] + "...")
     final_code = response.text
-    return final_code
+    return prompt, final_code
+
+
+def run_continuous(
+    llm_client: PretrainedLargeModel,
+    env_name: str,
+    encoding_method: str,
+    seed: int,
+    num_passages: int = 1,
+    num_initial_states: int = 10,
+    max_steps_per_traj: int = 40,
+    function_name: str = "policy",
+    skip_rate: int = 1,
+    collect_max_steps: int = 500,
+) -> tuple[str, str]:
+    """Collect expert trajectories in a continuous env and query the LLM.
+
+    Parameters
+    ----------
+    llm_client : PretrainedLargeModel
+        LLM client used for querying.
+    env_name : str
+        Continuous environment family name (e.g. ``"Motion2D"``).
+    encoding_method : str
+        Trajectory encoding mode (``"1"``-``"4"``).
+    seed : int
+        Random seed for reproducibility.
+    num_passages : int, optional
+        Number of wall passages (default 1).
+    num_initial_states : int, optional
+        Number of expert rollouts to collect (default 10).
+    max_steps_per_traj : int, optional
+        Maximum trajectory length fed to the LLM (default 40).
+    function_name : str, optional
+        Expected name of the generated policy function (default ``"policy"``).
+    skip_rate : int, optional
+        Sub-sampling rate for trajectories (default 1, no skipping).
+    collect_max_steps : int, optional
+        Maximum env steps when rolling out the expert (default 500).
+
+    Returns
+    -------
+    tuple[str, str]
+        A ``(prompt, llm_response)`` tuple.
+    """
+    env_name = continuous_hint_config.canonicalize_env_name(env_name)
+    # ------------------------------------------------------------
+    # 1) Setup encoder
+    # ------------------------------------------------------------
+    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
+    action_fields = continuous_hint_config.ACTION_FIELD_NAMES[env_name]
+    enc_cfg = continuous_encoder.ContinuousStateEncoderConfig(
+        obs_field_names=obs_fields,
+        action_field_names=action_fields,
+        salient_indices=continuous_hint_config.salient_obs_indices_for_motion2d(
+            num_passages
+        ),
+    )
+    encoder = continuous_encoder.ContinuousStateEncoder(enc_cfg)
+
+    # ------------------------------------------------------------
+    # 2) Collect expert trajectories
+    # ------------------------------------------------------------
+    logging.info(
+        "Collecting %d expert trajectories for %s (num_passages=%d) ...",
+        num_initial_states,
+        env_name,
+        num_passages,
+    )
+    ref_env, ref_obs = continuous_env_factory(env_name, num_passages, seed=seed)
+    assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
+    expert = create_kinder_expert(env_name, ref_env.action_space, seed=seed)
+    action_space = ref_env.action_space
+    logging.info(
+        "Action space: shape=%s dtype=%s low=%s high=%s",
+        action_space.shape,
+        action_space.dtype,
+        action_space.low,
+        action_space.high,
+    )
+    ref_env.close()
+
+    trajectories: list[list[tuple[Any, Any, Any]]] = []
+    for init_idx in range(num_initial_states):
+        env, obs0 = continuous_env_factory(env_name, num_passages, seed=seed + init_idx)
+        traj = collect_full_episode(env, expert, max_steps=collect_max_steps, start_obs=obs0)
+        env.close()
+        trajectories.append(traj)
+    logging.info("Collected %d trajectories.", len(trajectories))
+
+    # ------------------------------------------------------------
+    # 3) Serialize trajectories
+    # ------------------------------------------------------------
+    all_traj_texts = []
+    for i, traj in enumerate(trajectories):
+        text = continuous_trajectory_serializer.trajectory_to_text(
+            traj,
+            encoder=encoder,
+            num_passages=num_passages,
+            encoding_method=encoding_method,
+            max_steps=max_steps_per_traj,
+            skip_rate=skip_rate,
+        )
+        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
+
+    combined_text = "\n\n".join(all_traj_texts)
+    logging.info("Building continuous prompt (encoding=%s) ...", encoding_method)
+
+    env_desc = continuous_hint_config.get_env_description(env_name, num_passages)
+    prompt = build_continuous_hint_prompt(
+        combined_text,
+        env_desc,
+        action_fields,
+        action_space.low,
+        action_space.high,
+    )
+    prompt = f"{prompt}\n\nSEED: {seed}\n"
+    query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
+
+    def _validate_box_action(action: Any) -> bool:
+        # 1) check if the action is a ndarray
+        if not isinstance(action, np.ndarray):
+            raise AssertionError(
+                f"Action must be a NumPy ndarray, got {type(action)}. "
+                "Return e.g. np.array([dx, dy], dtype=np.float32)."
+            )
+
+        # 2) check if the action is convertible to the action space shape and dtype
+        try:
+            a = np.asarray(action, dtype=action_space.dtype).reshape(action_space.shape)
+        except Exception as e:
+            raise AssertionError(
+                f"Action must be convertible to shape={action_space.shape} "
+                f"and dtype={action_space.dtype}. Got {action}."
+            ) from e
+
+        # 3) check if the action is within the bounds
+        low = action_space.low
+        high = action_space.high
+        if not (np.all(a >= low) and np.all(a <= high)):
+            raise AssertionError(
+                f"Action out of bounds. "
+                f"Expected within [{low}, {high}] but got {a}."
+            )
+
+        return True
+
+    reprompt_checks: list[RepromptCheck] = [
+        SyntaxRepromptCheck(),
+        FunctionOutputRepromptCheck(
+            function_name,
+            [(ref_obs,)],
+            [_validate_box_action],
+        ),
+    ]
+    logging.info("Querying LLM (%s) — this may take a while ...", llm_client.get_id())
+    start_time = time.time()
+    response = query_with_reprompts(
+        llm_client,
+        query,
+        reprompt_checks=reprompt_checks,
+        max_attempts=5,
+    )
+    elapsed_time = time.time() - start_time
+    logging.info("LLM response received in %.2f seconds.", elapsed_time)
+    logging.info("LLM response: %s", response.text[:100] + "...")
+    final_code = response.text
+    return prompt, final_code
 
 
 def _parse_cli_args() -> argparse.Namespace:
