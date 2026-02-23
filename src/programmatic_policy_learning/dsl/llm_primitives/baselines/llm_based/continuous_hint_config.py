@@ -211,8 +211,7 @@ def get_env_description(env_name: str, num_passages: int = 0) -> str:
             "others to 0."
         )
         return base
-    else:
-        raise ValueError(f"Unknown environment name: {env_name}")
+    raise ValueError(f"Unknown environment name: {env_name}")
 
 
 _BASE_SALIENT_INDICES = [
