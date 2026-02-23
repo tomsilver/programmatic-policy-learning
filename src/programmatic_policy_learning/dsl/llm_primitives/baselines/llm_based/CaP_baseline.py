@@ -133,7 +133,22 @@ def collect_full_episode(
 def build_joint_hint_prompt(
     all_trajectories_text: str, env_name: str, encoding: str
 ) -> str:
-    """Return the LLM prompt for summarising expert trajectories."""
+    """Return the LLM prompt for summarising expert trajectories.
+
+    Parameters
+    ----------
+    all_trajectories_text : str
+        Concatenated text of all serialized expert trajectories.
+    env_name : str
+        Grid environment name (used to look up symbol maps).
+    encoding : str
+        Encoding mode (``"1"`` adds token-meaning metadata).
+
+    Returns
+    -------
+    str
+        Complete prompt string ready to send to the LLM.
+    """
     token_meanings = ""
     action_mask = ""
     if encoding == "1":
