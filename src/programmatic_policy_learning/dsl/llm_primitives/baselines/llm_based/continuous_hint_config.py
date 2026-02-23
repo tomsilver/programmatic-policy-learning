@@ -202,6 +202,10 @@ def get_env_description(env_name: str, num_passages: int = 0) -> str:
                 "the target in total."
             )
         base += (
+            " Coordinate convention: robot_x and robot_y give the CENTER of "
+            "the circular robot.  For all rectangles (target region and "
+            "obstacles), x and y give the BOTTOM-LEFT corner; the rectangle "
+            "extends rightward by its width and upward by its height."
             " The robot has a movable circular base, a retractable arm, and "
             "a vacuum end effector (the arm and vacuum are not needed for this "
             "task).  The action is a 5-D vector [dx, dy, dtheta, darm, vac]: "
