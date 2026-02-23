@@ -105,7 +105,7 @@ def run_single_episode(
         except Exception:  # pylint: disable=broad-exception-caught
             pass
     total_reward = 0.0
-    episode_terminated = False
+    episode_terminated: np.bool_ = np.bool_(False)
     for _ in range(max_num_steps):
         action = policy(obs)
         step_out = env.step(action)
