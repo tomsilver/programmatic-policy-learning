@@ -319,7 +319,7 @@ Running CaP baseline on continuous environments (currently Motion2D only):
 python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
   --env Motion2D \
   --env-type continuous \
-  --num-passages 2 \
+  --num-passages 1 \
   --encodings 4 \
   --seeds 0 \
   --model gpt-5.2-pro \

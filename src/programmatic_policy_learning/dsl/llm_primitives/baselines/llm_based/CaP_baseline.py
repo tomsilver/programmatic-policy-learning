@@ -785,7 +785,7 @@ def _parse_cli_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--eval-run-expert",
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Also evaluate the handcrafted expert policy during evaluation.",
     )
