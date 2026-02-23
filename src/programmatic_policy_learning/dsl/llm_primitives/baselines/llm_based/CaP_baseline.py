@@ -910,21 +910,65 @@ def _evaluate_policy_function(
     test_env_nums: Sequence[int],
     max_num_steps: int,
     *,
-    env_name: str,
     run_expert: bool,
+    expert_fn: Callable[[Any], Any] | None = None,
+    env_type: str = "grid",
 ) -> tuple[list[bool], list[bool]]:
-    """Roll out CaP (and optional expert) policies on the requested envs."""
+    """Roll out CaP (and optional expert) policies on the requested envs.
+
+    Parameters
+    ----------
+    policy_fn : Callable[[Any], Any]
+        LLM-generated policy function.
+    env_builder : Callable[[int], Any]
+        Factory that creates an environment from an index.
+    test_env_nums : Sequence[int]
+        Environment indices to evaluate on.
+    max_num_steps : int
+        Maximum steps per evaluation rollout.
+    run_expert : bool
+        Whether to also evaluate the expert policy.
+    expert_fn : Callable[[Any], Any] | None, optional
+        Expert policy function (required when ``run_expert`` is ``True``).
+    env_type : str, optional
+        ``"grid"`` or ``"continuous"`` — selects the action guard
+        (default ``"grid"``).
+
+    Returns
+    -------
+    tuple[list[bool], list[bool]]
+        ``(cap_results, expert_results)`` where each entry is ``True``
+        if the episode succeeded (positive reward).
+
+    Raises
+    ------
+    RuntimeError
+        If ``run_expert`` is ``True`` but ``expert_fn`` is ``None``.
+
+    Examples
+    --------
+    ::
+
+        cap_res, expert_res = _evaluate_policy_function(
+            policy_fn,
+            env_builder=lambda idx: env_factory(idx, "TicTacToe"),
+            test_env_nums=[0, 1, 2],
+            max_num_steps=100,
+            run_expert=True,
+            expert_fn=get_grid_expert("TicTacToe"),
+        )
+        # cap_res == [True, False, True], expert_res == [True, True, True]
+    """
 
     cap_results: list[bool] = []
     expert_results: list[bool] = []
-    expert_fn = get_grid_expert(env_name) if run_expert else None
 
     for env_idx in tqdm(test_env_nums, desc="Evaluating envs"):
         env = env_builder(env_idx)
 
         def safe_policy(obs: Any, *, _env: Any = env) -> Any:
-            """Guard policy execution to avoid crashes from invalid
-            assumptions."""
+            """Guard policy execution to avoid crashes from invalid assumptions
+            in grid environments."""
 
             try:
                 action = policy_fn(obs)
@@ -935,8 +979,43 @@ def _evaluate_policy_function(
                 return _env.action_space.sample()
             return action
 
+        def continuous_safe_policy(obs: Any, *, _env: Any = env) -> Any:
+            """Guard for Box (continuous) action spaces.
+
+            Converts to the correct dtype/shape and clips to bounds.
+            Falls back to a random sample on any conversion failure.
+            """
+            try:
+                action = policy_fn(obs)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"Exception: {e}")
+                return _env.action_space.sample()
+            if action is None:
+                return _env.action_space.sample()
+            try:
+                a = np.asarray(action, dtype=_env.action_space.dtype)
+                a = a.reshape(_env.action_space.shape)
+                a = np.clip(a, _env.action_space.low, _env.action_space.high)
+                return a
+            except (ValueError, TypeError):
+                return _env.action_space.sample()
+
+        guarded_policy = (
+            continuous_safe_policy
+            if env_type == "continuous"
+            else safe_policy
+        )
+        # NOTE (double-reset for continuous envs):
+        # continuous_env_factory already calls env.reset(seed=idx), but
+        # run_single_episode calls env.reset() again without a seed.
+        # The first state is discarded; the second is still deterministic
+        # (Gymnasium preserves the seeded RNG), so results are reproducible.
+        # Evaluation states differ from training demonstrations — this is
+        # intentional: CaP evaluation tests generalisation to unseen initial
+        # conditions.  To match training states exactly, pass the seed
+        # through to run_single_episode.
         cap_success = (
-            run_single_episode(env, safe_policy, max_num_steps=max_num_steps) > 0
+            run_single_episode(env, guarded_policy, max_num_steps=max_num_steps) > 0
         )
         cap_results.append(cap_success)
         env.close()
@@ -960,7 +1039,38 @@ def bootstrap_ci_success(
     alpha: float = 0.05,
     seed: int = 0,
 ) -> tuple[float, float]:
-    """Return mean success and half-width of a bootstrap CI."""
+    """Return mean success rate and half-width of a bootstrap CI (Confidence
+    Interval).
+
+    Parameters
+    ----------
+    successes : Sequence[bool]
+        Per-episode success indicators.
+    n_boot : int, optional
+        Number of bootstrap resamples (default 10000).
+    alpha : float, optional
+        Significance level for the CI (default 0.05 for 95% CI).
+    seed : int, optional
+        RNG seed for reproducibility (default 0).
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(mean_success_rate, ci_half_width)``.
+
+    Raises
+    ------
+    ValueError
+        If ``successes`` is empty.
+
+    Examples
+    --------
+    >>> mean, ci = bootstrap_ci_success([True, True, False, True, False])
+    >>> float(mean)  # 3 successes / 5 trials
+    0.6
+    >>> round(float(ci), 2)  # (hi - lo) / 2 = (1.00 - 0.20) / 2
+    0.4
+    """
     rng = np.random.default_rng(seed)
     s = np.asarray(successes, dtype=float)
     N = len(s)
@@ -983,7 +1093,30 @@ def plot_expert_vs_cap(
     title: str,
     save_path: str | Path,
 ) -> None:
-    """Bar plot comparing expert and CaP performance with error bars."""
+    """Bar plot comparing expert and CaP performance with error bars.
+
+    Parameters
+    ----------
+    labels : Sequence[str]
+        X-axis labels (one per encoding).
+    expert_means : Sequence[float]
+        Expert success rate (%) per encoding.
+    expert_cis : Sequence[float]
+        Expert CI half-width (%) per encoding.
+    cap_means : Sequence[float]
+        CaP success rate (%) per encoding.
+    cap_cis : Sequence[float]
+        CaP CI half-width (%) per encoding.
+    title : str
+        Plot title.
+    save_path : str | Path
+        Destination file path for the saved figure.
+
+    Raises
+    ------
+    ValueError
+        If ``labels`` is empty.
+    """
 
     if not labels:
         raise ValueError("No labels supplied for plotting.")
@@ -1041,7 +1174,35 @@ def _prepare_results_for_plot(
     encoding_eval_results: dict[str, dict[str, Any]],
     encoding_order: Sequence[str],
 ) -> tuple[list[str], list[float], list[float], list[float], list[float]]:
-    """Aggregate evaluation results per encoding for plotting."""
+    """Aggregate evaluation results per encoding for plotting.
+
+    Parameters
+    ----------
+    encoding_eval_results : dict[str, dict[str, Any]]
+        Mapping from encoding name to ``{"cap_runs": [...], "expert_run": [...]}``.
+    encoding_order : Sequence[str]
+        Order in which encodings appear on the x-axis.
+
+    Returns
+    -------
+    tuple[list[str], list[float], list[float], list[float], list[float]]
+        ``(labels, expert_means, expert_cis, cap_means, cap_cis)``
+        where means and CIs are in percent (0-100).
+
+    Examples
+    --------
+    >>> results = {
+    ...     "4": {
+    ...         "cap_runs": [[True, False, True]],
+    ...         "expert_run": [True, True, True],
+    ...     },
+    ... }
+    >>> labels, em, ec, cm, cc = _prepare_results_for_plot(results, ["4"])
+    >>> labels
+    ['enc_4']
+    >>> float(em[0])  # expert mean = 100%
+    100.0
+    """
 
     labels: list[str] = []
     expert_means: list[float] = []
@@ -1088,7 +1249,37 @@ def _load_eval_results_from_disk(
 ) -> dict[str, dict[str, Any]]:
     """Read saved metadata JSONs and rebuild encoding_eval_results.
 
-    If *encodings* is None, auto-discover all ``encoding_*`` directories.
+    If *encodings* is ``None``, auto-discover all ``encoding_*``
+    directories under ``output_dir / env_name / num_initial_states``.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Root output directory (e.g. ``logs/CaP_baseline``).
+    env_name : str
+        Environment tag used as a subdirectory name.
+    num_initial_states : int
+        Number of initial states (used as a subdirectory name).
+    encodings : Sequence[str] | None, optional
+        Specific encodings to load.  ``None`` auto-discovers all.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Mapping from encoding name to
+        ``{"cap_runs": [[bool, ...], ...], "expert_run": [bool, ...] | None}``.
+
+    Examples
+    --------
+    ::
+
+        results = _load_eval_results_from_disk(
+            Path("logs/CaP_baseline"),
+            env_name="Motion2D-p1/gpt-4.1",
+            num_initial_states=4,
+            encodings=["4"],
+        )
+        # results["4"]["cap_runs"] == [[True, False, ...], ...]
     """
     base_dir = output_dir / env_name / str(num_initial_states)
     if encodings is not None:
@@ -1127,7 +1318,12 @@ def _load_eval_results_from_disk(
 
 
 def manual_eval() -> None:
-    """Evaluate a compiled policy function and print results."""
+    """Evaluate a hard-coded policy function offline and print results.
+
+    This is a developer-facing utility for quick manual testing; it
+    compiles the inline ``final_code`` string and evaluates it on the
+    environment specified via CLI ``--env``.
+    """
     final_code = """
 def policy(obs):
     n_rows, n_cols = obs.shape
@@ -1171,24 +1367,41 @@ def policy(obs):
         env_builder,
         args.eval_env_nums,
         args.eval_max_steps,
-        env_name=args.env,
         run_expert=run_expert,
+        expert_fn=get_grid_expert(args.env),
     )
     print(cap_results)
     sys.exit()
 
 
 def main() -> None:
-    """Batch entry-point mirroring run_code_as_policies."""
+    """Batch entry-point mirroring Code-as-Policies experiments.
+
+    Iterates over all ``(encoding, seed)`` combinations specified via
+    CLI, collects expert trajectories, queries the LLM, evaluates the
+    generated policy, saves metadata/logs, and optionally produces a
+    summary plot.
+    """
     #  manual_eval() if we want to test a script manually (offline mode)
 
     args = _parse_cli_args()
+    if args.env_type == "continuous":
+        args.env = continuous_hint_config.canonicalize_env_name(args.env)
+
+    env_tag = (
+        f"{args.env}-p{args.num_passages}"
+        if args.env_type == "continuous"
+        else args.env
+    )
+    run_tag = f"{env_tag}/{args.model}"
+
     logging.info(
-        "CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s",
+        "CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s, run_tag=%s",
         args.env,
         args.model,
         args.encodings,
         args.seeds,
+        run_tag,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []
@@ -1196,8 +1409,8 @@ def main() -> None:
     for encoding in args.encodings:
         encoding_dir = (
             args.output_dir
-            / args.env
-            / f"{str(args.num_initial_states)}"
+            / run_tag
+            / str(args.num_initial_states)
             / f"encoding_{encoding}"
         )
         encoding_dir.mkdir(parents=True, exist_ok=True)
@@ -1228,7 +1441,7 @@ def main() -> None:
             suffix = cache_base.suffix or ".db"
             cache_path = (
                 cache_dir
-                / f"{stem}_{args.env}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
+                / f"{stem}_{env_tag}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
@@ -1248,22 +1461,59 @@ def main() -> None:
             else:
                 client = OpenAIModel(args.model, cache)
             logging.info("LLM client created: %s", client.get_id())
-            final_code = run(
-                client,
-                args.env,
-                encoding,
-                seed,
-                num_initial_states=args.num_initial_states,
-                max_steps_per_traj=args.max_steps_per_traj,
-            )
+            if args.env_type == "continuous":
+                try:
+                    prompt_text, final_code = run_continuous(
+                        client,
+                        args.env,
+                        encoding,
+                        seed,
+                        num_passages=args.num_passages,
+                        num_initial_states=args.num_initial_states,
+                        max_steps_per_traj=args.max_steps_per_traj,
+                        skip_rate=args.skip_rate,
+                        collect_max_steps=args.collect_max_steps,
+                    )
+                except Exception as _main_exc:  # pylint: disable=broad-exception-caught
+                    logging.error("run_continuous failed: %s", _main_exc, exc_info=True)
+                    continue
+            else:
+                prompt_text, final_code = run(
+                    client,
+                    args.env,
+                    encoding,
+                    seed,
+                    num_initial_states=args.num_initial_states,
+                    max_steps_per_traj=args.max_steps_per_traj,
+                )
 
             policy_filename = f"policy_seed{seed}.txt"
             policy_path = encoding_dir / policy_filename
             policy_path.write_text(final_code, encoding="utf-8")
 
+            code_str_for_log = _strip_code_block(final_code)
+            debug_log_path = encoding_dir / f"debug_seed{seed}.log"
+            debug_log_path.write_text(
+                f"{'=' * 80}\n"
+                f"PROMPT SENT TO LLM\n"
+                f"{'=' * 80}\n"
+                f"{prompt_text}\n\n"
+                f"{'=' * 80}\n"
+                f"RAW LLM RESPONSE\n"
+                f"{'=' * 80}\n"
+                f"{final_code}\n\n"
+                f"{'=' * 80}\n"
+                f"CODE AFTER _strip_code_block (passed to exec)\n"
+                f"{'=' * 80}\n"
+                f"{code_str_for_log}\n",
+                encoding="utf-8",
+            )
+            logging.info("Debug log saved to %s", debug_log_path)
+
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             metadata = {
                 "env": args.env,
+                "env_type": args.env_type,
                 "encoding": encoding,
                 "seed": seed,
                 "model": args.model,
@@ -1272,6 +1522,8 @@ def main() -> None:
                 "timestamp": timestamp,
                 "policy_path": str(policy_path.resolve()),
             }
+            if args.env_type == "continuous":
+                metadata["num_passages"] = args.num_passages
             meta_path = encoding_dir / f"metadata_seed{seed}.json"
             meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -1286,15 +1538,37 @@ def main() -> None:
             if args.eval_env_nums:
                 code_str = _strip_code_block(final_code)
                 policy_fn = _compile_policy_function(code_str, args.function_name)
-                env_builder = lambda idx: env_factory(idx, args.env)
+                if args.env_type == "continuous":
+                    # See NOTE in _evaluate_policy_function on double-reset.
+                    env_builder: Callable[[int], Any] = (
+                        lambda idx: continuous_env_factory(
+                            args.env, args.num_passages, seed=idx
+                        )[0]
+                    )
+                else:
+                    env_builder = lambda idx: env_factory(idx, args.env)
                 run_expert = args.eval_run_expert and seed == args.expert_reference_seed
+                eval_expert: Callable[[Any], Any] | None = None
+                if run_expert:
+                    if args.env_type == "continuous":
+                        ref_env, _ = continuous_env_factory(
+                            args.env, args.num_passages, seed=0
+                        )
+                        assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
+                        eval_expert = create_kinder_expert(
+                            args.env, ref_env.action_space, seed=seed
+                        )
+                        ref_env.close()
+                    else:
+                        eval_expert = get_grid_expert(args.env)
                 cap_results, expert_results = _evaluate_policy_function(
                     policy_fn,
                     env_builder,
                     args.eval_env_nums,
                     args.eval_max_steps,
-                    env_name=args.env,
                     run_expert=run_expert,
+                    expert_fn=eval_expert,
+                    env_type=args.env_type,
                 )
                 enc_summary = encoding_eval_results.setdefault(
                     encoding,
@@ -1319,7 +1593,7 @@ def main() -> None:
         else:
             disk_results = _load_eval_results_from_disk(
                 args.output_dir,
-                args.env,
+                run_tag,
                 args.num_initial_states,
             )
             for enc, stats in disk_results.items():
@@ -1344,11 +1618,11 @@ def main() -> None:
                     if plot_path is None:
                         plot_path = (
                             args.output_dir
-                            / args.env
+                            / run_tag
                             / f"cap_vs_expert_{args.num_initial_states}.png"
                         )
                     title = (
-                        f"{args.env}: Expert vs CaP "
+                        f"{env_tag}: Expert vs CaP "
                         f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"
                     )
                     plot_expert_vs_cap(
@@ -1365,7 +1639,7 @@ def main() -> None:
                         "Plotting requested but no encodings had both CaP and expert results."
                     )
 
-    manifest_path = args.output_dir / args.env / "manifest.json"
+    manifest_path = args.output_dir / run_tag / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
