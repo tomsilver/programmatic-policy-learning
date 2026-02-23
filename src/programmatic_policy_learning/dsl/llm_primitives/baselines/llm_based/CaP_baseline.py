@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import random
 import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+import gymnasium
+import kinder
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
@@ -28,10 +31,16 @@ from tqdm import tqdm
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
+from programmatic_policy_learning.approaches.experts.kinder_experts import (
+    create_kinder_expert,
+)
 from programmatic_policy_learning.approaches.utils import run_single_episode
 
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    continuous_encoder,
+    continuous_hint_config,
+    continuous_trajectory_serializer,
     grid_encoder,
     grid_hint_config,
     trajectory_serializer,
@@ -45,10 +54,52 @@ def collect_full_episode(
     expert_fn: Callable[[Any], Any],
     max_steps: int = 200,
     sample_count: int | None = None,
+    *,
+    start_obs: Any = None,
 ) -> list[tuple[Any, Any, Any]]:
     """Roll out expert policy, optionally sampling a subset of (obs, action,
-    obs_next)."""
-    obs, _ = env.reset()
+    obs_next) transitions.
+
+    If *start_obs* is provided the environment is **not** reset, avoiding a
+    double-reset when the caller already called ``env.reset(seed=...)``.
+
+    Parameters
+    ----------
+    env : Any
+        Gymnasium-compatible environment instance.
+    expert_fn : Callable[[Any], Any]
+        Expert policy mapping an observation to an action.
+    max_steps : int, optional
+        Maximum number of environment steps (default 200).
+    sample_count : int | None, optional
+        If set, randomly sub-sample the trajectory down to this many
+        transitions (always keeping the first step).  ``None`` returns the
+        full trajectory.
+    start_obs : Any, optional
+        If provided, skip ``env.reset()`` and use this observation as the
+        initial state.
+
+    Returns
+    -------
+    list[tuple[Any, Any, Any]]
+        List of ``(obs_t, action_t, obs_{t+1})`` transitions.
+
+    Examples
+    --------
+    Collect a full expert trajectory (no sub-sampling)::
+
+        env = gym.make("Motion2D-p1-v0")
+        traj = collect_full_episode(env, expert_fn, max_steps=200)
+        # traj[0] == (obs_0, action_0, obs_1)
+
+    Collect 5 randomly sampled transitions (first step always kept)::
+
+        traj = collect_full_episode(env, expert_fn, sample_count=5)
+    """
+    if start_obs is None:
+        obs, _ = env.reset()
+    else:
+        obs = start_obs
     trajectory = []
 
     for _ in range(max_steps):
