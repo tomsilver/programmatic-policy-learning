@@ -324,5 +324,6 @@ python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/C
   --seeds 0 \
   --model gpt-5.2-pro \
   --use-response-model \
-  --eval-max-steps 500
+  --eval-max-steps 500 \
+  --sleep-between-runs 0
 ```

@@ -1017,8 +1017,10 @@ def _evaluate_policy_function(
         reward, terminated = run_single_episode(
             env, guarded_policy, max_num_steps=max_num_steps
         )
+        print(f"env_idx: {env_idx}, reward: {reward}, terminated: {terminated}")
+        print(f"reward type: {type(reward)}, terminated type: {type(terminated)}")
         cap_success = terminated if env_type == "continuous" else reward > 0
-        cap_results.append(cap_success)
+        cap_results.append(bool(cap_success))
         env.close()
 
         if run_expert:
@@ -1028,8 +1030,10 @@ def _evaluate_policy_function(
             reward_e, terminated_e = run_single_episode(
                 env_e, expert_fn, max_num_steps=max_num_steps
             )
+            print(f"reward_e: {reward_e}, terminated_e: {terminated_e}")
+            print(f"reward_e type: {type(reward_e)}, terminated_e type: {type(terminated_e)}")
             expert_success = terminated_e if env_type == "continuous" else reward_e > 0
-            expert_results.append(expert_success)
+            expert_results.append(bool(expert_success))
             env_e.close()
 
     return cap_results, expert_results
@@ -1421,7 +1425,8 @@ def main() -> None:
             meta_path = encoding_dir / f"metadata_seed{seed}.json"
             if meta_path.exists():
                 existing = json.loads(meta_path.read_text(encoding="utf-8"))
-                if existing["evaluation"]["cap_results"]:
+                eval_section = existing.get("evaluation", {})
+                if eval_section.get("cap_results"):
                     logging.info(
                         "Skipping env=%s encoding=%s seed=%d — results already exist at %s",
                         args.env,

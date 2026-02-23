@@ -49,15 +49,17 @@ def run_single_episode(
     record_video: bool = False,
     video_out_path: str | None = None,
     max_num_steps: int = 100,
-) -> tuple[float, bool]:
+) -> tuple[float, np.bool_]:
     """Run a single episode in the environment using the given policy.
 
     Returns
     -------
-    tuple[float, bool]
+    tuple[float, np.bool_]
         ``(total_reward, terminated)`` — cumulative reward and whether the
         episode ended via the environment's termination signal (as opposed
-        to reaching *max_num_steps* or being truncated).
+        to reaching *max_num_steps* or being truncated).  ``terminated``
+        is ``np.bool_`` (from the environment); callers that need native
+        ``bool`` (e.g. for JSON serialization) should cast explicitly.
     """
 
     record_frames: list[Any] | None = None
