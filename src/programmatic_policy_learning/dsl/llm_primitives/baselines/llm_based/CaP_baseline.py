@@ -288,7 +288,33 @@ def env_factory(
     instance_num: int | None = None,
     env_name: str | None = None,
 ) -> Any:
-    """Env Factory."""
+    """Create a grid (GGG) environment instance.
+
+    Parameters
+    ----------
+    instance_num : int | None, optional
+        Board-layout index to load.
+    env_name : str | None, optional
+        Environment name (e.g. ``"TicTacToe"``).
+
+    Returns
+    -------
+    Any
+        A Gymnasium-compatible grid environment.
+
+    Raises
+    ------
+    ValueError
+        If ``env_name`` is ``None``.
+
+    Examples
+    --------
+    ::
+
+        env = env_factory(instance_num=0, env_name="TicTacToe")
+        obs, info = env.reset()
+        env.close()
+    """
     if env_name is None:
         raise ValueError("env_name must be provided.")
     registry = EnvRegistry()
