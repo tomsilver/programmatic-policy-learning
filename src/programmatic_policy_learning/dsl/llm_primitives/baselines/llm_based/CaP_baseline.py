@@ -1014,9 +1014,10 @@ def _evaluate_policy_function(
         # intentional: CaP evaluation tests generalisation to unseen initial
         # conditions.  To match training states exactly, pass the seed
         # through to run_single_episode.
-        cap_success = (
-            run_single_episode(env, guarded_policy, max_num_steps=max_num_steps) > 0
+        reward, terminated = run_single_episode(
+            env, guarded_policy, max_num_steps=max_num_steps
         )
+        cap_success = terminated if env_type == "continuous" else reward > 0
         cap_results.append(cap_success)
         env.close()
 
@@ -1024,9 +1025,10 @@ def _evaluate_policy_function(
             if expert_fn is None:
                 raise RuntimeError("Expert policy unavailable.")
             env_e = env_builder(env_idx)
-            expert_success = (
-                run_single_episode(env_e, expert_fn, max_num_steps=max_num_steps) > 0
+            reward_e, terminated_e = run_single_episode(
+                env_e, expert_fn, max_num_steps=max_num_steps
             )
+            expert_success = terminated_e if env_type == "continuous" else reward_e > 0
             expert_results.append(expert_success)
             env_e.close()
 
@@ -1579,6 +1581,7 @@ def main() -> None:
                     enc_summary["expert_run"] = expert_results
                 metadata.setdefault("evaluation", {})
                 metadata["evaluation"] = {
+                    "eval_max_steps": args.eval_max_steps,
                     "cap_results": cap_results,
                     "expert_results": expert_results,
                 }

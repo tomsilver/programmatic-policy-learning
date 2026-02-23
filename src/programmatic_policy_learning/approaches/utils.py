@@ -49,8 +49,16 @@ def run_single_episode(
     record_video: bool = False,
     video_out_path: str | None = None,
     max_num_steps: int = 100,
-) -> float:
-    """Run a single episode in the environment using the given policy."""
+) -> tuple[float, bool]:
+    """Run a single episode in the environment using the given policy.
+
+    Returns
+    -------
+    tuple[float, bool]
+        ``(total_reward, terminated)`` — cumulative reward and whether the
+        episode ended via the environment's termination signal (as opposed
+        to reaching *max_num_steps* or being truncated).
+    """
 
     record_frames: list[Any] | None = None
     if record_video:
@@ -95,6 +103,7 @@ def run_single_episode(
         except Exception:  # pylint: disable=broad-exception-caught
             pass
     total_reward = 0.0
+    episode_terminated = False
     for _ in range(max_num_steps):
         action = policy(obs)
         step_out = env.step(action)
@@ -115,6 +124,7 @@ def run_single_episode(
                 pass
 
         if terminated or truncated:
+            episode_terminated = terminated
             break
     env.close()
 
@@ -129,7 +139,7 @@ def run_single_episode(
         if record_frames:
             imageio.mimsave(video_out_path, record_frames, fps=10)
 
-    return total_reward
+    return total_reward, episode_terminated
 
 
 def load_hint_text(

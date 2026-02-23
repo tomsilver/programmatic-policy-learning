@@ -153,16 +153,14 @@ def main() -> None:
     for env_num in env_nums:
         env = env_factory(env_num)
         video_path = video_dir / f"{args.env}_{env_num}.{args.video_format}"
-        success = (
-            run_single_episode(  # type: ignore[no-untyped-call]
-                env,
-                policy,
-                record_video=True,
-                video_out_path=str(video_path),
-                max_num_steps=args.max_steps,
-            )
-            > 0
+        reward, _terminated = run_single_episode(
+            env,
+            policy,
+            record_video=True,
+            video_out_path=str(video_path),
+            max_num_steps=args.max_steps,
         )
+        success = reward > 0
         results.append(bool(success))
 
     print(f"Results: {results}")

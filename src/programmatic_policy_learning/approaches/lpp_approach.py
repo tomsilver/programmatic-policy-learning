@@ -786,16 +786,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             env = self.env_factory(i)
             video_out_path = f"/tmp/lfd_{base_class_name}.{video_format}"
             assert self._policy is not None, "Policy must be trained before testing."
-            result = (
-                run_single_episode(
-                    env,
-                    self._policy,
-                    max_num_steps=max_num_steps,
-                    record_video=record_videos,
-                    video_out_path=video_out_path,
-                )
-                > 0
+            reward, _terminated = run_single_episode(
+                env,
+                self._policy,
+                max_num_steps=max_num_steps,
+                record_video=record_videos,
+                video_out_path=video_out_path,
             )
+            result = reward > 0
             accuracies.append(result)
             env.close()
         return accuracies
