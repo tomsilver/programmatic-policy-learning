@@ -126,7 +126,11 @@ class GridStateEncoder:
         )
 
         if action is not None:
+            try:
+                action_rc = (int(action[0]), int(action[1]))
+            except Exception:  # pylint: disable=broad-exception-caught
+                action_rc = action
             sections.append(
-                f"Action Taken: {action}: '{get_cell_type(objects, action)}'"
+                f"Action Taken: {action_rc}: '{get_cell_type(objects, action_rc)}'"
             )
         return "\n\n".join(sections)

@@ -284,12 +284,10 @@ def extract_hints(
 ) -> str:
     """Query the LLM and return parsed hint JSON."""
     if structured:
-        prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
-        # print(prompt)
+        # prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
+        # # print(prompt)
+        prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
         # input(prompt)
-        # prompt = build_new_hint_structured(
-        #     trajectories_text, env_name, encoding_method
-        # )
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
@@ -375,10 +373,12 @@ def main() -> None:
         # "StopTheFall"
         # "CheckmateTactic"
     ]
-    encoding_methods = ["5"]  # "1",
-    num_initial_states = [0, 2, 6]  # 4 9 deleted
+    # encoding_methods = ["5"]  # "1",
+    # num_initial_states = [0, 2, 6]  # 4 9 deleted
+    # structured_modes = [True]
+    encoding_methods = ["6"]  # "1", "6"
+    num_initial_states = [0, 2, 4, 6, 9]  # 4 9 deleted
     structured_modes = [True]
-
     for env_name in env_names:
         for encoding_method in encoding_methods:
             for structured in structured_modes:
@@ -415,7 +415,7 @@ def main() -> None:
                     #     encoder=encoder,
                     #     max_steps=max_steps_per_traj,
                     # )
-                    # ENC 1 - 4
+                    # ENC 1 - 6
                     text = trajectory_serializer.trajectory_to_text(
                         traj,
                         encoder=encoder,
@@ -435,6 +435,8 @@ def main() -> None:
                     encoding_method,
                     structured,
                 )
+                print(combined_text)
+                input()
                 # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
                 # output = extract_dsl(llm_client, dsl_prompt)
 

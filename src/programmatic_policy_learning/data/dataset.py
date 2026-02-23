@@ -315,12 +315,15 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     data_imbalance = kwargs.get("data_imbalance") or {}
     imbalance_method = data_imbalance.get("method", "none")
     offline_path_name = kwargs.get("offline_path_name")
+    enabled = data_imbalance.get("enabled", False)
+    K = data_imbalance.get("K", "none") if enabled else "none"
+    imbalance_part = f"{imbalance_method}_K{K}" if enabled else "none"
     offline_tag = "none"
     if offline_path_name:
         offline_tag = Path(str(offline_path_name)).name
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
-        f"imb{imbalance_method}-offline{offline_tag}"
+        f"imb{imbalance_part}-offline{offline_tag}"
     )
 
 

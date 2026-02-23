@@ -2,7 +2,8 @@
 
 # pylint: disable=line-too-long
 
-from typing import Sequence
+import json
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -16,9 +17,46 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.transit
 
 Coord = tuple[int, int]
 
+ENC6_PATCH_W = 7
+ENC6_SAMPLE_K = 12
+ENC6_MAX_DIST = 20
+ENC6_MAX_COMPONENT_TOKENS = 8
+ENC6_TOP_TOKENS_BINS = 3
+ENC6_TOKENS_TOP_K = 8
+ENC6_INCLUDE_LEGEND = "once"  # "once" | "per_step" | "never"
+
 
 def _to_token_grid(obs: np.ndarray) -> list[list[str]]:
     return [[str(cell) for cell in row] for row in obs.tolist()]
+
+
+def _top_tokens_by_freq(
+    counts: dict[str, int], background: str, k: int, include: list[str] | None = None
+) -> list[str]:
+    include_set = set(include or [])
+    items = [(tok, cnt) for tok, cnt in counts.items() if tok != background]
+    items.sort(key=lambda kv: (-kv[1], kv[0]))
+    top = [tok for tok, _ in items[:k]]
+    for tok in sorted(include_set):
+        if tok != background and tok not in top:
+            top.append(tok)
+    return top
+
+
+def _sample_coords(coords: list[Coord], k: int) -> list[Coord]:
+    coords_sorted = sorted(coords)
+    return coords_sorted[:k]
+
+
+def _format_enc6_legend(patch_w: int) -> str:
+    return (
+        "legend: patch="
+        + str(patch_w)
+        + "x"
+        + str(patch_w)
+        + " around action; ray[dir]=(first non-bg, steps); "
+        + "nearest[token]=Manhattan dist; comp_largest[token]=largest 4-neigh size."
+    )
 
 
 def _token_counts(grid: list[list[str]]) -> dict[str, int]:
@@ -27,6 +65,23 @@ def _token_counts(grid: list[list[str]]) -> dict[str, int]:
         for tok in row:
             counts[tok] = counts.get(tok, 0) + 1
     return counts
+
+
+def _validate_rectangular(grid: list[list[str]]) -> None:
+    if not grid:
+        return
+    w = len(grid[0])
+    for idx, row in enumerate(grid):
+        if len(row) != w:
+            raise ValueError(
+                f"Non-rectangular grid: row 0 has len {w}, row {idx} has len {len(row)}"
+            )
+
+
+def _infer_background_token(counts: dict[str, int]) -> str:
+    if "." in counts:
+        return "."
+    return _background_token(counts)
 
 
 def _background_token(counts: dict[str, int]) -> str:
@@ -181,6 +236,274 @@ def _nearest_distance(coords: list[Coord], r: int, c: int) -> int | None:
     return min(abs(r - rr) + abs(c - cc) for rr, cc in coords)
 
 
+def _coerce_action(
+    action: tuple[int, int] | None,
+) -> tuple[bool, int | None, int | None]:
+    if action is None:
+        return False, None, None
+    try:
+        r = int(action[0])
+        c = int(action[1])
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False, None, None
+    return True, r, c
+
+
+def _local_patch(grid: list[list[str]], r: int, c: int, window: int) -> list[list[str]]:
+    h = len(grid)
+    w = len(grid[0]) if h else 0
+    radius = window // 2
+    patch: list[list[str]] = []
+    for dr in range(-radius, radius + 1):
+        row: list[str] = []
+        for dc in range(-radius, radius + 1):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < h and 0 <= cc < w:
+                row.append(grid[rr][cc])
+            else:
+                row.append("OOB")
+        patch.append(row)
+    return patch
+
+
+def _patch_counts(patch: list[list[str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in patch:
+        for tok in row:
+            if tok == "OOB":
+                continue
+            counts[tok] = counts.get(tok, 0) + 1
+    return counts
+
+
+def _uf_find(parent: list[int], x: int) -> int:
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+
+
+def _uf_union(parent: list[int], size: list[int], a: int, b: int) -> None:
+    ra = _uf_find(parent, a)
+    rb = _uf_find(parent, b)
+    if ra == rb:
+        return
+    if size[ra] < size[rb]:
+        ra, rb = rb, ra
+    parent[rb] = ra
+    size[ra] += size[rb]
+
+
+def _component_summaries(
+    grid: list[list[str]],
+    by_token: dict[str, list[Coord]],
+    tokens: list[str],
+    action_rc: Coord | None,
+) -> dict[str, dict[str, int | None]]:
+    summaries: dict[str, dict[str, int | None]] = {}
+    h = len(grid)
+    w = len(grid[0]) if h else 0
+    for tok in tokens:
+        coords = by_token.get(tok, [])
+        if not coords:
+            summaries[tok] = {
+                "num_components": 0,
+                "largest_size": 0,
+                "action_component_size": None,
+            }
+            continue
+        index = {rc: i for i, rc in enumerate(coords)}
+        parent = list(range(len(coords)))
+        size = [1] * len(coords)
+
+        for r, c in coords:
+            idx = index[(r, c)]
+            if c + 1 < w and grid[r][c + 1] == tok:
+                j = index.get((r, c + 1))
+                if j is not None:
+                    _uf_union(parent, size, idx, j)
+            if r + 1 < h and grid[r + 1][c] == tok:
+                j = index.get((r + 1, c))
+                if j is not None:
+                    _uf_union(parent, size, idx, j)
+
+        roots: dict[int, int] = {}
+        for i in range(len(coords)):
+            root = _uf_find(parent, i)
+            roots[root] = size[root]
+        largest = max(roots.values()) if roots else 0
+        num_components = len(roots)
+        action_size = None
+        if action_rc is not None and action_rc in index:
+            action_root = _uf_find(parent, index[action_rc])
+            action_size = size[action_root]
+
+        summaries[tok] = {
+            "num_components": num_components,
+            "largest_size": largest,
+            "action_component_size": action_size,
+        }
+    return summaries
+
+
+def _coarse_bins(
+    grid: list[list[str]],
+    background: str,
+    top_tokens: list[str],
+) -> dict[str, list[list[int]] | dict[str, list[list[int]]]]:
+    h = len(grid)
+    w = len(grid[0]) if h else 0
+    bins_non_bg = [[0 for _ in range(3)] for _ in range(3)]
+    bins_by_token = {
+        tok: [[0 for _ in range(3)] for _ in range(3)] for tok in top_tokens
+    }
+    for r in range(h):
+        for c in range(w):
+            tok = grid[r][c]
+            br = min(2, int(r * 3 / h)) if h else 0
+            bc = min(2, int(c * 3 / w)) if w else 0
+            if tok != background:
+                bins_non_bg[br][bc] += 1
+            if tok in bins_by_token:
+                bins_by_token[tok][br][bc] += 1
+    return {"non_bg_counts": bins_non_bg, "top_token_counts": bins_by_token}
+
+
+def encode_state_action_enc6(
+    obs: np.ndarray,
+    action: tuple[int, int] | None,
+    *,
+    patch_w: int = ENC6_PATCH_W,
+    sample_k: int = ENC6_SAMPLE_K,
+    max_dist: int = ENC6_MAX_DIST,
+    max_component_tokens: int = ENC6_MAX_COMPONENT_TOKENS,
+    top_tokens_bins: int = ENC6_TOP_TOKENS_BINS,
+    tokens_top_k: int = ENC6_TOKENS_TOP_K,
+    include_legend: str = ENC6_INCLUDE_LEGEND,
+) -> dict[str, Any]:
+    """Encode (state, action) into a compact JSON-serializable structure."""
+    grid = _to_token_grid(obs)
+    _validate_rectangular(grid)
+    counts = _token_counts(grid)
+    if not counts:
+        return {
+            "legend": (
+                _format_enc6_legend(patch_w) if include_legend == "per_step" else None
+            ),
+            "state": {"grid_shape": {"h": 0, "w": 0}},
+            "action": {"valid": False, "r": None, "c": None, "token": None},
+            "local": {},
+            "transition": None,
+        }
+
+    background = _infer_background_token(counts)
+    by_token = _coords_by_token(grid)
+    valid, r, c = _coerce_action(action)
+    h = len(grid)
+    w = len(grid[0]) if h else 0
+    in_bounds = valid and r is not None and c is not None and 0 <= r < h and 0 <= c < w
+    r_i = int(r) if r is not None else None
+    c_i = int(c) if c is not None else None
+    action_token = (
+        grid[r_i][c_i] if in_bounds and r_i is not None and c_i is not None else None
+    )
+
+    include_tokens: list[str] = []
+    if in_bounds and action_token is not None and action_token != background:
+        include_tokens.append(str(action_token))
+    tokens_top = _top_tokens_by_freq(
+        counts, background, tokens_top_k, include=include_tokens
+    )
+    objects: dict[str, dict[str, object]] = {}
+    for tok in tokens_top:
+        coords = by_token.get(tok, [])
+        samples = _sample_coords(coords, sample_k)
+        objects[tok] = {
+            "count": counts.get(tok, 0),
+            "samples": [[r, c] for r, c in samples],
+        }
+    action_payload = {
+        "valid": bool(in_bounds),
+        "r": r,
+        "c": c,
+        "token": action_token,
+    }
+    non_bg_tokens = [t for t in counts if t != background]
+    ranked_tokens = sorted(
+        [(tok, counts[tok]) for tok in non_bg_tokens],
+        key=lambda kv: (-kv[1], kv[0]),
+    )
+    component_tokens = [tok for tok, _ in ranked_tokens[:max_component_tokens]]
+    action_rc = (
+        (r_i, c_i) if in_bounds and r_i is not None and c_i is not None else None
+    )
+    components = _component_summaries(grid, by_token, component_tokens, action_rc)
+    top_tokens = [tok for tok, _ in ranked_tokens[:top_tokens_bins]]
+    global_bins = _coarse_bins(grid, background, top_tokens)
+
+    components_map = {
+        tok: {
+            "num": int(summary["num_components"] or 0),
+            "largest": int(summary["largest_size"] or 0),
+            "action_comp": summary["action_component_size"],
+        }
+        for tok, summary in components.items()
+    }
+
+    local: dict[str, object] = {}
+    if in_bounds and r_i is not None and c_i is not None:
+        patch = _local_patch(grid, r_i, c_i, patch_w)
+        # local_patch = {
+        #     "window": patch_w,
+        #     "top_left": [r - patch_w // 2, c - patch_w // 2],
+        #     "grid": patch,
+        # }
+
+        patch_counts = _patch_counts(patch)
+        local["patch"] = {
+            "window": patch_w,
+            "top_left": [r_i - patch_w // 2, c_i - patch_w // 2],
+            "grid": patch,
+            "counts": patch_counts,
+        }
+        # local_patch["counts"] = patch_counts
+
+        raycasts = {}
+        for name, dr, dc in (
+            ("up", -1, 0),
+            ("down", 1, 0),
+            ("left", 0, -1),
+            ("right", 0, 1),
+        ):
+            ray_tok, dist = _ray_feature(grid, background, r_i, c_i, dr, dc)
+            raycasts[name] = {"first": ray_tok, "dist": dist}
+        local["ray"] = raycasts
+        distances = {}
+        for tok in sorted(non_bg_tokens):
+            dist = _nearest_distance(by_token.get(tok, []), r_i, c_i)
+            if dist is not None:
+                dist = min(dist, max_dist)
+            distances[tok] = dist
+        local["nearest"] = distances
+    legend = None
+    if include_legend == "per_step":
+        legend = _format_enc6_legend(patch_w)
+    return {
+        "legend": legend,
+        "state": {
+            "grid_shape": {"h": h, "w": w},
+            "background": background,
+            "tokens_top": tokens_top,
+            "objects": objects,
+            "components": components_map,
+            "global_bins": global_bins,
+        },
+        "action": action_payload,
+        "local": local,
+        "transition": None,
+    }
+
+
 def _effect_summary(
     grid_t: list[list[str]],
     grid_t1: list[list[str]] | None,
@@ -278,6 +601,57 @@ def _effect_summary(
     ]
 
 
+def _effect_summary_structured(
+    grid_t: list[list[str]],
+    grid_t1: list[list[str]] | None,
+    background: str,
+    action: Coord,
+) -> dict[str, object]:
+    if grid_t1 is None:
+        return {
+            "num_cells_changed": 0,
+            "token_at_target_after": None,
+            "created": [],
+            "removed": [],
+            "overwritten": [],
+            "moved": [],
+            "terminal": True,
+        }
+
+    h = len(grid_t)
+    w = len(grid_t[0]) if h else 0
+    created: list[tuple[str, Coord]] = []
+    removed: list[tuple[str, Coord]] = []
+    overwritten: list[tuple[Coord, str, str]] = []
+    changed = 0
+    for r in range(h):
+        for c in range(w):
+            tok0 = grid_t[r][c]
+            tok1 = grid_t1[r][c]
+            if tok0 != tok1:
+                changed += 1
+                if background not in (tok0, tok1):
+                    overwritten.append(((r, c), tok0, tok1))
+                if tok0 == background and tok1 != background:
+                    created.append((tok1, (r, c)))
+                elif tok0 != background and tok1 == background:
+                    removed.append((tok0, (r, c)))
+
+    created.sort(key=lambda item: (item[0], item[1]))
+    removed.sort(key=lambda item: (item[0], item[1]))
+    overwritten.sort(key=lambda item: (item[1], item[0], item[2]))
+
+    return {
+        "num_cells_changed": changed,
+        "token_at_target_after": grid_t1[action[0]][action[1]] if grid_t1 else None,
+        "created": [[tok, [r, c]] for tok, (r, c) in created],
+        "removed": [[tok, [r, c]] for tok, (r, c) in removed],
+        "overwritten": [[[r, c], old, new] for (r, c), old, new in overwritten],
+        "moved": [],
+        "terminal": False,
+    }
+
+
 def trajectory_to_text(
     trajectory: Sequence[tuple[np.ndarray, tuple[int, int], np.ndarray]],
     *,
@@ -292,6 +666,11 @@ def trajectory_to_text(
     steps = trajectory[:max_steps] if max_steps else trajectory
 
     if steps and encoding_method == "5":
+        first_obs = steps[0][0]
+        h = int(first_obs.shape[0])
+        w = int(first_obs.shape[1])
+        blocks.append(f"BOARD: {h}x{w}")
+    if steps and encoding_method == "6":
         first_obs = steps[0][0]
         h = int(first_obs.shape[0])
         w = int(first_obs.shape[1])
@@ -397,6 +776,46 @@ def trajectory_to_text(
             lines.extend(_effect_summary(grid_t, grid_t1, background, (r, c)))
 
             blocks.append("\n".join(lines))
+        elif encoding_method == "6":
+            # payload = encode_state_action_enc6(obs_t, action)
+            legend_mode = ENC6_INCLUDE_LEGEND
+            payload: dict[str, Any] = encode_state_action_enc6(
+                obs_t,
+                action,
+                include_legend="per_step" if legend_mode == "per_step" else "never",
+            )
+            grid_t = _to_token_grid(obs_t)
+            grid_t1 = _to_token_grid(obs_t1) if obs_t1 is not None else None
+            action_info = payload.get("action")
+            if isinstance(action_info, dict) and action_info.get("valid", False):
+
+                state_info = payload.get("state")
+                background = (
+                    state_info.get("background", "")
+                    if isinstance(state_info, dict)
+                    else ""
+                )
+                transition = _effect_summary_structured(
+                    grid_t,
+                    grid_t1,
+                    str(background) if background is not None else "",
+                    (int(action[0]), int(action[1])),
+                )
+            else:
+                transition = None
+            # step_payload = {"state_action": payload, "transition": transition}
+            step_payload = payload
+            step_payload["transition"] = transition
+            if legend_mode == "once":
+                step_payload["legend"] = (
+                    _format_enc6_legend(ENC6_PATCH_W) if i == 0 else None
+                )
+            elif legend_mode == "per_step":
+                step_payload["legend"] = _format_enc6_legend(ENC6_PATCH_W)
+            else:
+                step_payload["legend"] = None
+            blocks.append(f"== STEP {i} ==")
+            blocks.append(json.dumps(step_payload, sort_keys=True))
         else:
             tokens = list(dict.fromkeys([*salient_tokens, encoder.cfg.empty_token]))
             objs = encoder.extract_objects(obs_t, tokens)
@@ -511,6 +930,15 @@ def trajectory_to_text(
             else:
                 final_lines.append("- connected_components: none")
             blocks.append("\n".join(final_lines))
+        elif encoding_method == "6":
+            # payload = encode_state_action_enc6(final_obs, None)
+            payload = encode_state_action_enc6(
+                final_obs,
+                None,
+                include_legend="never",
+            )
+            blocks.append(f"== STATE s_{final_step_idx} ==")
+            blocks.append(json.dumps(payload, sort_keys=True))
         else:
             tokens = list(dict.fromkeys([*salient_tokens, encoder.cfg.empty_token]))
             objs = encoder.extract_objects(final_obs, tokens)

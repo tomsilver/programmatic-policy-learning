@@ -395,10 +395,7 @@ def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
     lines = ["LEGEND:"]
     for token, char in symbol_map.items():
         lines.append(f"  {char} = {token}")
-    if "empty" in symbol_map:
-        lines.append("  * = action cell")
-    else:
-        lines.append("  * = action cell")
+    lines.append("  (token_code)! = action cell")
     return "\n".join(lines)
 
 
@@ -417,8 +414,6 @@ def _format_one_example_ascii(
     r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s[r, c] if in_bounds else "OOB"
-    action_code = "*" * code_width
-
     rows = []
     for rr in range(h):
         row_codes = []
@@ -426,7 +421,7 @@ def _format_one_example_ascii(
             tok = str(s[rr, cc])
             code = symbol_map.get(tok, "?").rjust(code_width)
             if in_bounds and rr == r and cc == c:
-                code = action_code
+                code = f"{code}!"
             row_codes.append(f"'{code}'")
         rows.append("  [" + ", ".join(row_codes) + "]")
     grid = "\n".join(rows)
@@ -466,6 +461,115 @@ def _format_one_example_coords(
     return "\n".join(lines)
 
 
+SMALL_LIST_THRESHOLD = 12
+PATCH_K = 3
+
+
+def _maybe_map_ascii_tokens(s: np.ndarray, symbol_map: dict[str, str]) -> np.ndarray:
+    """Map ASCII tokens to canonical names if symbol_map is provided."""
+    s_str = s.astype(str)
+    if not symbol_map:
+        return s_str
+    inverse = {v: k for k, v in symbol_map.items()}
+    if not np.isin(s_str, list(inverse.keys())).any():
+        return s_str
+    mapper = np.vectorize(lambda tok: inverse.get(tok, tok))
+    return mapper(s_str)
+
+
+def _compress_ranges(cols: list[int]) -> list[str]:
+    if not cols:
+        return []
+    ranges: list[str] = []
+    start = prev = cols[0]
+    for col in cols[1:]:
+        if col == prev + 1:
+            prev = col
+            continue
+        ranges.append(f"{start}-{prev}")
+        start = prev = col
+    ranges.append(f"{start}-{prev}")
+    return ranges
+
+
+def _format_one_example_enc2(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+    symbol_map: dict[str, str],
+    small_list_threshold: int = SMALL_LIST_THRESHOLD,
+    patch_k: int = PATCH_K,
+) -> str:
+    """Format one labeled (state, action) example using enc_2."""
+    s_tok = _maybe_map_ascii_tokens(s, symbol_map)
+    h, w = s_tok.shape[0], s_tok.shape[1]
+    tokens, counts = np.unique(s_tok, return_counts=True)
+    bg_idx = int(np.argmax(counts)) if tokens.size else -1
+    background = tokens[bg_idx] if bg_idx >= 0 else ""
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s_tok[r, c] if in_bounds else "OOB"
+
+    lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
+    lines.append(f"BOARD: {h}x{w}")
+    lines.append(f"BACKGROUND_TOKEN: {background}")
+
+    non_bg_tokens = sorted([tok for tok in tokens if tok != background])
+    lines.append(f"TOKENS: [{', '.join(non_bg_tokens)}]")
+
+    for tok in non_bg_tokens:
+        coords = np.argwhere(s_tok == tok)
+        if coords.size:
+            order = np.lexsort((coords[:, 1], coords[:, 0]))
+            coords = coords[order]
+        if coords.size:
+            rmin = int(coords[:, 0].min())
+            rmax = int(coords[:, 0].max())
+            cmin = int(coords[:, 1].min())
+            cmax = int(coords[:, 1].max())
+            num_rows = int(len(np.unique(coords[:, 0])))
+        else:
+            rmin = rmax = cmin = cmax = -1
+            num_rows = 0
+        lines.append(f"BBOX_BY_TOKEN {tok}: ({rmin}, {rmax}, {cmin}, {cmax})")
+        lines.append(
+            f'ROW_SPAN_BY_TOKEN {tok}: {{"rmin": {rmin}, "rmax": {rmax}, "num_rows": {num_rows}}}'
+        )
+        if coords.shape[0] <= small_list_threshold:
+            coord_text = ", ".join(f"({rr}, {cc})" for rr, cc in coords)
+            lines.append(f"{tok}: [{coord_text}]")
+        else:
+            row_map: dict[int, list[int]] = {}
+            for rr, cc in coords:
+                row_map.setdefault(int(rr), []).append(int(cc))
+            row_parts = []
+            for rr in sorted(row_map):
+                cols = sorted(row_map[rr])
+                ranges = _compress_ranges(cols)
+                row_parts.append(f"{rr}:[{', '.join(ranges)}]")
+            lines.append(f"{tok}: rows {{{', '.join(row_parts)}}}")
+
+    half = patch_k // 2
+    lines.append(f"LOCAL_VIEW_{patch_k}x{patch_k}:")
+    for dr in range(-half, half + 1):
+        row_tokens = []
+        for dc in range(-half, half + 1):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < h and 0 <= cc < w:
+                tok = str(s_tok[rr, cc])
+            else:
+                tok = "OOB"
+            if dr == 0 and dc == 0:
+                tok = f"{tok}[*]"
+            row_tokens.append(tok)
+        lines.append("  [" + ", ".join(row_tokens) + "]")
+
+    return "\n".join(lines)
+
+
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
@@ -498,19 +602,27 @@ def build_collision_repair_prompt(
     use_ascii = collision_feedback_enc == "enc_1"
     if collision_feedback_enc not in {"enc_1", "enc_2"}:
         raise ValueError("collision_feedback_enc must be 'enc_1' or 'enc_2'")
+    use_enc2 = collision_feedback_enc == "enc_2"
 
     symbol_map: dict[str, str] = {}
     legend_block = ""
     if use_ascii and env_name:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
         legend_block = _format_ascii_legend(symbol_map) + "\n\n"
-
+    elif env_name:
+        symbol_map = grid_hint_config.get_symbol_map(env_name)
+    # IMPLEMENT FOR ENC2
     pos_blocks = []
     for idx in pos_indices:
         s, a = examples[idx]
         if use_ascii:
             pos_blocks.append(
                 _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
+            )
+
+        elif use_enc2:
+            pos_blocks.append(
+                _format_one_example_enc2(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
         else:
             pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
@@ -521,6 +633,10 @@ def build_collision_repair_prompt(
         if use_ascii:
             neg_blocks.append(
                 _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
+            )
+        elif use_enc2:
+            neg_blocks.append(
+                _format_one_example_enc2(s, a, label=0, idx=idx, symbol_map=symbol_map)
             )
         else:
             neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
@@ -536,6 +652,12 @@ def build_collision_repair_prompt(
                         s, a, label=1, idx=idx, symbol_map=symbol_map
                     )
                 )
+            elif use_enc2:
+                pos_blocks_2.append(
+                    _format_one_example_enc2(
+                        s, a, label=1, idx=idx, symbol_map=symbol_map
+                    )
+                )
             else:
                 pos_blocks_2.append(_format_one_example_coords(s, a, label=1, idx=idx))
         for idx in neg_indices_2:
@@ -543,6 +665,12 @@ def build_collision_repair_prompt(
             if use_ascii:
                 neg_blocks_2.append(
                     _format_one_example_ascii(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            elif use_enc2:
+                neg_blocks_2.append(
+                    _format_one_example_enc2(
                         s, a, label=0, idx=idx, symbol_map=symbol_map
                     )
                 )
@@ -562,8 +690,15 @@ POSITIVE EXAMPLE (label = 1):
 {pos_blocks_2[0] if pos_blocks_2 else ""}
 
 NEGATIVE EXAMPLES (label = 0):
-{chr(10).join(neg_blocks_2[:5])}
+{(chr(10) * 2).join(neg_blocks_2[:5])}
 """
+
+    raw_token_examples = ""
+    final_check_tokens = ""
+    if env_name and symbol_map:
+        token_samples = list(symbol_map.values())
+        raw_token_examples = ", ".join(repr(s) for s in token_samples[:6])
+        final_check_tokens = ", ".join(repr(s) for s in token_samples[:6])
 
     prompt = f"""
 ## SYSTEM
@@ -603,8 +738,7 @@ No imports. Only Python built-ins.
 ## TOKEN RESTRICTIONS (CRITICAL)
 
 You MUST NOT use:
-- any raw token characters like '.', '#', '*', etc.
-- any constants like rfts.EMPTY, rfts.LEFT_ARROW, etc.
+- any raw token characters like {raw_token_examples}
 
 You MUST use ONLY these placeholders inside feature code:
 - ${TOKEN}  (single token placeholder)
@@ -628,7 +762,7 @@ POSITIVE EXAMPLE (label = 1):
 {legend_block}{pos_blocks[0] if pos_blocks else ""}
 
 NEGATIVE EXAMPLES (label = 0):
-{chr(10).join(neg_blocks[:5])}
+{(chr(10) * 2).join(neg_blocks[:5])}
 
 {bucket2_block}
 
@@ -675,8 +809,7 @@ Rules:
 - Use only ${TOKEN}, ${DRs}, ${K} placeholders.
 
 FINAL CHECK:
-- No raw tokens '.', 'A', 'D', 'F', 'R', 'S' appear in code.
-- No stf.* appears in code.
+- No raw tokens {final_check_tokens} appear in code.
 - Output is valid JSON only.
 
 """

@@ -38,7 +38,10 @@ class GenericTransitionAnalyzer:
             if token is None:
                 return None
             locs = np.argwhere(obs == token)
-            return tuple(locs[0]) if len(locs) > 0 else None
+            if len(locs) == 0:
+                return None
+            r, c = locs[0]
+            return (int(r), int(c))
 
         a0 = find(agent_token, obs_t)
         a1 = find(agent_token, obs_t1)

@@ -207,6 +207,8 @@ def run(
     combined_text = "\n\n".join(all_traj_texts)
     prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
+    print(prompt)
+    input()
     query = Query(
         prompt,  # , hyperparameters={"temperature": 0.0, "seed": seed}
     )  # "top_p": 1.0
@@ -566,35 +568,162 @@ def manual_eval() -> None:
     """Evaluate a compiled policy function and print results."""
     final_code = """
 def policy(obs):
-    n_rows, n_cols = obs.shape
-    TOKEN, EMPTY = "token", "empty"
+    h, w = obs.shape
 
-    candidates = []
-    any_tokens = []
+    # Count values
+    counts = {}
+    flat = obs.ravel()
+    for v in flat:
+        vv = v
+        counts[vv] = counts.get(vv, 0) + 1
 
-    for r in range(n_rows):
-        for c in range(n_cols):
-            if obs[r, c] == TOKEN:
-                any_tokens.append((r, c))
-                row_has_empty_elsewhere = False
-                for c2 in range(n_cols):
-                    if c2 != c and obs[r, c2] == EMPTY:
-                        row_has_empty_elsewhere = True
-                        break
-                if row_has_empty_elsewhere:
-                    candidates.append((r, c))
+    if not counts:
+        return (0, 0)
 
-    if candidates:
-        r_max = max(rc[0] for rc in candidates)
-        best = min((rc for rc in candidates if rc[0] == r_max), key=lambda x: x[1])
-        return best
+    # Background: mode
+    bg_val = max(counts.items(), key=lambda kv: kv[1])[0]
 
-    if any_tokens:
-        r_max = max(rc[0] for rc in any_tokens)
-        best = min((rc for rc in any_tokens if rc[0] == r_max), key=lambda x: x[1])
-        return best
+    # Drawn: most frequent among non-background
+    non_bg = [(v, c) for v, c in counts.items() if v != bg_val]
+    if non_bg:
+        drawn_val = max(non_bg, key=lambda kv: kv[1])[0]
+    else:
+        drawn_val = bg_val
 
-    return (0, 0)
+    # Collect positions per value
+    pos = {}
+    for r in range(h):
+        row = obs[r]
+        for c in range(w):
+            v = row[c]
+            if v == bg_val:
+                continue
+            pos.setdefault(v, []).append((r, c))
+
+    # Singleton tokens excluding drawn
+    single = []
+    for v, ps in pos.items():
+        if v != drawn_val and len(ps) == 1:
+            r, c = ps[0]
+            single.append((v, r, c))
+
+    arrow_vals = None
+    arrow_pos = None  # (v_small, (r,c_small)), (v_big, (r,c_big))
+    if len(single) >= 2:
+        # Prefer adjacent pair on maximal row
+        best = None
+        for i in range(len(single)):
+            v1, r1, c1 = single[i]
+            for j in range(i + 1, len(single)):
+                v2, r2, c2 = single[j]
+                if r1 != r2:
+                    continue
+                if abs(c1 - c2) != 1:
+                    continue
+                cand = (r1, min(c1, c2))
+                if best is None or cand[0] > best[0] or (cand[0] == best[0] and cand[1] < best[1]):
+                    if c1 < c2:
+                        best = (r1, c1, (v1, (r1, c1)), (v2, (r2, c2)))
+                    else:
+                        best = (r1, c2, (v2, (r2, c2)), (v1, (r1, c1)))
+        if best is not None:
+            _, _, a_small, a_big = best
+            arrow_pos = (a_small, a_big)
+            arrow_vals = {a_small[0], a_big[0]}
+        else:
+            # Fallback: pick two singleton tokens with maximal row, then order by column
+            single_sorted = sorted(single, key=lambda t: (-t[1], t[2]))
+            v1, r1, c1 = single_sorted[0]
+            v2, r2, c2 = single_sorted[1]
+            if c1 <= c2:
+                arrow_pos = ((v1, (r1, c1)), (v2, (r2, c2)))
+            else:
+                arrow_pos = ((v2, (r2, c2)), (v1, (r1, c1)))
+            arrow_vals = {arrow_pos[0][0], arrow_pos[1][0]}
+
+    # Star and agent from remaining singletons
+    remaining = []
+    for v, r, c in single:
+        if arrow_vals is not None and v in arrow_vals:
+            continue
+        remaining.append((v, r, c))
+
+    star = None
+    agent = None
+    if remaining:
+        star = min(remaining, key=lambda t: (t[1], t[2]))
+        rem2 = [t for t in remaining if t[0] != star[0]]
+        if rem2:
+            agent = rem2[0]
+    else:
+        # If unable, try to infer star/agent from any non-drawn non-bg values
+        # Prefer singletons first, else skip.
+        pass
+
+    # If star missing, just click an arrow if possible
+    if star is None:
+        if arrow_pos is not None:
+            # Choose the token with larger column by default
+            return arrow_pos[1][1]
+        # Else click any singleton
+        if single:
+            return (single[0][1], single[0][2])
+        # Else click any non-bg cell
+        for v, ps in pos.items():
+            if ps:
+                return ps[0]
+        return (0, 0)
+
+    star_r, star_c = star[1], star[2]
+
+    # Find agent if missing: pick a singleton that is not an arrow and not the star
+    if agent is None:
+        for v, r, c in single:
+            if (arrow_vals is not None and v in arrow_vals) or v == star[0]:
+                continue
+            agent = (v, r, c)
+            break
+
+    if agent is None:
+        # No agent detected; click near star
+        rr = min(h - 1, star_r + 1)
+        return (rr, star_c)
+
+    ag_r, ag_c = agent[1], agent[2]
+
+    # Choose sign and arrow click location
+    step_c = 0
+    arrow_click = None
+    if arrow_pos is not None:
+        # arrow_pos[0] has smaller column, arrow_pos[1] has larger column
+        if ag_c > star_c:
+            step_c = 1
+            arrow_click = arrow_pos[0][1]
+        elif ag_c < star_c:
+            step_c = -1
+            arrow_click = arrow_pos[1][1]
+        else:
+            # Column equal: prefer larger-column arrow if present
+            step_c = -1
+            arrow_click = arrow_pos[1][1]
+    else:
+        # No arrows detected: still build with a sign from columns
+        step_c = 1 if ag_c > star_c else (-1 if ag_c < star_c else 1)
+
+    # Build diagonal of length (ag_r - star_r), starting at (star_r+1, star_c)
+    n = ag_r - star_r
+    if n > 0:
+        for t in range(n):
+            r = star_r + 1 + t
+            c = star_c + step_c * t
+            if 0 <= r < h and 0 <= c < w:
+                if obs[r, c] != drawn_val:
+                    return (r, c)
+
+    # If diagonal complete (or n <= 0), click arrow if possible, else click agent
+    if arrow_click is not None:
+        return arrow_click
+    return (ag_r, ag_c)
     """
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -616,7 +745,7 @@ def policy(obs):
 
 def main() -> None:
     """Batch entry-point mirroring run_code_as_policies."""
-    #  manual_eval() if we want to test a script manually (offline mode)
+    manual_eval()  # if we want to test a script manually (offline mode)
 
     args = _parse_cli_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)

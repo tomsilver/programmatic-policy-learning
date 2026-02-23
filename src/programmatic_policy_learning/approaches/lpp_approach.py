@@ -84,12 +84,7 @@ EnvFactory = Callable[[int | None], Any]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HINTS_ROOT = (
-    REPO_ROOT
-    / "dsl"
-    / "llm_primitives"
-    / "hint_generation"
-    / "llm_based"
-    / "final_hints"
+    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
 )
 
 
@@ -445,6 +440,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
         best_group = ranked_groups[0]
         second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
+
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
             neg_indices=best_group["neg"],
@@ -456,6 +452,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
         )
+        print(prompt)
+        input()
         try:
             output_dir = Path(HydraConfig.get().runtime.output_dir)
         except Exception:  # pylint: disable=broad-exception-caught

@@ -170,6 +170,7 @@ Using gpt5.2-pro:
 - Structured: Fixed multi-section output
 - Unstructured: Free-form two-paragraph response
 - Set main parameters inside main (env_names, encoding_methods, num_initial_states, structured_modes), then run extractor:
+  - Enc_6 (new): object-based + compact geometry summaries (local patch, raycasts, distances, components, coarse 3x3 spatial bins).
 
 Run extractor:
 
