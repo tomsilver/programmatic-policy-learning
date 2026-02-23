@@ -196,6 +196,94 @@ CODE REQUIREMENTS:
 """
 
 
+def build_continuous_hint_prompt(
+    all_trajectories_text: str,
+    env_description: str,
+    action_field_names: list[str],
+    action_low: np.ndarray,
+    action_high: np.ndarray,
+) -> str:
+    """Return the LLM prompt for continuous-action expert trajectories.
+
+    Parameters
+    ----------
+    all_trajectories_text : str
+        Concatenated text of all serialized expert trajectories.
+    env_description : str
+        Human-readable task description inserted under ``TASK DESCRIPTION``.
+    action_field_names : list[str]
+        Names for each action dimension (e.g. ``["dx", "dy", ...]``).
+    action_low : np.ndarray
+        Per-dimension lower bounds of the action space.
+    action_high : np.ndarray
+        Per-dimension upper bounds of the action space.
+
+    Returns
+    -------
+    str
+        Complete prompt string ready to send to the LLM.
+
+    Examples
+    --------
+    ::
+
+        prompt = build_continuous_hint_prompt(
+            combined_text,
+            "A 2-D navigation task ...",
+            ["dx", "dy", "dtheta", "darm", "vac"],
+            action_space.low,
+            action_space.high,
+        )
+        assert "TASK DESCRIPTION" in prompt
+        assert "dx in [" in prompt
+    """
+    bounds_lines = ", ".join(
+        f"{name} in [{lo:.4f}, {hi:.4f}]"
+        for name, lo, hi in zip(action_field_names, action_low, action_high)
+    )
+    return f"""
+You are given a few expert demonstrations of the SAME task.
+Each demonstration is a full trajectory from a different initial state.
+
+TASK DESCRIPTION:
+{env_description}
+
+IMPORTANT:
+- The observation is a 1-D NumPy float array.  Field names are given in each step.
+- The action is a NumPy array of shape ({len(action_field_names)},) with bounds: {bounds_lines}.
+- Steps within a trajectory are temporally consecutive.
+- Your job is to infer the underlying strategy/policy that generalizes across trajectories.
+- Do NOT describe individual steps.
+- Do NOT narrate what happens over time.
+- Prefer rules that are consistent across trajectories; ignore trajectory-specific ones.
+
+========================
+DEMONSTRATIONS
+========================
+{all_trajectories_text}
+
+========================
+Your task:
+Infer the rule used to choose the action from the observation, then implement it.
+
+OUTPUT FORMAT (STRICT):
+- Return ONLY executable Python code.
+- Write the inferred rule as a docstring of that function.
+- The function MUST return a valid NumPy array on EVERY call (returning None is NOT allowed).
+- The code MUST be wrapped in a Markdown code block that starts with ```python and ends with ```.
+- Do NOT include any text, explanation, headings, or comments outside the code block.
+
+CODE REQUIREMENTS:
+- Define a function with signature: def policy(obs):
+- The function takes a 1-D NumPy float array and returns a NumPy array of shape ({len(action_field_names)},).
+- You may use `np` (NumPy) and `math`. Both are pre-imported.
+- Do NOT import external libraries.
+- Ensure the returned values are within the action bounds.
+- Return exactly: np.array([{', '.join(action_field_names)}], dtype=np.float32)
+- Do NOT return a Python list or tuple.
+"""
+
+
 def env_factory(
     instance_num: int | None = None,
     env_name: str | None = None,
