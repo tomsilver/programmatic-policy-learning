@@ -383,8 +383,31 @@ def run(
     num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
     function_name: str = "policy",
-) -> str:
-    """Collect multiple env trajectories and summarise hints via the LLM."""
+) -> tuple[str, str]:
+    """Collect multiple env trajectories and summarise hints via the LLM.
+
+    Parameters
+    ----------
+    llm_client : PretrainedLargeModel
+        LLM client used for querying.
+    env_name : str
+        Grid environment name.
+    encoding_method : str
+        Trajectory encoding mode (``"1"``-``"4"``).
+    seed : int
+        Random seed for reproducibility.
+    num_initial_states : int, optional
+        Number of expert rollouts to collect (default 10).
+    max_steps_per_traj : int, optional
+        Maximum trajectory length fed to the LLM (default 40).
+    function_name : str, optional
+        Expected name of the generated policy function (default ``"policy"``).
+
+    Returns
+    -------
+    tuple[str, str]
+        A ``(prompt, llm_response)`` tuple.
+    """
     # ------------------------------------------------------------
     # 1) Setup encoder + analyzer
     # ------------------------------------------------------------
