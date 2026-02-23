@@ -22,6 +22,7 @@ Act = NDArray[np.float32]
 FeatureFn = Callable[[Obs, Act], bool]
 
 _PROGRESS_THRESHOLD = 0.005
+_WALL_CLEARANCE = 0.01
 
 # ---------------------------------------------------------------------------
 # Feature helpers  (used by f_1 / f_2)
@@ -45,7 +46,7 @@ def _is_y_aligned(
 
 def _find_next_passage(
     s: Obs,
-) -> tuple[float, float, float, float] | None:
+) -> tuple[float, float, float, float, float] | None:
     """Find the next wall/passage the robot has not yet passed.
 
     Parses all passages from the observation vector and returns the
@@ -60,13 +61,15 @@ def _find_next_passage(
         bottom = obstacle ``2*i``  (obs index ``19 + 20*i``)
         top    = obstacle ``2*i+1`` (obs index ``19 + 20*i + 10``)
 
-    ``(x, y)`` is the bottom-edge center of each rectangle, so the gap
+    ``(x, y)`` is the bottom-left corner of each rectangle, so the gap
     runs from ``bottom.y + bottom.height`` up to ``top.y``.
 
     Returns
     -------
-    ``(wall_x, passage_y, gap_bottom, gap_top)`` for the next wall ahead,
-    or ``None`` if the robot has passed all walls (or there are none).
+    tuple[float, float, float, float, float] | None
+        ``(wall_x, passage_y, gap_bottom, gap_top, wall_width)`` for the
+        next wall ahead, or ``None`` if the robot has passed all walls
+        (or there are none).
     """
     robot_x = float(s[0])
     num_obstacles = (len(s) - 19) // 10
@@ -75,21 +78,22 @@ def _find_next_passage(
     if num_passages == 0:
         return None
 
-    passages: list[tuple[float, float, float, float]] = []
+    passages: list[tuple[float, float, float, float, float]] = []
     for i in range(num_passages):
         bot_base = 19 + 20 * i
         top_base = bot_base + 10
         wall_x = float(s[bot_base])
+        wall_width = float(s[bot_base + 8])
         gap_bottom = float(s[bot_base + 1] + s[bot_base + 9])
         gap_top = float(s[top_base + 1])
         passage_y = (gap_bottom + gap_top) / 2.0
-        passages.append((wall_x, passage_y, gap_bottom, gap_top))
+        passages.append((wall_x, passage_y, gap_bottom, gap_top, wall_width))
 
     passages.sort(key=lambda p: p[0])
 
-    for wall_x, passage_y, gap_bottom, gap_top in passages:
+    for wall_x, passage_y, gap_bottom, gap_top, wall_width in passages:
         if robot_x < wall_x:
-            return (wall_x, passage_y, gap_bottom, gap_top)
+            return (wall_x, passage_y, gap_bottom, gap_top, wall_width)
 
     return None
 
@@ -113,7 +117,7 @@ def f_1(s: Obs, a: Act) -> bool:
     if passage is None:
         return True
 
-    _wall_x, passage_y, gap_bottom, gap_top = passage
+    _wall_x, passage_y, gap_bottom, gap_top, _wall_width = passage
     robot_y = float(s[1])
     robot_radius = float(s[3])
 
@@ -152,12 +156,12 @@ def f_2(s: Obs, a: Act) -> bool:
         dist_after = abs(next_x - target_x) + abs(next_y - target_y)
         return dist_after < dist_before - _PROGRESS_THRESHOLD
 
-    wall_x, passage_y, gap_bottom, gap_top = passage
+    wall_x, passage_y, gap_bottom, gap_top, wall_width = passage
 
     if not _is_y_aligned(robot_y, robot_radius, gap_bottom, gap_top):
         return True
 
-    waypoint_x = wall_x + robot_radius + 0.05
+    waypoint_x = wall_x + wall_width + robot_radius + _WALL_CLEARANCE
     waypoint_y = passage_y
     dist_before = abs(robot_x - waypoint_x) + abs(robot_y - waypoint_y)
     dist_after = abs(next_x - waypoint_x) + abs(next_y - waypoint_y)
