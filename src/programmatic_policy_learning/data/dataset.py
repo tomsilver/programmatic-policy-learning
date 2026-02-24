@@ -9,7 +9,7 @@ import random
 from collections import defaultdict
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import cloudpickle
 import numpy as np
@@ -312,6 +312,13 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     demo_number = int(args[1])
     programs = args[2]
     program_count = len(programs) if programs is not None else 0
+    seed = kwargs.get("seed")
+    seed_tag = f"s{seed}" if seed is not None else "snone"
+    demos_included = kwargs.get("demos_included")
+    demos_tag = "none"
+    if demos_included is not None:
+        demos_list = list(demos_included)
+        demos_tag = "d" + "-".join(str(d) for d in demos_list)
     data_imbalance = kwargs.get("data_imbalance") or {}
     imbalance_method = data_imbalance.get("method", "none")
     offline_path_name = kwargs.get("offline_path_name")
@@ -323,7 +330,7 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
         offline_tag = Path(str(offline_path_name)).name
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
-        f"imb{imbalance_part}-offline{offline_tag}"
+        f"demos{demos_tag}-{seed_tag}-imb{imbalance_part}-offline{offline_tag}"
     )
 
 
@@ -383,6 +390,8 @@ def run_all_programs_on_single_demonstration(
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
+    demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
+    seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
@@ -449,6 +458,8 @@ def run_all_programs_on_demonstrations(
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,
+    demos_included: Sequence[int] | None = None,
+    seed: int | None = None,
 ) -> tuple[
     Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
 ]:
@@ -465,6 +476,8 @@ def run_all_programs_on_demonstrations(
             data_imbalance=data_imbalance,
             return_examples=return_examples,
             offline_path_name=offline_path_name,
+            demos_included=demos_included,
+            seed=seed,
         )
 
         if X is None:

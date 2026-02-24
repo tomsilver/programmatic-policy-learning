@@ -217,6 +217,11 @@ def _build_token_map(env_name: str) -> dict[str, str]:
     return token_map
 
 
+def build_token_map(env_name: str) -> dict[str, str]:
+    """Public wrapper for token map retrieval."""
+    return _build_token_map(env_name)
+
+
 def _format_token_map(token_map: dict[str, str]) -> str:
     items = sorted(token_map.items(), key=lambda item: item[0])
     lines = ["TOKEN_MAP = {"]

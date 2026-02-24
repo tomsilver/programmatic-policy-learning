@@ -1,0 +1,48 @@
+{
+  "action_choice_hints": [
+    "Action cell is in the same row as the agent's current position.",
+    "Action cell is the first empty cell encountered in a given direction from the agent.",
+    "Action cell is adjacent to a drawn trace segment.",
+    "Action cell is within a contiguous run of empty cells bounded by obstacles or traces.",
+    "Action cell is not blocked by an obstacle when moving from the agent's position.",
+    "Action cell is the nearest cell in a specified direction that is not occupied by an obstacle.",
+    "Action cell is within a fixed distance (e.g., within 2 steps) from the agent.",
+    "Action cell is in a region containing a special token (e.g., a goal or star) within the same row or column.",
+    "Action cell is the only available cell in a segment between two obstacles.",
+    "Action cell is at the boundary of a region of empty cells.",
+    "Action cell is the first cell after a drawn trace when scanning from the agent's position.",
+    "Action cell is in a row or column that contains a special token.",
+    "Action cell is not in a region already covered by a drawn trace.",
+    "Action cell is in a contiguous segment of empty cells that is longer than a minimum length.",
+    "Action cell is the only cell in its row or column not blocked by an obstacle.",
+    "Action cell is in a region where all cells between the agent and the action cell are empty."
+  ],
+  "transition_hints": [
+    "Selecting an empty cell causes a drawn trace to appear at that cell.",
+    "The agent's position does not change after an action.",
+    "Obstacles and special tokens remain unchanged after an action.",
+    "Drawn traces persist and accumulate with each action.",
+    "Selecting a cell already containing a drawn trace has no effect.",
+    "Special tokens are not consumed or altered by actions.",
+    "Only the selected cell is modified per action; all other cells remain unchanged.",
+    "Actions cannot modify obstacle cells.",
+    "The environment does not automatically advance the agent or any moving tokens.",
+    "Drawn traces do not overwrite obstacles or special tokens.",
+    "No new obstacles or special tokens are introduced during transitions."
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include templates that capture both local (adjacent cell) and global (row/column/region) relations.",
+      "Ensure templates cover both proximity-based and alignment-based predicates."
+    ],
+    "placeholder_usage_limits": [
+      "Limit the number of templates using fixed distance thresholds to at most 4.",
+      "Restrict templates that scan entire rows or columns to at most 3 per direction."
+    ],
+    "avoidances": [
+      "Avoid templates that only check for cell emptiness without considering context.",
+      "Avoid templates that rely solely on absolute coordinates.",
+      "Avoid templates that duplicate predicates differing only by direction unless necessary."
+    ]
+  }
+}

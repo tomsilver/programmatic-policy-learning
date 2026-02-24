@@ -162,6 +162,13 @@ def load_hint_text(
     return raw_text
 
 
+def load_unique_hint(env_name: str, hints_root: str | Path) -> str:
+    """Load the hint file from hints_root/env_name and return its raw JSON."""
+    hint_dir = Path(hints_root) / env_name
+    hint_file = sorted(hint_dir.glob("*.json"))[0]
+    return hint_file.read_text(encoding="utf-8").strip()
+
+
 def convert_dir_lists_to_tuples(programs: list[str]) -> list[str]:
     """Convert direction lists like [-1, -1] to tuples (-1, -1) inside program
     strings.
@@ -462,7 +469,8 @@ def _format_one_example_coords(
 
 
 SMALL_LIST_THRESHOLD = 12
-PATCH_K = 3
+PATCH_K = 7
+DIFF_LIMIT = 10
 
 
 def _maybe_map_ascii_tokens(s: np.ndarray, symbol_map: dict[str, str]) -> np.ndarray:
@@ -492,6 +500,271 @@ def _compress_ranges(cols: list[int]) -> list[str]:
     return ranges
 
 
+def _find_token_positions(grid: np.ndarray, token_name: str) -> list[tuple[int, int]]:
+    coords = np.argwhere(grid == token_name)
+    if coords.size == 0:
+        return []
+    coords = coords[np.lexsort((coords[:, 1], coords[:, 0]))]
+    return [(int(r), int(c)) for r, c in coords]
+
+
+def _compress_rows(positions: list[tuple[int, int]]) -> dict[int, list[str]]:
+    rows: dict[int, list[int]] = {}
+    for r, c in positions:
+        rows.setdefault(int(r), []).append(int(c))
+    compressed: dict[int, list[str]] = {}
+    for r in sorted(rows):
+        cols = sorted(rows[r])
+        compressed[r] = _compress_ranges(cols)
+    return compressed
+
+
+def _compute_patch(
+    grid: np.ndarray, center: tuple[int, int], window: int
+) -> dict[str, Any]:
+    h, w = grid.shape[0], grid.shape[1]
+    r, c = center
+    half = window // 2
+    top_left = (r - half, c - half)
+    patch_grid: list[list[str]] = []
+    counts: dict[str, int] = {}
+    for dr in range(-half, half + 1):
+        row: list[str] = []
+        for dc in range(-half, half + 1):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < h and 0 <= cc < w:
+                tok = str(grid[rr, cc])
+            else:
+                tok = "OOB"
+            row.append(tok)
+            if tok != "OOB":
+                counts[tok] = counts.get(tok, 0) + 1
+        patch_grid.append(row)
+    return {
+        "window": window,
+        "top_left": top_left,
+        "grid": patch_grid,
+        "counts": {k: counts[k] for k in sorted(counts)},
+    }
+
+
+def _raycast(
+    grid: np.ndarray,
+    start: tuple[int, int],
+    direction: tuple[int, int],
+    background_token: str,
+) -> tuple[str | None, int | None]:
+    h, w = grid.shape[0], grid.shape[1]
+    r, c = start
+    dr, dc = direction
+    steps = 0
+    rr, cc = r + dr, c + dc
+    while 0 <= rr < h and 0 <= cc < w:
+        steps += 1
+        tok = str(grid[rr, cc])
+        if tok != background_token:
+            return tok, steps
+        rr += dr
+        cc += dc
+    return None, None
+
+
+def _manhattan_nearest(
+    positions: list[tuple[int, int]],
+    point: tuple[int, int],
+) -> int | None:
+    if not positions:
+        return None
+    r, c = point
+    return min(abs(r - rr) + abs(c - cc) for rr, cc in positions)
+
+
+def _connected_components(grid: np.ndarray, token_name: str) -> tuple[int, int]:
+    h, w = grid.shape[0], grid.shape[1]
+    visited = np.zeros((h, w), dtype=bool)
+    comps = 0
+    largest = 0
+    for r in range(h):
+        for c in range(w):
+            if visited[r, c] or str(grid[r, c]) != token_name:
+                continue
+            comps += 1
+            stack = [(r, c)]
+            visited[r, c] = True
+            size = 0
+            while stack:
+                rr, cc = stack.pop()
+                size += 1
+                for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nr, nc = rr + dr, cc + dc
+                    if 0 <= nr < h and 0 <= nc < w:
+                        if not visited[nr, nc] and str(grid[nr, nc]) == token_name:
+                            visited[nr, nc] = True
+                            stack.append((nr, nc))
+            largest = max(largest, size)
+    return comps, largest
+
+
+def _diff_cells(
+    pos_grid: np.ndarray,
+    neg_grid: np.ndarray,
+    limit: int = DIFF_LIMIT,
+) -> list[tuple[int, int, str, str]]:
+    h = min(pos_grid.shape[0], neg_grid.shape[0])
+    w = min(pos_grid.shape[1], neg_grid.shape[1])
+    diffs: list[tuple[int, int, str, str]] = []
+    for r in range(h):
+        for c in range(w):
+            a = str(pos_grid[r, c])
+            b = str(neg_grid[r, c])
+            if a != b:
+                diffs.append((r, c, a, b))
+            if len(diffs) >= limit:
+                return diffs
+    return diffs
+
+
+def _diag_path_summary(
+    grid: np.ndarray,
+    star_pos: tuple[int, int] | None,
+    agent_pos: tuple[int, int] | None,
+    drawn_token_name: str,
+    limit_steps: int | None = None,
+) -> dict[str, Any]:
+    if star_pos is None or agent_pos is None:
+        return {
+            "diag_dir": None,
+            "diag_steps_considered": 0,
+            "first_mismatch_on_diag": None,
+            "num_mismatches_on_diag": 0,
+        }
+    h, w = grid.shape[0], grid.shape[1]
+    sr, sc = star_pos
+    ar, ac = agent_pos
+    dc = 1 if (ac - sc) >= 0 else -1
+    dr = 1
+    steps = max(ar - sr, 0)
+    if limit_steps is not None:
+        steps = min(steps, limit_steps)
+    mismatches = 0
+    first_mismatch = None
+    rr, cc = sr, sc
+    for _ in range(steps):
+        rr += dr
+        cc += dc
+        if not (0 <= rr < h and 0 <= cc < w):
+            break
+        tok = str(grid[rr, cc])
+        if tok != drawn_token_name:
+            mismatches += 1
+            if first_mismatch is None:
+                first_mismatch = (rr, cc)
+    return {
+        "diag_dir": (dr, dc),
+        "diag_steps_considered": steps,
+        "first_mismatch_on_diag": first_mismatch,
+        "num_mismatches_on_diag": mismatches,
+    }
+
+
+def _select_diverse_examples(
+    pos_indices: list[int],
+    neg_indices: list[int],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    symbol_map: dict[str, str],
+    max_pos: int = 2,
+    max_neg: int = 2,
+) -> tuple[list[int], list[int]]:
+    if not pos_indices or not neg_indices:
+        return pos_indices[:max_pos], neg_indices[:max_neg]
+    pair_scores: list[tuple[int, int, int]] = []
+    for p in pos_indices:
+        s_pos, _ = examples[p]
+        s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
+        for n in neg_indices:
+            s_neg, _ = examples[n]
+            s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
+            score = len(_diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT))
+            pair_scores.append((score, p, n))
+    pair_scores.sort(key=lambda item: (-item[0], item[1], item[2]))
+    _, best_p, best_n = pair_scores[0]
+    selected_pos = [best_p]
+    selected_neg = [best_n]
+
+    remaining_pos = [p for p in pos_indices if p not in selected_pos]
+    remaining_neg = [n for n in neg_indices if n not in selected_neg]
+
+    if remaining_pos and len(selected_pos) < max_pos:
+        pos_scores: list[tuple[int, int]] = []
+        for p in remaining_pos:
+            s_pos, _ = examples[p]
+            s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
+            best = 0
+            for n in selected_neg:
+                s_neg, _ = examples[n]
+                s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
+                best = max(
+                    best, len(_diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT))
+                )
+            pos_scores.append((best, p))
+        pos_scores.sort(key=lambda item: (-item[0], item[1]))
+        selected_pos.append(pos_scores[0][1])
+
+    if remaining_neg and len(selected_neg) < max_neg:
+        neg_scores: list[tuple[int, int]] = []
+        for n in remaining_neg:
+            s_neg, _ = examples[n]
+            s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
+            best = 0
+            for p in selected_pos:
+                s_pos, _ = examples[p]
+                s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
+                best = max(
+                    best, len(_diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT))
+                )
+            neg_scores.append((best, n))
+        neg_scores.sort(key=lambda item: (-item[0], item[1]))
+        selected_neg.append(neg_scores[0][1])
+
+    return selected_pos[:max_pos], selected_neg[:max_neg]
+
+
+def _build_diff_hints(
+    pos_idx: int,
+    neg_idx: int,
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    symbol_map: dict[str, str],
+) -> str:
+    s_pos, a_pos = examples[pos_idx]
+    s_neg, _ = examples[neg_idx]
+    s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
+    s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
+    agent_pos = _find_token_positions(s_pos_tok, "agent")
+    star_pos = _find_token_positions(s_pos_tok, "star")
+    agent_anchor = agent_pos[0] if agent_pos else None
+    star_anchor = star_pos[0] if star_pos else None
+    action_pos = (int(a_pos[0]), int(a_pos[1]))
+    agent_minus_star = None
+    if agent_anchor and star_anchor:
+        agent_minus_star = (
+            agent_anchor[0] - star_anchor[0],
+            agent_anchor[1] - star_anchor[1],
+        )
+    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT)
+    diag_summary = _diag_path_summary(
+        s_pos_tok, star_anchor, agent_anchor, "drawn", limit_steps=None
+    )
+    lines = []
+    lines.append("DIFF HINTS (auto-computed):")
+    lines.append(f"- AGENT_POS: {agent_anchor}")
+    lines.append(f"- STAR_POS: {star_anchor}")
+    lines.append(f"- ACTION_POS: {action_pos}")
+    lines.append(f"- agent_minus_star: {agent_minus_star}")
+    lines.append(f"- top_k_diffs: {diffs}")
+    lines.append(f"- diag_path_from_star_toward_agent: {diag_summary}")
+    return "\n".join(lines)
+
+
 def _format_one_example_enc2(
     s: np.ndarray,
     a: tuple[int, int],
@@ -519,53 +792,86 @@ def _format_one_example_enc2(
 
     non_bg_tokens = sorted([tok for tok in tokens if tok != background])
     lines.append(f"TOKENS: [{', '.join(non_bg_tokens)}]")
+    global_counts = {tok: int((s_tok == tok).sum()) for tok in non_bg_tokens}
+    counts_text = ", ".join(f"'{tok}': {global_counts[tok]}" for tok in non_bg_tokens)
+    lines.append(f"GLOBAL_COUNTS: {{{counts_text}}}")
+
+    agent_pos = _find_token_positions(s_tok, "agent")
+    star_pos = _find_token_positions(s_tok, "star")
+    lines.append(f"AGENT_POS: {agent_pos}")
+    lines.append(f"STAR_POS: {star_pos}")
+    lines.append(f"ACTION_POS: ({r}, {c})")
+    lines.append(f"ACTION_CELL_TOKEN: {cell}")
 
     for tok in non_bg_tokens:
         coords = np.argwhere(s_tok == tok)
         if coords.size:
             order = np.lexsort((coords[:, 1], coords[:, 0]))
             coords = coords[order]
-        if coords.size:
-            rmin = int(coords[:, 0].min())
-            rmax = int(coords[:, 0].max())
-            cmin = int(coords[:, 1].min())
-            cmax = int(coords[:, 1].max())
-            num_rows = int(len(np.unique(coords[:, 0])))
-        else:
-            rmin = rmax = cmin = cmax = -1
-            num_rows = 0
-        lines.append(f"BBOX_BY_TOKEN {tok}: ({rmin}, {rmax}, {cmin}, {cmax})")
-        lines.append(
-            f'ROW_SPAN_BY_TOKEN {tok}: {{"rmin": {rmin}, "rmax": {rmax}, "num_rows": {num_rows}}}'
-        )
+        if tok == "drawn":
+            positions = _find_token_positions(s_tok, tok)
+            drawn_row_map = _compress_rows(positions)
+            drawn_row_parts: list[str] = []
+            for rr in sorted(drawn_row_map):
+                drawn_row_parts.append(f"{rr}:[{', '.join(drawn_row_map[rr])}]")
+            lines.append(f"drawn: rows {{{', '.join(drawn_row_parts)}}}")
+            if positions:
+                rmin = min(r for r, _ in positions)
+                rmax = max(r for r, _ in positions)
+                cmin = min(c for _, c in positions)
+                cmax = max(c for _, c in positions)
+                drawn_bbox = (rmin, cmin, rmax, cmax)
+                comps, largest = _connected_components(s_tok, tok)
+            else:
+                drawn_bbox = None
+                comps, largest = 0, 0
+            lines.append(f"drawn_bbox: {drawn_bbox}")
+            lines.append(
+                f"drawn_components_summary: {{'num_components': {comps}, 'largest_component_size': {largest}}}"
+            )
+            continue
         if coords.shape[0] <= small_list_threshold:
             coord_text = ", ".join(f"({rr}, {cc})" for rr, cc in coords)
             lines.append(f"{tok}: [{coord_text}]")
         else:
-            row_map: dict[int, list[int]] = {}
+            coord_row_map: dict[int, list[int]] = {}
             for rr, cc in coords:
-                row_map.setdefault(int(rr), []).append(int(cc))
-            row_parts = []
-            for rr in sorted(row_map):
-                cols = sorted(row_map[rr])
+                coord_row_map.setdefault(int(rr), []).append(int(cc))
+            row_parts: list[str] = []
+            for rr in sorted(coord_row_map):
+                cols = sorted(coord_row_map[rr])
                 ranges = _compress_ranges(cols)
                 row_parts.append(f"{rr}:[{', '.join(ranges)}]")
             lines.append(f"{tok}: rows {{{', '.join(row_parts)}}}")
 
-    half = patch_k // 2
-    lines.append(f"LOCAL_VIEW_{patch_k}x{patch_k}:")
-    for dr in range(-half, half + 1):
-        row_tokens = []
-        for dc in range(-half, half + 1):
-            rr, cc = r + dr, c + dc
-            if 0 <= rr < h and 0 <= cc < w:
-                tok = str(s_tok[rr, cc])
-            else:
-                tok = "OOB"
-            if dr == 0 and dc == 0:
-                tok = f"{tok}[*]"
-            row_tokens.append(tok)
-        lines.append("  [" + ", ".join(row_tokens) + "]")
+    patch = _compute_patch(s_tok, (r, c), patch_k)
+    lines.append("LOCAL_PATCH:")
+    lines.append(f"- window: {patch['window']}")
+    lines.append(f"- top_left: {patch['top_left']}")
+    lines.append(f"- grid: {patch['grid']}")
+    lines.append(f"- counts: {patch['counts']}")
+
+    rays = {
+        name: _raycast(s_tok, (r, c), direction, background)
+        for name, direction in {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }.items()
+    }
+    ray_text = ", ".join(
+        f"{name}: (first={tok}, dist={dist})" for name, (tok, dist) in rays.items()
+    )
+    lines.append(f"RAYS_FROM_ACTION: {{{ray_text}}}")
+
+    dist_tokens = ["agent", "star", "drawn", "left_arrow", "right_arrow"]
+    dist_parts = []
+    for name in dist_tokens:
+        positions = _find_token_positions(s_tok, name)
+        dist = _manhattan_nearest(positions, (r, c))
+        dist_parts.append(f"{name}: {dist}")
+    lines.append(f"DISTANCES_MANHATTAN: {{{', '.join(dist_parts)}}}")
 
     return "\n".join(lines)
 
@@ -589,16 +895,6 @@ def build_collision_repair_prompt(
             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
         )
 
-    rng = np.random.default_rng()
-    if len(pos_indices) > max_per_label:
-        pos_indices = rng.choice(
-            pos_indices, size=max_per_label, replace=False
-        ).tolist()
-    if len(neg_indices) > max_per_label:
-        neg_indices = rng.choice(
-            neg_indices, size=max_per_label, replace=False
-        ).tolist()
-
     use_ascii = collision_feedback_enc == "enc_1"
     if collision_feedback_enc not in {"enc_1", "enc_2"}:
         raise ValueError("collision_feedback_enc must be 'enc_1' or 'enc_2'")
@@ -611,7 +907,30 @@ def build_collision_repair_prompt(
         legend_block = _format_ascii_legend(symbol_map) + "\n\n"
     elif env_name:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
-    # IMPLEMENT FOR ENC2
+    # FORMAT2 note: uses richer evidence + deterministic example selection.
+    if use_enc2:
+        pos_indices, neg_indices = _select_diverse_examples(
+            pos_indices, neg_indices, examples, symbol_map, max_pos=2, max_neg=2
+        )
+        if pos_indices_2 and neg_indices_2:
+            pos_indices_2, neg_indices_2 = _select_diverse_examples(
+                pos_indices_2,
+                neg_indices_2,
+                examples,
+                symbol_map,
+                max_pos=2,
+                max_neg=2,
+            )
+    else:
+        rng = np.random.default_rng()
+        if len(pos_indices) > max_per_label:
+            pos_indices = rng.choice(
+                pos_indices, size=max_per_label, replace=False
+            ).tolist()
+        if len(neg_indices) > max_per_label:
+            neg_indices = rng.choice(
+                neg_indices, size=max_per_label, replace=False
+            ).tolist()
     pos_blocks = []
     for idx in pos_indices:
         s, a = examples[idx]
@@ -677,20 +996,40 @@ def build_collision_repair_prompt(
             else:
                 neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
+    diff_hints_1 = ""
+    if use_enc2 and pos_indices and neg_indices:
+        try:
+            diff_hints_1 = _build_diff_hints(
+                pos_indices[0], neg_indices[0], examples, symbol_map
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            diff_hints_1 = ""
+
     N_NEW = "N_NEW"
-    TOKEN = "TOKEN"
+    TOKEN_A = "TOKEN_A"
+    TOKEN_B = "TOKEN_B"
     DRs = "DRs"
     K = "K"
     bucket2_block = ""
     if pos_blocks_2 or neg_blocks_2:
+        diff_hints_2 = ""
+        if use_enc2 and pos_indices_2 and neg_indices_2:
+            try:
+                diff_hints_2 = _build_diff_hints(
+                    pos_indices_2[0], neg_indices_2[0], examples, symbol_map
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                diff_hints_2 = ""
         bucket2_block = f"""
 
 BUCKET 2
-POSITIVE EXAMPLE (label = 1):
-{pos_blocks_2[0] if pos_blocks_2 else ""}
+POSITIVE EXAMPLES (label = 1):
+{(chr(10) * 2).join(pos_blocks_2[:3])}
 
 NEGATIVE EXAMPLES (label = 0):
-{(chr(10) * 2).join(neg_blocks_2[:5])}
+{(chr(10) * 2).join(neg_blocks_2[:3])}
+
+{diff_hints_2}
 """
 
     raw_token_examples = ""
@@ -700,6 +1039,10 @@ NEGATIVE EXAMPLES (label = 0):
         raw_token_examples = ", ".join(repr(s) for s in token_samples[:6])
         final_check_tokens = ", ".join(repr(s) for s in token_samples[:6])
 
+    # FORMAT2 dev note: enc_2 collision evidence now includes explicit token anchors,
+    # global counts, drawn compression + component stats, expanded local patch,
+    # rays/distances, and per-bucket DIFF HINTS. These extra fields help cheaper
+    # models separate positives/negatives while keeping code constraints strict.
     prompt = f"""
 ## SYSTEM
 
@@ -741,12 +1084,14 @@ You MUST NOT use:
 - any raw token characters like {raw_token_examples}
 
 You MUST use ONLY these placeholders inside feature code:
-- ${TOKEN}  (single token placeholder)
+- ${TOKEN_A}  (token placeholder A)
+- ${TOKEN_B}  (token placeholder B)
 - ${DRs}    (list of (dr, dc) tuples placeholder)
 - ${K}      (small positive integer placeholder)
 
-No other placeholders. No token lists. No multiple distinct token placeholders.
+No other placeholders. No token lists. Optional third token placeholder is NOT allowed.
 Each feature may use at most 3 placeholders total.
+Token names like 'agent', 'star', 'drawn' may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
 
 ---
 
@@ -758,11 +1103,13 @@ yet the expert labels differ. Therefore, the current features are provably insuf
 NOTE: Each bucket below may require different features to resolve.
 
 BUCKET 1
-POSITIVE EXAMPLE (label = 1):
-{legend_block}{pos_blocks[0] if pos_blocks else ""}
+POSITIVE EXAMPLES (label = 1):
+{legend_block}{(chr(10) * 2).join(pos_blocks[:2])}
 
 NEGATIVE EXAMPLES (label = 0):
-{(chr(10) * 2).join(neg_blocks[:5])}
+{(chr(10) * 2).join(neg_blocks[:2])}
+
+{diff_hints_1}
 
 {bucket2_block}
 
@@ -806,7 +1153,7 @@ Rules:
 - Each "source" must be a valid Python function string with \\n escaped newlines.
 - Every feature must return True/False.
 - Every feature must include the exact action validation boilerplate shown above.
-- Use only ${TOKEN}, ${DRs}, ${K} placeholders.
+- Use only ${TOKEN_A}, ${TOKEN_B}, ${DRs}, ${K} placeholders.
 
 FINAL CHECK:
 - No raw tokens {final_check_tokens} appear in code.

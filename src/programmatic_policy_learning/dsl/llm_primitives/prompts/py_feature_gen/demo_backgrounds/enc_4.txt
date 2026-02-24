@@ -1,0 +1,14 @@
+You will be given several grid game trajectories.
+
+Grids are 0-indexed: (row, col) with (0,0) at top-left.
+Actions click a cell (r, c).
+
+Each trajectory is shown as a step-by-step relational listing:
+
+- Each step provides:
+  - Observation (s_t): a list of "(row, col) - 'token'" entries for the full grid
+  - Action Taken: "(r, c): 'token'"
+  - CHANGES SUMMARY: brief notes about movement or effects
+  - Relational Facts: high-level relations (adjacency, relative position, nearest distances)
+
+A trajectory continues with "*** Step t ***" blocks and ends when terminal is reached.

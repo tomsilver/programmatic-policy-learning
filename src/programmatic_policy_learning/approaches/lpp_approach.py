@@ -19,6 +19,7 @@ from prpl_llm_utils.models import OpenAIModel
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
 from programmatic_policy_learning.approaches.utils import (
     assert_features_fire,
     build_collision_repair_prompt,
@@ -27,10 +28,10 @@ from programmatic_policy_learning.approaches.utils import (
     convert_dir_lists_to_tuples,
     gini_gain_per_feature,
     load_hint_text,
+    load_unique_hint,
     log_feature_collisions,
     log_plp_violation_counts,
     run_single_episode,
-    sample_transition_example,
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
@@ -38,15 +39,20 @@ from programmatic_policy_learning.dsl.generators.grammar_based_generator import 
     Grammar,
     GrammarBasedProgramGenerator,
 )
-
-# from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-#     grid_hint_config,
-# )
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    grid_encoder,
+    grid_hint_config,
+    trajectory_serializer,
+    transition_analyzer,
+)
 from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
     LLMFeatureGenerator,
 )
 from programmatic_policy_learning.dsl.llm_primitives.feature_priors import (
     compute_feature_log_probs,
+)
+from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
+    hint_extractor,
 )
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
@@ -121,6 +127,7 @@ def get_program_set(
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
+    demo_numbers: Sequence[int] | None = None,
     outer_feedback: str | None = None,
     seed: int = 0,
 ) -> tuple[list, list, dict]:
@@ -150,10 +157,12 @@ def get_program_set(
             program_generation, env_specs, start_symbol
         ),
     }
+    llm_model = (program_generation or {}).get("llm_model", "gpt-4.1")
+
     if strategy == "feature_generator":
         cache_path = Path("feature_cache.db")
         cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel("gpt-4.1", cache)
+        llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["feature_generator_prompt"]
         num_features = program_generation["num_features"]
         env = env_factory(0)
@@ -180,34 +189,73 @@ def get_program_set(
     if strategy == "py_feature_gen":
         cache_path = Path("py_feature_cache.db")
         cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel("gpt-4.1", cache)
+        llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
         batch_prompt_path = program_generation.get("py_feature_gen_batch_prompt")
+        enc_method = str(program_generation["encoding_method"])
+        enc_id = enc_method.replace("enc_", "")
         num_features = program_generation["num_features"]
         num_batches = program_generation.get("num_batches")
-        env = env_factory(0)
-        object_types = env.get_object_types()
         py_generator = PyFeatureGenerator(llm_client)
-        hint_text = load_hint_text(
-            base_class_name,
-            program_generation["encoding_method"],
-            program_generation["hint_structured"],
-            HINTS_ROOT,
-        )
+        hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
 
-        st, at, st1 = sample_transition_example(
-            env_factory, base_class_name, "1", max_steps=40
-        )
+        demo_text: str | None = None
+        try:
+            expert = get_grid_expert(base_class_name)
+            trajectories: list[list[tuple[Any, Any, Any]]] = []
+            demos_included = program_generation.get("demos_included")
+            if demos_included is None:
+                demo_ids = list(demo_numbers) if demo_numbers is not None else [0]
+            else:
+                demo_ids = list(demos_included)
+            for init_idx in demo_ids:
+                env_demo = env_factory(init_idx)
+                traj = hint_extractor.collect_full_episode(
+                    env_demo, expert, max_steps=40, sample_count=None
+                )
+                env_demo.close()
+                trajectories.append(traj)
+            symbol_map = grid_hint_config.get_symbol_map(base_class_name)
+            enc_cfg = grid_encoder.GridStateEncoderConfig(
+                symbol_map=symbol_map,
+                empty_token="empty",
+                coordinate_style="rc",
+            )
+            encoder = grid_encoder.GridStateEncoder(enc_cfg)
+            analyzer = transition_analyzer.GenericTransitionAnalyzer()
+            salient_tokens = grid_hint_config.SALIENT_TOKENS[base_class_name]
+            all_traj_texts: list[str] = []
+            for i, traj in enumerate(trajectories):
+                if enc_method == "enc_1":
+                    text = trajectory_serializer.trajectory_to_diff_text(
+                        traj,
+                        encoder=encoder,
+                        max_steps=50,
+                    )
+                else:
+                    # ENCODING 2-6
+                    text = trajectory_serializer.trajectory_to_text(
+                        traj,
+                        encoder=encoder,
+                        analyzer=analyzer,
+                        salient_tokens=salient_tokens,
+                        encoding_method=enc_id,
+                        max_steps=50,
+                    )
+                all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
+            demo_text = "\n\n".join(all_traj_texts)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logging.info("Failed to build demonstration text: %s", exc)
+
         features, payload = py_generator.generate(
             prompt_path=prompt_path,
             batch_prompt_path=batch_prompt_path,
-            object_types=object_types,
             hint_text=hint_text,
             num_features=num_features,
             num_batches=num_batches,
-            state_t_example=st,
-            action_example=at,
-            state_t1_example=st1,
+            env_name=base_class_name,
+            demonstration_data=demo_text,
+            encoding_method=enc_method,
             _seed=seed,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
             loading=program_generation.get("loading"),
@@ -285,7 +333,8 @@ def _generate_with_dsl_generator(
     cache_path = Path("llm_cache.db")
     # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_client = OpenAIModel("gpt-4.1", cache)
+    llm_model = program_generation.get("llm_model", "gpt-4.1")
+    llm_client = OpenAIModel(llm_model, cache)
     prompt_path = program_generation["dsl_generator_prompt"]
     with open(
         prompt_path,
@@ -452,8 +501,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
         )
-        print(prompt)
-        input()
         try:
             output_dir = Path(HydraConfig.get().runtime.output_dir)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -492,12 +539,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
+            demo_numbers=self.demo_numbers,
             outer_feedback=outer_feedback,
             seed=self.seed_num,
         )
 
-        logging.info("Programs Generation is Done.")
-        logging.info(len(programs))
+        logging.info("Feature Generation is Done.")
+        logging.info("%d features are genereted!", len(programs))
 
         demonstrations, demo_dict = get_demonstrations(
             self.env_factory, self.expert, demo_numbers=self.demo_numbers
@@ -531,6 +579,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             data_imbalance=(self.program_generation or {}).get("data_imbalance"),
             return_examples=True,
             offline_path_name=offline_path_name,
+            demos_included=(self.program_generation or {}).get("demos_included"),
+            seed=self.seed_num,
         )
 
         if X is None:
