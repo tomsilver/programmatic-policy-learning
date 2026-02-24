@@ -82,7 +82,7 @@ def policy(obs):
     clearance = 0.02
     x_clear = wall_right + r + clearance
     x_align_zone = wall_left - r - 0.03
-    x_stage = wall_left - r - 0.03
+    x_stage = wall_left - r - 0.005
 
     dx = 0.0
     dy = 0.0
