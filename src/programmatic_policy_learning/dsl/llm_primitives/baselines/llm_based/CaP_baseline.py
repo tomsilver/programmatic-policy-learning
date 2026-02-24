@@ -806,6 +806,15 @@ def _parse_cli_args() -> argparse.Namespace:
         default=None,
         help="Optional destination for the plot. Defaults to <output_dir>/<env>.",
     )
+    parser.add_argument(
+        "--manual-eval-code-file",
+        type=str,
+        default=None,
+        help=(
+            "Manual-eval code file basename under manual_eval_code/ (without .txt). "
+            "Example: --manual-eval-code-file continuous_policy"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1335,54 +1344,53 @@ def manual_eval() -> None:
     """Evaluate a hard-coded policy function offline and print results.
 
     This is a developer-facing utility for quick manual testing; it
-    compiles the inline ``final_code`` string and evaluates it on the
-    environment specified via CLI ``--env``.
-    """
-    final_code = """
-def policy(obs):
-    n_rows, n_cols = obs.shape
-    TOKEN, EMPTY = "token", "empty"
+    loads policy code from ``manual_eval_code/`` and evaluates it on the
+    environment specified via CLI ``--env``. The code file is loaded from
+    ``manual_eval_code/<name>.txt`` where ``<name>`` comes from
+    ``--manual-eval-code-file`` (or defaults by ``--env-type``).
 
-    candidates = []
-    any_tokens = []
-
-    for r in range(n_rows):
-        for c in range(n_cols):
-            if obs[r, c] == TOKEN:
-                any_tokens.append((r, c))
-                row_has_empty_elsewhere = False
-                for c2 in range(n_cols):
-                    if c2 != c and obs[r, c2] == EMPTY:
-                        row_has_empty_elsewhere = True
-                        break
-                if row_has_empty_elsewhere:
-                    candidates.append((r, c))
-
-    if candidates:
-        r_max = max(rc[0] for rc in candidates)
-        best = min((rc for rc in candidates if rc[0] == r_max), key=lambda x: x[1])
-        return best
-
-    if any_tokens:
-        r_max = max(rc[0] for rc in any_tokens)
-        best = min((rc for rc in any_tokens if rc[0] == r_max), key=lambda x: x[1])
-        return best
-
-    return (0, 0)
+    Raises
+    ------
+    FileNotFoundError
+        If the requested manual-eval code file does not exist under
+        ``manual_eval_code/``.
+    RuntimeError
+        If the loaded code cannot be compiled into the expected policy
+        function.
     """
     args = _parse_cli_args()
+    if args.env_type == "continuous":
+        args.env = continuous_hint_config.canonicalize_env_name(args.env)
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    manual_code_dir = Path(__file__).resolve().parent / "manual_eval_code"
+    code_base = args.manual_eval_code_file
+    if code_base is None:
+        raise ValueError("Manual eval code file not specified.")
+    code_filename = f"{code_base}.txt"
+    final_code = (manual_code_dir / code_filename).read_text(encoding="utf-8")
     code_str = _strip_code_block(final_code)
     policy_fn = _compile_policy_function(code_str, "policy")
-    env_builder = lambda idx: env_factory(idx, args.env)
     run_expert = True
+    eval_expert: Callable[[Any], Any] | None
+    if args.env_type == "continuous":
+        env_builder: Callable[[int], Any] = lambda idx: continuous_env_factory(
+            args.env, args.num_passages, seed=idx
+        )[0]
+        ref_env, _ = continuous_env_factory(args.env, args.num_passages, seed=0)
+        assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
+        eval_expert = create_kinder_expert(args.env, ref_env.action_space, seed=0)
+        ref_env.close()
+    else:
+        env_builder = lambda idx: env_factory(idx, args.env)
+        eval_expert = get_grid_expert(args.env)
     cap_results, _expert_results = _evaluate_policy_function(
         policy_fn,
         env_builder,
         args.eval_env_nums,
         args.eval_max_steps,
         run_expert=run_expert,
-        expert_fn=get_grid_expert(args.env),
+        expert_fn=eval_expert,
+        env_type=args.env_type,
     )
     print(cap_results)
     sys.exit()
