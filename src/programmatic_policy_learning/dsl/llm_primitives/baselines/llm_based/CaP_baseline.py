@@ -361,7 +361,7 @@ def continuous_env_factory(
     """
     env_name = continuous_hint_config.canonicalize_env_name(env_name)
     kinder.register_all_environments()
-    if env_name == "Motion2D" and num_passages:
+    if env_name == "Motion2D" and num_passages >= 0:
         env_id = f"kinder/{env_name}-p{num_passages}-v0"
     else:
         raise ValueError(
