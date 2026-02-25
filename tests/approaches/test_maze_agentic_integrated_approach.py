@@ -108,10 +108,10 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
         / "src"
         / "programmatic_policy_learning"
         / "metrics"
-        / "astar_metrics.jsonl"
+        / "astar_metrics.json"
     )
 
-    cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
+    cache_path = Path("llm_cache.db")
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm = OpenAIModel("gpt-4.1", cache)
 
