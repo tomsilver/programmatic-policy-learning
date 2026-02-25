@@ -1,10 +1,12 @@
 """Dataset creation and processing utilities for programmatic policy
 learning."""
 
+import hashlib
 import inspect
 import logging
 import multiprocessing
 import os
+import pickle
 import random
 from collections import defaultdict
 from importlib import import_module
@@ -20,7 +22,11 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
-from programmatic_policy_learning.utils.cache_utils import manage_cache
+from programmatic_policy_learning.utils.cache_utils import (
+    cache_single_output,
+    load_single_cache_output,
+    manage_cache,
+)
 
 
 def allowed_cpus() -> int:
@@ -446,6 +452,89 @@ def run_all_programs_on_single_demonstration(
         X[:, p_start:p_end] = batch_matrix
     examples = fn_inputs if return_examples else None
     return X.tocsr(), np.array(y, dtype=np.uint8), examples
+
+
+def run_programs_on_examples(
+    programs: list[StateActionProgram] | list[str],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    dsl_functions: dict,
+    *,
+    program_interval: int = 1000,
+    cache_dir: str | None = "cache",
+    cache_key: str | None = None,
+    feature_sources: list[str] | None = None,
+    collision_loop_idx: int | None = None,
+) -> Any:
+    """Run programs on a fixed list of (state, action) examples.
+
+    Returns a CSR sparse matrix with rows aligned to the given examples.
+    """
+    if not examples:
+        return lil_matrix((0, 0), dtype=bool).tocsr()
+
+    if cache_dir is not None:
+        os.makedirs(cache_dir, exist_ok=True)
+        if cache_key is None:
+            hasher = hashlib.sha256()
+            program_strs = [
+                (p.program if isinstance(p, StateActionProgram) else str(p))
+                for p in programs
+            ]
+            hasher.update("\n".join(program_strs).encode("utf-8"))
+            hasher.update(pickle.dumps(examples, protocol=4))
+            if feature_sources:
+                hasher.update("\n".join(feature_sources).encode("utf-8"))
+            if collision_loop_idx is not None:
+                hasher.update(
+                    f"collision_loop_idx={collision_loop_idx}".encode("utf-8")
+                )
+            cache_key = hasher.hexdigest()[:16]
+        cache_file = os.path.join(
+            cache_dir, f"run_programs_on_examples_{cache_key}_0.npz"
+        )
+        if os.path.isfile(cache_file):
+            return load_single_cache_output(cache_file)
+
+    base_dsl, module_map = _split_dsl(dsl_functions)
+
+    try:
+        dsl_blob = cloudpickle.dumps(base_dsl)
+        cloudpickle.loads(dsl_blob)  # Test deserialization
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
+
+    program_strs = [
+        (p.program if isinstance(p, StateActionProgram) else str(p)) for p in programs
+    ]
+
+    num_data = len(examples)
+    num_programs = len(program_strs)
+    X = lil_matrix((num_data, num_programs), dtype=bool)
+
+    try:
+        ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
+    except (ValueError, RuntimeError):
+        ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
+    num_workers = allowed_cpus()
+    num_workers = max(1, min(num_workers, len(examples)))
+    for p_start in range(0, num_programs, program_interval):
+        p_end = min(p_start + program_interval, num_programs)
+        program_batch = program_strs[p_start:p_end]
+        with ctx.Pool(
+            processes=num_workers,
+            initializer=worker_init,
+            initargs=(dsl_blob, module_map, program_batch),
+            maxtasksperchild=100,
+        ) as pool:
+            results_iter = pool.imap(worker_eval_example, examples, chunksize=64)
+            batch_rows_list = list(results_iter)
+        batch_matrix = np.array(batch_rows_list, dtype=bool)
+        X[:, p_start:p_end] = batch_matrix
+
+    X_csr = X.tocsr()
+    if cache_dir is not None:
+        cache_single_output(X_csr, cache_file)
+    return X_csr
 
 
 def run_all_programs_on_demonstrations(

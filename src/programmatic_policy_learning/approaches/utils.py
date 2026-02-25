@@ -343,7 +343,8 @@ def log_plp_violation_counts(
                     violations += 1
                     all_obs.append(obs)
                     all_acts.append(action)
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(e)
                 logging.info("EXCEPTION")
                 violations += 1
         counts.append((violations, plp, all_obs, all_acts))
@@ -673,7 +674,7 @@ def _select_diverse_examples(
     examples: list[tuple[np.ndarray, tuple[int, int]]],
     symbol_map: dict[str, str],
     max_pos: int = 2,
-    max_neg: int = 2,
+    max_neg: int = 3,
 ) -> tuple[list[int], list[int]]:
     if not pos_indices or not neg_indices:
         return pos_indices[:max_pos], neg_indices[:max_neg]
@@ -709,8 +710,9 @@ def _select_diverse_examples(
             pos_scores.append((best, p))
         pos_scores.sort(key=lambda item: (-item[0], item[1]))
         selected_pos.append(pos_scores[0][1])
+        remaining_pos = [p for p in remaining_pos if p not in selected_pos]
 
-    if remaining_neg and len(selected_neg) < max_neg:
+    while remaining_neg and len(selected_neg) < max_neg:
         neg_scores: list[tuple[int, int]] = []
         for n in remaining_neg:
             s_neg, _ = examples[n]
@@ -724,7 +726,9 @@ def _select_diverse_examples(
                 )
             neg_scores.append((best, n))
         neg_scores.sort(key=lambda item: (-item[0], item[1]))
-        selected_neg.append(neg_scores[0][1])
+        chosen = neg_scores[0][1]
+        selected_neg.append(chosen)
+        remaining_neg = [n for n in remaining_neg if n != chosen]
 
     return selected_pos[:max_pos], selected_neg[:max_neg]
 
@@ -755,7 +759,7 @@ def _build_diff_hints(
         s_pos_tok, star_anchor, agent_anchor, "drawn", limit_steps=None
     )
     lines = []
-    lines.append("DIFF HINTS (auto-computed):")
+    lines.append("DIFF HINTS:")
     lines.append(f"- AGENT_POS: {agent_anchor}")
     lines.append(f"- STAR_POS: {star_anchor}")
     lines.append(f"- ACTION_POS: {action_pos}")
@@ -795,13 +799,6 @@ def _format_one_example_enc2(
     global_counts = {tok: int((s_tok == tok).sum()) for tok in non_bg_tokens}
     counts_text = ", ".join(f"'{tok}': {global_counts[tok]}" for tok in non_bg_tokens)
     lines.append(f"GLOBAL_COUNTS: {{{counts_text}}}")
-
-    agent_pos = _find_token_positions(s_tok, "agent")
-    star_pos = _find_token_positions(s_tok, "star")
-    lines.append(f"AGENT_POS: {agent_pos}")
-    lines.append(f"STAR_POS: {star_pos}")
-    lines.append(f"ACTION_POS: ({r}, {c})")
-    lines.append(f"ACTION_CELL_TOKEN: {cell}")
 
     for tok in non_bg_tokens:
         coords = np.argwhere(s_tok == tok)
@@ -876,6 +873,54 @@ def _format_one_example_enc2(
     return "\n".join(lines)
 
 
+def _format_one_example_enc2_delta(
+    s: np.ndarray,
+    a: tuple[int, int],
+    *,
+    label: int,
+    idx: int,
+    symbol_map: dict[str, str],
+) -> str:
+    """Compact delta-only summary for enc_2 collision evidence."""
+    s_tok = _maybe_map_ascii_tokens(s, symbol_map)
+    tokens, counts = np.unique(s_tok, return_counts=True)
+    bg_idx = int(np.argmax(counts)) if tokens.size else -1
+    background = tokens[bg_idx] if bg_idx >= 0 else ""
+
+    r, c = int(a[0]), int(a[1])
+    in_bounds = 0 <= r < s_tok.shape[0] and 0 <= c < s_tok.shape[1]
+    cell = s_tok[r, c] if in_bounds else "OOB"
+
+    non_bg_tokens = sorted([tok for tok in tokens if tok != background])
+    global_counts = {tok: int((s_tok == tok).sum()) for tok in non_bg_tokens}
+    counts_text = ", ".join(f"'{tok}': {global_counts[tok]}" for tok in non_bg_tokens)
+
+    drawn_rows = None
+    drawn_bbox = None
+    if "drawn" in non_bg_tokens:
+        positions = _find_token_positions(s_tok, "drawn")
+        drawn_row_map = _compress_rows(positions)
+        drawn_row_parts: list[str] = []
+        for rr in sorted(drawn_row_map):
+            drawn_row_parts.append(f"{rr}:[{', '.join(drawn_row_map[rr])}]")
+        drawn_rows = f"rows {{{', '.join(drawn_row_parts)}}}"
+        if positions:
+            rmin = min(r for r, _ in positions)
+            rmax = max(r for r, _ in positions)
+            cmin = min(c for _, c in positions)
+            cmax = max(c for _, c in positions)
+            drawn_bbox = (rmin, cmin, rmax, cmax)
+
+    parts = [
+        f"NEG idx={idx} label={label} action=({r}, {c}) cell={cell}",
+        f"GLOBAL_COUNTS: {{{counts_text}}}",
+    ]
+    if drawn_rows is not None:
+        parts.append(f"drawn: {drawn_rows}")
+        parts.append(f"drawn_bbox: {drawn_bbox}")
+    return "; ".join(parts)
+
+
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
@@ -887,6 +932,8 @@ def build_collision_repair_prompt(
     collision_feedback_enc: str = "enc_1",
     pos_indices_2: list[int] | None = None,
     neg_indices_2: list[int] | None = None,
+    seed: int | None = None,
+    collision_template_feedback: bool = True,
 ) -> str:
     """Build an LLM prompt that proposes features to resolve label
     collisions."""
@@ -910,7 +957,7 @@ def build_collision_repair_prompt(
     # FORMAT2 note: uses richer evidence + deterministic example selection.
     if use_enc2:
         pos_indices, neg_indices = _select_diverse_examples(
-            pos_indices, neg_indices, examples, symbol_map, max_pos=2, max_neg=2
+            pos_indices, neg_indices, examples, symbol_map, max_pos=1, max_neg=3
         )
         if pos_indices_2 and neg_indices_2:
             pos_indices_2, neg_indices_2 = _select_diverse_examples(
@@ -918,11 +965,11 @@ def build_collision_repair_prompt(
                 neg_indices_2,
                 examples,
                 symbol_map,
-                max_pos=2,
-                max_neg=2,
+                max_pos=1,
+                max_neg=3,
             )
     else:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed)
         if len(pos_indices) > max_per_label:
             pos_indices = rng.choice(
                 pos_indices, size=max_per_label, replace=False
@@ -947,16 +994,25 @@ def build_collision_repair_prompt(
             pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
 
     neg_blocks = []
-    for idx in neg_indices:
+    for i, idx in enumerate(neg_indices):
         s, a = examples[idx]
         if use_ascii:
             neg_blocks.append(
                 _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
             )
         elif use_enc2:
-            neg_blocks.append(
-                _format_one_example_enc2(s, a, label=0, idx=idx, symbol_map=symbol_map)
-            )
+            if i == 0:
+                neg_blocks.append(
+                    _format_one_example_enc2(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            else:
+                neg_blocks.append(
+                    _format_one_example_enc2_delta(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
         else:
             neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
@@ -979,7 +1035,7 @@ def build_collision_repair_prompt(
                 )
             else:
                 pos_blocks_2.append(_format_one_example_coords(s, a, label=1, idx=idx))
-        for idx in neg_indices_2:
+        for i, idx in enumerate(neg_indices_2):
             s, a = examples[idx]
             if use_ascii:
                 neg_blocks_2.append(
@@ -988,11 +1044,18 @@ def build_collision_repair_prompt(
                     )
                 )
             elif use_enc2:
-                neg_blocks_2.append(
-                    _format_one_example_enc2(
-                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                if i == 0:
+                    neg_blocks_2.append(
+                        _format_one_example_enc2(
+                            s, a, label=0, idx=idx, symbol_map=symbol_map
+                        )
                     )
-                )
+                else:
+                    neg_blocks_2.append(
+                        _format_one_example_enc2_delta(
+                            s, a, label=0, idx=idx, symbol_map=symbol_map
+                        )
+                    )
             else:
                 neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
@@ -1024,7 +1087,7 @@ def build_collision_repair_prompt(
 
 BUCKET 2
 POSITIVE EXAMPLES (label = 1):
-{(chr(10) * 2).join(pos_blocks_2[:3])}
+{(chr(10) * 2).join(pos_blocks_2[:2])}
 
 NEGATIVE EXAMPLES (label = 0):
 {(chr(10) * 2).join(neg_blocks_2[:3])}
@@ -1043,7 +1106,162 @@ NEGATIVE EXAMPLES (label = 0):
     # global counts, drawn compression + component stats, expanded local patch,
     # rays/distances, and per-bucket DIFF HINTS. These extra fields help cheaper
     # models separate positives/negatives while keeping code constraints strict.
-    prompt = f"""
+    prompt_feature = f"""
+## SYSTEM
+
+You are an expert feature-library repair agent for Logical Programmatic Policies (LPP) in grid-based games.
+
+Your job:
+
+Given evidence of feature collisions, propose NEW boolean feature functions f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
+
+A feature collision means:
+
+All provided examples produce IDENTICAL feature vectors under the current feature set, yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+You must propose new feature families that break this indistinguishability.
+
+Your goal is not just to separate the shown examples, but to propose structural features that generalize.
+
+
+## ENVIRONMENT
+
+- s is a 2D list of tokens (strings).
+- a is a clicked cell coordinate: a = (row, col).
+- a may contain numpy integers.
+
+Every feature MUST begin with this exact validation logic:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+No imports. Only Python built-ins.
+
+Every feature must return True or False.
+
+
+## TOKEN USAGE RULES (CRITICAL)
+
+You MAY use the following constants inside feature code:
+
+- rfts.EMPTY
+- rfts.AGENT
+- rfts.STAR
+- rfts.DRAWN
+- rfts.LEFT_ARROW
+- rfts.RIGHT_ARROW
+
+You MUST NOT use raw character tokens like '.', 'A', '*', '<', '>', '#'.
+
+You MUST NOT introduce new token constants.
+
+
+## GENERALIZATION & ANTI-OVERFITTING RULES (CRITICAL)
+
+Your features must satisfy ALL of the following:
+
+1) No hard-coded row indices, column indices, or board sizes.
+2) No hard-coded absolute counts (e.g., count_drawn >= 43).
+3) No dataset-specific constants extracted from the examples.
+4) No dependence on the specific board dimensions shown.
+5) No memorization of example-specific positions.
+
+If counts are used, they must be:
+- Relative (e.g., comparing two regions),
+- Structural (e.g., monotonic growth, connectivity),
+- Or derived from relationships between AGENT, STAR, DRAWN, and ACTION.
+
+Features must be:
+
+- Scale-free (work on larger or smaller boards),
+- Shift-invariant (work if the staircase appears elsewhere),
+- Structure-based (capture geometric or relational invariants).
+
+
+## COLLISION EVIDENCE
+
+All examples below produce IDENTICAL feature vectors under the current feature set, yet the expert labels differ.
+
+Therefore, the current features are insufficient.
+
+Each bucket may require different structural features.
+
+BUCKET 1
+POSITIVE EXAMPLES (label = 1):
+{legend_block}{(chr(10) * 2).join(pos_blocks[:2])}
+
+NEGATIVE EXAMPLES (label = 0):
+{(chr(10) * 2).join(neg_blocks[:3])}
+
+{diff_hints_1}
+
+{bucket2_block}
+
+
+## TASK
+
+1) Carefully compare POSITIVE vs NEGATIVE examples.
+2) Identify structural distinctions that are NOT captured by typical local templates.
+3) Propose NEW feature functions that capture those structural distinctions.
+4) Ensure your features would still work if:
+   - The board were larger or smaller,
+   - The staircase were shifted horizontally or vertically,
+   - The game progressed further,
+   - The same structural pattern appeared in a different region.
+
+For each feature, your description MUST explain:
+- What structural invariant it captures.
+- Why it generalizes beyond the specific examples shown.
+- Why it avoids memorizing absolute quantities.
+
+
+## OUTPUT FORMAT (STRICT)
+
+You MUST output ONLY valid JSON, directly parsable by json.loads().
+
+No markdown. No prose outside JSON.
+
+Return exactly this structure:
+
+{{
+  "features": [
+    {{
+      "id": "f101",
+      "name": "f101",
+      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
+      "source": "def f101(s, a):\\n    ...\\n"
+    }},
+    ...
+  ]
+}}
+
+Rules:
+
+- IDs must be sequential: f101, f102, f103, ...
+- Provide about 50 new features.
+- Each "source" must be a valid Python function string with \n escaped newlines.
+- Every feature must include the exact action validation boilerplate shown above.
+- Each feature must return True or False.
+- No imports.
+- No raw character tokens.
+
+
+## FINAL CHECK BEFORE OUTPUT
+
+Ensure:
+
+- No hard-coded row numbers or column numbers.
+- No dataset-specific constants.
+- No raw tokens like '.', 'A', '*', '<', '>', '#'.
+- Features are structural and relational.
+- Output is valid JSON only.
+
+    """
+    prompt_template = f"""
 ## SYSTEM
 
 You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
@@ -1090,7 +1308,7 @@ You MUST use ONLY these placeholders inside feature code:
 - ${K}      (small positive integer placeholder)
 
 No other placeholders. No token lists. Optional third token placeholder is NOT allowed.
-Each feature may use at most 3 placeholders total.
+Each feature may use at most 4 placeholders total.
 Token names like 'agent', 'star', 'drawn' may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
 
 ---
@@ -1107,7 +1325,7 @@ POSITIVE EXAMPLES (label = 1):
 {legend_block}{(chr(10) * 2).join(pos_blocks[:2])}
 
 NEGATIVE EXAMPLES (label = 0):
-{(chr(10) * 2).join(neg_blocks[:2])}
+{(chr(10) * 2).join(neg_blocks[:3])}
 
 {diff_hints_1}
 
@@ -1160,7 +1378,7 @@ FINAL CHECK:
 - Output is valid JSON only.
 
 """
-    return prompt
+    return prompt_template if collision_template_feedback else prompt_feature
 
 
 def _strip_outer_parens(expr: str) -> str:

@@ -1,6 +1,7 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import ast
+import json
 import logging
 import os
 import random
@@ -16,6 +17,7 @@ from hydra.core.hydra_config import HydraConfig
 # from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
+from scipy.sparse import hstack
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -34,7 +36,10 @@ from programmatic_policy_learning.approaches.utils import (
     run_single_episode,
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
-from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
+from programmatic_policy_learning.data.dataset import (
+    run_all_programs_on_demonstrations,
+    run_programs_on_examples,
+)
 from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
     Grammar,
     GrammarBasedProgramGenerator,
@@ -120,6 +125,170 @@ def build_py_feature_functions(
     return functions
 
 
+def _extract_feature_names(feature_programs: list[str]) -> list[str]:
+    """Extract function names from feature source strings."""
+    names: list[str] = []
+    for source in feature_programs:
+        tree = ast.parse(source)
+        func_names = [
+            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+        ]
+        if not func_names:
+            raise ValueError("Expected at least one function definition in feature.")
+        names.extend(func_names)
+    return names
+
+
+def _constant_feature_cols(
+    X_csr: Any,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = X_csr.shape[0]  # num examples
+    # nnz per column = how many rows have a nonzero entry in that feature
+    col_nnz = np.asarray(X_csr.getnnz(axis=0)).ravel()
+    all_zero = np.where(col_nnz == 0)[0]
+    all_one = np.where(col_nnz == n)[0]  # only valid if X is truly binary 0/1
+    return all_zero, all_one, col_nnz
+
+
+def _filter_constant_features(
+    X: Any,
+    programs_sa: list[StateActionProgram],
+    program_prior_log_probs: list[float] | None,
+    *,
+    round_idx: int | None = None,
+) -> tuple[Any, list[StateActionProgram], list[float] | None, np.ndarray]:
+    all_zero, all_one, col_nnz = _constant_feature_cols(X)
+    remove = np.unique(np.concatenate([all_zero, all_one]))
+    if remove.size > 0:
+        keep_mask = np.ones(X.shape[1], dtype=bool)
+        keep_mask[remove] = False
+        X = X[:, keep_mask]
+        programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+        if program_prior_log_probs is not None:
+            program_prior_log_probs = [
+                lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+            ]
+        if round_idx is None:
+            logging.info("Filtered constant features. New X shape: %s", X.shape)
+        else:
+            logging.info(
+                "Filtered constant features after feedback round %d. "
+                "New X shape: %s",
+                round_idx,
+                X.shape,
+            )
+    return X, programs_sa, program_prior_log_probs, col_nnz
+
+
+def _append_new_features_from_sources(
+    X: Any,
+    programs_sa: list[StateActionProgram],
+    program_prior_log_probs: list[float] | None,
+    dsl_functions: dict[str, Any],
+    new_feature_sources: list[str],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    *,
+    start_index: int,
+    collision_loop_idx: int,
+) -> tuple[Any, int]:
+    dsl_functions.update(build_py_feature_functions(new_feature_sources, dsl_functions))
+    new_feature_names = _extract_feature_names(new_feature_sources)
+    new_programs = [f"{name}(s, a)" for name in new_feature_names]
+    new_programs_sa = [StateActionProgram(p) for p in new_programs]
+    X_new = run_programs_on_examples(
+        new_programs_sa,
+        examples,
+        dsl_functions,
+        feature_sources=new_feature_sources,
+        collision_loop_idx=collision_loop_idx,
+    )
+    X = hstack([X, X_new]).tocsr()
+    programs_sa.extend(new_programs_sa)
+    if program_prior_log_probs is not None:
+        new_priors = priors_from_features(new_feature_sources)["logprobs"]
+        program_prior_log_probs.extend(new_priors)
+    return X, start_index + len(new_feature_names)
+
+
+def _run_collision_feedback_loop(
+    *,
+    collision_groups: list[dict[str, Any]],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    max_rounds: int,
+    target_collisions: int,
+    start_index: int,
+    program_prior_log_probs: list[float] | None,
+    X: Any,
+    y: np.ndarray | None,
+    programs_sa: list[StateActionProgram],
+    dsl_functions: dict[str, Any],
+    generate_features: Callable[
+        [str, int, int], tuple[list[str], dict[str, Any], Path]
+    ],
+    make_prompt: Callable[
+        [list[dict[str, Any]], list[tuple[np.ndarray, tuple[int, int]]]], str | None
+    ],
+) -> tuple[
+    Any,
+    list[StateActionProgram],
+    list[float] | None,
+    list[dict[str, Any]],
+    Path | None,
+    np.ndarray,
+]:
+    collision_payloads: list[dict[str, Any]] = []
+    collision_output_path: Path | None = None
+    col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
+    for round_idx in range(max_rounds):
+        num_collisions = len(collision_groups) if collision_groups else 0
+        if num_collisions <= target_collisions:
+            logging.info(
+                "Collision feedback stopping: %d <= target %d.",
+                num_collisions,
+                target_collisions,
+            )
+            break
+        prompt = make_prompt(collision_groups, examples)
+        if prompt is None:
+            break
+        new_feature_sources, collision_payload, output_path = generate_features(
+            prompt, start_index, round_idx + 1
+        )
+        collision_payloads.append(collision_payload)
+        collision_output_path = output_path
+
+        if not new_feature_sources:
+            logging.info("No new features generated; stopping feedback loop.")
+            break
+        X, start_index = _append_new_features_from_sources(
+            X,
+            programs_sa,
+            program_prior_log_probs,
+            dsl_functions,
+            new_feature_sources,
+            examples,
+            start_index=start_index,
+            collision_loop_idx=round_idx + 1,
+        )
+        X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
+            X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
+        )
+        collision_groups = log_feature_collisions(X, y, examples)
+        logging.info(
+            "Collision groups after feedback round %d: %d",
+            round_idx + 1,
+            len(collision_groups) if collision_groups else 0,
+        )
+    return (
+        X,
+        programs_sa,
+        program_prior_log_probs,
+        collision_payloads,
+        collision_output_path,
+        col_nnz,
+    )
+
+
 def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
@@ -130,7 +299,7 @@ def get_program_set(
     demo_numbers: Sequence[int] | None = None,
     outer_feedback: str | None = None,
     seed: int = 0,
-) -> tuple[list, list, dict]:
+) -> tuple[list[Any], list[float], dict[str, Any]]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
 
@@ -433,6 +602,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         dt_splitter: str = "random",
         cc_alpha: float = 0.0,
         collision_feedback_enc: str = "enc_1",
+        collision_template_feedback: bool = True,
+        collision_feedback_enabled: bool = False,
+        collision_feedback_max_new_features: int = 10,
+        collision_feedback_max_rounds: int = 1,
+        collision_feedback_target_collisions: int = 0,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -458,19 +632,72 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.dt_splitter = dt_splitter
         self.cc_alpha = cc_alpha
         self.collision_feedback_enc = collision_feedback_enc
+        self.collision_template_feedback = collision_template_feedback
+        self.collision_feedback_enabled = collision_feedback_enabled
+        self.collision_feedback_max_new_features = collision_feedback_max_new_features
+        self.collision_feedback_max_rounds = collision_feedback_max_rounds
+        self.collision_feedback_target_collisions = collision_feedback_target_collisions
+        self.collision_feedback_reprompt_max_attempts = 5
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
         random.seed(self.seed_num)
         np.random.seed(self.seed_num)
 
+    def _generate_collision_features(
+        self,
+        prompt: str,
+        *,
+        start_index: int,
+        collision_idx: int,
+    ) -> tuple[list[str], dict[str, Any], Path]:
+        if self.program_generation is None:
+            logging.info("Collision feedback skipped: program_generation missing.")
+            return [], {}, Path()
+        if self.program_generation.get("strategy") != "py_feature_gen":
+            logging.info(
+                "Collision feedback skipped: strategy %s does not support LLM features.",
+                self.program_generation.get("strategy"),
+            )
+            return [], {}, Path()
+
+        llm_model = (self.program_generation or {}).get("llm_model", "gpt-4.1")
+        cache_path = Path("py_feature_cache.db")
+        cache = SQLite3PretrainedLargeModelCache(cache_path)
+        llm_client = OpenAIModel(llm_model, cache)
+        py_generator = PyFeatureGenerator(llm_client)
+
+        template_payload = py_generator.query_llm(
+            prompt,
+            max_attempts=self.collision_feedback_reprompt_max_attempts,
+            reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
+            seed=self.seed_num,
+        )
+        print(template_payload)
+        expanded_payload = py_generator.expand_template_payload(
+            template_payload, env_name=self.base_class_name, start_index=start_index
+        )
+        py_generator.write_json(
+            f"py_feature_payload_collision_{collision_idx}.json", expanded_payload
+        )
+        feature_programs = py_generator.parse_feature_programs(expanded_payload)
+        if self.collision_feedback_max_new_features > 0:
+            feature_programs = feature_programs[
+                : self.collision_feedback_max_new_features
+            ]
+        logging.info(
+            "Collision feedback generated %d new feature(s).",
+            len(feature_programs),
+        )
+        return feature_programs, expanded_payload, py_generator.output_path
+
     def _handle_collision_feedback(
         self,
         collision_groups: list[dict[str, Any]],
         examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
-    ) -> None:
+    ) -> str | None:
         if not collision_groups or examples is None:
-            return
+            return None
         ranked_groups = sorted(
             collision_groups, key=lambda g: g["max_occur"], reverse=True
         )
@@ -500,6 +727,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             collision_feedback_enc=self.collision_feedback_enc,
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
+            seed=self.seed_num,
+            collision_template_feedback=self.collision_template_feedback,
         )
         try:
             output_dir = Path(HydraConfig.get().runtime.output_dir)
@@ -512,6 +741,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         out_path = output_dir / f"{prefix}{next_idx}.txt"
         out_path.write_text(prompt, encoding="utf-8")
         logging.info("Collision repair prompt written to %s", out_path)
+        return prompt
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -520,16 +750,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
-
-        def constant_feature_cols(
-            X_csr: Any,
-        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-            n = X_csr.shape[0]  # num examples
-            # nnz per column = how many rows have a nonzero entry in that feature
-            col_nnz = np.asarray(X_csr.getnnz(axis=0)).ravel()
-            all_zero = np.where(col_nnz == 0)[0]
-            all_one = np.where(col_nnz == n)[0]  # only valid if X is truly binary 0/1
-            return all_zero, all_one, col_nnz
 
         outer_feedback = None
         programs, program_prior_log_probs, dsl_functions = get_program_set(
@@ -543,7 +763,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             outer_feedback=outer_feedback,
             seed=self.seed_num,
         )
-
+        program_prior_log_probs: list[float] | None = program_prior_log_probs
+        start_index = len(programs) + 1
         logging.info("Feature Generation is Done.")
         logging.info("%d features are genereted!", len(programs))
 
@@ -555,11 +776,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             raise ValueError("program_generation config is required.")
 
         if self.program_generation["strategy"] == "py_feature_gen":
-            # n = self.program_generation["num_features"]
-            total_features = len(programs)
-            programs = [
-                f"f{i}(s, a)" for i in range(1, total_features + 1)
-            ]  # check space
+            feature_names = _extract_feature_names(list(programs))
+            programs = [f"{name}(s, a)" for name in feature_names]
 
         programs_sa: list[StateActionProgram] = [
             StateActionProgram(p) for p in programs
@@ -592,29 +810,59 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ############ ANALYSIS ON DATA ############
         ##########################################
 
-        all_zero, all_one, col_nnz = constant_feature_cols(X)
+        all_zero, all_one, col_nnz = _constant_feature_cols(X)
         logging.info(f"n_examples={X.shape[0]} n_features={X.shape[1]}")
         logging.info(f"#all-zero features={len(all_zero)} indices={all_zero[:30]}")
         logging.info(f"#all-one features={len(all_one)} indices={all_one[:30]}")
-
-        remove = np.unique(np.concatenate([all_zero, all_one]))
-        if remove.size > 0:
-            keep_mask = np.ones(X.shape[1], dtype=bool)
-            keep_mask[remove] = False
-            X = X[:, keep_mask]
-            programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
-            if program_prior_log_probs is not None:
-                program_prior_log_probs = [
-                    lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
-                ]
-            logging.info("Filtered constant features. New X shape: %s", X.shape)
+        X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
+            X, programs_sa, program_prior_log_probs
+        )
 
         collision_groups = log_feature_collisions(
             X,
             y,
             examples,
         )
-        self._handle_collision_feedback(collision_groups, examples)
+
+        ################### COLLISION FEEDBACK LOOP ####################
+        if self.collision_feedback_enabled and examples is not None:
+            max_rounds = max(1, self.collision_feedback_max_rounds)
+
+            def _generate_collision_features(
+                prompt: str, start_idx: int, collision_idx: int
+            ) -> tuple[list[str], dict[str, Any], Path]:
+                return self._generate_collision_features(
+                    prompt, start_index=start_idx, collision_idx=collision_idx
+                )
+
+            (
+                X,
+                programs_sa,
+                program_prior_log_probs,
+                collision_payloads,
+                collision_output_path,
+                col_nnz,
+            ) = _run_collision_feedback_loop(
+                collision_groups=collision_groups,
+                examples=examples,
+                max_rounds=max_rounds,
+                target_collisions=(self.collision_feedback_target_collisions),
+                start_index=start_index,
+                program_prior_log_probs=program_prior_log_probs,
+                X=X,
+                y=y,
+                programs_sa=programs_sa,
+                dsl_functions=dsl_functions,
+                generate_features=_generate_collision_features,
+                make_prompt=self._handle_collision_feedback,
+            )
+            if collision_payloads and collision_output_path is not None:
+                all_payload = {"collision_payloads": collision_payloads}
+                out_path = (
+                    collision_output_path / "py_feature_payload_collision_all.json"
+                )
+                out_path.write_text(json.dumps(all_payload, indent=4), encoding="utf-8")
+        logging.info("Data after collision feedback loop: X shape %s", X.shape)
 
         n = X.shape[0]
         logging.info(f"N={n}")

@@ -224,6 +224,7 @@ class PyFeatureGenerator:
 
     def _substitute(self, src: str, assignment: dict[str, Any]) -> str:
         def repl(m: re.Match) -> str:
+            """Replace a placeholder match with its rendered value."""
             key = m.group(1)
             return self._render_placeholder(key, assignment[key])
 
@@ -236,9 +237,15 @@ class PyFeatureGenerator:
         start, end = m.span(1)
         return source[:start] + new_fn_name + source[end:]
 
-    def _expand_template_payload(
-        self, payload: dict[str, Any], env_name: str | None
+    def expand_template_payload(
+        self,
+        payload: dict[str, Any],
+        env_name: str | None,
+        *,
+        start_index: int = 1,
     ) -> dict[str, Any]:
+        """Expand a template payload by substituting placeholders and renaming
+        IDs."""
         if env_name is None:
             raise ValueError("env_name is required to expand template payloads.")
 
@@ -260,8 +267,10 @@ class PyFeatureGenerator:
         dr_lists = [dirs8, dirs4, horizontal, vertical]
         ks = [1, 2, 3, 5, 10, 20]
 
+        if start_index < 1:
+            raise ValueError("start_index must be >= 1.")
         expanded: list[dict[str, str]] = []
-        next_id = 1
+        next_id = start_index
 
         for feat in payload.get("features", []):
             src = self._normalize_placeholders(feat["source"])
@@ -442,15 +451,15 @@ class PyFeatureGenerator:
                         start_index=len(all_programs) + 1,
                     )
                 prompt = f"{prompt}\n\nSEED: {_seed}\n"
-                logging.info(prompt)
+                # logging.info(prompt)
                 template_payload = self.query_llm(
                     prompt,
                     max_attempts=max_attempts,
                     reprompt_checks=reprompt_checks,
                     seed=_seed,
                 )
-                expanded_payload = self._expand_template_payload(
-                    template_payload, env_name
+                expanded_payload = self.expand_template_payload(
+                    template_payload, env_name, start_index=1
                 )
                 feature_programs = self.parse_feature_programs(expanded_payload)
                 # all_descriptions.extend(self._extract_descriptions(template_payload))
@@ -483,7 +492,7 @@ class PyFeatureGenerator:
             raise ValueError("offline_json_path is required when running offline.")
         payload_text = Path(offline_json_path).read_text(encoding="utf-8")
         payload = json.loads(payload_text)
-        payload = self._expand_template_payload(payload, env_name)
+        payload = self.expand_template_payload(payload, env_name, start_index=1)
         feature_programs = self.parse_feature_programs(payload)
         # logging.info(feature_programs)
         return feature_programs, payload

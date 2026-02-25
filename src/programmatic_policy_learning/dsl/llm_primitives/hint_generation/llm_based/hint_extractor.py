@@ -292,7 +292,7 @@ def extract_hints(
         # prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
         # # print(prompt)
         prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
-        # input(prompt)
+
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
