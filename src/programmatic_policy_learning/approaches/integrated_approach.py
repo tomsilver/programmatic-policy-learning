@@ -1,4 +1,5 @@
-"""An approach that synthesizes a programmatic policy using an LLM with access to a planner."""
+"""An approach that synthesizes a programmatic policy using an LLM with access
+to a planner."""
 
 import logging
 from typing import Any, Callable, List, TypeVar
@@ -72,7 +73,8 @@ PLANNER_DOC = '''
 
 
 class IntegratedApproach(BaseApproach[_ObsType, _ActType]):
-    """An approach that synthesizes a programmatic policy using an LLM with planner access."""
+    """An approach that synthesizes a programmatic policy using an LLM with
+    planner access."""
 
     def __init__(
         self,
@@ -132,11 +134,11 @@ def synthesize_policy_with_planner_access(
     get_cost: Callable[[], float],
     check_goal: Callable[[_State, Any], bool],
 ) -> Callable[..., _ActType]:
-    """Use the LLM to synthesize a programmatic policy with access to a planner."""
+    """Use the LLM to synthesize a programmatic policy with access to a
+    planner."""
 
     function_name = "_policy"
-    query = Query(
-        f"""Generate a Python function policy of the form
+    query = Query(f"""Generate a Python function policy of the form
 
         ```python
         def _policy(obs, get_actions, get_next_state, get_cost, check_goal):
@@ -259,8 +261,7 @@ def synthesize_policy_with_planner_access(
             accumulate `_policy.total_num_evals` and `_policy.total_num_expansions`.
 
         Return only the function; do not give example usages.
-        """
-    )
+        """)
     # Insert instructions for different approaches here. For example:
 
     # Pure Planning: Always Plans

@@ -55,17 +55,13 @@ class StateActionProgram:
             return StateActionProgram(self.program + s)
         if isinstance(s, StateActionProgram):
             return StateActionProgram(self.program + s.program)
-        raise TypeError(
-            f"Unsupported operand type(s) for +: '\
-            {type(self).__name__}' and '{type(s).__name__}'"
-        )
+        raise TypeError(f"Unsupported operand type(s) for +: '\
+            {type(self).__name__}' and '{type(s).__name__}'")
 
     def __radd__(self, s: Any) -> "StateActionProgram":
         if isinstance(s, str):
             return StateActionProgram(s + self.program)
         if isinstance(s, StateActionProgram):
             return StateActionProgram(s.program + self.program)
-        raise TypeError(
-            f"Unsupported operand type(s) for +: '\
-                {type(s).__name__}' and '{type(self).__name__}'"
-        )
+        raise TypeError(f"Unsupported operand type(s) for +: '\
+                {type(s).__name__}' and '{type(self).__name__}'")

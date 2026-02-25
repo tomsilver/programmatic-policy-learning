@@ -60,8 +60,7 @@ def synthesize_policy_from_environment_description(
     """Use the LLM to synthesize a programmatic policy."""
 
     function_name = "_policy"
-    query = Query(
-        f"""Generate a Python function policy of the form
+    query = Query(f"""Generate a Python function policy of the form
 
 ```python
 def _policy(obs):
@@ -81,8 +80,7 @@ Here is an example observation:
 {example_observation}
 
 Return only the function; do not give example usages.
-"""
-    )
+""")
     reprompt_checks = [
         SyntaxRepromptCheck(),
         FunctionOutputRepromptCheck(

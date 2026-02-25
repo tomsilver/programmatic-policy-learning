@@ -1,7 +1,7 @@
 """Tests for agentic_integrated_approach.py with maze environment."""
 
+import json
 import os
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -142,8 +142,18 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
 
     print("Goal reached:", goal_reached)
 
-    # Print search metrics (accumulated by the generated class)
-    generated = approach._generated
+    # Print search metrics from the JSON file written by run_astar
+    metrics_path = Path(os.environ["astar_metrics_path"])
+    total_evals = 0
+    total_expansions = 0
+    if metrics_path.exists():
+        with metrics_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entry = json.loads(line)
+                    total_evals += entry["num_evals"]
+                    total_expansions += entry["num_expansions"]
     print("Search Metrics:")
-    print("Num_evals:", getattr(generated, "total_num_evals", 0))
-    print("Num_expansions:", getattr(generated, "total_num_expansions", 0))
+    print("Num_evals:", total_evals)
+    print("Num_expansions:", total_expansions)
