@@ -54,54 +54,23 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
     )
 
     env.action_space.seed(123)
-    environment_description = f"""
-        A maze environment with two regions: an outer void and an inner maze.
 
-        COORDINATE SYSTEM:
-        - Observation is (row, col).
-        - Rows increase going South, columns increase going East.
-        - The inner maze occupies rows 0..{env.inner_h - 1} and cols 0..{env.inner_w - 1}.
+    obs, info = env.reset(seed=123)
+    goal = info["goal"]
+    environment_description = f"""The observation is a (row, col) position tuple. The goal is always at
+the bottom-right corner of the inner maze grid, i.e.,
+(inner_height - 1, inner_width - 1). The maze dimensions can vary across
+episodes, so the goal position must be determined dynamically by probing
+the environment with get_next_state to find the inner maze boundaries.
 
-        REGIONS:
-        - Outer void: open area surrounding the maze. No obstacles. The agent
-          can be at any (row, col) outside the wall border.
-        - Wall border: a solid rectangular wall that fully encloses the maze.
-          It occupies row=-1 (from col=-1 to col={env.inner_w}),
-          row={env.inner_h}, col=-1, and col={env.inner_w}. Any attempt to move
-          into a wall cell is blocked (the agent stays in place).
-        - Entrance: the ONLY gap in the wall border, at cell (-1, 0). This is
-          the only way into the maze from the outer void.
-        - Inner maze: a {env.inner_h}x{env.inner_w} grid with internal walls.
-          The layout is not known in advance.
+Here is one example from this environment:
+- Observation: {obs}
+- Goal: {goal}
 
-        IMPORTANT: The wall border is a solid barrier. The entire row=-1
-        (except the entrance at (-1, 0)) is wall. If you navigate to row=-1
-        at any column other than 0, you will be stuck on the wall and unable
-        to move East or West along that row. To avoid this, always go to
-        row=-2 (which is in the open outer void) before moving horizontally.
-
-        ACTIONS:
-        - Action 0 (North): row -= 1.
-        - Action 1 (South): row += 1.
-        - Action 2 (East):  col += 1.
-        - Action 3 (West):  col -= 1.
-
-        TASK:
-        Step 1: Navigate from a random outer void position to the entrance (-1, 0).
-                The wall border blocks direct paths, so you must go AROUND it:
-                a) First, move to row=-2 (above the wall border). Row -2 is in
-                   the outer void and completely obstacle-free.
-                   - If row > -2, move North (action 0) until row == -2.
-                   - If row < -2, move South (action 1) until row == -2.
-                b) Then, move horizontally to col=0 (the entrance column).
-                   - If col > 0, move West (action 3) until col == 0.
-                   - If col < 0, move East (action 2) until col == 0.
-                c) Finally, move South (action 1) once to reach (-1, 0).
-        Step 2: From (-1, 0), move South (action 1) to enter the maze at (0, 0).
-        Step 3: Navigate through the inner maze to the goal at {env.goal_pos}.
-                The maze has internal walls, so use the A* planner with
-                get_next_state to find a path.
-    """
+This is just one example. Both the starting position and the maze dimensions
+(and therefore the goal and observation bounds) can change across episodes.
+The written policy must not hardcode positions or dimensions. Use
+get_next_state to discover the environment structure dynamically."""
 
     os.environ["astar_metrics_path"] = str(
         Path(__file__).parents[2]
@@ -127,8 +96,40 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
         check_goal=env.check_goal,
     )
 
+    # TRAINING PHASE (obs and info already obtained from env.reset above).
+    approach.reset(obs, info)
+    env.close()
+
+    # EVALUATION PHASE.
+    # TODO: add multiple mazes.
+    inner_maze = np.array(
+    [
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+        [1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1],
+        [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1],
+        [1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
+        [1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+        [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+        [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
+        [1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
+        [1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1],
+        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0],
+    ],
+    dtype=np.int8,
+)
+    outer_margin = 20
+    enable_render = True
+    env = MazeEnv(
+        inner_maze=inner_maze, outer_margin=outer_margin, enable_render=enable_render
+    )
     obs, info = env.reset(seed=123)
     approach.reset(obs, info)
+
     goal_reached = False
     for _ in range(1000):
         action = approach.step()
