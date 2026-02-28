@@ -251,9 +251,12 @@ def _run_collision_feedback_loop(
         prompt = make_prompt(collision_groups, examples)
         if prompt is None:
             break
+        prompt = f"{prompt}\n\nCOLLISION_FEEDBACK_ROUND: {round_idx + 1}\n"
         new_feature_sources, collision_payload, output_path = generate_features(
             prompt, start_index, round_idx + 1
         )
+        # print(f"Generated new features: {new_feature_sources}")
+        # input()
         collision_payloads.append(collision_payload)
         collision_output_path = output_path
 
@@ -605,7 +608,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_template_feedback: bool = True,
         collision_feedback_enabled: bool = False,
         collision_feedback_max_new_features: int = 10,
-        collision_feedback_max_rounds: int = 1,
+        collision_feedback_max_rounds: int = 3,
         collision_feedback_target_collisions: int = 0,
     ) -> None:
         """LPP APProach."""

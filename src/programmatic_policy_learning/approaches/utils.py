@@ -495,9 +495,9 @@ def _compress_ranges(cols: list[int]) -> list[str]:
         if col == prev + 1:
             prev = col
             continue
-        ranges.append(f"{start}-{prev}")
+        ranges.append(f"{start}" if start == prev else f"{start}-{prev}")
         start = prev = col
-    ranges.append(f"{start}-{prev}")
+    ranges.append(f"{start}" if start == prev else f"{start}-{prev}")
     return ranges
 
 
@@ -805,28 +805,6 @@ def _format_one_example_enc2(
         if coords.size:
             order = np.lexsort((coords[:, 1], coords[:, 0]))
             coords = coords[order]
-        if tok == "drawn":
-            positions = _find_token_positions(s_tok, tok)
-            drawn_row_map = _compress_rows(positions)
-            drawn_row_parts: list[str] = []
-            for rr in sorted(drawn_row_map):
-                drawn_row_parts.append(f"{rr}:[{', '.join(drawn_row_map[rr])}]")
-            lines.append(f"drawn: rows {{{', '.join(drawn_row_parts)}}}")
-            if positions:
-                rmin = min(r for r, _ in positions)
-                rmax = max(r for r, _ in positions)
-                cmin = min(c for _, c in positions)
-                cmax = max(c for _, c in positions)
-                drawn_bbox = (rmin, cmin, rmax, cmax)
-                comps, largest = _connected_components(s_tok, tok)
-            else:
-                drawn_bbox = None
-                comps, largest = 0, 0
-            lines.append(f"drawn_bbox: {drawn_bbox}")
-            lines.append(
-                f"drawn_components_summary: {{'num_components': {comps}, 'largest_component_size': {largest}}}"
-            )
-            continue
         if coords.shape[0] <= small_list_threshold:
             coord_text = ", ".join(f"({rr}, {cc})" for rr, cc in coords)
             lines.append(f"{tok}: [{coord_text}]")
@@ -840,6 +818,21 @@ def _format_one_example_enc2(
                 ranges = _compress_ranges(cols)
                 row_parts.append(f"{rr}:[{', '.join(ranges)}]")
             lines.append(f"{tok}: rows {{{', '.join(row_parts)}}}")
+            positions = _find_token_positions(s_tok, tok)
+            if positions:
+                rmin = min(r for r, _ in positions)
+                rmax = max(r for r, _ in positions)
+                cmin = min(c for _, c in positions)
+                cmax = max(c for _, c in positions)
+                tok_bbox = (rmin, cmin, rmax, cmax)
+                comps, largest = _connected_components(s_tok, tok)
+            else:
+                tok_bbox = None
+                comps, largest = 0, 0
+            lines.append(f"{tok}_bbox: {tok_bbox}")
+            lines.append(
+                f"{tok}_components_summary: {{'num_components': {comps}, 'largest_component_size': {largest}}}"
+            )
 
     patch = _compute_patch(s_tok, (r, c), patch_k)
     lines.append("LOCAL_PATCH:")
@@ -862,7 +855,7 @@ def _format_one_example_enc2(
     )
     lines.append(f"RAYS_FROM_ACTION: {{{ray_text}}}")
 
-    dist_tokens = ["agent", "star", "drawn", "left_arrow", "right_arrow"]
+    dist_tokens = non_bg_tokens
     dist_parts = []
     for name in dist_tokens:
         positions = _find_token_positions(s_tok, name)
@@ -880,6 +873,7 @@ def _format_one_example_enc2_delta(
     label: int,
     idx: int,
     symbol_map: dict[str, str],
+    small_list_threshold: int = SMALL_LIST_THRESHOLD,
 ) -> str:
     """Compact delta-only summary for enc_2 collision evidence."""
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
@@ -895,29 +889,29 @@ def _format_one_example_enc2_delta(
     global_counts = {tok: int((s_tok == tok).sum()) for tok in non_bg_tokens}
     counts_text = ", ".join(f"'{tok}': {global_counts[tok]}" for tok in non_bg_tokens)
 
-    drawn_rows = None
-    drawn_bbox = None
-    if "drawn" in non_bg_tokens:
-        positions = _find_token_positions(s_tok, "drawn")
-        drawn_row_map = _compress_rows(positions)
-        drawn_row_parts: list[str] = []
-        for rr in sorted(drawn_row_map):
-            drawn_row_parts.append(f"{rr}:[{', '.join(drawn_row_map[rr])}]")
-        drawn_rows = f"rows {{{', '.join(drawn_row_parts)}}}"
+    parts = [
+        f"NEG idx={idx} label={label} action=({r}, {c}) cell={cell}",
+        f"GLOBAL_COUNTS: {{{counts_text}}}",
+    ]
+    for tok in non_bg_tokens:
+        if global_counts.get(tok, 0) <= small_list_threshold:
+            continue
+        positions = _find_token_positions(s_tok, tok)
+        row_map = _compress_rows(positions)
+        row_parts: list[str] = []
+        for rr in sorted(row_map):
+            row_parts.append(f"{rr}:[{', '.join(row_map[rr])}]")
+        tok_rows = f"rows {{{', '.join(row_parts)}}}"
         if positions:
             rmin = min(r for r, _ in positions)
             rmax = max(r for r, _ in positions)
             cmin = min(c for _, c in positions)
             cmax = max(c for _, c in positions)
-            drawn_bbox = (rmin, cmin, rmax, cmax)
-
-    parts = [
-        f"NEG idx={idx} label={label} action=({r}, {c}) cell={cell}",
-        f"GLOBAL_COUNTS: {{{counts_text}}}",
-    ]
-    if drawn_rows is not None:
-        parts.append(f"drawn: {drawn_rows}")
-        parts.append(f"drawn_bbox: {drawn_bbox}")
+            tok_bbox = (rmin, cmin, rmax, cmax)
+        else:
+            tok_bbox = None
+        parts.append(f"{tok}: {tok_rows}")
+        parts.append(f"{tok}_bbox: {tok_bbox}")
     return "; ".join(parts)
 
 
@@ -1101,166 +1095,53 @@ NEGATIVE EXAMPLES (label = 0):
         token_samples = list(symbol_map.values())
         raw_token_examples = ", ".join(repr(s) for s in token_samples[:6])
         final_check_tokens = ", ".join(repr(s) for s in token_samples[:6])
+    token_constants_block = "- {ENV_TOKEN_CONSTANTS}"
+    if env_name:
+        try:
+            token_map = hint_extractor.build_token_map(env_name)
+            ordered_constants: list[str] = []
+            for raw_char in sorted(token_map.keys()):
+                const = token_map[raw_char]
+                if const not in ordered_constants:
+                    ordered_constants.append(const)
+            if ordered_constants:
+                token_constants_block = "\n".join(
+                    f"- {const}" for const in ordered_constants
+                )
+        except Exception:  # pylint: disable=broad-exception-caught
+            token_constants_block = "- ENV token constants from this domain."
 
     # FORMAT2 dev note: enc_2 collision evidence now includes explicit token anchors,
     # global counts, drawn compression + component stats, expanded local patch,
     # rays/distances, and per-bucket DIFF HINTS. These extra fields help cheaper
     # models separate positives/negatives while keeping code constraints strict.
-    prompt_feature = f"""
-## SYSTEM
-
-You are an expert feature-library repair agent for Logical Programmatic Policies (LPP) in grid-based games.
-
-Your job:
-
-Given evidence of feature collisions, propose NEW boolean feature functions f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
-
-A feature collision means:
-
-All provided examples produce IDENTICAL feature vectors under the current feature set, yet the expert labels differ. Therefore, the current features are provably insufficient.
-
-You must propose new feature families that break this indistinguishability.
-
-Your goal is not just to separate the shown examples, but to propose structural features that generalize.
-
-
-## ENVIRONMENT
-
-- s is a 2D list of tokens (strings).
-- a is a clicked cell coordinate: a = (row, col).
-- a may contain numpy integers.
-
-Every feature MUST begin with this exact validation logic:
-
-    try:
-        r = int(a[0]); c = int(a[1])
-    except:
-        return False
-    h = len(s); w = len(s[0]) if h else 0
-    if not (0 <= r < h and 0 <= c < w): return False
-
-No imports. Only Python built-ins.
-
-Every feature must return True or False.
-
-
-## TOKEN USAGE RULES (CRITICAL)
-
-You MAY use the following constants inside feature code:
-
-- rfts.EMPTY
-- rfts.AGENT
-- rfts.STAR
-- rfts.DRAWN
-- rfts.LEFT_ARROW
-- rfts.RIGHT_ARROW
-
-You MUST NOT use raw character tokens like '.', 'A', '*', '<', '>', '#'.
-
-You MUST NOT introduce new token constants.
-
-
-## GENERALIZATION & ANTI-OVERFITTING RULES (CRITICAL)
-
-Your features must satisfy ALL of the following:
-
-1) No hard-coded row indices, column indices, or board sizes.
-2) No hard-coded absolute counts (e.g., count_drawn >= 43).
-3) No dataset-specific constants extracted from the examples.
-4) No dependence on the specific board dimensions shown.
-5) No memorization of example-specific positions.
-
-If counts are used, they must be:
-- Relative (e.g., comparing two regions),
-- Structural (e.g., monotonic growth, connectivity),
-- Or derived from relationships between AGENT, STAR, DRAWN, and ACTION.
-
-Features must be:
-
-- Scale-free (work on larger or smaller boards),
-- Shift-invariant (work if the staircase appears elsewhere),
-- Structure-based (capture geometric or relational invariants).
-
-
-## COLLISION EVIDENCE
-
-All examples below produce IDENTICAL feature vectors under the current feature set, yet the expert labels differ.
-
-Therefore, the current features are insufficient.
-
-Each bucket may require different structural features.
-
-BUCKET 1
-POSITIVE EXAMPLES (label = 1):
-{legend_block}{(chr(10) * 2).join(pos_blocks[:2])}
-
-NEGATIVE EXAMPLES (label = 0):
-{(chr(10) * 2).join(neg_blocks[:3])}
-
-{diff_hints_1}
-
-{bucket2_block}
-
-
-## TASK
-
-1) Carefully compare POSITIVE vs NEGATIVE examples.
-2) Identify structural distinctions that are NOT captured by typical local templates.
-3) Propose NEW feature functions that capture those structural distinctions.
-4) Ensure your features would still work if:
-   - The board were larger or smaller,
-   - The staircase were shifted horizontally or vertically,
-   - The game progressed further,
-   - The same structural pattern appeared in a different region.
-
-For each feature, your description MUST explain:
-- What structural invariant it captures.
-- Why it generalizes beyond the specific examples shown.
-- Why it avoids memorizing absolute quantities.
-
-
-## OUTPUT FORMAT (STRICT)
-
-You MUST output ONLY valid JSON, directly parsable by json.loads().
-
-No markdown. No prose outside JSON.
-
-Return exactly this structure:
-
-{{
-  "features": [
-    {{
-      "id": "f101",
-      "name": "f101",
-      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
-      "source": "def f101(s, a):\\n    ...\\n"
-    }},
-    ...
-  ]
-}}
-
-Rules:
-
-- IDs must be sequential: f101, f102, f103, ...
-- Provide about 50 new features.
-- Each "source" must be a valid Python function string with \n escaped newlines.
-- Every feature must include the exact action validation boilerplate shown above.
-- Each feature must return True or False.
-- No imports.
-- No raw character tokens.
-
-
-## FINAL CHECK BEFORE OUTPUT
-
-Ensure:
-
-- No hard-coded row numbers or column numbers.
-- No dataset-specific constants.
-- No raw tokens like '.', 'A', '*', '<', '>', '#'.
-- Features are structural and relational.
-- Output is valid JSON only.
-
-    """
+    feature_prompt_filename = (
+        "featured_collision_feedback_enc2.txt"
+        if use_enc2
+        else "featured_collision_feedback_enc1.txt"
+    )
+    feature_prompt_path = (
+        Path(__file__).resolve().parent.parent
+        / "dsl"
+        / "llm_primitives"
+        / "prompts"
+        / "py_feature_gen"
+        / feature_prompt_filename
+    )
+    prompt_feature = feature_prompt_path.read_text(encoding="utf-8")
+    prompt_feature = prompt_feature.replace(
+        "${token_constants_block}", token_constants_block
+    )
+    prompt_feature = prompt_feature.replace(
+        "${bucket1_pos}", legend_block + (chr(10) * 2).join(pos_blocks[:2])
+    )
+    prompt_feature = prompt_feature.replace(
+        "${bucket1_neg}", (chr(10) * 2).join(neg_blocks[:3])
+    )
+    prompt_feature = prompt_feature.replace("${diff_hints_1}", diff_hints_1)
+    prompt_feature = prompt_feature.replace("${bucket2_block}", bucket2_block)
+    prompt_feature = prompt_feature.replace("{raw_token_examples}", raw_token_examples)
+    prompt_feature = prompt_feature.replace("{final_check_tokens}", final_check_tokens)
     prompt_template = f"""
 ## SYSTEM
 
@@ -1309,7 +1190,7 @@ You MUST use ONLY these placeholders inside feature code:
 
 No other placeholders. No token lists. Optional third token placeholder is NOT allowed.
 Each feature may use at most 4 placeholders total.
-Token names like 'agent', 'star', 'drawn' may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
+Specific token names may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
 
 ---
 
