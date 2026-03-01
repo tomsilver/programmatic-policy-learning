@@ -441,6 +441,8 @@ class PyFeatureGenerator:
                         env_name=env_name,
                         demonstration_data=demonstration_data,
                     )
+                    print(prompt)
+                    # input()
 
                 else:
                     prompt = self.fill_batch_prompt(
@@ -457,6 +459,12 @@ class PyFeatureGenerator:
                     max_attempts=max_attempts,
                     reprompt_checks=reprompt_checks,
                     seed=_seed,
+                )
+                prompt_label = Path(current_prompt_path).stem.replace("/", "-")
+                env_label = (env_name or "unknown").replace("/", "-")
+                self.write_json(
+                    f"template_payload_{prompt_label}_{env_label}.json",
+                    template_payload,
                 )
                 expanded_payload = self.expand_template_payload(
                     template_payload, env_name, start_index=1
@@ -494,5 +502,6 @@ class PyFeatureGenerator:
         payload = json.loads(payload_text)
         payload = self.expand_template_payload(payload, env_name, start_index=1)
         feature_programs = self.parse_feature_programs(payload)
+        self.write_json("py_feature_payload.json", payload)
         # logging.info(feature_programs)
         return feature_programs, payload

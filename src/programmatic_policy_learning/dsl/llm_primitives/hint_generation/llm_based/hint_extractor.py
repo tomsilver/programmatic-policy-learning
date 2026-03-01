@@ -364,7 +364,7 @@ def save_hints(
 
 def main() -> None:
     """Entry point for running hint and DSL extraction."""
-    max_steps_per_traj = 50
+    max_steps_per_traj = 80
     seed = 0
     cache_path = Path("hint_cache.db")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -374,15 +374,16 @@ def main() -> None:
     env_names = [
         # "Chase",
         # "TwoPileNim",
-        "ReachForTheStar",
+        # "ReachForTheStar",
         # "StopTheFall"
-        # "CheckmateTactic"
+        "CheckmateTactic"
     ]
     # encoding_methods = ["5"]  # "1",
     # num_initial_states = [0, 2, 6]  # 4 9 deleted
     # structured_modes = [True]
-    encoding_methods = ["6"]  # "1", "6"
-    num_initial_states = [0, 2, 4, 6, 9]  # 4 9 deleted
+    encoding_methods = ["5"]  # "1", "6"
+    # num_initial_states = [0, 2, 4, 6, 9]  # 4 9 deleted
+    num_initial_states = [0, 1,2,3,4,5,6,7,8,9,10]  # 4 9 deleted
     structured_modes = [True]
     for env_name in env_names:
         for encoding_method in encoding_methods:
@@ -440,8 +441,8 @@ def main() -> None:
                     encoding_method,
                     structured,
                 )
-                print(combined_text)
-                input()
+                # print(combined_text)
+                # input()
                 # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
                 # output = extract_dsl(llm_client, dsl_prompt)
 

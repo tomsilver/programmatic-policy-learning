@@ -1,0 +1,135 @@
+## SYSTEM
+
+You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
+
+Your job:
+Given evidence of feature collisions, propose NEW boolean feature templates f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
+
+A feature collision means:
+All provided examples have IDENTICAL feature vectors under the current feature set (same feature-key),
+yet labels differ. Therefore, the current features are provably insufficient.
+
+You must propose new feature families that break this indistinguishability.
+
+---
+
+## ENVIRONMENT
+
+- Grid observation s is a 2D list of tokens (strings).
+- Action a is a clicked cell coordinate: a = (row, col).
+- a may contain numpy integers.
+- All auxiliary summaries (GLOBAL_COUNTS, bounding boxes, components, rays, distances, diffs, etc.) are provided for human understanding only. Feature functions may only access s and a.
+
+Every feature MUST begin with this exact validation logic:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+No imports. Only Python built-ins.
+
+---
+
+## TOKEN RESTRICTIONS (CRITICAL)
+
+You MUST NOT use:
+- any raw token characters like {raw_token_examples}
+
+You MUST use ONLY these placeholders inside feature code:
+- ${TOKEN_A}  (token placeholder A)
+- ${TOKEN_B}  (token placeholder B)
+- ${DRs}    (list of (dr, dc) tuples placeholder)
+- ${K}      (small positive integer placeholder)
+
+No other placeholders. No token lists. Optional third token placeholder is NOT allowed.
+Each feature may use at most 4 placeholders total.
+Specific token names may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
+
+---
+
+
+## COLLISION EVIDENCE
+
+All examples below produce IDENTICAL feature vectors under the current feature set,
+yet the expert labels differ. Therefore, the current features are provably insufficient.
+
+NOTE: Each bucket below may require different features to resolve.
+
+BUCKET 1
+POSITIVE EXAMPLES (label = 1):
+${bucket1_pos}
+
+NEGATIVE EXAMPLES (label = 0):
+${bucket1_neg}
+
+${diff_hints_1}
+
+${bucket2_block}
+
+---
+
+## BUCKET HANDLING (CRITICAL)
+
+- Each bucket is an independent collision context.
+- Analyze buckets one by one.
+- Buckets may share the same missing distinction OR require different feature families.
+- Do NOT stop after proposing one feature per bucket.
+- For each bucket, propose multiple STRUCTURALLY DISTINCT template families until you run out of new non-redundant distinctions that are consistent with the bucket’s evidence.
+
+---
+
+## TASK
+
+1) Carefully compare the POSITIVE vs NEGATIVE examples.
+2) Identify structural distinctions that are NOT captured by typical local templates.
+3) For EACH bucket:
+   - Propose NEW feature templates that separate at least one positive from one negative in that bucket.
+   - After proposing at least one collision-breaking template for the bucket, continue adding additional structurally distinct template families for that SAME bucket.
+
+Important:
+- Do NOT generate near-duplicate features.
+- Do NOT overfit to board size. No hard-coded row numbers.
+- Stop when you have exhausted distinct, plausible structural distinctions supported by the evidence.
+- Do NOT output polarity duplicates:
+  do not include both P and (not P) as separate templates.
+---
+
+## OUTPUT FORMAT (STRICT)
+
+You MUST output ONLY valid JSON, directly parsable by json.loads().
+No markdown. No prose.
+
+Return exactly this structure:
+
+{{
+  "features": [
+    {{
+      "id": "f101",
+      "name": "f101",
+      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
+      "source": "def f101(s, a):\\n    ...\\n"
+    }},
+    ...
+  ]
+}}
+
+Rules:
+- ids/names must be sequential: f101, f102, ...
+- Output as many features as needed; stop when no new non-redundant, evidence-supported template families remain.
+- Each "source" must be a valid Python function string with \\n escaped newlines.
+- Every feature must return True/False.
+- Every feature must include the exact action validation boilerplate shown above.
+- Use only ${TOKEN_A}, ${TOKEN_B}, ${DRs}, ${K} placeholders.
+
+IMPORTANT: The missing distinction may occur FAR from the action cell.
+Do NOT assume the relevant evidence is in the same row/column as the action or within small distance of it.
+You MUST consider GLOBAL structural patterns anywhere on the board, using scans over all rows/columns and connected components.
+
+FINAL CHECK:
+- No raw tokens appear in code.
+- Output is valid JSON only.
+
+"""
