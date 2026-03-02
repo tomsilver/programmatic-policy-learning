@@ -1062,11 +1062,6 @@ def build_collision_repair_prompt(
         except Exception:  # pylint: disable=broad-exception-caught
             diff_hints_1 = ""
 
-    N_NEW = "N_NEW"
-    TOKEN_A = "TOKEN_A"
-    TOKEN_B = "TOKEN_B"
-    DRs = "DRs"
-    K = "K"
     bucket2_block = ""
     if pos_blocks_2 or neg_blocks_2:
         diff_hints_2 = ""
@@ -1142,123 +1137,7 @@ NEGATIVE EXAMPLES (label = 0):
     prompt_feature = prompt_feature.replace("${bucket2_block}", bucket2_block)
     prompt_feature = prompt_feature.replace("{raw_token_examples}", raw_token_examples)
     prompt_feature = prompt_feature.replace("{final_check_tokens}", final_check_tokens)
-#     prompt_template = f"""
-# ## SYSTEM
 
-# You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
-
-# Your job:
-# Given evidence of feature collisions, propose NEW boolean feature templates f_i(s, a) that can distinguish positive vs negative examples within the collision bucket.
-
-# A feature collision means:
-# All provided examples have IDENTICAL feature vectors under the current feature set (same feature-key),
-# yet labels differ. Therefore, the current features are provably insufficient.
-
-# You must propose new feature families that break this indistinguishability.
-
-# ---
-
-# ## ENVIRONMENT
-
-# - Grid observation s is a 2D list of tokens (strings).
-# - Action a is a clicked cell coordinate: a = (row, col).
-# - a may contain numpy integers.
-
-# Every feature MUST begin with this exact validation logic:
-
-#     try:
-#         r = int(a[0]); c = int(a[1])
-#     except:
-#         return False
-#     h = len(s); w = len(s[0]) if h else 0
-#     if not (0 <= r < h and 0 <= c < w): return False
-
-# No imports. Only Python built-ins.
-
-# ---
-
-# ## TOKEN RESTRICTIONS (CRITICAL)
-
-# You MUST NOT use:
-# - any raw token characters like {raw_token_examples}
-
-# You MUST use ONLY these placeholders inside feature code:
-# - ${TOKEN_A}  (token placeholder A)
-# - ${TOKEN_B}  (token placeholder B)
-# - ${DRs}    (list of (dr, dc) tuples placeholder)
-# - ${K}      (small positive integer placeholder)
-
-# No other placeholders. No token lists. Optional third token placeholder is NOT allowed.
-# Each feature may use at most 4 placeholders total.
-# Specific token names may appear in the COLLISION EVIDENCE text; the prohibition applies only to feature CODE, which must use placeholders.
-
-# ---
-
-# ## COLLISION EVIDENCE
-
-# All examples below produce IDENTICAL feature vectors under the current feature set,
-# yet the expert labels differ. Therefore, the current features are provably insufficient.
-
-# NOTE: Each bucket below may require different features to resolve.
-
-# BUCKET 1
-# POSITIVE EXAMPLES (label = 1):
-# {legend_block}{(chr(10) * 2).join(pos_blocks[:2])}
-
-# NEGATIVE EXAMPLES (label = 0):
-# {(chr(10) * 2).join(neg_blocks[:3])}
-
-# {diff_hints_1}
-
-# {bucket2_block}
-
-# ---
-
-# ## TASK
-
-# 1) Carefully compare the POSITIVE vs NEGATIVE examples.
-# 2) Identify structural distinctions that are NOT captured by typical local templates.
-# 3) Propose NEW feature templates that can separate (at least some of) the positives from negatives in THIS bucket.
-
-# Important:
-# - Do NOT generate near-duplicates of the same adjacency/scan/count family.
-# - Prefer features that capture *relational structure*.
-# - Do NOT overfit to board size. No hard-coded row numbers.
-
-# ---
-
-# ## OUTPUT FORMAT (STRICT)
-
-# You MUST output ONLY valid JSON, directly parsable by json.loads().
-# No markdown. No prose.
-
-# Return exactly this structure:
-
-# {{
-#   "features": [
-#     {{
-#       "id": "f101",
-#       "name": "f101",
-#       "description": "What structural distinction this feature captures and why it helps separate the bucket.",
-#       "source": "def f101(s, a):\\n    ...\\n"
-#     }},
-#     ...
-#   ]
-# }}
-
-# Rules:
-# - ids/names must be sequential: f101, f102, ...
-# - Provide EXACTLY {N_NEW} new features.
-# - Each "source" must be a valid Python function string with \\n escaped newlines.
-# - Every feature must return True/False.
-# - Every feature must include the exact action validation boilerplate shown above.
-# - Use only ${TOKEN_A}, ${TOKEN_B}, ${DRs}, ${K} placeholders.
-
-# FINAL CHECK:
-# - No raw tokens {final_check_tokens} appear in code.
-# - Output is valid JSON only.
-
-# """
     if collision_template_feedback:
         template_prompt_filename = (
             "template_collision_feedback_enc2.txt"

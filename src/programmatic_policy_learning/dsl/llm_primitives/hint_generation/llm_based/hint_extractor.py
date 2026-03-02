@@ -383,7 +383,7 @@ def main() -> None:
     # structured_modes = [True]
     encoding_methods = ["5"]  # "1", "6"
     # num_initial_states = [0, 2, 4, 6, 9]  # 4 9 deleted
-    num_initial_states = [0, 1,2,3,4,5,6,7,8,9,10]  # 4 9 deleted
+    num_initial_states = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # 4 9 deleted
     structured_modes = [True]
     for env_name in env_names:
         for encoding_method in encoding_methods:

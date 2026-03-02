@@ -18,6 +18,13 @@ collision_template_feedback: true #false: means the feedback is just features/no
 collision_feedback_max_new_features: 5000
 collision_feedback_max_rounds: 3
 collision_feedback_target_collisions: 0
+prior_version: "uniform" # v1 | v2 | uniform
+prior_beta: 1.0
+val_frac: 0.0
+val_size: null
+split_seed: 0
+split_strategy: "random"
+preserve_ordering: false
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"

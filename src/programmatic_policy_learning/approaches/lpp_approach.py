@@ -1,6 +1,7 @@
 """An approach that learns a logical programmatic policy from data."""
 
 import ast
+import hashlib
 import json
 import logging
 import os
@@ -37,6 +38,7 @@ from programmatic_policy_learning.approaches.utils import (
 )
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import (
+    extract_examples_from_demonstration,
     run_all_programs_on_demonstrations,
     run_programs_on_examples,
 )
@@ -85,6 +87,7 @@ from programmatic_policy_learning.learning.particles_utils import select_particl
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.learning.prior_calculation import (
     priors_from_features,
+    priors_from_features_v2,
 )
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
@@ -139,6 +142,101 @@ def _extract_feature_names(feature_programs: list[str]) -> list[str]:
     return names
 
 
+def split_dataset(
+    demo_numbers: Sequence[int],
+    *,
+    val_frac: float | None = None,
+    val_size: int | None = None,
+    split_seed: int = 0,
+    split_strategy: str = "random",
+    preserve_ordering: bool = False,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Split demo ids into train_core/val deterministically."""
+    if split_strategy != "random":
+        raise ValueError(f"Unsupported split_strategy: {split_strategy}")
+
+    demo_ids: list[int] = []
+    seen: set[int] = set()
+    for d in demo_numbers:
+        dd = int(d)
+        if dd not in seen:
+            seen.add(dd)
+            demo_ids.append(dd)
+    n = len(demo_ids)
+    if n == 0:
+        return tuple(), tuple()
+
+    if val_size is not None:
+        if val_size < 0 or val_size >= n:
+            raise ValueError("val_size must be in [0, len(demo_numbers)-1].")
+        n_val = int(val_size)
+    else:
+        frac = 0.0 if val_frac is None else float(val_frac)
+        if frac < 0.0 or frac >= 1.0:
+            raise ValueError("val_frac must be in [0.0, 1.0).")
+        n_val = int(round(n * frac))
+
+    if n_val <= 0:
+        return tuple(demo_ids), tuple()
+
+    work = list(demo_ids)
+    if not preserve_ordering:
+        rng = np.random.default_rng(split_seed)
+        rng.shuffle(work)
+    val_ids = tuple(work[:n_val])
+    train_ids = tuple(work[n_val:])
+    if len(train_ids) == 0:
+        raise ValueError("Split produced empty train_core set.")
+    return train_ids, val_ids
+
+
+def _hash_state(obs: np.ndarray) -> str:
+    arr = np.asarray(obs)
+    hasher = hashlib.sha1()
+    hasher.update(str(arr.dtype).encode("utf-8"))
+    hasher.update(str(arr.shape).encode("utf-8"))
+    hasher.update(arr.tobytes())
+    return hasher.hexdigest()
+
+
+def _count_states_and_expanded_examples(
+    demo_ids: Sequence[int],
+    demo_dict: dict[int, Any],
+    *,
+    data_imbalance: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    num_states = 0
+    expanded = 0
+    for demo_id in demo_ids:
+        traj = demo_dict[int(demo_id)]
+        num_states += len(traj.steps)
+        pos, neg = extract_examples_from_demonstration(
+            traj, data_imbalance=data_imbalance
+        )
+        expanded += len(pos) + len(neg)
+    return num_states, expanded
+
+
+def _assert_state_disjointness(
+    demo_dict: dict[int, Any],
+    train_ids: Sequence[int],
+    val_ids: Sequence[int],
+) -> None:
+    train_hashes: set[str] = set()
+    val_hashes: set[str] = set()
+    for demo_id in train_ids:
+        for obs, _ in demo_dict[int(demo_id)].steps:
+            train_hashes.add(_hash_state(obs))
+    for demo_id in val_ids:
+        for obs, _ in demo_dict[int(demo_id)].steps:
+            val_hashes.add(_hash_state(obs))
+    overlap = train_hashes.intersection(val_hashes)
+    if overlap:
+        raise AssertionError(
+            "train_core/val state leakage detected via state hash overlap."
+        )
+
+
 def _constant_feature_cols(
     X_csr: Any,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -190,6 +288,8 @@ def _append_new_features_from_sources(
     *,
     start_index: int,
     collision_loop_idx: int,
+    prior_version: str = "v1",
+    prior_beta: float = 1.0,
 ) -> tuple[Any, int]:
     dsl_functions.update(build_py_feature_functions(new_feature_sources, dsl_functions))
     new_feature_names = _extract_feature_names(new_feature_sources)
@@ -205,7 +305,14 @@ def _append_new_features_from_sources(
     X = hstack([X, X_new]).tocsr()
     programs_sa.extend(new_programs_sa)
     if program_prior_log_probs is not None:
-        new_priors = priors_from_features(new_feature_sources)["logprobs"]
+        if prior_version == "v2":
+            new_priors = priors_from_features_v2(new_feature_sources, beta=prior_beta)[
+                "beta_log_scores"
+            ]
+        elif prior_version in {"v1", "uniform"}:
+            new_priors = priors_from_features(new_feature_sources)["logprobs"]
+        else:
+            raise ValueError(f"Unsupported prior_version: {prior_version}")
         program_prior_log_probs.extend(new_priors)
     return X, start_index + len(new_feature_names)
 
@@ -228,6 +335,8 @@ def _run_collision_feedback_loop(
     make_prompt: Callable[
         [list[dict[str, Any]], list[tuple[np.ndarray, tuple[int, int]]]], str | None
     ],
+    prior_version: str = "v1",
+    prior_beta: float = 1.0,
 ) -> tuple[
     Any,
     list[StateActionProgram],
@@ -272,6 +381,8 @@ def _run_collision_feedback_loop(
             examples,
             start_index=start_index,
             collision_loop_idx=round_idx + 1,
+            prior_version=prior_version,
+            prior_beta=prior_beta,
         )
         X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
             X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
@@ -302,6 +413,8 @@ def get_program_set(
     demo_numbers: Sequence[int] | None = None,
     outer_feedback: str | None = None,
     seed: int = 0,
+    prior_version: str = "v1",
+    prior_beta: float = 1.0,
 ) -> tuple[list[Any], list[float], dict[str, Any]]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs.
@@ -436,8 +549,14 @@ def get_program_set(
         dsl_fns.update(
             build_py_feature_functions(features, dsl_fns)
         )  # pylint: disable=exec-used
-        out_dict = priors_from_features(features)
-        program_prior_log_probs = out_dict["logprobs"]
+        if prior_version == "v2":
+            out_dict = priors_from_features_v2(features, beta=prior_beta)
+            program_prior_log_probs = out_dict["beta_log_scores"]
+        elif prior_version in {"v1", "uniform"}:
+            out_dict = priors_from_features(features)
+            program_prior_log_probs = out_dict["logprobs"]
+        else:
+            raise ValueError(f"Unsupported prior_version: {prior_version}")
         return features, program_prior_log_probs, dsl_fns
 
     if strategy not in strategies:
@@ -610,6 +729,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
         collision_feedback_target_collisions: int = 0,
+        prior_version: str = "v1",
+        prior_beta: float = 1.0,
+        val_frac: float | None = 0.2,
+        val_size: int | None = None,
+        split_seed: int = 0,
+        split_strategy: str = "random",
+        preserve_ordering: bool = False,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -641,6 +767,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
         self.collision_feedback_target_collisions = collision_feedback_target_collisions
         self.collision_feedback_reprompt_max_attempts = 5
+        if prior_version not in {"v1", "v2", "uniform"}:
+            raise ValueError("prior_version must be one of {'v1', 'v2', 'uniform'}.")
+        self.prior_version = prior_version
+        self.prior_beta = float(prior_beta)
+        self.val_frac = val_frac
+        self.val_size = val_size
+        self.split_seed = split_seed
+        self.split_strategy = split_strategy
+        self.preserve_ordering = preserve_ordering
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -755,25 +890,53 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """Train the logical programmatic policy using demonstrations."""
 
         outer_feedback = None
-        programs, program_prior_log_probs, dsl_functions = get_program_set(
+        train_core_demos, val_demos = split_dataset(
+            self.demo_numbers,
+            val_frac=self.val_frac,
+            val_size=self.val_size,
+            split_seed=self.split_seed,
+            split_strategy=self.split_strategy,
+            preserve_ordering=self.preserve_ordering,
+        )
+        if set(train_core_demos).intersection(set(val_demos)):
+            raise AssertionError("train_core and val demo IDs are not disjoint.")
+        logging.info("Split train_core demos: %s", list(train_core_demos))
+        logging.info("Split val demos: %s", list(val_demos))
+        (
+            programs,
+            program_prior_log_probs_init,
+            dsl_functions,
+        ) = get_program_set(
             self.num_programs,
             self.base_class_name,
             self.env_factory,
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
-            demo_numbers=self.demo_numbers,
+            demo_numbers=train_core_demos,
             outer_feedback=outer_feedback,
             seed=self.seed_num,
+            prior_version=self.prior_version,
+            prior_beta=self.prior_beta,
         )
-        program_prior_log_probs: list[float] | None = program_prior_log_probs
+        program_prior_log_probs_opt: list[float] | None = program_prior_log_probs_init
         start_index = len(programs) + 1
         logging.info("Feature Generation is Done.")
         logging.info("%d features are genereted!", len(programs))
 
-        demonstrations, demo_dict = get_demonstrations(
-            self.env_factory, self.expert, demo_numbers=self.demo_numbers
+        demonstrations, demo_dict_train = get_demonstrations(
+            self.env_factory,
+            self.expert,
+            demo_numbers=train_core_demos,
         )
+        demo_dict_all = dict(demo_dict_train)
+        if val_demos:
+            _, demo_dict_val = get_demonstrations(
+                self.env_factory,
+                self.expert,
+                demo_numbers=val_demos,
+            )
+            demo_dict_all.update(demo_dict_val)
 
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
@@ -790,17 +953,48 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         loading_cfg = (self.program_generation or {}).get("loading")
         if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
+        data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+
+        _assert_state_disjointness(demo_dict_all, train_core_demos, val_demos)
+        train_states, train_expanded = _count_states_and_expanded_examples(
+            train_core_demos,
+            demo_dict_all,
+            data_imbalance=data_imbalance_cfg,
+        )
+        val_states, val_expanded = _count_states_and_expanded_examples(
+            val_demos,
+            demo_dict_all,
+            data_imbalance=data_imbalance_cfg,
+        )
+        logging.info(
+            "Split stats | train_core: demos=%d states=%d expanded_examples=%d",
+            len(train_core_demos),
+            train_states,
+            train_expanded,
+        )
+        logging.info(
+            "Split stats | val: demos=%d states=%d expanded_examples=%d",
+            len(val_demos),
+            val_states,
+            val_expanded,
+        )
 
         X, y, examples = run_all_programs_on_demonstrations(
             self.base_class_name,
-            self.demo_numbers,
+            train_core_demos,
             programs_sa,
-            demo_dict,
+            demo_dict_train,
             dsl_functions,
-            data_imbalance=(self.program_generation or {}).get("data_imbalance"),
+            data_imbalance=data_imbalance_cfg,
             return_examples=True,
             offline_path_name=offline_path_name,
             demos_included=(self.program_generation or {}).get("demos_included"),
+            split_tag=(
+                f"seed{self.split_seed}"
+                f"_train_{'-'.join(str(x) for x in train_core_demos)}"
+                f"__val_{'-'.join(str(x) for x in val_demos) if val_demos else 'none'}"
+                "__role_train_core"
+            ),
             seed=self.seed_num,
         )
 
@@ -817,8 +1011,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info(f"n_examples={X.shape[0]} n_features={X.shape[1]}")
         logging.info(f"#all-zero features={len(all_zero)} indices={all_zero[:30]}")
         logging.info(f"#all-one features={len(all_one)} indices={all_one[:30]}")
-        X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
-            X, programs_sa, program_prior_log_probs
+        X, programs_sa, program_prior_log_probs_opt, col_nnz = (
+            _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
         )
 
         collision_groups = log_feature_collisions(
@@ -841,7 +1035,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             (
                 X,
                 programs_sa,
-                program_prior_log_probs,
+                program_prior_log_probs_opt,
                 collision_payloads,
                 collision_output_path,
                 col_nnz,
@@ -851,13 +1045,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 max_rounds=max_rounds,
                 target_collisions=(self.collision_feedback_target_collisions),
                 start_index=start_index,
-                program_prior_log_probs=program_prior_log_probs,
+                program_prior_log_probs=program_prior_log_probs_opt,
                 X=X,
                 y=y,
                 programs_sa=programs_sa,
                 dsl_functions=dsl_functions,
                 generate_features=_generate_collision_features,
                 make_prompt=self._handle_collision_feedback,
+                prior_version=self.prior_version,
+                prior_beta=self.prior_beta,
             )
             if collision_payloads and collision_output_path is not None:
                 all_payload = {"collision_payloads": collision_payloads}
@@ -891,7 +1087,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ranked_cols = np.argsort(-gain)  # descending
         X_ranked = X[:, ranked_cols]
         programs_ranked = [programs_sa[i] for i in ranked_cols]
-        priors_ranked = [program_prior_log_probs[i] for i in ranked_cols]
+        if program_prior_log_probs_opt is None:
+            priors_ranked = [0.0 for _ in ranked_cols]
+        else:
+            priors_ranked = [program_prior_log_probs_opt[i] for i in ranked_cols]
 
         plps, plp_priors = learn_plps(
             X_ranked,
@@ -913,8 +1112,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         #     program_generation_step_size=self.program_generation_step_size,
         #     dsl_functions=dsl_functions,
         # )
-
-        plp_priors = [-4.0] * len(plps)
+        if self.prior_version == "uniform":
+            plp_priors = [-4.0] * len(plps)
         logging.info(f"LEN BEFORE FILTERING FALSE={len(plps)}")
         filtered: list[tuple[StateActionProgram, float]] = []
         for plp, prior in zip(plps, plp_priors):

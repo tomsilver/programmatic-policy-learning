@@ -334,9 +334,14 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     offline_tag = "none"
     if offline_path_name:
         offline_tag = Path(str(offline_path_name)).name
+    split_tag = kwargs.get("split_tag")
+    split_part = "splitnone"
+    if split_tag:
+        split_part = f"split{split_tag}"
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
-        f"demos{demos_tag}-{seed_tag}-imb{imbalance_part}-offline{offline_tag}"
+        f"demos{demos_tag}-{seed_tag}-imb{imbalance_part}-offline{offline_tag}-"
+        f"{split_part}"
     )
 
 
@@ -397,6 +402,7 @@ def run_all_programs_on_single_demonstration(
     return_examples: bool = False,
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
     demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
+    split_tag: str | None = None,  # pylint: disable=unused-argument
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
@@ -548,6 +554,7 @@ def run_all_programs_on_demonstrations(
     return_examples: bool = False,
     offline_path_name: str | None = None,
     demos_included: Sequence[int] | None = None,
+    split_tag: str | None = None,
     seed: int | None = None,
 ) -> tuple[
     Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
@@ -566,6 +573,7 @@ def run_all_programs_on_demonstrations(
             return_examples=return_examples,
             offline_path_name=offline_path_name,
             demos_included=demos_included,
+            split_tag=split_tag,
             seed=seed,
         )
 
