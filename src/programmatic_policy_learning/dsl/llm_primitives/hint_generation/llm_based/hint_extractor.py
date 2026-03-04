@@ -373,10 +373,10 @@ def main() -> None:
 
     env_names = [
         # "Chase",
-        # "TwoPileNim",
+        "TwoPileNim",
         # "ReachForTheStar",
         # "StopTheFall"
-        "CheckmateTactic"
+        # "CheckmateTactic"
     ]
     # encoding_methods = ["5"]  # "1",
     # num_initial_states = [0, 2, 6]  # 4 9 deleted

@@ -1,45 +1,64 @@
 {
   "action_choice_hints": [
-    "Whether the action cell is part of a contiguous segment of target tokens in its row or column",
-    "If the action cell is the first target token encountered from a boundary along a row or column",
-    "Whether the action cell is adjacent (orthogonally) to an empty cell",
-    "If all cells between the action cell and a boundary in a given direction are target tokens",
-    "Whether the action cell is within a contiguous run of target tokens of length at least K",
-    "If the action cell is the only target token in its row or column",
-    "Whether the action cell is at the edge of a contiguous block of target tokens",
-    "If the action cell is in the topmost or bottommost row containing any target token",
-    "Whether the action cell is the nearest target token to a boundary in its column",
-    "If the action cell is part of a vertical or horizontal band of target tokens",
-    "Whether the action cell is surrounded on all four sides by target tokens",
-    "If the action cell is the last remaining target token in the grid",
-    "Whether the action cell is at a corner of a contiguous region of target tokens",
-    "If the action cell is the only target token adjacent to a particular empty region",
-    "Whether the action cell is part of a group of target tokens separated from others by empty cells"
+    "Whether the action cell is in the same row or column as a special token",
+    "Whether the action cell is the nearest cell to a special token along a cardinal direction",
+    "Whether there exists an uninterrupted path from the action cell to a boundary without encountering an obstacle",
+    "Whether the action cell is adjacent to a contiguous segment of special tokens",
+    "Whether the action cell is within K steps of a special token, for small K",
+    "Whether the action cell is at the end of a contiguous run of special tokens",
+    "Whether the action cell is in a region (e.g., top or bottom band) containing more special tokens",
+    "Whether all cells between the action cell and a boundary are empty",
+    "Whether the action cell is the first empty cell encountered along a direction from a special token",
+    "Whether the action cell is surrounded by empty cells in all four cardinal directions",
+    "Whether the action cell is part of a maximal contiguous segment of empty cells",
+    "Whether the action cell is blocked by an obstacle before reaching a special token along a direction",
+    "Whether the action cell is the only empty cell in its row or column",
+    "Whether the action cell is equidistant from multiple special tokens",
+    "Whether the action cell is at a corner or edge of the grid",
+    "Whether the action cell is in a row or column with the highest count of special tokens"
   ],
   "transition_hints": [
-    "Selecting a target token cell causes that cell to become empty in the next state",
-    "Only the chosen action cell changes state; all other cells remain unchanged",
-    "The removal of a target token does not affect the state of adjacent cells",
-    "No new target tokens are created as a result of an action",
-    "Empty cells remain empty after any action",
-    "The set of target tokens strictly decreases by one with each action",
-    "The action is only valid on cells currently containing a target token",
-    "The environment does not introduce obstacles or new regions after an action",
-    "The grid structure and boundaries remain fixed throughout transitions"
+    "Clicking an empty cell converts it into a special token",
+    "Only the clicked cell changes state; all other cells remain unchanged",
+    "If the clicked cell is already a special token, no change occurs",
+    "The environment does not move or remove any special tokens automatically",
+    "Obstacles, if present, are static and unaffected by actions",
+    "The set of special tokens can only increase or remain the same after each action",
+    "No cells revert from special token to empty as a result of any action",
+    "The grid size and boundaries remain fixed throughout transitions",
+    "Actions are deterministic: the same (s, a) always yields the same s_{t+1}",
+    "No new obstacles or special tokens appear except by explicit action"
+  ],
+  "feature_family_hints": [
+    "Directional scan features: needed to detect first empty or special token along a direction",
+    "Contiguity features: to capture whether a cell is part of a contiguous segment of empty or special tokens",
+    "Row/column aggregation features: to count special tokens or empty cells in a row or column",
+    "Adjacency features: to check if a cell is adjacent to a special token or obstacle",
+    "Path-clearance features: to determine if a path from a cell to a boundary is unobstructed",
+    "Region-based features: to compare token distributions in different grid regions (e.g., bands)",
+    "Edge/corner features: to identify if a cell is at the grid's edge or corner",
+    "Maximal segment features: to find if a cell is part of the largest contiguous run",
+    "Distance-to-token features: to compute distance from a cell to the nearest special token",
+    "Uniqueness features: to check if a cell is the only empty cell in its row or column",
+    "Equidistance features: to determine if a cell is equally distant from multiple special tokens",
+    "Blocked-path features: to detect if an obstacle blocks the path between a cell and a special token",
+    "Global count features: to summarize total counts of special tokens or empty cells",
+    "Local neighborhood features: to assess the configuration of cells in a small window around the action cell",
+    "Boundary-proximity features: to measure how close a cell is to the grid boundary"
   ],
   "template_constraints": {
     "diversity_requirements": [
-      "Include templates that capture both local (adjacency) and global (row/column/region) patterns",
-      "Ensure templates cover both edge/corner and interior cell scenarios"
+      "Include at least one template for each of: row/column relations, directional scans, and contiguity structure",
+      "Require templates that combine both local (adjacency) and global (row/column/region) context"
     ],
     "placeholder_usage_limits": [
-      "Limit the number of direction placeholders per template to at most 2",
-      "Restrict the maximum run-length parameter K to 4"
+      "Limit the number of free coordinate placeholders per template to two",
+      "Restrict the maximum scan length or radius in directional features to a small constant (e.g., 4)"
     ],
     "avoidances": [
-      "Avoid templates that only check for the presence of a target token at (s, a)",
-      "Avoid templates that depend solely on absolute coordinates",
-      "Avoid templates that duplicate coverage of identical spatial relations"
+      "Avoid templates that only check the raw token at the action cell without context",
+      "Avoid templates that encode absolute coordinates or grid positions",
+      "Avoid templates that duplicate the same relation with only minor parameter changes"
     ]
   }
 }

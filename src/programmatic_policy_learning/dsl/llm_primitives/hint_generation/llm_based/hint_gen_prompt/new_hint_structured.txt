@@ -16,8 +16,8 @@ You are given multiple expert demonstrations consisting of transitions (s_t, a_t
 Return ONLY a JSON object with exactly these keys:
 {
   "action_choice_hints": [ ... ],
-  "negative_evidence_hints": [ ... ],
   "transition_hints": [ ... ],
+  "feature_family_hints": [ ... ],
   "template_constraints": { ... }
 }
 No extra text. No markdown. No commentary.
@@ -39,21 +39,16 @@ Rules:
   - “region: top/bottom band”
 - Each hint must be actionable enough to suggest a feature-template pattern.
 
-### B) negative_evidence_hints (6–10 strings)
-“Distractor patterns”: things that look correlated with chosen actions but are NOT sufficient.
-Same style rules as above.
-
-### C) transition_hints (6–12 strings)
+### B) transition_hints (6–12 strings)
 Describe deterministic dynamics inferred from s_t → s_{t+1} that matter for action choice.
 Rules:
 - Describe transitions as general rules.
 - Refer to tokens by *roles* (e.g., “advance control”, “moving token”, “drawn trace”, “static floor”, “obstacle”) instead of raw characters.
 
-### D) template_constraints (object)
+### C) template_constraints (object)
 Constraints for the *feature-template generator* to avoid combinatorial blow-up while keeping expressivity.
 Return:
 {
-  "max_templates_suggested": <int between 30 and 60>,
   "diversity_requirements": [
      "....", "...."
   ],
@@ -69,6 +64,15 @@ Rules:
 - Include at least 2 constraints that limit instantiation explosion.
 - Include at least 2 constraints that enforce diversity.
 - Include at least 2 avoidances that prevent trivial/overfit templates.
+
+### D) feature_family_hints (10–15 strings)
+Provide a set of **feature-family types** needed to model this environment's decision policy.
+Rules:
+- Each item should name one family and briefly state why it is needed.
+- Focus on structurally distinct families (not near-duplicates).
+- Prefer families such as directional scans, relative-position relations,
+  obstacle/support constraints, path/contiguity structure, and local-vs-global context.
+- Do not mention raw token characters; use token roles.
 
 ## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
 1) Compare chosen actions vs nearby plausible alternative cells.

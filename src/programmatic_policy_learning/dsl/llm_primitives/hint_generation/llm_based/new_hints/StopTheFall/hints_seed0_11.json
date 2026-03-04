@@ -1,0 +1,62 @@
+{
+  "action_choice_hints": [
+    "Whether the action cell is in the same row or column as a special control token",
+    "If the action cell is the nearest unblocked cell to a control token along a cardinal direction",
+    "Whether there exists a contiguous segment of empty cells between the action cell and a boundary",
+    "If the action cell is adjacent to a static or obstacle token",
+    "Whether the action cell is within K steps of a moving or advance token",
+    "If the action cell is the first empty cell encountered in a scan from a control token",
+    "Whether the action cell is part of a contiguous run of empty cells of length at least N",
+    "If the action cell is blocked by an obstacle before reaching a boundary in a given direction",
+    "Whether the action cell is in a top or bottom band region of the grid",
+    "If all cells between the action cell and a control token are empty",
+    "Whether the action cell is directly above or below a drawn trace",
+    "If the action cell is the only candidate in its row or column satisfying a certain predicate",
+    "Whether the action cell is adjacent to a drawn trace or moving token",
+    "If the action cell is at the edge of a contiguous region of empty cells",
+    "Whether the action cell is the first available cell in a prioritized direction from a control token"
+  ],
+  "transition_hints": [
+    "Selecting a cell containing an advance control token causes a new drawn trace to appear at that location",
+    "Choosing an empty cell adjacent to a drawn trace extends the trace into that cell",
+    "Selecting a cell with a moving token causes the token to move in a specific direction",
+    "When a drawn trace is extended, it may convert adjacent empty cells into drawn trace tokens",
+    "Selecting a cell blocked by an obstacle does not change the grid",
+    "Choosing a cell at the boundary may trigger a special transition or no change",
+    "Selecting a cell adjacent to a static token may prevent further extension in that direction",
+    "When a moving token reaches an obstacle, it stops or changes state",
+    "Selecting a cell in a contiguous empty region may fill the entire region with a drawn trace",
+    "Actions on cells not adjacent to any special token result in no change"
+  ],
+  "feature_family_hints": [
+    "Directional scan features: needed to detect first available or blocked cells along rows or columns",
+    "Contiguity features: to capture runs or regions of empty or drawn trace cells",
+    "Adjacency features: to determine if a cell is next to a static, obstacle, or drawn trace token",
+    "Relative position features: to encode distance or steps from control or moving tokens",
+    "Band/region features: to distinguish actions in top, bottom, or central grid regions",
+    "Obstacle constraint features: to check if a path is blocked before reaching a boundary",
+    "Edge detection features: to identify if a cell is at the edge of a region or the grid",
+    "Global count features: to represent the number of special tokens present in the grid",
+    "Unique candidate features: to determine if a cell is the only one in its row/column satisfying a predicate",
+    "Path extension features: to model whether a trace can be extended from a given cell",
+    "Support features: to check if a cell is supported by a static or drawn trace below",
+    "Nearest neighbor features: to find the closest control or moving token to a candidate cell",
+    "Blocked path features: to encode whether a direction is blocked by an obstacle before reaching a target",
+    "Local context features: to capture the configuration of a cell and its immediate neighbors",
+    "Transition-triggering features: to detect if an action will cause a state change in the grid"
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include both local (adjacency) and global (row/column scan) predicate templates",
+      "Require at least one template that combines relative position with obstacle presence"
+    ],
+    "placeholder_usage_limits": [
+      "Limit templates to at most two free coordinate placeholders per feature",
+      "Restrict directional scan templates to a maximum of two directions per feature"
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of a single token role at a fixed location",
+      "Do not allow templates that duplicate the same predicate with only minor parameter changes"
+    ]
+  }
+}
