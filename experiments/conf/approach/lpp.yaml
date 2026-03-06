@@ -7,6 +7,7 @@ num_dts: 5
 max_num_particles: 25
 start_symbol: 0 # for fixed dsl/grammar
 dt_splitter: best
+dt_max_depth_candidates: [5,10,30]  # e.g., [null, 5, 10, 20]
 cc_alpha: 0
 normalize_plp_actions: true
 permissive_filter_enabled: false
@@ -16,25 +17,24 @@ collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
 collision_template_feedback: true #false: means the feedback is just features/no templates
 collision_feedback_max_new_features: 5000
-collision_feedback_max_rounds: 1
+collision_feedback_max_rounds: 3
 collision_feedback_target_collisions: 0
-prior_version: "v2" # v1 | v2 | uniform
-prior_beta: 1
+prior_version: "uniform" # v1 | v2 | uniform
+prior_beta: 2
 alpha: 0
 w_clauses: 0.1
 w_literals: 0.05
 w_max_clause: 0.1
 w_depth: 0.05
 w_ops: 0.03
-val_frac: 0
+val_frac: 0.2
 val_size: null
 split_seed: 0
 split_strategy: "random"
-preserve_ordering: false
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
-  demos_included: [0,2,6,9]
+  demos_included: [0,2,6,8,9]
   py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/new_hybrid.txt" #prompt_v1_1
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1 #keep this 1 for now

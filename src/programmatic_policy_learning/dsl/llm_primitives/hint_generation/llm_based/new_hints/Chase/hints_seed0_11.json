@@ -1,62 +1,15 @@
 {
   "action_choice_hints": [
-    "Whether the action cell is in the same row or column as a special target token",
-    "If the action cell is the nearest unblocked cell to a control token along a cardinal direction",
-    "Whether there exists a contiguous run of empty cells between the action cell and a boundary or obstacle",
-    "If the action cell is adjacent to a moving token or agent",
-    "Whether the action cell is within K steps of a target token, unobstructed",
-    "If the action cell is the first empty cell encountered along a direction from a control token",
-    "Whether the action cell is part of a contiguous segment of empty cells of length at least N",
-    "If the action cell is blocked by an obstacle before reaching a target token along a direction",
-    "Whether the action cell is in a region (e.g., top/bottom band) containing a specific role token",
-    "If all cells between the action cell and a control token are empty",
-    "Whether the action cell is at the boundary of the grid",
-    "If the action cell is the only available cell in a row or column not blocked by obstacles",
-    "Whether the action cell is aligned with a drawn trace or path",
-    "If the action cell is the closest to a target token among all candidates",
-    "Whether the action cell is surrounded by empty cells on at least three sides"
-  ],
-  "transition_hints": [
-    "Selecting a cell containing an empty token converts it to a drawn trace",
-    "When a control token is adjacent to a selected cell, the control token advances into that cell",
-    "Obstacles remain static and do not change during transitions",
-    "Selecting a cell aligned with a target token may trigger a state change in the target",
-    "Drawn traces persist and accumulate with each action",
-    "Agent tokens move deterministically toward the selected cell if unobstructed",
-    "If a path is blocked by an obstacle, no movement occurs along that direction",
-    "Selecting a cell at the boundary does not affect out-of-bounds areas",
-    "Contiguous runs of drawn traces are extended by each action",
-    "Selecting a cell adjacent to a moving token causes the moving token to update its position"
+    "The candidate action cell is adjacent to a cell with a special directional marker.",
+    "The candidate action cell is in the same row or column as a target object, with no blocking obstacles in between.",
+    "The candidate action cell is adjacent to a previously marked or modified cell.",
+    "The candidate action cell is at the boundary of a contiguous region of empty cells.",
+    "The candidate action cell is closer to a target object than other available cells, considering obstacles."
   ],
   "feature_family_hints": [
-    "Directional scan features to detect the nearest special token along rows or columns",
-    "Relative position features between candidate cell and control or target tokens",
-    "Contiguity features to measure length of empty or drawn segments",
-    "Obstacle detection features to determine if a path is blocked",
-    "Adjacency features for neighboring roles (e.g., agent, moving token, obstacle)",
-    "Boundary proximity features to check if a cell is at or near the grid edge",
-    "Global count features for the number of special tokens present",
-    "Region-based features to identify presence of roles in specific grid bands",
-    "Path extension features to detect if a drawn trace can be continued",
-    "First-encounter features for the first empty or special cell along a direction",
-    "Support features to check if a cell is supported by a contiguous structure below or beside",
-    "Isolation features to detect if a cell is surrounded by empty or obstacle cells",
-    "Alignment features to check if a cell is aligned with existing traces or targets",
-    "Unobstructed path features to verify clear lines between roles",
-    "Uniqueness features to determine if a candidate cell is the only valid option in a region"
-  ],
-  "template_constraints": {
-    "diversity_requirements": [
-      "Include both local (adjacency) and global (region-based) predicate templates",
-      "Require at least one template that combines directionality with contiguity"
-    ],
-    "placeholder_usage_limits": [
-      "Limit templates to at most two free coordinate placeholders per feature",
-      "Restrict directional scans to a maximum of three steps from the candidate cell"
-    ],
-    "avoidances": [
-      "Avoid templates that only check for the presence of a single token role at a fixed location",
-      "Do not allow templates that duplicate the same predicate with only minor coordinate shifts"
-    ]
-  }
+    "Adjacency relations: Needed to determine if the candidate action cell is next to important objects or markers.",
+    "Line-of-sight features: Required to assess whether there is an unobstructed path between the candidate cell and a target object.",
+    "Region boundary detection: To identify if the candidate cell lies at the edge of a region of interest.",
+    "Relative distance features: To compare the proximity of candidate cells to target objects, accounting for obstacles."
+  ]
 }

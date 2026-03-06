@@ -372,10 +372,10 @@ def main() -> None:
     llm_client = OpenAIModel("gpt-4.1", cache)
 
     env_names = [
-        # "Chase",
-        "TwoPileNim",
-        # "ReachForTheStar",
-        # "StopTheFall"
+        "Chase",
+        # "TwoPileNim",
+        "ReachForTheStar",
+        "StopTheFall",
         # "CheckmateTactic"
     ]
     # encoding_methods = ["5"]  # "1",

@@ -1,0 +1,16 @@
+{
+  "action_choice_hints": [
+    "Action cell is the first non-empty cell encountered along a specific direction from a reference point.",
+    "Action cell is aligned in the same row or column as a key token.",
+    "Action cell is adjacent to a boundary or obstacle in a particular direction.",
+    "Action cell is within a contiguous region connected to a key token.",
+    "Action cell is in a region that is not blocked by obstacles when moving from a reference point."
+  ],
+  "feature_family_hints": [
+    "Directional reachability: Needed to determine if a cell can be reached from a reference point without being blocked.",
+    "Relative position: Needed to capture whether a cell is above, below, left, or right of a key token.",
+    "Local neighborhood patterns: Needed to assess the configuration of tokens within a small radius around the action cell.",
+    "Connectivity: Needed to determine if the action cell is part of the same connected component as a key token.",
+    "Existence of token roles: Needed to check if certain token roles are present anywhere in the grid."
+  ]
+}

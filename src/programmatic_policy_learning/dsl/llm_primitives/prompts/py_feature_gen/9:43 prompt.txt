@@ -65,6 +65,7 @@ Rules:
    - hard-code token identities
    - use raw tokens
    - create complements of existing predicates as separate features
+   - Do not compare any cell to string literals (including 'empty', 'OOB', etc.). Background/empty must be represented using ${TOKEN_A} or ${TOKEN_B}.
 
 4) If ${K} is used:
    - It must represent a small contiguous structural span (e.g., local neighborhood extent).

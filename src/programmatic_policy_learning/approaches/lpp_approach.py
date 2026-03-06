@@ -1,15 +1,11 @@
 """An approach that learns a logical programmatic policy from data."""
 
-import ast
-import hashlib
 import json
 import logging
-import os
 import random
-import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar, cast
+from typing import Any, Callable, Sequence, TypeVar
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -18,785 +14,56 @@ from hydra.core.hydra_config import HydraConfig
 # from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
-from scipy.sparse import hstack
+from scipy.sparse import vstack
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
+from programmatic_policy_learning.approaches.lpp_collision_feedback_utils import (
+    _run_collision_feedback_loop,
+)
+from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+    _extract_feature_names,
+)
+from programmatic_policy_learning.approaches.lpp_program_generation_utils import (
+    get_program_set,
+)
+from programmatic_policy_learning.approaches.lpp_program_setup_utils import (
+    prepare_programs_and_dsl,
+)
+from programmatic_policy_learning.approaches.lpp_split_matrix_utils import (
+    filter_constant_features as _filter_constant_features,)
+from programmatic_policy_learning.approaches.lpp_split_matrix_utils import (
+    split_and_collect_demonstrations,
+)
 from programmatic_policy_learning.approaches.utils import (
     assert_features_fire,
     build_collision_repair_prompt,
-    build_dnf_failure_payload,
-    build_dnf_failure_prompt,
-    convert_dir_lists_to_tuples,
     gini_gain_per_feature,
-    load_hint_text,
-    load_unique_hint,
     log_feature_collisions,
     log_plp_violation_counts,
     run_single_episode,
 )
-from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import (
-    extract_examples_from_demonstration,
     run_all_programs_on_demonstrations,
-    run_programs_on_examples,
 )
-from programmatic_policy_learning.dsl.generators.grammar_based_generator import (
-    Grammar,
-    GrammarBasedProgramGenerator,
-)
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    grid_encoder,
-    grid_hint_config,
-    trajectory_serializer,
-    transition_analyzer,
-)
-from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
-    LLMFeatureGenerator,
-)
-from programmatic_policy_learning.dsl.llm_primitives.feature_priors import (
-    compute_feature_log_probs,
-)
-from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
-    hint_extractor,
-)
-from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
-    LLMPrimitivesGenerator,
-)
+from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
     PyFeatureGenerator,
 )
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
 )
-from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
-    GridInput,
-    LocalProgram,
-    create_grammar,
-    get_dsl_functions_dict,
-    make_ablated_dsl,
-    make_dsl,
-)
 from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
-    set_dsl_functions,
 )
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
-from programmatic_policy_learning.learning.prior_calculation import (
-    priors_from_features,
-    priors_from_features_v2,
-)
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 EnvFactory = Callable[[int | None], Any]
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-HINTS_ROOT = (
-    REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
-)
-
-
-def build_py_feature_functions(
-    feature_programs: list[str],
-    dsl_functions: dict[str, Any],
-) -> dict[str, Any]:
-    """Build a dict of feature function names to callables from source
-    strings."""
-    functions: dict[str, Any] = {}
-    for source in feature_programs:
-
-        tree = ast.parse(source)
-        func_names = [
-            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        ]
-        if not func_names:
-            raise ValueError("Expected at least one function definition in feature.")
-
-        module_globals = dict(dsl_functions)
-        exec(source, module_globals)  # pylint: disable=exec-used
-        for name in func_names:
-            fn = module_globals.get(name)
-            if not callable(fn):
-                raise ValueError(f"Feature function '{name}' is not callable.")
-            functions[name] = fn
-    return functions
-
-
-def _extract_feature_names(feature_programs: list[str]) -> list[str]:
-    """Extract function names from feature source strings."""
-    names: list[str] = []
-    for source in feature_programs:
-        tree = ast.parse(source)
-        func_names = [
-            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        ]
-        if not func_names:
-            raise ValueError("Expected at least one function definition in feature.")
-        names.extend(func_names)
-    return names
-
-
-def _flatten_boolop(node: ast.AST, op_type: type[ast.boolop]) -> list[ast.AST]:
-    if isinstance(node, ast.BoolOp) and isinstance(node.op, op_type):
-        out: list[ast.AST] = []
-        for v in node.values:
-            out.extend(_flatten_boolop(v, op_type))
-        return out
-    return [node]
-
-
-def _ast_depth(node: ast.AST) -> int:
-    children = list(ast.iter_child_nodes(node))
-    if not children:
-        return 1
-    return 1 + max(_ast_depth(child) for child in children)
-
-
-def compute_program_structural_complexity(program: Any) -> dict[str, int]:
-    """Compute structural complexity metrics from program syntax only."""
-    expr = str(program).strip()
-    try:
-        tree = ast.parse(expr, mode="eval")
-        root: ast.AST = tree.body
-    except SyntaxError:
-        return {
-            "num_clauses": 1,
-            "total_literals": 1,
-            "max_clause_len": 1,
-            "depth": 1,
-            "ops": 0,
-        }
-
-    clauses = _flatten_boolop(root, ast.Or)
-    num_clauses = max(1, len(clauses))
-    clause_lit_counts: list[int] = []
-    for clause in clauses:
-        lits = _flatten_boolop(clause, ast.And)
-        clause_lit_counts.append(max(1, len(lits)))
-
-    total_literals = int(sum(clause_lit_counts)) if clause_lit_counts else 1
-    max_clause_len = int(max(clause_lit_counts)) if clause_lit_counts else 1
-    depth = _ast_depth(root)
-
-    ops = 0
-    for node in ast.walk(root):
-        if isinstance(node, ast.BoolOp):
-            ops += max(0, len(node.values) - 1)
-        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            ops += 1
-
-    return {
-        "num_clauses": num_clauses,
-        "total_literals": total_literals,
-        "max_clause_len": max_clause_len,
-        "depth": depth,
-        "ops": int(ops),
-    }
-
-
-def compute_program_structural_log_prior(
-    program: Any,
-    *,
-    alpha: float,
-    w_clauses: float,
-    w_literals: float,
-    w_max_clause: float,
-    w_depth: float,
-    w_ops: float,
-) -> float:
-    """Structural log-prior term: -alpha * C_struct(program)."""
-    c = compute_program_structural_complexity(program)
-    cost = (
-        w_clauses * c["num_clauses"]
-        + w_literals * c["total_literals"]
-        + w_max_clause * c["max_clause_len"]
-        + w_depth * c["depth"]
-        + w_ops * c["ops"]
-    )
-    return -float(alpha) * float(cost)
-
-
-def _run_structural_prior_sanity_checks() -> None:
-    """Unit-test-like sanity checks for structural prior monotonicity."""
-    cfg = {
-        "alpha": 1.0,
-        "w_clauses": 1.0,
-        "w_literals": 1.0,
-        "w_max_clause": 1.0,
-        "w_depth": 1.0,
-        "w_ops": 1.0,
-    }
-    p_short = "f1(s, a)"
-    p_long = "(f1(s, a) and f2(s, a)) or (f3(s, a) and f4(s, a))"
-    lp_short = compute_program_structural_log_prior(p_short, **cfg)
-    lp_long = compute_program_structural_log_prior(p_long, **cfg)
-    assert lp_short > lp_long
-
-    p_two = "f1(s, a) or f2(s, a)"
-    p_three = "f1(s, a) or f2(s, a) or f3(s, a)"
-    lp_two = compute_program_structural_log_prior(p_two, **cfg)
-    lp_three = compute_program_structural_log_prior(p_three, **cfg)
-    assert lp_two > lp_three
-
-
-def split_dataset(
-    demo_numbers: Sequence[int],
-    *,
-    val_frac: float | None = None,
-    val_size: int | None = None,
-    split_seed: int = 0,
-    split_strategy: str = "random",
-    preserve_ordering: bool = False,
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Split demo ids into train_core/val deterministically."""
-    if split_strategy != "random":
-        raise ValueError(f"Unsupported split_strategy: {split_strategy}")
-
-    demo_ids: list[int] = []
-    seen: set[int] = set()
-    for d in demo_numbers:
-        dd = int(d)
-        if dd not in seen:
-            seen.add(dd)
-            demo_ids.append(dd)
-    n = len(demo_ids)
-    if n == 0:
-        return tuple(), tuple()
-
-    if val_size is not None:
-        if val_size < 0 or val_size >= n:
-            raise ValueError("val_size must be in [0, len(demo_numbers)-1].")
-        n_val = int(val_size)
-    else:
-        frac = 0.0 if val_frac is None else float(val_frac)
-        if frac < 0.0 or frac >= 1.0:
-            raise ValueError("val_frac must be in [0.0, 1.0).")
-        n_val = int(round(n * frac))
-
-    if n_val <= 0:
-        return tuple(demo_ids), tuple()
-
-    work = list(demo_ids)
-    if not preserve_ordering:
-        rng = np.random.default_rng(split_seed)
-        rng.shuffle(work)
-    val_ids = tuple(work[:n_val])
-    train_ids = tuple(work[n_val:])
-    if len(train_ids) == 0:
-        raise ValueError("Split produced empty train_core set.")
-    return train_ids, val_ids
-
-
-def _hash_state(obs: np.ndarray) -> str:
-    arr = np.asarray(obs)
-    hasher = hashlib.sha1()
-    hasher.update(str(arr.dtype).encode("utf-8"))
-    hasher.update(str(arr.shape).encode("utf-8"))
-    hasher.update(arr.tobytes())
-    return hasher.hexdigest()
-
-
-def _count_states_and_expanded_examples(
-    demo_ids: Sequence[int],
-    demo_dict: dict[int, Any],
-    *,
-    data_imbalance: dict[str, Any] | None = None,
-) -> tuple[int, int]:
-    num_states = 0
-    expanded = 0
-    for demo_id in demo_ids:
-        traj = demo_dict[int(demo_id)]
-        num_states += len(traj.steps)
-        pos, neg = extract_examples_from_demonstration(
-            traj, data_imbalance=data_imbalance
-        )
-        expanded += len(pos) + len(neg)
-    return num_states, expanded
-
-
-def _assert_state_disjointness(
-    demo_dict: dict[int, Any],
-    train_ids: Sequence[int],
-    val_ids: Sequence[int],
-) -> None:
-    train_hashes: set[str] = set()
-    val_hashes: set[str] = set()
-    for demo_id in train_ids:
-        for obs, _ in demo_dict[int(demo_id)].steps:
-            train_hashes.add(_hash_state(obs))
-    for demo_id in val_ids:
-        for obs, _ in demo_dict[int(demo_id)].steps:
-            val_hashes.add(_hash_state(obs))
-    overlap = train_hashes.intersection(val_hashes)
-    if overlap:
-        raise AssertionError(
-            "train_core/val state leakage detected via state hash overlap."
-        )
-
-
-def _constant_feature_cols(
-    X_csr: Any,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    n = X_csr.shape[0]  # num examples
-    # nnz per column = how many rows have a nonzero entry in that feature
-    col_nnz = np.asarray(X_csr.getnnz(axis=0)).ravel()
-    all_zero = np.where(col_nnz == 0)[0]
-    all_one = np.where(col_nnz == n)[0]  # only valid if X is truly binary 0/1
-    return all_zero, all_one, col_nnz
-
-
-def _filter_constant_features(
-    X: Any,
-    programs_sa: list[StateActionProgram],
-    program_prior_log_probs: list[float] | None,
-    *,
-    round_idx: int | None = None,
-) -> tuple[Any, list[StateActionProgram], list[float] | None, np.ndarray]:
-    all_zero, all_one, col_nnz = _constant_feature_cols(X)
-    remove = np.unique(np.concatenate([all_zero, all_one]))
-    if remove.size > 0:
-        keep_mask = np.ones(X.shape[1], dtype=bool)
-        keep_mask[remove] = False
-        X = X[:, keep_mask]
-        programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
-        if program_prior_log_probs is not None:
-            program_prior_log_probs = [
-                lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
-            ]
-        if round_idx is None:
-            logging.info("Filtered constant features. New X shape: %s", X.shape)
-        else:
-            logging.info(
-                "Filtered constant features after feedback round %d. "
-                "New X shape: %s",
-                round_idx,
-                X.shape,
-            )
-    return X, programs_sa, program_prior_log_probs, col_nnz
-
-
-def _append_new_features_from_sources(
-    X: Any,
-    programs_sa: list[StateActionProgram],
-    program_prior_log_probs: list[float] | None,
-    dsl_functions: dict[str, Any],
-    new_feature_sources: list[str],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
-    *,
-    start_index: int,
-    collision_loop_idx: int,
-    prior_version: str = "v1",
-    prior_beta: float = 1.0,
-) -> tuple[Any, int]:
-    dsl_functions.update(build_py_feature_functions(new_feature_sources, dsl_functions))
-    new_feature_names = _extract_feature_names(new_feature_sources)
-    new_programs = [f"{name}(s, a)" for name in new_feature_names]
-    new_programs_sa = [StateActionProgram(p) for p in new_programs]
-    X_new = run_programs_on_examples(
-        new_programs_sa,
-        examples,
-        dsl_functions,
-        feature_sources=new_feature_sources,
-        collision_loop_idx=collision_loop_idx,
-    )
-    X = hstack([X, X_new]).tocsr()
-    programs_sa.extend(new_programs_sa)
-    if program_prior_log_probs is not None:
-        if prior_version == "v2":
-            new_priors = priors_from_features_v2(new_feature_sources, beta=prior_beta)[
-                "beta_log_scores"
-            ]
-        elif prior_version in {"v1", "uniform"}:
-            new_priors = priors_from_features(new_feature_sources)["logprobs"]
-        else:
-            raise ValueError(f"Unsupported prior_version: {prior_version}")
-        program_prior_log_probs.extend(new_priors)
-    return X, start_index + len(new_feature_names)
-
-
-def _run_collision_feedback_loop(
-    *,
-    collision_groups: list[dict[str, Any]],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
-    max_rounds: int,
-    target_collisions: int,
-    start_index: int,
-    program_prior_log_probs: list[float] | None,
-    X: Any,
-    y: np.ndarray | None,
-    programs_sa: list[StateActionProgram],
-    dsl_functions: dict[str, Any],
-    generate_features: Callable[
-        [str, int, int], tuple[list[str], dict[str, Any], Path]
-    ],
-    make_prompt: Callable[
-        [list[dict[str, Any]], list[tuple[np.ndarray, tuple[int, int]]]], str | None
-    ],
-    prior_version: str = "v1",
-    prior_beta: float = 1.0,
-) -> tuple[
-    Any,
-    list[StateActionProgram],
-    list[float] | None,
-    list[dict[str, Any]],
-    Path | None,
-    np.ndarray,
-]:
-    collision_payloads: list[dict[str, Any]] = []
-    collision_output_path: Path | None = None
-    col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
-    for round_idx in range(max_rounds):
-        num_collisions = len(collision_groups) if collision_groups else 0
-        if num_collisions <= target_collisions:
-            logging.info(
-                "Collision feedback stopping: %d <= target %d.",
-                num_collisions,
-                target_collisions,
-            )
-            break
-        prompt = make_prompt(collision_groups, examples)
-        if prompt is None:
-            break
-        prompt = f"{prompt}\n\nCOLLISION_FEEDBACK_ROUND: {round_idx + 1}\n"
-        new_feature_sources, collision_payload, output_path = generate_features(
-            prompt, start_index, round_idx + 1
-        )
-        # print(f"Generated new features: {new_feature_sources}")
-        # input()
-        collision_payloads.append(collision_payload)
-        collision_output_path = output_path
-
-        if not new_feature_sources:
-            logging.info("No new features generated; stopping feedback loop.")
-            break
-        X, start_index = _append_new_features_from_sources(
-            X,
-            programs_sa,
-            program_prior_log_probs,
-            dsl_functions,
-            new_feature_sources,
-            examples,
-            start_index=start_index,
-            collision_loop_idx=round_idx + 1,
-            prior_version=prior_version,
-            prior_beta=prior_beta,
-        )
-        X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
-            X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
-        )
-        collision_groups = log_feature_collisions(X, y, examples)
-        logging.info(
-            "Collision groups after feedback round %d: %d",
-            round_idx + 1,
-            len(collision_groups) if collision_groups else 0,
-        )
-    return (
-        X,
-        programs_sa,
-        program_prior_log_probs,
-        collision_payloads,
-        collision_output_path,
-        col_nnz,
-    )
-
-
-def get_program_set(
-    num_programs: int,
-    base_class_name: str,  # pylint: disable=unused-argument
-    env_factory: EnvFactory,
-    env_specs: dict[str, Any] | None = None,
-    start_symbol: int = 0,
-    program_generation: dict[str, Any] | None = None,
-    demo_numbers: Sequence[int] | None = None,
-    outer_feedback: str | None = None,
-    seed: int = 0,
-    prior_version: str = "v1",
-    prior_beta: float = 1.0,
-) -> tuple[list[Any], list[float], dict[str, Any]]:
-    """Enumerate programs from the grammar and return programs + prior log-
-    probs.
-
-    This helper creates the DSL and the grammar-based generator, then
-    samples `num_programs` programs from the generator. It returns a tuple of
-    (programs, program_prior_log_probs).
-    """
-    if program_generation is None:
-        raise ValueError(
-            "program_generation configuration is required for LPP approach."
-        )
-    strategy = program_generation["strategy"]
-
-    # Define strategies as a dictionary
-    strategies = {
-        "fixed_grid_v1": lambda: _generate_with_fixed_grid_v1(env_specs, start_symbol),
-        "dsl_generator": lambda: _generate_with_dsl_generator(
-            program_generation, env_specs, start_symbol, env_factory, outer_feedback
-        ),
-        "grid_v1_ablated": lambda: _generate_with_ablated_grid_v1(
-            program_generation, env_specs, start_symbol
-        ),
-        "offline_loader": lambda: _generate_with_offline_loader(
-            program_generation, env_specs, start_symbol
-        ),
-    }
-    llm_model = (program_generation or {}).get("llm_model", "gpt-4.1")
-
-    if strategy == "feature_generator":
-        cache_path = Path("feature_cache.db")
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
-        prompt_path = program_generation["feature_generator_prompt"]
-        num_features = program_generation["num_features"]
-        env = env_factory(0)
-        object_types = env.get_object_types()
-        generator = LLMFeatureGenerator(llm_client)
-        hint_text = load_hint_text(
-            base_class_name,
-            program_generation["encoding_method"],
-            program_generation["hint_structured"],
-            HINTS_ROOT,
-        )
-
-        features, payload = generator.generate(
-            prompt_path=prompt_path,
-            object_types=object_types,
-            hint_text=hint_text,
-            num_features=num_features,
-        )
-        features = convert_dir_lists_to_tuples(features)
-
-        program_prior_log_probs = compute_feature_log_probs(payload, object_types)
-        dsl_fns = get_dsl_functions_dict()
-        return features, program_prior_log_probs, dsl_fns
-    if strategy == "py_feature_gen":
-        cache_path = Path("py_feature_cache.db")
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
-        prompt_path = program_generation["py_feature_gen_prompt"]
-        batch_prompt_path = program_generation.get("py_feature_gen_batch_prompt")
-        enc_method = str(program_generation["encoding_method"])
-        enc_id = enc_method.replace("enc_", "")
-        num_features = program_generation["num_features"]
-        num_batches = program_generation.get("num_batches")
-        py_generator = PyFeatureGenerator(llm_client)
-        hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
-
-        demo_text: str | None = None
-        try:
-            expert = get_grid_expert(base_class_name)
-            trajectories: list[list[tuple[Any, Any, Any]]] = []
-            demos_included = program_generation.get("demos_included")
-            if demos_included is None:
-                demo_ids = list(demo_numbers) if demo_numbers is not None else [0]
-            else:
-                demo_ids = list(demos_included)
-            for init_idx in demo_ids:
-                env_demo = env_factory(init_idx)
-                traj = hint_extractor.collect_full_episode(
-                    env_demo, expert, max_steps=40, sample_count=None
-                )
-                env_demo.close()
-                trajectories.append(traj)
-            symbol_map = grid_hint_config.get_symbol_map(base_class_name)
-            enc_cfg = grid_encoder.GridStateEncoderConfig(
-                symbol_map=symbol_map,
-                empty_token="empty",
-                coordinate_style="rc",
-            )
-            encoder = grid_encoder.GridStateEncoder(enc_cfg)
-            analyzer = transition_analyzer.GenericTransitionAnalyzer()
-            salient_tokens = grid_hint_config.SALIENT_TOKENS[base_class_name]
-            all_traj_texts: list[str] = []
-            for i, traj in enumerate(trajectories):
-                if enc_method == "enc_1":
-                    text = trajectory_serializer.trajectory_to_diff_text(
-                        traj,
-                        encoder=encoder,
-                        max_steps=50,
-                    )
-                else:
-                    # ENCODING 2-6
-                    text = trajectory_serializer.trajectory_to_text(
-                        traj,
-                        encoder=encoder,
-                        analyzer=analyzer,
-                        salient_tokens=salient_tokens,
-                        encoding_method=enc_id,
-                        max_steps=50,
-                    )
-                all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
-            demo_text = "\n\n".join(all_traj_texts)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logging.info("Failed to build demonstration text: %s", exc)
-
-        features, payload = py_generator.generate(
-            prompt_path=prompt_path,
-            batch_prompt_path=batch_prompt_path,
-            hint_text=hint_text,
-            num_features=num_features,
-            num_batches=num_batches,
-            env_name=base_class_name,
-            demonstration_data=demo_text,
-            encoding_method=enc_method,
-            _seed=seed,
-            reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
-            loading=program_generation.get("loading"),
-        )
-        dsl_fns = get_dsl_functions_dict()
-        dsl_fns.update(
-            build_py_feature_functions(features, dsl_fns)
-        )  # pylint: disable=exec-used
-        if prior_version == "v2":
-            out_dict = priors_from_features_v2(features, beta=prior_beta)
-            program_prior_log_probs = out_dict["beta_log_scores"]
-        elif prior_version in {"v1", "uniform"}:
-            out_dict = priors_from_features(features)
-            program_prior_log_probs = out_dict["logprobs"]
-        else:
-            raise ValueError(f"Unsupported prior_version: {prior_version}")
-        return features, program_prior_log_probs, dsl_fns
-
-    if strategy not in strategies:
-        raise ValueError(f"Unknown strategy: {strategy}")
-
-    # Call the appropriate strategy
-    program_generator, dsl_fns = strategies[strategy]()
-    # Generate programs using the shared helper function
-    programs, program_prior_log_probs = _generate_programs(
-        program_generator, num_programs
-    )
-    return programs, program_prior_log_probs, dsl_fns
-
-
-def _generate_with_fixed_grid_v1(
-    env_specs: dict[str, Any] | None, start_symbol: int
-) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
-    """Generate programs using the fixed grid_v1 DSL."""
-
-    dsl = make_dsl()
-    dsl_dict = get_dsl_functions_dict()
-
-    program_generator = GrammarBasedProgramGenerator(
-        cast(
-            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-            create_grammar,
-        ),
-        dsl,
-        env_spec=env_specs if env_specs is not None else {},
-        start_symbol=start_symbol,
-    )
-    return program_generator, dsl_dict
-
-
-def _generate_with_ablated_grid_v1(
-    program_generation: dict[str, Any],
-    env_specs: dict[str, Any] | None,
-    start_symbol: int,
-) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
-    """Generate programs using the ablated grid_v1 DSL."""
-    removed_primitive = program_generation["removed_primitive"]
-    dsl = make_ablated_dsl(removed_primitive)
-    dsl_dict = get_dsl_functions_dict(removed_primitive)
-    program_generator = GrammarBasedProgramGenerator(
-        cast(
-            Callable[[dict[str, Any]], Grammar[LocalProgram, GridInput, Any]],
-            create_grammar,
-        ),
-        dsl,
-        env_spec=env_specs if env_specs is not None else {},
-        start_symbol=start_symbol,
-        removed_primitive=removed_primitive,
-    )
-    return program_generator, dsl_dict
-
-
-def _generate_with_dsl_generator(
-    program_generation: dict[str, Any],
-    env_specs: dict[str, Any] | None,
-    start_symbol: int,
-    env_factory: EnvFactory,
-    outer_feedback: str | None,
-) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
-    """Generate programs using the DSL generator."""
-    cache_path = Path("llm_cache.db")
-    # cache_path = Path(tempfile.NamedTemporaryFile(suffix=".db").name)
-    cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_model = program_generation.get("llm_model", "gpt-4.1")
-    llm_client = OpenAIModel(llm_model, cache)
-    prompt_path = program_generation["dsl_generator_prompt"]
-    with open(
-        prompt_path,
-        "r",
-        encoding="utf-8",
-    ) as file:
-        prompt = file.read()
-    removed_primitive = program_generation["removed_primitive"]
-    generator = LLMPrimitivesGenerator(llm_client, removed_primitive)
-    if env_specs is None:
-        raise ValueError("env_specs cannot be None when indexing.")
-    _, new_dsl_dict, dsl = generator.generate_and_process_grammar(
-        prompt,
-        env_specs["object_types"],
-        env_factory,  # type: ignore
-        "full",
-        outer_feedback,
-    )
-
-    program_generator = GrammarBasedProgramGenerator(
-        generator.create_grammar,
-        dsl,
-        env_spec=env_specs if env_specs is not None else {},
-        start_symbol=start_symbol,
-    )
-
-    return program_generator, new_dsl_dict
-
-
-def _generate_with_offline_loader(
-    program_generation: dict[str, Any],
-    env_specs: dict[str, Any] | None,
-    start_symbol: int,
-) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
-    """Generate programs using the offline loader."""
-    run_id = program_generation["offline_loader_run_id"]
-    removed_primitive = program_generation["removed_primitive"]
-    generator = LLMPrimitivesGenerator(None, removed_primitive)
-    _, new_dsl_dict, dsl = generator.offline_loader(run_id)
-    program_generator = GrammarBasedProgramGenerator(
-        generator.create_grammar,
-        dsl,
-        env_spec=env_specs if env_specs is not None else {},
-        start_symbol=start_symbol,
-    )
-    return program_generator, new_dsl_dict
-
-
-def _generate_programs(
-    program_generator: GrammarBasedProgramGenerator, num_programs: int
-) -> tuple[list[Any], list[float]]:
-    """Shared logic for generating programs."""
-    logging.info(f"Generating {num_programs} programs")
-
-    programs: list[Any] = []
-    program_prior_log_probs = []
-    gen = program_generator.generate_programs()
-    for _ in range(num_programs):
-        try:
-            program, prior = next(gen)
-        except StopIteration:
-            logging.info(
-                f"Generator exhausted early — only produced {len(programs)} programs."
-            )
-            break
-        programs.append(program)
-        program_prior_log_probs.append(prior)
-    return programs, program_prior_log_probs
 
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
@@ -845,6 +112,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         split_seed: int = 0,
         split_strategy: str = "random",
         preserve_ordering: bool = False,
+        dt_max_depth_candidates: Sequence[int | None] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -876,6 +144,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
         self.collision_feedback_target_collisions = collision_feedback_target_collisions
         self.collision_feedback_reprompt_max_attempts = 5
+        self._collision_llm_model: str | None = None
+        self._collision_py_generator: PyFeatureGenerator | None = None
         if prior_version not in {"v1", "v2", "uniform"}:
             raise ValueError("prior_version must be one of {'v1', 'v2', 'uniform'}.")
         self.prior_version = prior_version
@@ -886,17 +156,38 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.w_max_clause = float(w_max_clause)
         self.w_depth = float(w_depth)
         self.w_ops = float(w_ops)
-        _run_structural_prior_sanity_checks()
         self.val_frac = val_frac
         self.val_size = val_size
         self.split_seed = split_seed
         self.split_strategy = split_strategy
         self.preserve_ordering = preserve_ordering
+        self.dt_max_depth_candidates: list[int | None]
+        if dt_max_depth_candidates is None:
+            self.dt_max_depth_candidates = [None]
+        else:
+            if len(dt_max_depth_candidates) == 0:
+                raise ValueError("dt_max_depth_candidates cannot be empty.")
+            self.dt_max_depth_candidates = list(dt_max_depth_candidates)
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
         random.seed(self.seed_num)
         np.random.seed(self.seed_num)
+
+    def _get_collision_py_generator(self) -> PyFeatureGenerator:
+        """Create and cache the PyFeatureGenerator used by collision
+        feedback."""
+        llm_model = (self.program_generation or {}).get("llm_model", "gpt-4.1")
+        if (
+            self._collision_py_generator is None
+            or self._collision_llm_model != llm_model
+        ):
+            cache_path = Path("py_feature_cache.db")
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            llm_client = OpenAIModel(llm_model, cache)
+            self._collision_py_generator = PyFeatureGenerator(llm_client)
+            self._collision_llm_model = llm_model
+        return self._collision_py_generator
 
     def _generate_collision_features(
         self,
@@ -915,11 +206,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             return [], {}, Path()
 
-        llm_model = (self.program_generation or {}).get("llm_model", "gpt-4.1")
-        cache_path = Path("py_feature_cache.db")
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
-        py_generator = PyFeatureGenerator(llm_client)
+        py_generator = self._get_collision_py_generator()
 
         template_payload = py_generator.query_llm(
             prompt,
@@ -997,107 +284,157 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info("Collision repair prompt written to %s", out_path)
         return prompt
 
-    def reset(self, *args: Any, **kwargs: Any) -> None:
-        super().reset(*args, **kwargs)
-        self._policy = self._train_policy()
-        self._timestep = 0
+    def _train_policy_from_matrix(
+        self,
+        X: Any,
+        y_bool: list[bool],
+        programs_sa: list[StateActionProgram],
+        program_prior_log_probs_opt: list[float] | None,
+        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        dsl_functions: dict[str, Any],
+        *,
+        dt_max_depth: int | None,
+    ) -> LPPPolicy:
+        gain = gini_gain_per_feature(X, y_bool)
+        ranked_cols = np.argsort(-gain)
+        X_ranked = X[:, ranked_cols]
+        programs_ranked = [programs_sa[i] for i in ranked_cols]
+        if program_prior_log_probs_opt is None:
+            priors_ranked = [0.0 for _ in ranked_cols]
+        else:
+            priors_ranked = [program_prior_log_probs_opt[i] for i in ranked_cols]
 
-    def _train_policy(self) -> LPPPolicy:
-        """Train the logical programmatic policy using demonstrations."""
+        plps, plp_priors = learn_plps(
+            X_ranked,
+            y_bool,
+            programs_ranked,
+            priors_ranked,
+            num_dts=self.num_dts,
+            program_generation_step_size=self.program_generation_step_size,
+            dt_splitter=self.dt_splitter,
+            cc_alpha=self.cc_alpha,
+            dt_max_depth=dt_max_depth,
+            dsl_functions=dsl_functions,
+        )
+        if self.prior_version == "uniform":
+            plp_priors = [-4.0] * len(plps)
 
-        outer_feedback = None
-        train_core_demos, val_demos = split_dataset(
-            self.demo_numbers,
-            val_frac=self.val_frac,
-            val_size=self.val_size,
-            split_seed=self.split_seed,
-            split_strategy=self.split_strategy,
-            preserve_ordering=self.preserve_ordering,
-        )
-        if set(train_core_demos).intersection(set(val_demos)):
-            raise AssertionError("train_core and val demo IDs are not disjoint.")
-        logging.info("Split train_core demos: %s", list(train_core_demos))
-        logging.info("Split val demos: %s", list(val_demos))
-        (
-            programs,
-            program_prior_log_probs_init,
-            dsl_functions,
-        ) = get_program_set(
-            self.num_programs,
-            self.base_class_name,
-            self.env_factory,
-            env_specs=self.env_specs,
-            start_symbol=self.start_symbol,
-            program_generation=self.program_generation,
-            demo_numbers=train_core_demos,
-            outer_feedback=outer_feedback,
-            seed=self.seed_num,
-            prior_version=self.prior_version,
-            prior_beta=self.prior_beta,
-        )
-        program_prior_log_probs_opt: list[float] | None = program_prior_log_probs_init
-        start_index = len(programs) + 1
-        logging.info("Feature Generation is Done.")
-        logging.info("%d features are genereted!", len(programs))
+        logging.info("LEN BEFORE FILTERING FALSE=%d", len(plps))
+        filtered: list[tuple[StateActionProgram, float]] = []
+        for plp, prior in zip(plps, plp_priors):
+            if str(plp).strip() == "False":
+                continue
+            filtered.append((plp, prior))
+        if filtered:
+            filtered_plps_tuple, filtered_priors_tuple = zip(*filtered)
+            plps = list(filtered_plps_tuple)
+            plp_priors = list(filtered_priors_tuple)
+        else:
+            plps, plp_priors = [], []
 
-        demonstrations, demo_dict_train = get_demonstrations(
-            self.env_factory,
-            self.expert,
-            demo_numbers=train_core_demos,
+        logging.info("LEN AFTER FILTERING FALSE=%d", len(plps))
+
+        valid_plps = log_plp_violation_counts(plps, demonstrations, dsl_functions)
+        logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
+        plps = valid_plps
+
+        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
+        logging.info("LIKELIHOODS: %s", likelihoods)
+        logging.info("PRIORS: %s", plp_priors)
+        particles = []
+        particle_log_probs = []
+        for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
+            particles.append(plp)
+            particle_log_probs.append(prior + likelihood)
+
+        top_particles, top_particle_log_probs = select_particles(
+            particles, particle_log_probs, self.max_num_particles
         )
-        demo_dict_all = dict(demo_dict_train)
-        if val_demos:
-            _, demo_dict_val = get_demonstrations(
-                self.env_factory,
-                self.expert,
-                demo_numbers=val_demos,
+        if len(top_particle_log_probs) > 0:
+            probs_arr = np.asarray(particle_log_probs)
+            max_val = probs_arr.max()
+            max_indices = np.flatnonzero(probs_arr == max_val)
+            map_idx = int(np.random.choice(max_indices))
+            logging.info("MAP program index=%d", map_idx)
+            logging.info("MAP program (%s):", particle_log_probs[map_idx])
+            logging.info(particles[map_idx])
+
+            top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
+                top_particle_log_probs
             )
-            demo_dict_all.update(demo_dict_val)
+            top_particle_probs = np.exp(top_particle_log_probs)
+            logging.info("top_particle_probs: %s", top_particle_probs)
+            policy: LPPPolicy = LPPPolicy(
+                top_particles,
+                top_particle_probs,
+                normalize_plp_actions=self.normalize_plp_actions,
+            )
+            policy.map_program = str(particles[map_idx])
+            policy.map_posterior = particle_log_probs[map_idx]
+            return policy
 
+        logging.info("no nontrivial particles found")
+        return LPPPolicy(
+            [StateActionProgram("False")],
+            [1.0],
+            normalize_plp_actions=self.normalize_plp_actions,
+        )
+
+    def _compute_policy_risk_on_demos(
+        self,
+        policy: LPPPolicy,
+        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        *,
+        eps: float = 1e-12,
+    ) -> float:
+        """Compute empirical validation risk: mean NLL of expert actions."""
+        if len(demonstrations.steps) == 0:
+            return float("inf")
+        losses: list[float] = []
+        for obs, action in demonstrations.steps:
+            action_probs = policy.get_action_probs(obs)
+            prob = float(action_probs[action])
+            losses.append(-float(np.log(max(prob, eps))))
+        return float(np.mean(losses))
+
+    def _get_data_loading_config(
+        self,
+    ) -> tuple[str | None, dict[str, Any] | None]:
         if self.program_generation is None:
             raise ValueError("program_generation config is required.")
-
-        if self.program_generation["strategy"] == "py_feature_gen":
-            feature_names = _extract_feature_names(list(programs))
-            programs = [f"{name}(s, a)" for name in feature_names]
-
-        programs_sa: list[StateActionProgram] = [
-            StateActionProgram(p) for p in programs
-        ]
-
         offline_path_name = None
         loading_cfg = (self.program_generation or {}).get("loading")
         if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
         data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+        return offline_path_name, data_imbalance_cfg
 
-        _assert_state_disjointness(demo_dict_all, train_core_demos, val_demos)
-        train_states, train_expanded = _count_states_and_expanded_examples(
-            train_core_demos,
-            demo_dict_all,
-            data_imbalance=data_imbalance_cfg,
+    def _build_and_process_train_matrix(
+        self,
+        *,
+        train_demo_ids: tuple[int, ...],
+        val_demo_ids: tuple[int, ...],
+        demo_dict_train: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        programs_sa: list[StateActionProgram],
+        program_prior_log_probs_opt: list[float] | None,
+        dsl_functions: dict[str, Any],
+        data_imbalance_cfg: dict[str, Any] | None,
+        offline_path_name: str | None,
+        start_index: int,
+    ) -> tuple[
+        Any,
+        np.ndarray,
+        list[bool],
+        list[tuple[np.ndarray, tuple[int, int]]] | None,
+        list[StateActionProgram],
+        list[float] | None,
+    ]:
+        val_split_tag = (
+            "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
-        val_states, val_expanded = _count_states_and_expanded_examples(
-            val_demos,
-            demo_dict_all,
-            data_imbalance=data_imbalance_cfg,
-        )
-        logging.info(
-            "Split stats | train_core: demos=%d states=%d expanded_examples=%d",
-            len(train_core_demos),
-            train_states,
-            train_expanded,
-        )
-        logging.info(
-            "Split stats | val: demos=%d states=%d expanded_examples=%d",
-            len(val_demos),
-            val_states,
-            val_expanded,
-        )
-
         X, y, examples = run_all_programs_on_demonstrations(
             self.base_class_name,
-            train_core_demos,
+            train_demo_ids,
             programs_sa,
             demo_dict_train,
             dsl_functions,
@@ -1107,37 +444,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demos_included=(self.program_generation or {}).get("demos_included"),
             split_tag=(
                 f"seed{self.split_seed}"
-                f"_train_{'-'.join(str(x) for x in train_core_demos)}"
-                f"__val_{'-'.join(str(x) for x in val_demos) if val_demos else 'none'}"
+                f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
+                f"__val_{val_split_tag}"
                 "__role_train_core"
             ),
             seed=self.seed_num,
         )
-
-        if X is None:
+        if X is None or y is None:
             raise ValueError(
-                "X is None. Ensure the program execution results are valid."
+                "Train matrix is invalid. Ensure program execution results are valid."
             )
 
-        ##########################################
-        ############ ANALYSIS ON DATA ############
-        ##########################################
-
-        all_zero, all_one, col_nnz = _constant_feature_cols(X)
-        logging.info(f"n_examples={X.shape[0]} n_features={X.shape[1]}")
-        logging.info(f"#all-zero features={len(all_zero)} indices={all_zero[:30]}")
-        logging.info(f"#all-one features={len(all_one)} indices={all_one[:30]}")
+        logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
             _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
         )
+        all_zero = np.where(col_nnz == 0)[0]
+        all_one = np.where(col_nnz == X.shape[0])[0]
+        logging.info("#all-zero features=%d indices=%s", len(all_zero), all_zero[:30])
+        logging.info("#all-one features=%d indices=%s", len(all_one), all_one[:30])
 
-        collision_groups = log_feature_collisions(
-            X,
-            y,
-            examples,
-        )
-
-        ################### COLLISION FEEDBACK LOOP ####################
+        collision_groups = log_feature_collisions(X, y, examples)
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
 
@@ -1159,7 +486,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 collision_groups=collision_groups,
                 examples=examples,
                 max_rounds=max_rounds,
-                target_collisions=(self.collision_feedback_target_collisions),
+                target_collisions=self.collision_feedback_target_collisions,
                 start_index=start_index,
                 program_prior_log_probs=program_prior_log_probs_opt,
                 X=X,
@@ -1172,277 +499,286 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 prior_beta=self.prior_beta,
             )
             if collision_payloads and collision_output_path is not None:
-                all_payload = {"collision_payloads": collision_payloads}
                 out_path = (
                     collision_output_path / "py_feature_payload_collision_all.json"
                 )
-                out_path.write_text(json.dumps(all_payload, indent=4), encoding="utf-8")
+                out_path.write_text(
+                    json.dumps({"collision_payloads": collision_payloads}, indent=4),
+                    encoding="utf-8",
+                )
         logging.info("Data after collision feedback loop: X shape %s", X.shape)
 
         n = X.shape[0]
-        logging.info(f"N={n}")
-        freq = col_nnz / n  # fraction of examples where feature is on
-        rare = np.where(freq <= 0.05)[0]  # almost always 0
-        common = np.where(freq >= 0.95)[0]  # almost always 1
-        logging.info(f"Almost-always-0={len(rare)}")
-        logging.info(f"Almost-always-1={len(common)}")
+        logging.info("N=%d", n)
+        freq = col_nnz / n
+        rare = np.where(freq <= 0.05)[0]
+        common = np.where(freq >= 0.95)[0]
+        logging.info("Almost-always-0=%d", len(rare))
+        logging.info("Almost-always-1=%d", len(common))
         assert_features_fire(X, programs_sa)
-        y_bool: list[bool] = list(y.astype(bool).flatten()) if y is not None else []
 
+        y_bool: list[bool] = list(y.astype(bool).flatten())
         pos = sum(y_bool)
         neg = len(y_bool) - pos
         logging.info(
-            f"y: n={len(y_bool)} pos={pos} ({100 * pos / len(y_bool):.2f}%) neg={neg}"
+            "y: n=%d pos=%d (%.2f%%) neg=%d",
+            len(y_bool),
+            pos,
+            100 * pos / len(y_bool),
+            neg,
+        )
+        return X, y, y_bool, examples, programs_sa, program_prior_log_probs_opt
+
+    def _select_hyperparams(
+        self,
+        *,
+        X: Any,
+        y_bool: list[bool],
+        programs_sa: list[StateActionProgram],
+        program_prior_log_probs_opt: list[float] | None,
+        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+        dsl_functions: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Select hyperparameters via validation risk.
+
+        Returns a dict so future tunable knobs can be added without
+        changing training/evaluation orchestration code.
+        """
+        candidate_hyperparams = [
+            {"dt_max_depth": depth} for depth in self.dt_max_depth_candidates
+        ]
+        has_validation = len(demonstrations_val.steps) > 0
+        best_hyperparams = dict(candidate_hyperparams[0])
+        if not has_validation:
+            logging.info(
+                "No validation data available; skipping eval-risk minimization and "
+                "falling back to default dt_max_depth=None."
+            )
+            return {"dt_max_depth": None}
+        if len(candidate_hyperparams) == 1:
+            logging.info(
+                "Single dt_max_depth candidate=%s; skipping validation model selection.",
+                best_hyperparams["dt_max_depth"],
+            )
+            return best_hyperparams
+
+        best_risk = float("inf")
+        for hp in candidate_hyperparams:
+            dt_max_depth = hp.get("dt_max_depth")
+            logging.info(
+                "Training candidate with dt_max_depth=%s on train_core.",
+                dt_max_depth,
+            )
+            candidate_policy = self._train_policy_from_matrix(
+                X,
+                y_bool,
+                programs_sa,
+                program_prior_log_probs_opt,
+                demonstrations_train,
+                dsl_functions,
+                dt_max_depth=dt_max_depth,
+            )
+            val_risk = self._compute_policy_risk_on_demos(
+                candidate_policy, demonstrations_val
+            )
+            logging.info(
+                "Validation risk (mean NLL) for dt_max_depth=%s: %.6f",
+                dt_max_depth,
+                val_risk,
+            )
+            if val_risk < best_risk:
+                best_risk = val_risk
+                best_hyperparams = dict(hp)
+        logging.info(
+            "Selected dt_max_depth=%s with best validation risk %.6f.",
+            best_hyperparams["dt_max_depth"],
+            best_risk,
+        )
+        return best_hyperparams
+
+    def _build_final_training_data(
+        self,
+        *,
+        train_demo_ids: tuple[int, ...],
+        val_demo_ids: tuple[int, ...],
+        demo_dict_val: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        programs_sa: list[StateActionProgram],
+        dsl_functions: dict[str, Any],
+        data_imbalance_cfg: dict[str, Any] | None,
+        offline_path_name: str | None,
+        X_train: Any,
+        y_train: np.ndarray,
+        program_prior_log_probs_opt: list[float] | None,
+        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+    ) -> tuple[
+        Any,
+        list[bool],
+        list[StateActionProgram],
+        list[float] | None,
+        Trajectory[np.ndarray, tuple[int, int]],
+    ]:
+        if len(train_demo_ids) == 0:
+            raise ValueError("No demonstrations available for final retraining.")
+        demonstrations_final = Trajectory[np.ndarray, tuple[int, int]](
+            steps=list(demonstrations_train.steps) + list(demonstrations_val.steps)
         )
 
-        #########################################
-        ############ END OF ANALYSIS ############
-        #########################################
+        X_final = X_train
+        y_final = y_train
+        if val_demo_ids:
+            X_val, y_val, _ = run_all_programs_on_demonstrations(
+                self.base_class_name,
+                val_demo_ids,
+                list(programs_sa),
+                demo_dict_val,
+                dsl_functions,
+                data_imbalance=data_imbalance_cfg,
+                return_examples=False,
+                offline_path_name=offline_path_name,
+                demos_included=(self.program_generation or {}).get("demos_included"),
+                split_tag=(
+                    f"seed{self.split_seed}"
+                    f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
+                    f"__val_{'-'.join(str(x) for x in val_demo_ids)}"
+                    "__role_val"
+                ),
+                seed=self.seed_num,
+            )
+            if X_val is None or y_val is None:
+                raise ValueError(
+                    "X_val or y_val is None. Ensure the validation dataset is valid."
+                )
+            X_final = vstack([X_final, X_val]).tocsr()
+            y_final = np.concatenate([y_final, y_val])
 
-        gain = gini_gain_per_feature(X, y_bool)
-        ranked_cols = np.argsort(-gain)  # descending
-        X_ranked = X[:, ranked_cols]
-        programs_ranked = [programs_sa[i] for i in ranked_cols]
-        if program_prior_log_probs_opt is None:
-            priors_ranked = [0.0 for _ in ranked_cols]
-        else:
-            priors_ranked = [program_prior_log_probs_opt[i] for i in ranked_cols]
+        final_programs_sa = list(programs_sa)
+        final_program_priors = (
+            list(program_prior_log_probs_opt)
+            if program_prior_log_probs_opt is not None
+            else None
+        )
+        X_final, final_programs_sa, final_program_priors, _ = _filter_constant_features(
+            X_final, final_programs_sa, final_program_priors
+        )
+        y_final_bool: list[bool] = list(y_final.astype(bool).flatten())
+        return (
+            X_final,
+            y_final_bool,
+            final_programs_sa,
+            final_program_priors,
+            demonstrations_final,
+        )
 
-        plps, plp_priors = learn_plps(
-            X_ranked,
-            y_bool,
-            programs_ranked,
-            priors_ranked,
-            num_dts=self.num_dts,
-            program_generation_step_size=self.program_generation_step_size,
-            dt_splitter=self.dt_splitter,
-            cc_alpha=self.cc_alpha,
+    def reset(self, *args: Any, **kwargs: Any) -> None:
+        super().reset(*args, **kwargs)
+        self._policy = self._train_policy()
+        self._timestep = 0
+
+    def _train_policy(self) -> LPPPolicy:
+        """Train the logical programmatic policy using demonstrations."""
+        outer_feedback = None
+        offline_path_name, data_imbalance_cfg = self._get_data_loading_config()
+        (
+            train_demo_ids,
+            val_demo_ids,
+            demonstrations_train,
+            demonstrations_val,
+            demo_dict_train,
+            demo_dict_val,
+        ) = split_and_collect_demonstrations(
+            env_factory=self.env_factory,
+            expert=self.expert,
+            demo_numbers=self.demo_numbers,
+            val_frac=self.val_frac,
+            val_size=self.val_size,
+            split_seed=self.split_seed,
+            split_strategy=self.split_strategy,
+            preserve_ordering=self.preserve_ordering,
+            data_imbalance_cfg=data_imbalance_cfg,
+        )
+        (
+            programs_sa,
+            program_prior_log_probs_opt,
+            dsl_functions,
+            start_index,
+        ) = prepare_programs_and_dsl(
+            num_programs=self.num_programs,
+            base_class_name=self.base_class_name,
+            env_factory=self.env_factory,
+            env_specs=self.env_specs,
+            start_symbol=self.start_symbol,
+            program_generation=self.program_generation,
+            train_demo_ids=train_demo_ids,
+            outer_feedback=outer_feedback,
+            seed_num=self.seed_num,
+            prior_version=self.prior_version,
+            prior_beta=self.prior_beta,
+            get_program_set_fn=get_program_set,
+            extract_feature_names_fn=_extract_feature_names,
+        )
+        (
+            X_train,
+            y_train,
+            y_train_bool,
+            _examples,
+            programs_sa,
+            program_prior_log_probs_opt,
+        ) = self._build_and_process_train_matrix(
+            train_demo_ids=train_demo_ids,
+            val_demo_ids=val_demo_ids,
+            demo_dict_train=demo_dict_train,
+            programs_sa=programs_sa,
+            program_prior_log_probs_opt=program_prior_log_probs_opt,
+            dsl_functions=dsl_functions,
+            data_imbalance_cfg=data_imbalance_cfg,
+            offline_path_name=offline_path_name,
+            start_index=start_index,
+        )
+        selected_hyperparams = self._select_hyperparams(
+            X=X_train,
+            y_bool=y_train_bool,
+            programs_sa=programs_sa,
+            program_prior_log_probs_opt=program_prior_log_probs_opt,
+            demonstrations_train=demonstrations_train,
+            demonstrations_val=demonstrations_val,
             dsl_functions=dsl_functions,
         )
-        # plps, plp_priors = learn_plps(
-        #     X,
-        #     y_bool,
-        #     programs_sa,
-        #     program_prior_log_probs,
-        #     num_dts=self.num_dts,
-        #     program_generation_step_size=self.program_generation_step_size,
-        #     dsl_functions=dsl_functions,
-        # )
-        if self.prior_version == "uniform":
-            plp_priors = [-4.0] * len(plps)
-        logging.info(f"LEN BEFORE FILTERING FALSE={len(plps)}")
-        filtered: list[tuple[StateActionProgram, float]] = []
-        for plp, prior in zip(plps, plp_priors):
-            if str(plp).strip() == "False":
-                continue
-            filtered.append((plp, prior))
-        if filtered:
-            filtered_plps_tuple, filtered_priors_tuple = zip(*filtered)
-            plps = list(filtered_plps_tuple)
-            plp_priors = list(filtered_priors_tuple)
-        else:
-            plps, plp_priors = [], []
-
-        logging.info(f"LEN AFTER FILTERING FALSE={len(plps)}")
-
-        valid_plps = log_plp_violation_counts(plps, demonstrations, dsl_functions)
-        logging.info(f"LEN AFTER filtering violations={len(valid_plps)}")
-
-        plps = valid_plps
-
-        if self.permissive_filter_enabled:
-            if (
-                self.permissive_filter_max_avg_frac is None
-                and self.permissive_filter_max_avg_count is None
-            ):
-                logging.info(
-                    "Permissive PLP filter enabled but no thresholds provided; skipping."
-                )
-            else:
-                set_dsl_functions(dsl_functions)
-                permissive_filtered_plps: list[StateActionProgram] = []
-                total_steps = len(demonstrations.steps)
-                logging.info(
-                    "Applying permissive PLP filter on %d PLPs over %d steps.",
-                    len(plps),
-                    total_steps,
-                )
-                for plp in plps:
-                    total_allowed = 0
-                    total_frac = 0.0
-                    valid = True
-                    for obs, _ in demonstrations.steps:
-                        try:
-                            rows, cols = obs.shape[:2]
-                            n_actions = rows * cols
-                            allowed = 0
-                            for r in range(rows):
-                                for c in range(cols):
-                                    if plp(obs, (r, c)):
-                                        allowed += 1
-                            total_allowed += allowed
-                            total_frac += (allowed / n_actions) if n_actions else 0.0
-                        except Exception:  # pylint: disable=broad-exception-caught
-                            valid = False
-                            break
-                    if not valid or total_steps == 0:
-                        continue
-                    avg_allowed = total_allowed / total_steps
-                    avg_frac = total_frac / total_steps
-                    if (
-                        self.permissive_filter_max_avg_count is not None
-                        and avg_allowed > self.permissive_filter_max_avg_count
-                    ):
-                        continue
-                    if (
-                        self.permissive_filter_max_avg_frac is not None
-                        and avg_frac > self.permissive_filter_max_avg_frac
-                    ):
-                        continue
-                    permissive_filtered_plps.append(plp)
-                logging.info(
-                    "Permissive PLP filter kept %d/%d PLPs.",
-                    len(permissive_filtered_plps),
-                    len(plps),
-                )
-                plps = permissive_filtered_plps
-
-        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
-        logging.info(f"LIKELIHOODS: {likelihoods}")
-        logging.info(f"PRIORS: {plp_priors}")
+        selected_dt_max_depth = selected_hyperparams.get("dt_max_depth")
+        (
+            X_final,
+            y_final_bool,
+            final_programs_sa,
+            final_program_priors,
+            demonstrations_final,
+        ) = self._build_final_training_data(
+            train_demo_ids=train_demo_ids,
+            val_demo_ids=val_demo_ids,
+            demo_dict_val=demo_dict_val,
+            programs_sa=programs_sa,
+            dsl_functions=dsl_functions,
+            data_imbalance_cfg=data_imbalance_cfg,
+            offline_path_name=offline_path_name,
+            X_train=X_train,
+            y_train=y_train,
+            program_prior_log_probs_opt=program_prior_log_probs_opt,
+            demonstrations_train=demonstrations_train,
+            demonstrations_val=demonstrations_val,
+        )
         logging.info(
-            "Structural prior cfg: alpha=%s w_clauses=%s w_literals=%s "
-            "w_max_clause=%s w_depth=%s w_ops=%s",
-            self.alpha,
-            self.w_clauses,
-            self.w_literals,
-            self.w_max_clause,
-            self.w_depth,
-            self.w_ops,
+            "Retraining final policy on train+val with dt_max_depth=%s.",
+            selected_dt_max_depth,
         )
-        particles = []
-        particle_log_probs = []
-        program_rows: list[dict[str, Any]] = []
-        for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
-            complexity = compute_program_structural_complexity(plp)
-            struct_prior = compute_program_structural_log_prior(
-                plp,
-                alpha=self.alpha,
-                w_clauses=self.w_clauses,
-                w_literals=self.w_literals,
-                w_max_clause=self.w_max_clause,
-                w_depth=self.w_depth,
-                w_ops=self.w_ops,
-            )
-            final_log_weight = prior + likelihood + struct_prior
-            particles.append(plp)
-            particle_log_probs.append(final_log_weight)
-            program_rows.append(
-                {
-                    "program": str(plp),
-                    "num_clauses": complexity["num_clauses"],
-                    "total_literals": complexity["total_literals"],
-                    "max_clause_len": complexity["max_clause_len"],
-                    "depth": complexity["depth"],
-                    "ops": complexity["ops"],
-                    "logP_features": float(prior),
-                    "logP_struct": float(struct_prior),
-                    "log_likelihood": float(likelihood),
-                    "log_weight": float(final_log_weight),
-                }
-            )
-
-        if program_rows:
-            top_rows = sorted(program_rows, key=lambda r: r["log_weight"], reverse=True)[
-                :5
-            ]
-            for rank, row in enumerate(top_rows, start=1):
-                logging.info(
-                    "Top-%d program stats | clauses=%d literals=%d max_clause=%d "
-                    "depth=%d ops=%d logP_features=%.4f logP_struct=%.4f "
-                    "log_likelihood=%.4f final_log_weight=%.4f",
-                    rank,
-                    row["num_clauses"],
-                    row["total_literals"],
-                    row["max_clause_len"],
-                    row["depth"],
-                    row["ops"],
-                    row["logP_features"],
-                    row["logP_struct"],
-                    row["log_likelihood"],
-                    row["log_weight"],
-                )
-                logging.info("Top-%d program: %s", rank, row["program"])
-
-        # logging.info(particle_log_probs)
-        probs_arr = np.asarray(particle_log_probs)
-        max_val = probs_arr.max()
-        max_indices = np.flatnonzero(probs_arr == max_val)
-        map_idx = int(np.random.choice(max_indices))
-        logging.info(map_idx)  # MAYBE MIXTURE?
-        logging.info(f"MAP program ({particle_log_probs[map_idx]}):")
-        logging.info(particles[map_idx])
-
-        top_particles, top_particle_log_probs = select_particles(
-            particles, particle_log_probs, self.max_num_particles
+        return self._train_policy_from_matrix(
+            X_final,
+            y_final_bool,
+            final_programs_sa,
+            final_program_priors,
+            demonstrations_final,
+            dsl_functions,
+            dt_max_depth=selected_dt_max_depth,
         )
-        policy: LPPPolicy
-        if len(top_particle_log_probs) > 0:
-            top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
-                top_particle_log_probs
-            )
-            top_particle_probs = np.exp(top_particle_log_probs)
-            logging.info(f"top_particle_probs: {top_particle_probs}")
-            # policy = LPPPolicy(top_particles, top_particle_probs)
-            policy = LPPPolicy(
-                top_particles,
-                top_particle_probs,
-                normalize_plp_actions=self.normalize_plp_actions,
-            )
-            policy.map_program = str(particles[map_idx])
-            policy.map_posterior = particle_log_probs[map_idx]
-        else:
-            logging.info("no nontrivial particles found")
-            # policy = LPPPolicy([StateActionProgram("False")], [1.0])
-            policy = LPPPolicy(
-                [StateActionProgram("False")],
-                [1.0],
-                normalize_plp_actions=self.normalize_plp_actions,
-            )
-
-        if os.getenv("DEBUG_LPP_FEEDBACK", "0").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        }:
-            if examples is None:
-                logging.info("DEBUG_LPP_FEEDBACK: examples missing; skipping feedback.")
-            else:
-                feature_fns = {
-                    name: fn
-                    for name, fn in dsl_functions.items()
-                    if re.match(r"^f\d+$", name)
-                }
-                policy_str = (
-                    policy.map_program
-                    if getattr(policy, "map_program", None)
-                    else str(policy)
-                )
-                payload = build_dnf_failure_payload(
-                    policy_str=policy_str,
-                    examples=examples,
-                    y=y_bool,
-                    feature_fns=feature_fns,
-                )
-                prompt = build_dnf_failure_prompt(  # pylint: disable=unused-variable
-                    payload, examples
-                )
-                # logging.info("DEBUG_LPP_FEEDBACK payload: %s", payload)
-                # logging.info("DEBUG_LPP_FEEDBACK prompt:\n%s", prompt)
-
-        return policy
 
     def test_policy_on_envs(
         self,

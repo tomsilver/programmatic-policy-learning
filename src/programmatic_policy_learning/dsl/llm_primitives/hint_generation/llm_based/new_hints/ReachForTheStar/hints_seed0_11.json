@@ -1,62 +1,16 @@
 {
   "action_choice_hints": [
-    "Whether the action cell is in the same row as a moving token",
-    "Whether the action cell is in the same column as a moving token",
-    "Whether the action cell is the nearest empty cell in a given direction from a moving token",
-    "Whether the action cell is adjacent to a drawn trace",
-    "Whether the action cell is within K steps of an obstacle along a row or column",
-    "Whether the action cell is the first empty cell encountered along a direction from a control token",
-    "Whether the action cell is blocked by an obstacle before reaching the grid boundary",
-    "Whether the action cell is part of a contiguous segment of empty cells",
-    "Whether the action cell is in a region (e.g., top or bottom band) containing a specific token role",
-    "Whether there exists a path from a moving token to the action cell without crossing obstacles",
-    "Whether all cells between a moving token and the action cell are empty",
-    "Whether the action cell is aligned with a drawn trace in the same row or column",
-    "Whether the action cell is at the boundary of the grid",
-    "Whether the action cell is the only available cell in a direction from a control token",
-    "Whether the action cell is within a certain Manhattan distance from a moving token"
-  ],
-  "transition_hints": [
-    "Selecting an empty cell causes a moving token to advance to that cell",
-    "A drawn trace is created along the path between the previous and new positions of a moving token",
-    "Obstacles prevent movement and block trace creation",
-    "Selecting a cell in the same row or column as a moving token results in a straight-line transition",
-    "If a path is blocked by an obstacle, no movement or trace is created beyond the obstacle",
-    "The agent's position updates to the selected cell if the move is valid",
-    "Drawn traces persist after movement and affect future valid moves",
-    "Selecting a cell not aligned with a moving token results in no movement",
-    "Movement is only allowed through empty cells",
-    "Boundary cells restrict movement if no empty cell is available in the chosen direction"
+    "The candidate action cell is adjacent to a cell containing a directional marker.",
+    "The candidate action cell is in a straight line path extending from a directional marker.",
+    "The candidate action cell is adjacent to a previously marked or modified cell.",
+    "The candidate action cell is part of a contiguous sequence of cells leading from a starting structure toward a target structure.",
+    "The candidate action cell is not already marked or modified.",
+    "The candidate action cell is positioned such that selecting it extends an existing structure in the direction indicated by a nearby marker."
   ],
   "feature_family_hints": [
-    "Directional scan features: to detect the first empty or obstacle cell along a row or column",
-    "Relative position features: to encode the offset between a moving token and candidate action cell",
-    "Contiguity features: to check if a segment of cells between two points is uninterrupted by obstacles",
-    "Alignment features: to determine if the action cell is aligned with a drawn trace or moving token",
-    "Adjacency features: to check if the action cell is adjacent to a drawn trace or obstacle",
-    "Path existence features: to determine if a valid path exists between two cells without crossing obstacles",
-    "Boundary proximity features: to encode whether a cell is at or near the grid edge",
-    "Region-based features: to capture whether a cell is in a specific band or area of the grid",
-    "Global count features: to represent the number of certain token roles present in the grid",
-    "Obstacle constraint features: to encode whether obstacles block movement or trace creation",
-    "Manhattan distance features: to measure proximity between tokens and candidate cells",
-    "Unique candidate features: to detect if a cell is the only available option in a direction",
-    "Persistence features: to represent the effect of persistent traces on future moves",
-    "Row/column scan features: to summarize the distribution of token roles along a line",
-    "Local neighborhood features: to capture the configuration of token roles around the action cell"
-  ],
-  "template_constraints": {
-    "diversity_requirements": [
-      "Include both local (adjacency) and global (row/column scan) predicate templates",
-      "Require at least one template that combines path existence with obstacle constraints"
-    ],
-    "placeholder_usage_limits": [
-      "Limit templates to at most two free coordinate placeholders per feature",
-      "Restrict directional scan templates to a maximum of three directions per feature"
-    ],
-    "avoidances": [
-      "Avoid templates that only check for the presence of a single token role at a fixed location",
-      "Avoid templates that duplicate the same predicate schema with only minor parameter changes"
-    ]
-  }
+    "Local neighborhood patterns: Needed to detect the presence and arrangement of special objects or markers adjacent to the candidate action cell.",
+    "Directional relationships: Required to capture alignment or extension of structures in the direction indicated by markers.",
+    "Contiguity and connectivity: Necessary to determine whether the candidate action cell continues or connects existing structures.",
+    "Cell state predicates: Needed to distinguish between unmarked and already marked or modified cells."
+  ]
 }

@@ -1,0 +1,93 @@
+# Hint-Extractor Prompt
+
+## ROLE
+You are a “policy-hint extractor” for grid-world imitation learning.
+You will NOT generate code or features.
+Your job is to infer **what kinds of observable predicates over (s, a)** are needed to explain the expert’s action choices, *without naming feature families explicitly*.
+The hints must be scale-invariant: they should not depend on absolute grid size or fixed numeric thresholds.
+
+Prefer predicates that terminate at boundaries or at first-hit events (e.g., “scan until obstacle/boundary”, “nearest”, “first encountered”).
+Avoid any predicate that would naturally instantiate as distance == K, count ≥ K, run length ≥ K for large K.
+
+## INPUT
+You are given multiple expert demonstrations consisting of transitions (s_t, a_t, s_{t+1}).
+- s is a 2D grid of tokens (characters shown).
+- a is a clicked cell (row, col).
+- The environment is deterministic.
+- The expert’s action selection depends only on s (not on hidden state).
+
+## OUTPUT (STRICT)
+Return ONLY a JSON object with exactly these keys:
+{
+  "action_choice_hints": [ ... ],
+  "feature_family_hints": [ ... ],
+}
+No extra text. No markdown. No commentary.
+
+## WHAT TO EXTRACT
+
+### A) action_choice_hints (10–16 strings)
+Each string describes a **predicate schema** over (s, a) that seems necessary to decide whether a candidate action cell is good.
+Rules:
+- Do NOT mention specific raw token characters (see TOKEN_MAP below).
+- Do NOT mention exact coordinates.
+- Prefer describing relations using:
+  - “same row/column”
+  - “within a small local radius”
+  - “nearest / first encountered along a direction”
+  - “exists / for all”
+  - “blocked by / before reaching boundary”
+  - "contiguous connectivity / same connected component"
+  - "relative region w.r.t. objects (above/below/left/right of a key token), not absolute bands"
+
+- Each hint must be actionable enough to suggest a feature-template pattern.
+
+
+### B) feature_family_hints (10–15 strings)
+Provide a set of **feature-family types** needed to model this environment's decision policy.
+Rules:
+- Each item should name one family and briefly state why it is needed.
+- Focus on structurally distinct families (not near-duplicates).
+- “Do NOT suggest global count/threshold families (e.g., ‘number of X ≥ K’). 
+   If global context is needed, express it as existence (present/absent) or relative comparisons (more of X than Y), not absolute counts.
+- Do not mention raw token characters; use token roles.
+
+## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
+1) Compare chosen actions vs nearby plausible alternative cells.
+2) Identify what information about the grid the expert seems to use:
+   - alignment with long structures
+   - constraints by obstacles/support
+   - nearest/first-hit patterns along directions
+   - coarse global presence only (e.g., whether a role exists at all), but avoid counts or thresholds
+3) Output the minimal predicate schemas that could separate chosen actions from non-chosen ones.
+
+## DEMONSTRATIONS
+{trajectories_text}
+
+## TOKEN MAP (FOR REFERENCE ONLY; DO NOT MENTION RAW TOKENS IN OUTPUT TEXT)
+<<TOKEN_MAP>>
+
+
+---
+
+- Prefer describing relations using:
+  - “same row/column”
+  - “within a small local radius”
+  - “nearest / first encountered along a direction”
+  - “exists / for all”
+  - “blocked by / before reaching boundary”
+  - "contiguous connectivity / same connected component"
+  - "relative region w.r.t. objects (above/below/left/right of a key token), not absolute bands"
+
+
+---
+
+## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
+1) Compare chosen actions vs nearby plausible alternative cells.
+2) Identify what information about the grid the expert seems to use:
+   - alignment with long structures
+   - constraints by obstacles/support
+   - relations between the action cell and multiple reference objects simultaneously
+   - coarse global presence only (e.g., whether a role exists at all), but avoid counts or thresholds
+3) Output the minimal predicate schemas that could separate chosen actions from non-chosen ones.
+4) Consider how the action relates simultaneously to multiple important objects  (e.g., goal objects, structures created so far, or moving agents).

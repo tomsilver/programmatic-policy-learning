@@ -20,6 +20,8 @@ The JSON must be directly parsable by json.loads().
 - Action `a` is a clicked cell coordinate: a = (row, col).
 - Next state `s'` is deterministic.
 
+Note: the demonstrations form a trajectory — the next state `s'` of step `t` is the state s of step `t+1`.
+
 IMPORTANT:
 Action coordinates may be numpy integers (e.g., int64).
 
@@ -47,7 +49,6 @@ You may use the following placeholders:
 - ${TOKEN_A}
 - ${TOKEN_B}
 - ${DRs}
-- ${K}
 
 Rules:
 
@@ -65,15 +66,20 @@ Rules:
    - hard-code token identities
    - use raw tokens
    - create complements of existing predicates as separate features
-
-4) If ${K} is used:
-   - It must represent a small contiguous structural span (e.g., local neighborhood extent).
-   - It must NOT encode board-size dependent thresholds.
-   - It must NOT be used in global count comparisons.
-   - It must NOT represent large absolute distances.
+   - Do not compare any cell to string literals (including 'empty', 'OOB', etc.). Background/empty must be represented using ${TOKEN_A} or ${TOKEN_B}.
 
 Negation may appear INSIDE a feature, but you must not create a second feature
 that is simply the logical complement of another.
+
+---
+
+## NUMERIC INVARIANCE RULE (CRITICAL)
+
+Avoid introducing numeric thresholds (K, radius, distance caps) unless they are boundary-derived.
+
+If a template would normally use a number (e.g., “within K”, “scan K steps”, “K consecutive”), rewrite it to use board-boundary termination instead (e.g., scan until out-of-bounds, or until a blocking role is encountered).
+
+If a number is unavoidable, it must be restricted to a small fixed local constant (e.g., adjacency or a 3×3 neighborhood), and must not be used to measure global extent.
 
 ---
 
@@ -122,8 +128,7 @@ The library should be expressive enough to:
 Once the necessary structural predicate families are covered, STOP.
 Do NOT inflate the library artificially.
 
-Expected size: typically between 20 and 50 templates.
-Only exceed this if clearly justified by distinct semantic needs.
+Generate only as many templates as needed for semantic coverage. In many environments this will be a few dozen, but there is no target count.z
 
 ---
 
@@ -176,7 +181,7 @@ Ensure:
 
 - Reject any template that would change meaning if the board were scaled up or down.
 - No raw token comparisons.
-- Only ${TOKEN_A}, ${TOKEN_B}, ${DRs}, ${K} are used.
+- Only ${TOKEN_A}, ${TOKEN_B}, ${DRs} are used.
 - Each function validates action exactly as specified.
 - No duplicate semantics.
 - Output is valid JSON.

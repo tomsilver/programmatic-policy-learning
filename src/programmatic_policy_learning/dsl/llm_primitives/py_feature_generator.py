@@ -441,7 +441,7 @@ class PyFeatureGenerator:
                         env_name=env_name,
                         demonstration_data=demonstration_data,
                     )
-                    print(prompt)
+                    # print(prompt)
                     # input()
 
                 else:

@@ -12,9 +12,7 @@ All provided examples produce IDENTICAL feature vectors under the current featur
 
 Therefore, the current feature basis is insufficient.
 
-Your goal is to expand the hypothesis class in a principled and structured way, introducing only structurally distinct predicate families.
-
-You must propose structural feature families that generalize beyond the shown examples.
+Your goal is to expand the hypothesis class in a principled and structured way by introducing structural predicates that generalize beyond the provided examples.
 
 
 ---
@@ -24,7 +22,9 @@ You must propose structural feature families that generalize beyond the shown ex
 - s is a 2D list of tokens (strings).
 - a is a clicked cell coordinate: a = (row, col).
 - a may contain numpy integers.
-- All auxiliary summaries (GLOBAL_COUNTS, bounding boxes, components, rays, distances, diffs, etc.) are provided for human understanding only. Feature functions may only access s and a.
+
+Auxiliary summaries (GLOBAL_COUNTS, bounding boxes, rays, components, distances, etc.) are provided only to help reasoning.
+Feature functions may access ONLY s and a.
 
 Every feature MUST begin with this exact validation logic:
 
@@ -39,51 +39,100 @@ No imports.
 Only Python built-ins.
 Every feature must return True or False.
 
-
 ---
 
 ## TOKEN USAGE RULES (CRITICAL)
 
-You MAY use only these constants inside feature code:
+You may use only the following token constants inside feature code:
 
 ${token_constants_block}
 
 You MUST NOT:
-- use raw character tokens.
+- use raw string tokens.
 - introduce new token constants.
+- use literal strings anywhere in the code.
 
 
 ---
 
-## GENERALIZATION & ANTI-OVERFITTING RULES (CRITICAL)
+## STRICT IMPLEMENTATION CONSTRAINTS
+
+The following constructs are forbidden and will cause the feature to be rejected:
+
+1. Any use of imports.
+2. Any literal strings ("..." or '...').
+3. Any scan-order anchoring pattern.
+
+Scan-order anchors include patterns like:
+
+    pos = None
+    for i in range(h):
+        for j in range(w):
+            if s[i][j] == TOKEN:
+                pos = (i, j)
+
+This implicitly selects the *last* matching cell in scan order and is NOT allowed.
+
+If a reference cell is needed, it MUST be defined using:
+
+- nearest-token rules
+- symmetric comparisons
+- relational predicates
+
+not by scan order.
+
+
+---
+
+## GENERALIZATION & ANTI-OVERFITTING RULES
 
 All proposed features must satisfy:
 
-1) No hard-coded row indices, column indices, or board sizes.
-2) No dataset-specific numeric thresholds.
-3) No dependence on absolute board dimensions.
-4) No memorization of specific coordinates.
-5) No features tailored only to these specific examples.
+1. No hard-coded row indices or column indices.
+2. No dependence on specific board sizes.
+3. No dataset-specific numeric thresholds.
+4. No memorization of specific coordinates.
+5. No reliance on absolute board position.
 
 Features must be:
 
-- Scale-free.
-- Shift-invariant.
-- Structure-based.
-- Expressed in terms of geometric or relational invariants.
+- translation invariant
+- scale robust
+- structure-based
 
 
 ---
 
-## MINIMALITY & NON-REDUNDANCY RULES (CRITICAL)
+## STRUCTURAL FEATURE TYPES (PREFERRED)
 
-- Do NOT produce polarity duplicates (e.g., is_X and is_not_X as separate features).
-- Generate only structurally distinct predicate families.
+Prefer features expressing structural relationships such as:
 
-A collision is considered broken if at least one new feature evaluates differently between at least one positive and one negative example within the bucket.
+- Ray visibility along directions
+- Relative proximity between tokens
+- Alignment relations (same row / column / diagonal)
+- Reachability through passable cells
+- Boundary or enclosure relations
+- Structural gaps along rays
+- Between-ness relations between tokens
 
-After you identify at least one feature that breaks the collision for a bucket, continue proposing additional structurally distinct feature families for that same bucket until you cannot find any new non-redundant semantic distinctions that are consistent with the examples.
-Aim for broad semantic coverage across distinct families; but avoid enumerating trivial variants.
+Features may scan the entire board if necessary.
+
+
+---
+
+## MINIMALITY & NON-REDUNDANCY RULES
+
+Do NOT produce polarity duplicates such as:
+
+- is_X
+- not_is_X
+
+Generate only structurally distinct predicate families.
+
+A collision is considered broken if at least one feature evaluates differently between at least one positive and one negative example.
+
+Once you find one feature that breaks the collision, continue proposing additional structurally distinct feature families until you cannot identify further meaningful structural distinctions.
+
 
 ---
 
@@ -100,36 +149,36 @@ ${diff_hints_1}
 
 ${bucket2_block}
 
+
 ---
 
 ## BUCKET HANDLING
 
 Each bucket represents a separate collision context.
-Analyze each bucket independently.
 
-Different buckets may:
-- require different structural feature families, OR
-- reveal the same underlying missing structural distinction.
+Analyze buckets independently.
 
-If multiple buckets share the same structural deficiency, you may propose a common feature family that resolves them.
-If they differ, propose separate feature families as needed.
+If multiple buckets reveal the same missing structural distinction, you may propose a feature that resolves them simultaneously.
 
-Do not assume that breaking one bucket automatically resolves the others.
+Otherwise propose bucket-specific structural features.
+
 
 ---
 
 ## TASK
 
-1) Compare positive vs negative examples carefully.
-2) Identify structural invariants that differ between them.
-3) Propose new feature functions capturing those invariants.
-4) Ensure they generalize to:
-   - Larger or smaller boards,
-   - Different spatial placements of the same pattern,
-   - Later stages of the game,
-   - Equivalent structures appearing elsewhere.
+1. Compare positive vs negative examples carefully.
+2. Identify structural invariants that differ between them.
+3. Propose new feature functions capturing those invariants.
+4. Ensure they generalize to:
+   - larger or smaller boards
+   - different spatial placements of the same pattern
+   - later stages of the game
+   - equivalent structures appearing elsewhere
 
-Your features must capture structural logic, not specific board snapshots.
+Do NOT assume the relevant signal is near the action cell.
+
+Global structural patterns may be relevant.
 
 
 ---
@@ -155,24 +204,23 @@ Rules:
 
 - IDs must be sequential: f101, f102, ...
 - Each "source" must contain a valid Python function string with escaped newlines.
-- Every feature must include the exact action validation boilerplate.
+- Every feature must include the exact validation boilerplate.
 - Each feature must return True or False.
 - No imports.
-- No raw character tokens.
-- No extra commentary outside JSON.
+- No raw tokens.
+- No literal strings.
+- No commentary outside JSON.
 
----
-IMPORTANT: The missing distinction may occur FAR from the action cell.
-Do NOT assume the relevant evidence is in the same row/column as the action or within small distance of it.
-You MUST consider GLOBAL structural patterns anywhere on the board, using scans over all rows/columns and connected components.
+
 ---
 
 ## FINAL CHECK BEFORE OUTPUT
 
 Ensure:
 
-- No hard-coded row/column numbers.
-- No dataset-specific constants.
-- No polarity-duplicate features.
+- No imports.
+- No literal strings.
+- No scan-order anchors.
+- No hard-coded coordinates.
 - Features introduce genuinely new structural distinctions.
 - Output is valid JSON only.

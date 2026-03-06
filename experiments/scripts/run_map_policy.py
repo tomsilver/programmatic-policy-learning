@@ -10,8 +10,8 @@ from typing import Any, Callable
 import numpy as np
 from omegaconf import OmegaConf
 
-from programmatic_policy_learning.approaches.lpp_approach import (
-    build_py_feature_functions,
+from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+    _parse_py_feature_sources,
 )
 from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
@@ -23,6 +23,16 @@ from programmatic_policy_learning.dsl.state_action_program import (
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+
+
+def build_py_feature_functions(
+    feature_programs: list[str],
+    dsl_functions: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a dict of feature function names to callables from source
+    strings."""
+    functions, _ = _parse_py_feature_sources(feature_programs, dsl_functions)
+    return functions
 
 
 def _parse_env_nums(spec: str) -> list[int]:
