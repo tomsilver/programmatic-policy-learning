@@ -31,7 +31,8 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
     prepare_programs_and_dsl,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features as _filter_constant_features,)
+    filter_constant_features as _filter_constant_features,
+)
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     split_and_collect_demonstrations,
 )
