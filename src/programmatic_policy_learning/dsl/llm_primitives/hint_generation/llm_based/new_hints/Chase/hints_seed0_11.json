@@ -1,0 +1,15 @@
+{
+  "action_choice_hints": [
+    "The candidate action cell is adjacent to a cell with a special directional marker.",
+    "The candidate action cell is in the same row or column as a target object, with no blocking obstacles in between.",
+    "The candidate action cell is adjacent to a previously marked or modified cell.",
+    "The candidate action cell is at the boundary of a contiguous region of empty cells.",
+    "The candidate action cell is closer to a target object than other available cells, considering obstacles."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if the candidate action cell is next to important objects or markers.",
+    "Line-of-sight features: Required to assess whether there is an unobstructed path between the candidate cell and a target object.",
+    "Region boundary detection: To identify if the candidate cell lies at the edge of a region of interest.",
+    "Relative distance features: To compare the proximity of candidate cells to target objects, accounting for obstacles."
+  ]
+}

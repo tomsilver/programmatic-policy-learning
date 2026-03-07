@@ -27,6 +27,7 @@ def learn_plps(
     program_generation_step_size: int = 10,
     dt_splitter: str = "random",
     cc_alpha: float = 0.0,
+    dt_max_depth: int | None = None,
     dsl_functions: dict | None = None,
 ) -> tuple[list[StateActionProgram], list[float]]:
     """
@@ -59,6 +60,7 @@ def learn_plps(
             X[:, : i + 1],
             dt_splitter=dt_splitter,
             cc_alpha=cc_alpha,
+            dt_max_depth=dt_max_depth,
         ):
             plp, plp_prior_log_prob = extract_plp_from_dt(
                 clf, programs, program_prior_log_probs, dsl_functions
@@ -75,6 +77,7 @@ def learn_single_batch_decision_trees(
     X_i: csr_matrix,
     dt_splitter: str = "random",
     cc_alpha: float = 0.0,
+    dt_max_depth: int | None = None,
 ) -> list[DecisionTreeClassifier]:
     """
     Parameters
@@ -96,8 +99,9 @@ def learn_single_batch_decision_trees(
             random_state=seed,
             splitter=dt_splitter,
             class_weight="balanced",
-            max_depth=None,
-            min_samples_leaf=1,
+            max_depth=dt_max_depth,  # None means unbounded depth.
+            min_samples_leaf=1,  # 8,#1,
+            # min_samples_split = 10,
             ccp_alpha=cc_alpha,
         )
 

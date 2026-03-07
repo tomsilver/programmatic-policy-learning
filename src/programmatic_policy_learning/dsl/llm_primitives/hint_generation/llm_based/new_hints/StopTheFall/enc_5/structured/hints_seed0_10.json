@@ -1,0 +1,63 @@
+{
+  "feature_family_hints": [
+    "Directional scan features: needed to detect nearest special-role tokens or obstacles along rows or columns",
+    "Contiguity features: to capture whether a cell is part of a contiguous run of empty or special-role cells",
+    "Support/obstacle features: to determine if a cell is directly above, below, or adjacent to a static support or obstacle",
+    "Edge/boundary features: to check if a cell is at or near the grid boundary",
+    "Adjacency features: to detect if a cell is adjacent to a drawn trace or moving token",
+    "Region features: to distinguish actions in top/bottom bands or other grid regions",
+    "First-available features: to identify if a cell is the first available in a row or column",
+    "Blocked-path features: to determine if a path from the action cell to a target is blocked by obstacles",
+    "Alignment features: to capture whether a cell is aligned with vertical or horizontal structures",
+    "Manhattan distance features: to measure proximity to special-role tokens",
+    "Global count features: to encode the number of special-role tokens present in the grid",
+    "Segment-edge features: to detect if a cell is at the edge of a contiguous segment",
+    "Relative-position features: to encode the position of the action cell relative to other tokens",
+    "Local neighborhood features: to summarize the configuration of cells in a small window around the action cell",
+    "Run-length features: to capture the length of contiguous runs of empty or special-role cells"
+  ],
+  "action_choice_hints": [
+    "The candidate cell is the nearest in its column to a specific role token above or below.",
+    "The candidate cell is in the same row as a contiguous segment of a particular role.",
+    "There exists an unbroken path from the candidate cell to the grid boundary in a given direction.",
+    "The candidate cell is adjacent to a static or immovable token.",
+    "The candidate cell is within K steps of a moving or advancing token.",
+    "The candidate cell is the first encountered along a direction before hitting an obstacle.",
+    "The candidate cell is part of a vertical or horizontal run of similar role tokens.",
+    "The candidate cell is in a region (e.g., top or bottom band) with a higher density of a specific role.",
+    "The candidate cell is not blocked by any obstacle in a given direction.",
+    "There exists at least one direction from the candidate cell with no obstacles within a certain range.",
+    "The candidate cell is at the edge of a contiguous segment of a particular role.",
+    "The candidate cell is the only one in its row or column with a certain property.",
+    "The candidate cell is adjacent to a drawn trace or previously visited cell.",
+    "The candidate cell is the closest to a moving token along a straight line.",
+    "The candidate cell is in a region where all neighboring cells share a specific property."
+  ],
+  "transition_hints": [
+    "Selecting a cell containing an advancing token causes that token to move or change state.",
+    "Selecting a cell adjacent to a drawn trace extends the trace to the selected cell.",
+    "Selecting a cell with a moving token causes the token to advance in a specific direction.",
+    "Selecting a cell at the edge of a contiguous segment causes the segment to grow or shift.",
+    "Selecting a cell blocked by an obstacle prevents any state change.",
+    "Selecting a cell in a region with static tokens leaves those tokens unchanged.",
+    "Selecting a cell in a vertical or horizontal run may cause the entire run to update.",
+    "Selecting a cell with no special role results in no change.",
+    "Selecting a cell adjacent to a static token may cause a new token to appear.",
+    "Selecting a cell at the boundary may trigger a special transition for edge cases."
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include templates that capture both local (adjacent cell) and global (row/column/region) patterns.",
+      "Ensure templates cover both direction-based and region-based predicates."
+    ],
+    "placeholder_usage_limits": [
+      "Limit the number of templates with more than two placeholders to avoid combinatorial explosion.",
+      "Restrict templates that require enumeration over all possible directions to a maximum of two per template set."
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of any token without considering role.",
+      "Avoid templates that rely solely on absolute coordinates or grid positions.",
+      "Avoid templates that duplicate the same predicate schema with only minor variations."
+    ]
+  }
+}

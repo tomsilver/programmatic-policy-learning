@@ -1,0 +1,45 @@
+{
+  "action_choice_hints": [
+    "Whether the action cell is part of a contiguous segment of target tokens in its row or column",
+    "If the action cell is the first target token encountered from a boundary along a row or column",
+    "Whether the action cell is adjacent (orthogonally) to an empty cell",
+    "If all cells between the action cell and a boundary in a given direction are target tokens",
+    "Whether the action cell is within a contiguous run of target tokens of length at least K",
+    "If the action cell is the only target token in its row or column",
+    "Whether the action cell is at the edge of a contiguous block of target tokens",
+    "If the action cell is in the topmost or bottommost row containing any target token",
+    "Whether the action cell is the nearest target token to a boundary in its column",
+    "If the action cell is part of a vertical or horizontal band of target tokens",
+    "Whether the action cell is surrounded on all four sides by target tokens",
+    "If the action cell is the last remaining target token in the grid",
+    "Whether the action cell is at a corner of a contiguous region of target tokens",
+    "If the action cell is the only target token adjacent to a particular empty region",
+    "Whether the action cell is part of a group of target tokens separated from others by empty cells"
+  ],
+  "transition_hints": [
+    "Selecting a target token cell causes that cell to become empty in the next state",
+    "Only the chosen action cell changes state; all other cells remain unchanged",
+    "The removal of a target token does not affect the state of adjacent cells",
+    "No new target tokens are created as a result of an action",
+    "Empty cells remain empty after any action",
+    "The set of target tokens strictly decreases by one with each action",
+    "The action is only valid on cells currently containing a target token",
+    "The environment does not introduce obstacles or new regions after an action",
+    "The grid structure and boundaries remain fixed throughout transitions"
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include templates that capture both local (adjacency) and global (row/column/region) patterns",
+      "Ensure templates cover both edge/corner and interior cell scenarios"
+    ],
+    "placeholder_usage_limits": [
+      "Limit the number of direction placeholders per template to at most 2",
+      "Restrict the maximum run-length parameter K to 4"
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of a target token at (s, a)",
+      "Avoid templates that depend solely on absolute coordinates",
+      "Avoid templates that duplicate coverage of identical spatial relations"
+    ]
+  }
+}

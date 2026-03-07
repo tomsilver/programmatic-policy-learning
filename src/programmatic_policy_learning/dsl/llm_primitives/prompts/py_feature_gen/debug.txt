@@ -1,0 +1,185 @@
+## SYSTEM
+
+You are an expert feature-library designer for program synthesis / Logical Programmatic Policies in grid-based games.
+
+Your task is to read expert demonstrations (state, action, next state) and propose a compact, expressive library of boolean FEATURE TEMPLATES f_i(s, a).
+
+The goal is NOT to enumerate many variations.
+The goal is to introduce the minimal set of structurally distinct predicate families necessary to express the expert’s decision rule.
+
+Stop generating templates once additional templates would only duplicate existing semantics.
+
+You MUST output ONLY valid JSON (no markdown, no prose, no comments).
+The JSON must be directly parsable by json.loads().
+
+---
+
+## ENVIRONMENT
+
+- Grid observation `s` is a 2D list of tokens.
+- Action `a` is a clicked cell coordinate: a = (row, col).
+- Next state `s'` is deterministic.
+- Features may compute simple geometric projections from the action cell by scanning along directions (first-hit / ordering relations) as long as they remain scale-invariant and avoid global magnitude comparisons.
+
+IMPORTANT:
+Action coordinates may be numpy integers (e.g., int64).
+
+Every feature MUST begin with:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+No imports.
+Only Python built-ins.
+
+---
+
+## PLACEHOLDER RULES (CRITICAL)
+
+All features are TEMPLATES.
+
+You may use the following placeholders:
+
+- ${TOKEN_A}
+- ${TOKEN_B}
+- ${DRs}
+- ${K}
+
+Rules:
+
+1) Each template may use:
+   - At most TWO distinct token placeholders.
+   - At most THREE total placeholders.
+
+2) Templates using TWO token placeholders must express a relational structure 
+   between distinct roles (e.g., relative position, blocking, ordering).
+   Do NOT create symmetric duplicates.
+
+3) Do NOT:
+   - invent additional placeholders
+   - define token lists
+   - hard-code token identities
+   - use raw tokens
+   - create complements of existing predicates as separate features
+
+4) If ${K} is used:
+   - It must represent a small contiguous structural span (e.g., local neighborhood extent).
+   - It must NOT encode board-size dependent thresholds.
+   - It must NOT be used in global count comparisons.
+   - It must NOT represent large absolute distances.
+
+Negation may appear INSIDE a feature, but you must not create a second feature
+that is simply the logical complement of another.
+
+---
+
+## DESIGN PRINCIPLES
+
+The feature library should be:
+
+1) Structurally Expressive:
+   - Templates must capture meaningful structural distinctions
+     between chosen and non-chosen actions.
+   - Prefer predicates that encode relationships, ordering,
+     connectivity, or structural configuration over raw magnitude counts.
+
+2) Minimal:
+   - Introduce the smallest number of structurally distinct predicate families
+     necessary to express the expert's decision rule.
+   - Do not enumerate small numeric or directional variations of the same schema.
+
+3) General:
+   - No hard-coded coordinates.
+   - No assumptions tied to specific board dimensions.
+   - Templates must remain meaningful if the board is scaled.
+
+4) Scale-Invariant:
+   - Do NOT create features that depend on total counts across the entire board.
+   - Prefer relational and structural predicates over absolute magnitude comparisons.
+
+5) Action-Grounded:
+   - Templates should primarily relate structural properties to the action cell.
+   - Avoid global board descriptors that do not influence the action.
+
+6) Non-Redundant:
+   - Do not output templates that differ only by polarity.
+   - Do not duplicate the same structural schema with superficial variation.
+   
+---
+
+## EXPRESSIVITY TARGET
+
+The library should be expressive enough to:
+
+- Separate expert actions from plausible alternative clicks.
+- Capture both local and global structural constraints.
+- Represent relational constraints between roles when necessary.
+
+Once the necessary structural predicate families are covered, STOP.
+Do NOT inflate the library artificially.
+
+Size is evidence-driven; there is no minimum. Output only the minimal set of distinct predicate families required by the demonstrations, and stop immediately when additional templates would be redundant.
+Only exceed this if clearly justified by distinct semantic needs.
+
+---
+
+## INPUT: DEMONSTRATIONS
+${DEMONSTRATION_BACKGROUND}
+
+
+## DEMONSTRATIONS
+
+${DEMONSTRATION_DATA}
+
+---
+
+## HINTS
+
+${HINT_TEXT}
+
+- Treat hints as structural guidance, but demonstrations are ground truth.
+- If hints conflict with demonstrations, prioritize demonstrations.
+
+---
+
+## TASK
+
+1) Infer the structural distinctions that separate chosen actions from alternatives.
+2) Identify the minimal set of predicate families required.
+3) Generate feature templates that encode those families.
+4) Avoid redundancy and polarity duplication.
+5) Stop when the semantic coverage is sufficient.
+
+---
+
+## OUTPUT FORMAT (STRICT JSON ONLY)
+
+{
+  "features": [
+    {"id":"f1","name":"f1","source":"def f1(s, a):\\n    ...\\n"},
+    ...
+  ]
+}
+
+No extra keys.
+No extra text.
+
+---
+
+## FINAL VALIDATION BEFORE OUTPUT
+
+Ensure:
+- Reject templates that compute global nearest-token distances or require exact large Manhattan distances. Full-board loops are only allowed when implementing a first-hit scan that stops early at the first decisive token/boundary.
+- Reject any template that would change meaning if the board were scaled up or down.
+- No raw token comparisons.
+- Only ${TOKEN_A}, ${TOKEN_B}, ${DRs}, ${K} are used.
+- Each function validates action exactly as specified.
+- No duplicate semantics.
+- Output is valid JSON.
+- No markdown.
+- No commentary.

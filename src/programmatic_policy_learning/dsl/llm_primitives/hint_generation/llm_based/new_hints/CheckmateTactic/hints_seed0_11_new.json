@@ -1,0 +1,61 @@
+{
+  "action_choice_hints": [
+    "Whether the action cell is in the same row or column as a key token of interest",
+    "Whether the action cell is adjacent to a token with a special role",
+    "Whether the action cell is the nearest empty cell to a target token along a cardinal direction",
+    "Whether there exists an uninterrupted path from a token of interest to the action cell",
+    "Whether the action cell is within a contiguous segment of empty cells",
+    "Whether the action cell is blocked by an obstacle before reaching a boundary in a given direction",
+    "Whether the action cell is the first available cell in a direction from a token of interest",
+    "Whether the action cell is within a certain distance (e.g., within 1 or 2 steps) from a token of interest",
+    "Whether the action cell is in a region (e.g., top or bottom band) containing a specific token role",
+    "Whether all cells between a token of interest and the action cell are empty",
+    "Whether the action cell is part of a run of empty cells of a minimum length",
+    "Whether the action cell is aligned with multiple tokens of interest along a row or column",
+    "Whether the action cell is at the boundary of the grid",
+    "Whether the action cell is the only available cell in a local neighborhood",
+    "Whether the action cell is in a column or row with the highest density of a specific token role"
+  ],
+  "transition_hints": [
+    "Selecting a cell containing a movable token causes that token to become highlighted",
+    "Selecting an empty cell adjacent to a highlighted token causes the highlighted token to move to that cell",
+    "After a token moves, its previous cell becomes empty",
+    "Highlighting is removed from a token after it moves",
+    "Only one token can be highlighted at a time",
+    "Selecting a non-movable or blocked cell results in no change",
+    "A highlighted token can only move to empty cells",
+    "Tokens with special roles cannot move through obstacles or other tokens",
+    "The environment updates deterministically based on the selected cell and current highlights"
+  ],
+  "feature_family_hints": [
+    "Directional scan features: to detect the first token of a given role along a row or column",
+    "Adjacency features: to check if a cell is adjacent to a token of interest",
+    "Contiguity/run features: to measure the length of empty or occupied segments",
+    "Path-clearance features: to determine if a path between two cells is unobstructed",
+    "Distance features: to compute the number of steps between a cell and a token of interest",
+    "Boundary features: to check if a cell is at the edge of the grid",
+    "Region-based features: to aggregate information over bands or quadrants of the grid",
+    "Highlight status features: to indicate whether a token is currently highlighted",
+    "Uniqueness features: to detect if a cell is the only available option in a neighborhood",
+    "Density features: to count the number of tokens of a given role in a row or column",
+    "Alignment features: to check if multiple tokens of interest are aligned along a direction",
+    "Obstacle-blocking features: to determine if movement is blocked before reaching a boundary",
+    "Local neighborhood features: to summarize the configuration around a candidate cell",
+    "Role-transition features: to capture changes in token roles after an action",
+    "Global context features: to encode the overall distribution of token roles on the grid"
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include both local (adjacency, neighborhood) and global (row/column, region) templates",
+      "Require at least one template that combines path-clearance with distance or alignment"
+    ],
+    "placeholder_usage_limits": [
+      "Limit templates to at most two free coordinate placeholders per feature",
+      "Restrict directional scans to a maximum of three directions per template"
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of a token at a fixed coordinate",
+      "Avoid templates that duplicate the same predicate with only minor variations in distance"
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "action_choice_hints": [
+    "Action cell is in the same row or column as a special target token.",
+    "Action cell is the nearest unblocked cell to a target token along a straight line.",
+    "There exists a contiguous segment of empty cells between the action cell and a boundary or obstacle.",
+    "Action cell is adjacent to a moving token or agent.",
+    "Action cell is within K steps of a target token, where K is small.",
+    "Action cell is the first empty cell encountered in a given direction from a moving token.",
+    "Action cell is not blocked by obstacles when moving from a moving token toward a target.",
+    "Action cell is part of a contiguous run of empty cells extending toward a target token.",
+    "Action cell is in a region (e.g., top/bottom band) containing a target token.",
+    "Action cell is the only available cell in a direction from a moving token before hitting an obstacle.",
+    "Action cell is aligned with the direction indicated by a directional token.",
+    "Action cell is the next cell along the path from a moving token to a target token.",
+    "Action cell is not adjacent to any obstacle.",
+    "Action cell is the first cell after a drawn trace in a given direction.",
+    "Action cell is in a column or row with no obstacles between it and a target token.",
+    "Action cell is the only cell in a contiguous empty segment between two obstacles."
+  ],
+  "transition_hints": [
+    "Selecting an action cell causes a moving token or agent to move to that cell.",
+    "A drawn trace is created along the path from the previous position to the action cell.",
+    "Obstacles remain static and do not change between transitions.",
+    "Empty cells become part of a drawn trace when traversed by the moving token.",
+    "Target tokens may disappear or change state when reached by the moving token.",
+    "Directional tokens may influence the direction of movement for the agent.",
+    "The agent's previous position becomes part of the drawn trace after moving.",
+    "Boundaries are impassable and do not change state.",
+    "Selecting a cell blocked by an obstacle does not result in movement.",
+    "Drawn traces persist and accumulate over time.",
+    "Only one moving token or agent is active at a time.",
+    "The environment updates deterministically based on the selected action cell."
+  ],
+  "template_constraints": {
+    "diversity_requirements": [
+      "Include templates that capture both local (adjacent cell) and global (row/column/region) relationships.",
+      "Ensure templates cover both alignment (row/column) and proximity (within K steps) patterns."
+    ],
+    "placeholder_usage_limits": [
+      "Limit the number of templates with more than two placeholders to avoid combinatorial explosion.",
+      "Restrict templates that require enumeration over all possible directions to a maximum of four directions."
+    ],
+    "avoidances": [
+      "Avoid templates that only check for the presence of a single token type without relational context.",
+      "Avoid templates that rely solely on absolute coordinates or specific grid positions."
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "action_choice_hints": [
+    "The candidate cell is adjacent to a cell with a specific role that is not yet part of a constructed structure.",
+    "The candidate cell is part of a contiguous region of cells sharing a particular role.",
+    "The candidate cell is positioned such that selecting it extends an existing structure in a preferred direction.",
+    "The candidate cell is not blocked by cells with a restrictive role in the direction of intended expansion.",
+    "The candidate cell is closer (in grid steps) to a target role than alternative candidates.",
+    "The candidate cell is selected only if a cell with a required role exists somewhere in the grid."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if the candidate cell is next to cells with specific roles.",
+    "Contiguity/grouping: Required to identify whether the candidate cell is part of a connected region of similar-role cells.",
+    "Directional extension: Necessary to capture whether the action extends an existing structure along a particular axis.",
+    "Blocking/obstruction: Needed to check if the candidate cell is prevented from being chosen due to the presence of restrictive-role cells in certain directions.",
+    "Relative proximity: Required to compare distances from the candidate cell to target-role cells versus other candidates.",
+    "Existence predicates: Needed to verify if at least one cell with a required role is present in the grid."
+  ]
+}

@@ -1,0 +1,25 @@
+You will be given several grid game trajectories.
+
+Grids are 0-indexed: (row, col) with (0,0) at top-left.
+Actions click a cell (r, c).
+
+Each trajectory is shown in a structured relational format:
+
+- Each state lists:
+  - BOARD size
+  - NON_EMPTY_BY_TOKEN (coordinate lists or row-compressed form)
+  - FOCUS_TOKENS
+  - GLOBAL_RELATIONS (counts and components)
+
+- Each action includes:
+  - clicked target and token_at_target_before
+  - 3x3 LOCAL_VIEW (center marked with [*])
+  - ray features and Manhattan distances to focus tokens
+
+- Each transition provides:
+  - num_cells_changed
+  - token_at_target_after
+  - created / removed / overwritten / moved
+  - terminal flag
+
+A trajectory ends when terminal is reached.

@@ -10,8 +10,8 @@ from typing import Any, Callable
 import numpy as np
 from omegaconf import OmegaConf
 
-from programmatic_policy_learning.approaches.lpp_approach import (
-    build_py_feature_functions,
+from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+    _parse_py_feature_sources,
 )
 from programmatic_policy_learning.approaches.utils import run_single_episode
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
@@ -23,6 +23,16 @@ from programmatic_policy_learning.dsl.state_action_program import (
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+
+
+def build_py_feature_functions(
+    feature_programs: list[str],
+    dsl_functions: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a dict of feature function names to callables from source
+    strings."""
+    functions, _ = _parse_py_feature_sources(feature_programs, dsl_functions)
+    return functions
 
 
 def _parse_env_nums(spec: str) -> list[int]:
@@ -106,11 +116,11 @@ def main() -> None:
     p.add_argument("--video-dir", default="logs/map_policy_videos")
     p.add_argument("--video-format", default="mp4")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument(
-        "--normalize-plp-actions",
-        action="store_true",
-        help="Enable PLP action-mass normalization (penalize permissive PLPs).",
-    )
+    # p.add_argument(
+    #     "--normalize-plp-actions",
+    #     action="store_false",
+    #     help="Enable PLP action-mass normalization (penalize permissive PLPs).",
+    # )
     args = p.parse_args()
 
     random.seed(args.seed)
@@ -139,7 +149,7 @@ def main() -> None:
     policy: LPPPolicy = LPPPolicy(
         [plp],
         [1.0],
-        normalize_plp_actions=args.normalize_plp_actions,
+        # normalize_plp_actions=args.normalize_plp_actions,
     )
 
     video_dir = Path(args.video_dir)

@@ -1,14 +1,17 @@
 """Dataset creation and processing utilities for programmatic policy
 learning."""
 
+import hashlib
 import inspect
 import logging
 import multiprocessing
 import os
+import pickle
 import random
 from collections import defaultdict
 from importlib import import_module
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
 import cloudpickle
 import numpy as np
@@ -18,6 +21,11 @@ from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
+)
+from programmatic_policy_learning.utils.cache_utils import (
+    cache_single_output,
+    load_single_cache_output,
+    manage_cache,
 )
 
 
@@ -130,6 +138,40 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
+def sample_negative_actions_hard_negative(
+    state: np.ndarray,
+    expert_action: Coord,
+    K: int = 30,
+    rng: random.Random | None = None,
+) -> list[Coord]:
+    """Hard-negative sampling by proximity to the expert action.
+
+    Picks the K closest coordinates (by Manhattan distance) to the
+    expert action, excluding the expert action itself. Ties are shuffled
+    for variety.
+    """
+    if rng is None:
+        rng = random.Random(0)
+
+    h = state.shape[0]
+    w = state.shape[1]
+    er, ec = expert_action
+
+    candidates: list[Coord] = []
+    for r in range(h):
+        for c in range(w):
+            if (r, c) == (er, ec):
+                continue
+            candidates.append((r, c))
+
+    if not candidates:
+        return []
+
+    rng.shuffle(candidates)
+    candidates.sort(key=lambda rc: abs(rc[0] - er) + abs(rc[1] - ec))
+    return candidates[:K]
+
+
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
     *,
@@ -171,6 +213,19 @@ def extract_examples_from_demonstration_item(
                 K=k,
                 rng=rng,
                 include_nearby=8,
+            )
+            for rc in neg_coords:
+                negative_examples.append((state, rc))
+        elif method == "hard_negative":
+            k = int(data_imbalance.get("K", 10))
+            if k < 0:
+                raise ValueError("data_imbalance.K must be >= 0")
+            rng = random.Random(0)
+            neg_coords = sample_negative_actions_hard_negative(
+                state=state,
+                expert_action=action,
+                K=k,
+                rng=rng,
             )
             for rc in neg_coords:
                 negative_examples.append((state, rc))
@@ -255,6 +310,40 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
 
+CACHE_DIR = "cache"
+
+
+def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    base_class_name = str(args[0])
+    demo_number = int(args[1])
+    programs = args[2]
+    program_count = len(programs) if programs is not None else 0
+    seed = kwargs.get("seed")
+    seed_tag = f"s{seed}" if seed is not None else "snone"
+    demos_included = kwargs.get("demos_included")
+    demos_tag = "none"
+    if demos_included is not None:
+        demos_list = list(demos_included)
+        demos_tag = "d" + "-".join(str(d) for d in demos_list)
+    data_imbalance = kwargs.get("data_imbalance") or {}
+    imbalance_method = data_imbalance.get("method", "none")
+    offline_path_name = kwargs.get("offline_path_name")
+    enabled = data_imbalance.get("enabled", False)
+    K = data_imbalance.get("K", "none") if enabled else "none"
+    imbalance_part = f"{imbalance_method}_K{K}" if enabled else "none"
+    offline_tag = "none"
+    if offline_path_name:
+        offline_tag = Path(str(offline_path_name)).name
+    split_tag = kwargs.get("split_tag")
+    split_part = "splitnone"
+    if split_tag:
+        split_part = f"split{split_tag}"
+    return (
+        f"{base_class_name}-demo{demo_number}-n{program_count}-"
+        f"demos{demos_tag}-{seed_tag}-imb{imbalance_part}-offline{offline_tag}-"
+        f"{split_part}"
+    )
+
 
 def worker_init(
     dsl_blob: bytes, module_map: dict[str, str], program_batch: list[str]
@@ -301,6 +390,7 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     return results
 
 
+@manage_cache(CACHE_DIR, [".npz", ".pkl", ".pkl"], key_fn=_cache_key_run_all_programs)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
@@ -310,6 +400,10 @@ def run_all_programs_on_single_demonstration(
     *,
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
+    offline_path_name: str | None = None,  # pylint: disable=unused-argument
+    demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
+    split_tag: str | None = None,  # pylint: disable=unused-argument
+    seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
@@ -366,6 +460,89 @@ def run_all_programs_on_single_demonstration(
     return X.tocsr(), np.array(y, dtype=np.uint8), examples
 
 
+def run_programs_on_examples(
+    programs: list[StateActionProgram] | list[str],
+    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    dsl_functions: dict,
+    *,
+    program_interval: int = 1000,
+    cache_dir: str | None = "cache",
+    cache_key: str | None = None,
+    feature_sources: list[str] | None = None,
+    collision_loop_idx: int | None = None,
+) -> Any:
+    """Run programs on a fixed list of (state, action) examples.
+
+    Returns a CSR sparse matrix with rows aligned to the given examples.
+    """
+    if not examples:
+        return lil_matrix((0, 0), dtype=bool).tocsr()
+
+    if cache_dir is not None:
+        os.makedirs(cache_dir, exist_ok=True)
+        if cache_key is None:
+            hasher = hashlib.sha256()
+            program_strs = [
+                (p.program if isinstance(p, StateActionProgram) else str(p))
+                for p in programs
+            ]
+            hasher.update("\n".join(program_strs).encode("utf-8"))
+            hasher.update(pickle.dumps(examples, protocol=4))
+            if feature_sources:
+                hasher.update("\n".join(feature_sources).encode("utf-8"))
+            if collision_loop_idx is not None:
+                hasher.update(
+                    f"collision_loop_idx={collision_loop_idx}".encode("utf-8")
+                )
+            cache_key = hasher.hexdigest()[:16]
+        cache_file = os.path.join(
+            cache_dir, f"run_programs_on_examples_{cache_key}_0.npz"
+        )
+        if os.path.isfile(cache_file):
+            return load_single_cache_output(cache_file)
+
+    base_dsl, module_map = _split_dsl(dsl_functions)
+
+    try:
+        dsl_blob = cloudpickle.dumps(base_dsl)
+        cloudpickle.loads(dsl_blob)  # Test deserialization
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(f"Failed to serialize/deserialize DSL: {e}") from e
+
+    program_strs = [
+        (p.program if isinstance(p, StateActionProgram) else str(p)) for p in programs
+    ]
+
+    num_data = len(examples)
+    num_programs = len(program_strs)
+    X = lil_matrix((num_data, num_programs), dtype=bool)
+
+    try:
+        ctx = multiprocessing.get_context("spawn")  # type: ignore[assignment]
+    except (ValueError, RuntimeError):
+        ctx = multiprocessing.get_context("fork")  # type: ignore[assignment]
+    num_workers = allowed_cpus()
+    num_workers = max(1, min(num_workers, len(examples)))
+    for p_start in range(0, num_programs, program_interval):
+        p_end = min(p_start + program_interval, num_programs)
+        program_batch = program_strs[p_start:p_end]
+        with ctx.Pool(
+            processes=num_workers,
+            initializer=worker_init,
+            initargs=(dsl_blob, module_map, program_batch),
+            maxtasksperchild=100,
+        ) as pool:
+            results_iter = pool.imap(worker_eval_example, examples, chunksize=64)
+            batch_rows_list = list(results_iter)
+        batch_matrix = np.array(batch_rows_list, dtype=bool)
+        X[:, p_start:p_end] = batch_matrix
+
+    X_csr = X.tocsr()
+    if cache_dir is not None:
+        cache_single_output(X_csr, cache_file)
+    return X_csr
+
+
 def run_all_programs_on_demonstrations(
     base_class_name: str,
     demo_numbers: tuple[int, ...],
@@ -375,6 +552,10 @@ def run_all_programs_on_demonstrations(
     *,
     data_imbalance: dict[str, Any] | None = None,
     return_examples: bool = False,
+    offline_path_name: str | None = None,
+    demos_included: Sequence[int] | None = None,
+    split_tag: str | None = None,
+    seed: int | None = None,
 ) -> tuple[
     Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
 ]:
@@ -390,6 +571,10 @@ def run_all_programs_on_demonstrations(
             dsl_functions,
             data_imbalance=data_imbalance,
             return_examples=return_examples,
+            offline_path_name=offline_path_name,
+            demos_included=demos_included,
+            split_tag=split_tag,
+            seed=seed,
         )
 
         if X is None:

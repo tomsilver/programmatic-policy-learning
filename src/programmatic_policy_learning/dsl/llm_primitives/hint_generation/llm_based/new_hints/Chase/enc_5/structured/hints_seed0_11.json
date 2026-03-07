@@ -1,0 +1,18 @@
+
+{
+  "action_choice_hints": [
+    "The action cell is adjacent to a cell with a special directional marker.",
+    "The action cell is aligned in the same row or column as a target object.",
+    "The action cell is not blocked by an obstacle in the direction of intended movement.",
+    "The action cell extends an existing contiguous structure of a particular role.",
+    "The action cell is adjacent to a previously selected action cell.",
+    "The action cell is on a path that connects two or more important objects."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if the action cell is next to key objects or structures.",
+    "Alignment features: Required to capture whether the action cell shares a row or column with important objects.",
+    "Contiguity/extension features: To model whether the action cell continues an existing structure.",
+    "Path connectivity: To assess if the action cell helps form a connection between multiple objects.",
+    "Obstacle-aware features: To ensure the action cell is not blocked in the intended direction."
+  ]
+}

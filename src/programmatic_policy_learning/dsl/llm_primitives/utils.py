@@ -1,5 +1,7 @@
 """Util for LLM-based Primitives Generation."""
 
+from __future__ import annotations
+
 import ast
 import builtins
 import json
