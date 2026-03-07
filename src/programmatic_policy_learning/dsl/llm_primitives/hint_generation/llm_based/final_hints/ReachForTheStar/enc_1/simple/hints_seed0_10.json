@@ -1,0 +1,12 @@
+The expert's strategy in the grid-based environment involves systematically clicking on specific cells to manipulate the state of the grid, primarily focusing on clearing paths and moving the agent (denoted by "A") towards the goal. The expert often targets empty cells (".") to convert them into obstacles ("#") while also strategically moving the agent left or right using the arrow cells ("<" and ">"). This approach allows the expert to create a clear path for the agent while avoiding obstacles and ensuring that the agent can reach its destination effectively.
+
+The dynamics of the game reveal a structured environment where the agent must navigate through a grid filled with obstacles and empty spaces. The agent can interact with the grid by clicking on cells, which can either change the state of the grid or move the agent. The game features deterministic transitions, meaning that each action leads to a predictable outcome, allowing the expert to plan their moves carefully. The presence of arrows facilitates lateral movement, while the agent's ability to convert empty spaces into obstacles adds a layer of strategy, as the expert must balance between creating pathways and blocking potential routes for the agent.
+
+TOKEN_MAP = {
+  "#": "rfts.DRAWN",
+  "*": "rfts.STAR",
+  ".": "rfts.EMPTY",
+  "<": "rfts.LEFT_ARROW",
+  ">": "rfts.RIGHT_ARROW",
+  "A": "rfts.AGENT"
+}

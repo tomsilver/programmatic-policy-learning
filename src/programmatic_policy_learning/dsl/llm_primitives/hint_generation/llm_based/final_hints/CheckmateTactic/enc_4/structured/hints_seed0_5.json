@@ -1,0 +1,34 @@
+1) POLICY RULES
+
+- The action is taken on a cell containing a 'white_queen' (seen in ~5/5 demos).
+- The action cell is the only cell in the grid containing a 'white_queen' (seen in ~5/5 demos).
+- The action cell is not adjacent (in any direction) to a 'black_king' or 'white_king' (seen in ~5/5 demos).
+- The action cell is in the same row, column, or diagonal as a 'white_king' and/or 'black_king', but not directly adjacent (seen in ~5/5 demos).
+- The action cell is typically 2–7 steps away (Manhattan or Chebyshev distance) from the nearest king (seen in ~5/5 demos).
+- The action is always taken on a 'white_queen' before any other action is taken (i.e., first step of each trajectory) (seen in ~5/5 demos).
+- The action cell is not blocked by any other piece between it and the nearest king in the relevant direction (seen in ~5/5 demos).
+- The action is never taken on an 'empty' cell in the first step (seen in ~5/5 demos).
+- The action cell is not on the same cell as a king (seen in ~5/5 demos).
+- The action is not taken on a cell containing a 'highlighted_white_queen' (seen in ~5/5 demos).
+- The action is not taken on a cell containing any piece other than a 'white_queen' (seen in ~5/5 demos).
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- Empty cells adjacent to the 'white_queen' are never chosen (even if in line with a king).
+- Cells containing 'white_king' or 'black_king' are never chosen.
+- Cells containing 'highlighted_white_queen' are never chosen.
+- Empty cells along the same row, column, or diagonal as the 'white_queen' are not chosen.
+- Cells containing any piece other than 'white_queen' (e.g., 'empty', 'highlighted_white_queen', 'white_king', 'black_king') are not chosen.
+
+3) GAME DYNAMICS
+
+- Clicking a cell containing a 'white_queen' changes it to 'highlighted_white_queen' in the next state.
+- After a 'white_queen' is highlighted, the next action is always on an 'empty' cell (second step).
+- Clicking an 'empty' cell after a 'highlighted_white_queen' does not change the 'empty' cell’s state (it remains 'empty').
+- The 'highlighted_white_queen' remains highlighted after the second action (no further change).
+- No pieces move automatically; all changes are a direct result of the action taken.
+- The positions of 'white_king' and 'black_king' do not change between steps.
+- Only the cell clicked is affected by the action (no area-of-effect or chain reactions).
+- The only state change observed is 'white_queen' → 'highlighted_white_queen' after the first action; all other actions do not alter the board.
+- The action sequence is always: select 'white_queen', then select an 'empty' cell (possibly as a target for a move or ability).
+- No new pieces are created or removed except for the highlighting effect.

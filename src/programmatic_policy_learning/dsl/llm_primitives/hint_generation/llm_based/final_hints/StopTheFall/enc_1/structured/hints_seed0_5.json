@@ -1,0 +1,46 @@
+1) POLICY RULES
+
+- Click the first EMPTY cell directly below a contiguous vertical stack of RED tokens, before reaching a STATIC row. (seen in ~5/5 demos)
+- Click EMPTY cells that are the first gap in a vertical column of RED tokens, i.e., the first non-RED cell encountered from above. (seen in ~5/5 demos)
+- Only click EMPTY cells that are immediately above a STATIC or ADVANCE token row. (seen in ~5/5 demos)
+- Click EMPTY cells that are directly below a FALLING token, or in the same column as a FALLING token, with only RED tokens in between. (seen in ~4/5 demos)
+- Click EMPTY cells that are the only available action in their column (action mask = 1 at that cell only). (seen in ~5/5 demos)
+- After a DRAWN token appears in a column, do not click further up in that column; only proceed downward or to ADVANCE. (seen in ~5/5 demos)
+- After all required DRAWN tokens are placed in a column, click the ADVANCE token at the bottom right. (seen in ~5/5 demos)
+- Never click on RED, STATIC, DRAWN, or FALLING tokens—only EMPTY or ADVANCE. (seen in ~5/5 demos)
+- When multiple columns are available, process columns with a FALLING token first, then left-to-right. (seen in ~3/5 demos)
+- ADVANCE is only clicked after all required DRAWN tokens are placed in the relevant columns. (seen in ~5/5 demos)
+- Never click EMPTY cells that are not directly below a RED stack or not above STATIC/ADVANCE. (seen in ~5/5 demos)
+- Do not click EMPTY cells that are not highlighted by the action mask. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- EMPTY cells that are not directly below a RED stack (e.g., gaps in the middle of RED blocks) are not clicked.
+- EMPTY cells that are not immediately above a STATIC or ADVANCE row are ignored.
+- EMPTY cells in columns without a FALLING token at the top are not clicked, even if adjacent to RED.
+- EMPTY cells surrounded by RED horizontally (not vertically) are not clicked.
+- EMPTY cells in columns where a DRAWN token already exists further down are not clicked.
+
+3) GAME DYNAMICS
+
+- Clicking an EMPTY cell in the target column converts it to a DRAWN token (“D”).
+- DRAWN tokens “stack” downward in the column, filling the first available EMPTY cell above STATIC/ADVANCE.
+- After a DRAWN token is placed, the action mask moves to the next EMPTY cell above in the same column, or to another column if available.
+- FALLING tokens (“F”) remain at the top of the column and do not move; they indicate the active column.
+- RED tokens (“R”) are static barriers that must be “drawn through” by filling the EMPTY cell below them.
+- STATIC tokens (“S”) and ADVANCE tokens (“A”) form the bottom row; ADVANCE is only clickable after all required DRAWN tokens are placed.
+- Clicking ADVANCE (“A”) ends the current phase or level.
+- The action mask only enables one cell at a time, guiding the legal move.
+- No tokens move horizontally; all changes are vertical within columns.
+- No redraw or erasure of DRAWN tokens; once placed, they persist.
+
+4) TOKEN MAP
+
+TOKEN_MAP = {
+  ".": "stf.EMPTY",
+  "A": "stf.ADVANCE",
+  "D": "stf.DRAWN",
+  "F": "stf.FALLING",
+  "R": "stf.RED",
+  "S": "stf.STATIC"
+}

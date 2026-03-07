@@ -1,0 +1,12 @@
+The expert’s strategy is to identify a vertical column of empty cells that lies directly above a token labeled "A" (advance token) at the bottom of the grid. The expert then sequentially clicks on the empty cells in that column, starting from the cell closest to the "A" token and moving upward, one row at a time. Each click transforms the selected empty cell into a "D" (drawn) token, creating a continuous vertical path of "D" tokens from the "A" token upward. Once the path is complete (i.e., the column from the "A" token up to the first non-empty cell is filled with "D" tokens), the expert clicks the "A" token itself to presumably trigger an advancement or progression in the game.
+
+The game dynamics observed are as follows: Clicking on an empty cell (".") that is in a column above an "A" token and not blocked by other tokens (such as "R" or "S") converts that cell into a "D" (drawn) token. This process can only be performed on the next available empty cell directly above the existing "D" path or the "A" token, enforcing a strict top-down order. Once a continuous path of "D" tokens is established from the "A" token upward, clicking the "A" token is allowed and likely advances the game state. Other tokens, such as "R" (red), "S" (static), and "F" (falling), act as obstacles or boundaries that the path cannot cross or overwrite. The action mask at each step enforces that only the next valid cell in the column or the "A" token itself (when the path is complete) can be clicked.
+
+TOKEN_MAP = {
+  ".": "stf.EMPTY",
+  "A": "stf.ADVANCE",
+  "D": "stf.DRAWN",
+  "F": "stf.FALLING",
+  "R": "stf.RED",
+  "S": "stf.STATIC"
+}

@@ -1,0 +1,12 @@
+The expert’s strategy is to clear a vertical path for a falling "F" token by sequentially clicking on the only available empty cells (".") directly beneath or in the column below the "F" token, converting them into "D" (drawn) tokens. This process continues until the path is fully cleared from the "F" token down to the row just above the "ADVANCE" ("A") token. Once the path is open, the expert clicks the "A" token to advance the game, presumably causing the "F" token to fall further or trigger the next phase. The expert always selects the next available empty cell in the column beneath the "F" token, working from bottom to top, and only clicks the "A" token when the path is fully cleared.
+
+The game dynamics observed are as follows: Clicking an empty cell (".") in the column beneath a "FALLING" ("F") token turns that cell into a "DRAWN" ("D") token, effectively clearing or marking the path. This action can only be performed on specific empty cells, as indicated by the action mask. Once a contiguous vertical path of "D" tokens is created from the "F" token down to the row above the "ADVANCE" ("A") token, the "A" token becomes the only valid action. Clicking the "A" token likely causes the "F" token to fall or the game to progress, resetting the board for the next sequence. The "R" (red) and "S" (static) tokens act as obstacles or boundaries that cannot be clicked or traversed, and the expert never interacts with them.
+
+TOKEN_MAP = {
+  ".": "stf.EMPTY",
+  "A": "stf.ADVANCE",
+  "D": "stf.DRAWN",
+  "F": "stf.FALLING",
+  "R": "stf.RED",
+  "S": "stf.STATIC"
+}
