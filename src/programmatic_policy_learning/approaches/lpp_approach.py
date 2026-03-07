@@ -18,12 +18,16 @@ from scipy.sparse import vstack
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+
+# pylint: disable-next=line-too-long
 from programmatic_policy_learning.approaches.lpp_utils.lpp_collision_feedback_utils import (
-    _run_collision_feedback_loop,
+    run_collision_feedback_loop,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils import (
     _extract_feature_names,
 )
+
+# pylint: disable-next=line-too-long
 from programmatic_policy_learning.approaches.lpp_utils.lpp_program_generation_utils import (
     get_program_set,
 )
@@ -483,7 +487,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 collision_payloads,
                 collision_output_path,
                 col_nnz,
-            ) = _run_collision_feedback_loop(
+            ) = run_collision_feedback_loop(
                 collision_groups=collision_groups,
                 examples=examples,
                 max_rounds=max_rounds,

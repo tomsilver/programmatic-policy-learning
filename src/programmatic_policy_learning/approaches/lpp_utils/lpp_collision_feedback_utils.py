@@ -68,7 +68,7 @@ def _append_new_features_from_sources(
     return X, start_index + len(new_feature_names)
 
 
-def _run_collision_feedback_loop(
+def run_collision_feedback_loop(
     *,
     collision_groups: list[dict[str, Any]],
     examples: list[tuple[np.ndarray, tuple[int, int]]],

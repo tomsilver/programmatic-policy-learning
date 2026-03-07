@@ -1,6 +1,7 @@
 """Serialize expert trajectories into textual hint blocks."""
 
 # pylint: disable=line-too-long
+# pylint: disable=duplicate-code
 
 import json
 from typing import Any, Sequence
