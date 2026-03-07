@@ -1,8 +1,0 @@
-The expert’s strategy is to always click the lowest (largest row index) available cell in the rightmost column (column 1) that contains a token ('*'). If there are no tokens left in column 1, the expert then clicks the lowest available token in the left column (column 0). At each step, the action mask only allows one possible action, which is always the lowest token in the rightmost column, or, if none remain, the lowest in the left column. The expert proceeds in this bottom-up, right-to-left order until all tokens are removed.
-
-The game dynamics are deterministic: clicking a cell containing a token ('*') removes that token, turning it into an empty cell ('.'), and does not affect any other cells. Only one cell can be clicked per step, and only cells with tokens are valid actions (as indicated by the action mask). The process continues until all tokens are removed from the grid.
-
-TOKEN_MAP = {
-  "*": "tpn.TOKEN",
-  ".": "tpn.EMPTY"
-}
