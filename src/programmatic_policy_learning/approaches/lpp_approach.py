@@ -31,9 +31,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
     prepare_programs_and_dsl,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features as _filter_constant_features,
-)
-from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
+    filter_constant_features,
     split_and_collect_demonstrations,
 )
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
@@ -61,6 +59,8 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+
+_filter_constant_features = filter_constant_features
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")

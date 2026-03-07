@@ -11,7 +11,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils 
     _parse_py_feature_sources,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features as _filter_constant_features,
+    filter_constant_features,
 )
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     log_feature_collisions,
@@ -22,6 +22,8 @@ from programmatic_policy_learning.learning.prior_calculation import (
     priors_from_features,
     priors_from_features_v2,
 )
+
+_filter_constant_features = filter_constant_features
 
 
 def _append_new_features_from_sources(
