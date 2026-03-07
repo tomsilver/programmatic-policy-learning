@@ -153,11 +153,13 @@ def run_rollout(
 
     for step in range(_MAX_STEPS):
         raw: np.ndarray | list[np.ndarray] | None = env.render()
+
         if raw is not None:
             frames.append(np.asarray(raw))
 
         action = expert(obs)
         obs, reward, terminated, truncated, _ = env.step(action)
+
         total_reward += float(reward)
 
         if terminated or truncated:

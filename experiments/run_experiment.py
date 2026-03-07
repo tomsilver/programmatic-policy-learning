@@ -26,6 +26,7 @@ def instantiate_approach(
     """
 
     env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+    expert_cfg = cfg.env.expert if "expert" in cfg.env else cfg.expert
 
     if cfg.approach_name == "lpp":
 
@@ -38,7 +39,7 @@ def instantiate_approach(
         env_specs = {"object_types": object_types}
 
         expert = hydra.utils.instantiate(
-            cfg.expert,
+            expert_cfg,
             cfg.env.description,
             env.observation_space,
             env.action_space,
@@ -62,7 +63,7 @@ def instantiate_approach(
     if cfg.approach_name == "residual":
 
         expert = hydra.utils.instantiate(
-            cfg.expert,
+            expert_cfg,
             cfg.env.description,
             env.observation_space,
             env.action_space,

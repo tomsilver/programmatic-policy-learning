@@ -138,40 +138,6 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
-def sample_negative_actions_hard_negative(
-    state: np.ndarray,
-    expert_action: Coord,
-    K: int = 30,
-    rng: random.Random | None = None,
-) -> list[Coord]:
-    """Hard-negative sampling by proximity to the expert action.
-
-    Picks the K closest coordinates (by Manhattan distance) to the
-    expert action, excluding the expert action itself. Ties are shuffled
-    for variety.
-    """
-    if rng is None:
-        rng = random.Random(0)
-
-    h = state.shape[0]
-    w = state.shape[1]
-    er, ec = expert_action
-
-    candidates: list[Coord] = []
-    for r in range(h):
-        for c in range(w):
-            if (r, c) == (er, ec):
-                continue
-            candidates.append((r, c))
-
-    if not candidates:
-        return []
-
-    rng.shuffle(candidates)
-    candidates.sort(key=lambda rc: abs(rc[0] - er) + abs(rc[1] - ec))
-    return candidates[:K]
-
-
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[np.ndarray, tuple[int, int]],
     *,
@@ -213,19 +179,6 @@ def extract_examples_from_demonstration_item(
                 K=k,
                 rng=rng,
                 include_nearby=8,
-            )
-            for rc in neg_coords:
-                negative_examples.append((state, rc))
-        elif method == "hard_negative":
-            k = int(data_imbalance.get("K", 10))
-            if k < 0:
-                raise ValueError("data_imbalance.K must be >= 0")
-            rng = random.Random(0)
-            neg_coords = sample_negative_actions_hard_negative(
-                state=state,
-                expert_action=action,
-                K=k,
-                rng=rng,
             )
             for rc in neg_coords:
                 negative_examples.append((state, rc))
