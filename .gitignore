@@ -198,3 +198,4 @@ final_prompts/
 # ignore output files
 *.out
 .cursor/
+.pylint_cache/
