@@ -23,8 +23,9 @@ def collect_demo(
     policy."""
 
     env = env_factory(env_num)  # type: ignore
+
     # (because not all the providers have this 'env_num' attribute)
-    reset_out = env.reset()
+    reset_out = env.reset(seed=env_num)
     assert (
         isinstance(reset_out, tuple) and len(reset_out) == 2
     ), f"Expected env.reset() to return (obs, info), got {reset_out}"
@@ -48,6 +49,7 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
+        
         t += 1
         expert.update(obs, reward, terminated, info)
         if terminated or truncated or (t >= max_demo_length):

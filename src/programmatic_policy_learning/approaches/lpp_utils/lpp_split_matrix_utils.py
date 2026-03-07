@@ -44,6 +44,7 @@ def split_and_collect_demonstrations(
         split_strategy=split_strategy,
         preserve_ordering=preserve_ordering,
     )
+
     if set(train_demo_ids).intersection(set(val_demo_ids)):
         raise AssertionError("train and val demo IDs are not disjoint.")
 

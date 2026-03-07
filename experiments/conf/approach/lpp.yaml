@@ -7,7 +7,7 @@ num_dts: 5
 max_num_particles: 25
 start_symbol: 0 # for fixed dsl/grammar
 dt_splitter: best
-dt_max_depth_candidates: [5,10,30]  # e.g., [null, 5, 10, 20]
+dt_max_depth_candidates: [5]  # e.g., [null, 5, 10, 20]
 cc_alpha: 0
 normalize_plp_actions: true
 permissive_filter_enabled: false

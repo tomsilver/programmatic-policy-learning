@@ -685,6 +685,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """Train the logical programmatic policy using demonstrations."""
         outer_feedback = None
         offline_path_name, data_imbalance_cfg = self._get_data_loading_config()
+
         (
             train_demo_ids,
             val_demo_ids,
