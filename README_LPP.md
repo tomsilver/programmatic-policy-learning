@@ -146,14 +146,14 @@ python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/C
   --plot-results
 ```
 
-Using gpt5.2-pro:
+Using gpt-5.2-pro:
 
 ```bash
-  python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
+python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
   --env StopTheFall \
   --encodings 4 \
   --seeds 0 \
-  --model gpt5.2-pro \
+  --model gpt-5.2-pro \
   --use-response-model
 ```
 
@@ -312,4 +312,20 @@ To run a rollout with the expert (using human-designed programmatic policies), u
 
 ```bash
 python experiments/scripts/run_motion2d_rollout.py --passages 1 --seed 0
+```
+
+Running CaP baseline on continuous environments (currently Motion2D only):
+
+```bash
+python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
+  --env Motion2D \
+  --env-type continuous \
+  --num-passages 1 \
+  --encodings 4 \
+  --seeds 0 \
+  --model gpt-5.2-pro \
+  --use-response-model \
+  --eval-max-steps 500 \
+  --sleep-between-runs 0 \
+  --plot-results
 ```

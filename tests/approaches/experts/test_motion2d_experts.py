@@ -65,7 +65,7 @@ def test_find_next_passage_with_p1_env(p1_env_and_obs: EnvObs) -> None:
     _env, obs = p1_env_and_obs
     result = _find_next_passage(obs)
     assert result is not None
-    wall_x, passage_y, gap_bottom, gap_top = result
+    wall_x, passage_y, gap_bottom, gap_top, _wall_width = result
     assert wall_x > 0
     assert gap_bottom < passage_y < gap_top
 
@@ -115,7 +115,7 @@ def test_f1_accepts_corrective_dy(p1_env_and_obs: EnvObs) -> None:
     if passage is None:
         pytest.skip("No passage found in initial obs")
 
-    _wall_x, passage_y, _gb, _gt = passage
+    _wall_x, passage_y, _gb, _gt, _ww = passage
     robot_y = float(obs[1])
     direction = 1.0 if passage_y > robot_y else -1.0
 

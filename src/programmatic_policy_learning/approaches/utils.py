@@ -48,9 +48,19 @@ def run_single_episode(
     policy: Callable[[Any], Any],
     record_video: bool = False,
     video_out_path: str | None = None,
-    max_num_steps: int = 50,
-) -> float:
-    """Run a single episode in the environment using the given policy."""
+    max_num_steps: int = 100,
+) -> tuple[float, np.bool_]:
+    """Run a single episode in the environment using the given policy.
+
+    Returns
+    -------
+    tuple[float, np.bool_]
+        ``(total_reward, terminated)`` — cumulative reward and whether the
+        episode ended via the environment's termination signal (as opposed
+        to reaching *max_num_steps* or being truncated).  ``terminated``
+        is ``np.bool_`` (from the environment); callers that need native
+        ``bool`` (e.g. for JSON serialization) should cast explicitly.
+    """
 
     record_frames: list[Any] | None = None
     if record_video:
@@ -95,6 +105,7 @@ def run_single_episode(
         except Exception:  # pylint: disable=broad-exception-caught
             pass
     total_reward = 0.0
+    episode_terminated: np.bool_ = np.bool_(False)
     for _ in range(max_num_steps):
         action = policy(obs)
         step_out = env.step(action)
@@ -115,6 +126,7 @@ def run_single_episode(
                 pass
 
         if terminated or truncated:
+            episode_terminated = terminated
             break
     env.close()
 
@@ -129,7 +141,7 @@ def run_single_episode(
         if record_frames:
             imageio.mimsave(video_out_path, record_frames, fps=10)
 
-    return total_reward
+    return total_reward, episode_terminated
 
 
 def load_hint_text(

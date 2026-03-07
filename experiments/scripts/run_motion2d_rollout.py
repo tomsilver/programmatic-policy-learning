@@ -27,15 +27,61 @@ logging.basicConfig(level=logging.INFO)
 _MAX_STEPS = 500
 
 
+_ACTION_FIELD_NAMES = ["dx", "dy", "dtheta", "darm", "vac"]
+
+
 def log_obs(obs: np.ndarray) -> None:
-    """Log a structured summary of the observation vector."""
-    logging.info("Robot:     x=%.4f, y=%.4f, theta=%.4f", obs[0], obs[1], obs[2])
-    logging.info("           base_radius=%.4f", obs[3])
-    logging.info("Target:    x=%.4f, y=%.4f, theta=%.4f", obs[9], obs[10], obs[11])
-    logging.info("           width=%.4f, height=%.4f", obs[17], obs[18])
+    """Log a structured summary of every observation field."""
+    logging.info("--- Robot (indices 0-8) ---")
+    logging.info("  [0] x=%.4f", obs[0])
+    logging.info("  [1] y=%.4f", obs[1])
+    logging.info("  [2] theta=%.4f", obs[2])
+    logging.info("  [3] base_radius=%.4f", obs[3])
+    logging.info("  [4] arm_joint=%.4f", obs[4])
+    logging.info("  [5] arm_length=%.4f", obs[5])
+    logging.info("  [6] vacuum=%.4f", obs[6])
+    logging.info("  [7] gripper_height=%.4f", obs[7])
+    logging.info("  [8] gripper_width=%.4f", obs[8])
+
+    logging.info("--- Target (indices 9-18) ---")
+    logging.info("  [9]  x=%.4f", obs[9])
+    logging.info("  [10] y=%.4f", obs[10])
+    logging.info("  [11] theta=%.4f", obs[11])
+    logging.info("  [12] static=%.4f", obs[12])
+    logging.info("  [13] color_r=%.4f", obs[13])
+    logging.info("  [14] color_g=%.4f", obs[14])
+    logging.info("  [15] color_b=%.4f", obs[15])
+    logging.info("  [16] z_order=%.4f", obs[16])
+    logging.info("  [17] width=%.4f", obs[17])
+    logging.info("  [18] height=%.4f", obs[18])
 
     num_obstacles = (len(obs) - 19) // 10
     num_passages = num_obstacles // 2
+    if num_obstacles > 0:
+        logging.info(
+            "--- Obstacles (%d total, %d passages) ---",
+            num_obstacles,
+            num_passages,
+        )
+
+    for i in range(num_obstacles):
+        base = 19 + 10 * i
+        logging.info(
+            "  Obstacle %d (indices %d-%d):",
+            i,
+            base,
+            base + 9,
+        )
+        logging.info("    [%d] x=%.4f", base, obs[base])
+        logging.info("    [%d] y=%.4f", base + 1, obs[base + 1])
+        logging.info("    [%d] theta=%.4f", base + 2, obs[base + 2])
+        logging.info("    [%d] static=%.4f", base + 3, obs[base + 3])
+        logging.info("    [%d] color_r=%.4f", base + 4, obs[base + 4])
+        logging.info("    [%d] color_g=%.4f", base + 5, obs[base + 5])
+        logging.info("    [%d] color_b=%.4f", base + 6, obs[base + 6])
+        logging.info("    [%d] z_order=%.4f", base + 7, obs[base + 7])
+        logging.info("    [%d] width=%.4f", base + 8, obs[base + 8])
+        logging.info("    [%d] height=%.4f", base + 9, obs[base + 9])
 
     for i in range(num_passages):
         bot_base = 19 + 20 * i
@@ -44,33 +90,34 @@ def log_obs(obs: np.ndarray) -> None:
         bot_y = obs[bot_base + 1]
         bot_h = obs[bot_base + 9]
         top_y = obs[top_base + 1]
-        top_h = obs[top_base + 9]
         wall_x = obs[bot_base]
 
         gap_bottom = bot_y + bot_h
         gap_top = top_y
         passage_y = (gap_bottom + gap_top) / 2
 
-        logging.info("Passage %d: wall_x=%.4f", i, wall_x)
         logging.info(
-            "  Bottom obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
-            bot_y,
-            bot_h,
-            bot_y,
-            bot_y + bot_h,
-        )
-        logging.info(
-            "  Top    obstacle: y=%.4f, height=%.4f, y-range=[%.4f, %.4f]",
-            top_y,
-            top_h,
-            top_y,
-            top_y + top_h,
-        )
-        logging.info(
-            "  Gap: [%.4f, %.4f], center=%.4f",
+            "  Passage %d: wall_x=%.4f, gap=[%.4f, %.4f], center=%.4f",
+            i,
+            wall_x,
             gap_bottom,
             gap_top,
             passage_y,
+        )
+
+
+def log_action_space(action_space: gym.spaces.Box) -> None:
+    """Log the name, bounds, and dtype of each action dimension."""
+    assert isinstance(action_space, gym.spaces.Box)
+    logging.info("--- Action space (%s) ---", action_space)
+    for i in range(action_space.shape[0]):
+        name = _ACTION_FIELD_NAMES[i] if i < len(_ACTION_FIELD_NAMES) else f"a[{i}]"
+        logging.info(
+            "  [%d] %s: low=%.4f, high=%.4f",
+            i,
+            name,
+            action_space.low[i],
+            action_space.high[i],
         )
 
 
@@ -129,8 +176,10 @@ def main(args: argparse.Namespace) -> None:
 
     logging.info("Env: %s", env_id)
     logging.info("Observation space: %s", env.observation_space)
-    logging.info("Action space: %s", env.action_space)
     logging.info("Obs shape: %s", obs.shape)
+    assert isinstance(env.action_space, gym.spaces.Box)
+    logging.info("=== Action Space ===")
+    log_action_space(env.action_space)
     logging.info("=== Initial Observation ===")
     log_obs(obs)
 
