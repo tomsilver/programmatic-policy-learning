@@ -10,10 +10,10 @@ from typing import Any, Callable
 import numpy as np
 from omegaconf import OmegaConf
 
-from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils import (
     _parse_py_feature_sources,
 )
-from programmatic_policy_learning.approaches.utils import run_single_episode
+from programmatic_policy_learning.approaches.lpp_utils.utils import run_single_episode
 from programmatic_policy_learning.dsl.primitives_sets.grid_v1 import (
     get_dsl_functions_dict,
 )

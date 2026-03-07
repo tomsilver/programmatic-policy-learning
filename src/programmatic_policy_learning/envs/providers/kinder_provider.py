@@ -2,7 +2,7 @@
 
 from typing import Any
 
-import kinder
+import kinder  # type: ignore[import-not-found]
 from gymnasium import spaces
 from omegaconf import DictConfig
 

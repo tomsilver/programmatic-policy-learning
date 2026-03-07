@@ -14,7 +14,7 @@ from prpl_llm_utils.models import OpenAIModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
-from programmatic_policy_learning.approaches.utils import load_hint_text
+from programmatic_policy_learning.approaches.lpp_utils.utils import load_hint_text
 
 # pylint: disable=line-too-long
 HINT_EXTRACTOR_MODULE = "programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor"

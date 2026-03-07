@@ -18,24 +18,24 @@ from scipy.sparse import vstack
 from scipy.special import logsumexp
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.approaches.lpp_collision_feedback_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_collision_feedback_utils import (
     _run_collision_feedback_loop,
 )
-from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils import (
     _extract_feature_names,
 )
-from programmatic_policy_learning.approaches.lpp_program_generation_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_program_generation_utils import (
     get_program_set,
 )
-from programmatic_policy_learning.approaches.lpp_program_setup_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils import (
     prepare_programs_and_dsl,
 )
-from programmatic_policy_learning.approaches.lpp_split_matrix_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     filter_constant_features as _filter_constant_features,)
-from programmatic_policy_learning.approaches.lpp_split_matrix_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     split_and_collect_demonstrations,
 )
-from programmatic_policy_learning.approaches.utils import (
+from programmatic_policy_learning.approaches.lpp_utils.utils import (
     assert_features_fire,
     build_collision_repair_prompt,
     gini_gain_per_feature,

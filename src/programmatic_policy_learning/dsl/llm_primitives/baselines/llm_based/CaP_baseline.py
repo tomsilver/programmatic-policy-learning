@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 import gymnasium
-import kinder
+import kinder  # type: ignore[import-not-found]
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
@@ -34,7 +34,7 @@ from programmatic_policy_learning.approaches.experts.grid_experts import (
 from programmatic_policy_learning.approaches.experts.kinder_experts import (
     create_kinder_expert,
 )
-from programmatic_policy_learning.approaches.utils import run_single_episode
+from programmatic_policy_learning.approaches.lpp_utils.utils import run_single_episode
 
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (

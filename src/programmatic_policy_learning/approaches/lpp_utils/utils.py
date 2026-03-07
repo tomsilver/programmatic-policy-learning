@@ -177,7 +177,10 @@ def load_hint_text(
 def load_unique_hint(env_name: str, hints_root: str | Path) -> str:
     """Load the hint file from hints_root/env_name and return its raw JSON."""
     hint_dir = Path(hints_root) / env_name
-    hint_file = sorted(hint_dir.glob("*.json"))[0]
+    hint_files = sorted(hint_dir.glob("*.json"))
+    if not hint_files:
+        raise FileNotFoundError(f"No hint files found in {hint_dir}")
+    hint_file = hint_files[0]
     return hint_file.read_text(encoding="utf-8").strip()
 
 
@@ -1128,7 +1131,7 @@ NEGATIVE EXAMPLES (label = 0):
         else "featured_collision_feedback_enc1.txt"
     )
     feature_prompt_path = (
-        Path(__file__).resolve().parent.parent
+        Path(__file__).resolve().parents[2]
         / "dsl"
         / "llm_primitives"
         / "prompts"
@@ -1157,7 +1160,7 @@ NEGATIVE EXAMPLES (label = 0):
             else "template_collision_feedback_enc1.txt"
         )
         template_prompt_path = (
-            Path(__file__).resolve().parent.parent
+            Path(__file__).resolve().parents[2]
             / "dsl"
             / "llm_primitives"
             / "prompts"

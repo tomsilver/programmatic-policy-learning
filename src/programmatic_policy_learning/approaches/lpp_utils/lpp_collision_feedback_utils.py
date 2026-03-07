@@ -7,12 +7,14 @@ from typing import Any, Callable
 import numpy as np
 from scipy.sparse import hstack
 
-from programmatic_policy_learning.approaches.lpp_feature_source_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils import (
     _parse_py_feature_sources,
 )
-from programmatic_policy_learning.approaches.lpp_split_matrix_utils import (
+from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     filter_constant_features as _filter_constant_features,)
-from programmatic_policy_learning.approaches.utils import log_feature_collisions
+from programmatic_policy_learning.approaches.lpp_utils.utils import (
+    log_feature_collisions,
+)
 from programmatic_policy_learning.data.dataset import run_programs_on_examples
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
 from programmatic_policy_learning.learning.prior_calculation import (

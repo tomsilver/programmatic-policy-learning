@@ -10,7 +10,7 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
 from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
-from programmatic_policy_learning.approaches.utils import (
+from programmatic_policy_learning.approaches.lpp_utils.utils import (
     convert_dir_lists_to_tuples,
     load_hint_text,
     load_unique_hint,
@@ -57,7 +57,7 @@ from programmatic_policy_learning.learning.prior_calculation import (
 )
 
 EnvFactory = Callable[[int | None], Any]
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 HINTS_ROOT = (
     REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
 )
