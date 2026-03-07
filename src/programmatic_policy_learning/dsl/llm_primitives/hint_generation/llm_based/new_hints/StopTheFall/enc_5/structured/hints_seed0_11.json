@@ -1,0 +1,18 @@
+
+{
+  "action_choice_hints": [
+    "Action cell is in the same row or column as a cell with a special role token.",
+    "Action cell is the nearest cell with a particular role along a direction from another key token.",
+    "Action cell is adjacent to or within a small radius of a cell with a specific role.",
+    "There exists a contiguous path of certain role tokens connecting the action cell to another region or object.",
+    "Action cell is not blocked by obstacles when moving along a straight line from a reference cell.",
+    "Action cell is in a region above, below, left, or right of a key token, relative to its position."
+  ],
+  "feature_family_hints": [
+    "Relative position features: Needed to capture whether the action cell is aligned or positioned with respect to other key tokens (e.g., same row/column, above/below).",
+    "Local neighborhood features: Required to determine if the action cell is adjacent to or near cells with specific roles.",
+    "Connectivity features: Necessary to model whether the action cell is part of a contiguous structure or path of certain role tokens.",
+    "Directional proximity features: Needed to express if the action cell is the nearest or first encountered cell with a role along a direction from a reference point.",
+    "Obstacle-aware path features: Required to check if a path from a reference cell to the action cell is unblocked by obstacles."
+  ]
+}

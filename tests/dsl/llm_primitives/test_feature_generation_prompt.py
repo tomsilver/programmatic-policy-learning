@@ -14,7 +14,7 @@ from prpl_llm_utils.models import OpenAIModel
 from prpl_llm_utils.reprompting import query_with_reprompts
 from prpl_llm_utils.structs import Query
 
-from programmatic_policy_learning.approaches.utils import load_hint_text
+from programmatic_policy_learning.approaches.lpp_utils.utils import load_hint_text
 
 # pylint: disable=line-too-long
 HINT_EXTRACTOR_MODULE = "programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based.hint_extractor"
@@ -61,7 +61,10 @@ def _read_prompt(path: Path) -> str:
 def _fill_prompt(template: str, object_types: tuple[str, ...]) -> str:
     rendered = (
         template.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
-        .replace("${HINT_TEXT}", load_hint_text(ENV_NAME, ENCODING_METHOD, HINTS_ROOT))
+        .replace(
+            "${HINT_TEXT}",
+            load_hint_text(ENV_NAME, ENCODING_METHOD, False, HINTS_ROOT),
+        )
         .replace("${NUM_FEATURES}", str(NUM_FEATURES))
     )
     if (
@@ -119,7 +122,6 @@ def test_query_prompt_llm_online() -> None:
     assert output_path.exists()
     assert output_path.read_text(encoding="utf-8").strip()
 
-    print(response_text)
     if response_text.startswith("```"):
         response_text = response_text.strip("`").lstrip("json").strip()
 

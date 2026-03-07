@@ -17,7 +17,7 @@ def test_run_all_programs_on_single_demonstration() -> None:
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
     programs = ["np.sum(s) > 10"]
-    X, y = run_all_programs_on_single_demonstration(
+    X, y, _examples = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
         0,  # demo_number
         programs,  # programs

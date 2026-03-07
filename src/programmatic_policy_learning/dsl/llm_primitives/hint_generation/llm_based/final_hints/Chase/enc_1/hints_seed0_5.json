@@ -1,0 +1,52 @@
+1) POLICY RULES
+
+- If the only available action is a wall cell at the top-left corner (0,0), click it. (seen in ~5/5 demos)
+- When a cell contains ec.EMPTY and is the first empty cell in a straight line (row or column) between ec.AGENT and ec.TARGET, click it. (seen in ~4/5 demos)
+- When the agent is adjacent (in the same row or column, no barriers) to a direction-arrow cell (ec.RIGHT_ARROW, ec.LEFT_ARROW, ec.UP_ARROW, ec.DOWN_ARROW) in the bottom row, repeatedly click that arrow to move the agent in that direction. (seen in ~5/5 demos)
+- If the agent is not adjacent to an arrow, but an arrow is available in the bottom row, click it repeatedly until the agent reaches the correct row/column. (seen in ~5/5 demos)
+- When the agent is aligned with an arrow in the bottom row (same column for up/down, same row for left/right), click the corresponding arrow to move the agent in that direction. (seen in ~5/5 demos)
+- If the agent is blocked by walls or barriers, click the only available non-wall cell in the action mask (usually the next step toward the target). (seen in ~5/5 demos)
+- When a cell contains ec.EMPTY and is directly in the path between ec.AGENT and ec.TARGET (no walls in between), click it to draw a path. (seen in ~4/5 demos)
+- When the agent is at the edge of the grid and the only available action is a wall, click the wall. (seen in ~5/5 demos)
+- If the agent is adjacent to a direction-arrow cell and the action mask allows, click the arrow repeatedly to move the agent stepwise in that direction. (seen in ~5/5 demos)
+- When the agent is adjacent to the target and the only available action is a direction-arrow, click the arrow to move toward the target. (seen in ~4/5 demos)
+- If the agent is in a corridor or path with only one open direction, click the only available cell in the action mask. (seen in ~5/5 demos)
+- When a cell contains ec.EMPTY and is the only cell in the action mask, click it. (seen in ~5/5 demos)
+- When the agent is at a corner and the only available action is a direction-arrow, click the arrow. (seen in ~4/5 demos)
+- If the agent is on a path and the only available action is a direction-arrow, click the arrow. (seen in ~4/5 demos)
+- When the agent is at the edge and the only available action is a wall, click the wall. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- ec.EMPTY cells that are not in a direct line between ec.AGENT and ec.TARGET are not clicked, even if adjacent. 
+- Direction-arrow cells (ec.RIGHT_ARROW, ec.LEFT_ARROW, ec.UP_ARROW, ec.DOWN_ARROW) that are not aligned with the agent’s current row/column are not clicked.
+- ec.EMPTY cells that are blocked by a wall between the agent and the target are not clicked.
+- ec.EMPTY cells that are not the only available action in the mask are not clicked.
+- Wall cells (ec.WALL) that are not at the top-left corner or not the only available action are not clicked.
+
+3) GAME DYNAMICS
+
+- Clicking a wall cell at (0,0) (or the only available wall) does not change the grid, but is required to proceed.
+- Clicking an ec.EMPTY cell between ec.AGENT and ec.TARGET draws a ec.DRAWN ("*") token at that cell.
+- Clicking a direction-arrow cell (ec.RIGHT_ARROW, ec.LEFT_ARROW, ec.UP_ARROW, ec.DOWN_ARROW) moves the agent one cell in the indicated direction, if not blocked by a wall.
+- The agent (ec.AGENT) moves stepwise in the direction of the clicked arrow, updating its position each time.
+- The agent cannot move through walls (ec.WALL) or outside the grid.
+- The target (ec.TARGET) does not move.
+- Drawing a path (ec.DRAWN) does not move the agent, but marks the cell as part of the path.
+- Only one action is available at each step (action mask is sparse).
+- The environment enforces movement or drawing only when the action mask allows it.
+- The bottom row of arrows is used to control the agent’s movement in the main grid.
+
+4) TOKEN MAP
+
+TOKEN_MAP = {
+  "#": "ec.WALL",
+  "*": "ec.DRAWN",
+  ".": "ec.EMPTY",
+  "<": "ec.LEFT_ARROW",
+  ">": "ec.RIGHT_ARROW",
+  "A": "ec.AGENT",
+  "T": "ec.TARGET",
+  "^": "ec.UP_ARROW",
+  "v": "ec.DOWN_ARROW"
+}

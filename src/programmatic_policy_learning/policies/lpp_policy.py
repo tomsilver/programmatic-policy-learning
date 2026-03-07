@@ -1,6 +1,6 @@
 """Policy class for logic programmatic policies (LPP)."""
 
-from typing import Any, Generic, List, Sequence, TypeVar, cast
+from typing import Any, Generic, Sequence, TypeVar, cast
 
 import numpy as np
 
@@ -18,25 +18,29 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         probs: Sequence[float],
         seed: int = 0,
         map_choices: bool = True,
+        normalize_plp_actions: bool = False,
     ) -> None:
         """Initialize the LPPPolicy.
 
         Parameters
         ----------
         plps : Sequence[Any]
-            List of programmatic logical policies.
+            list of programmatic logical policies.
         probs : Sequence[float]
             Probabilities associated with each PLP.
         seed : int
             Random seed for stochastic choices.
         map_choices : bool
             If True, select action with highest probability; otherwise, sample.
+        normalize_plp_actions : bool
+            If True, normalize the action probabilities for each PLP.
         """
         assert abs(np.sum(probs) - 1.0) < 1e-5
 
         self.plps = plps
         self.probs = probs
         self.map_choices = map_choices
+        self.normalize_plp_actions = normalize_plp_actions
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
         self.map_program = ""
@@ -109,11 +113,19 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         )
 
         for plp, prob in zip(self.plps, self.probs):
-            for action in self.get_plp_suggestions(plp, obs):
+            # for action in self.get_plp_suggestions(plp, obs):
+            suggestions = self.get_plp_suggestions(plp, obs)
+            if self.normalize_plp_actions:
+                if not suggestions:
+                    continue
+                per_action_prob = prob / len(suggestions)
+            else:
+                per_action_prob = prob
+            for action in suggestions:
                 # For grid-based environments, action is a tuple of indices
                 # For general environments, override this logic as needed
                 if isinstance(action, tuple) and len(action) == action_probs.ndim:
-                    action_probs[action] += prob
+                    action_probs[action] += per_action_prob
                 else:
                     raise NotImplementedError(
                         "get_action_probs assumes action is a tuple of indices\
@@ -129,7 +141,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self._action_prob_cache[hashed_obs] = action_probs
         return action_probs
 
-    def get_plp_suggestions(self, plp: Any, obs: _ObsType) -> List[_ActType]:
+    def get_plp_suggestions(self, plp: Any, obs: _ObsType) -> list[_ActType]:
         """Get suggested actions from a PLP for a given observation.
 
         Parameters
@@ -141,10 +153,10 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
 
         Returns
         -------
-        suggestions : List[_ActType]
-            List of suggested actions.
+        suggestions : list[_ActType]
+            list of suggested actions.
         """
-        suggestions: List[_ActType] = []
+        suggestions: list[_ActType] = []
 
         if not hasattr(obs, "shape"):
             raise NotImplementedError(
@@ -160,7 +172,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
                 if plp(obs, action):
                     suggestions.append(action)  # type: ignore[arg-type]
 
-        return cast(List[_ActType], suggestions)  # cast to match the return type
+        return cast(list[_ActType], suggestions)  # cast to match the return type
 
     def set_map_program(self, program: str, posterior: float) -> None:
         """Set the MAP program and its posterior value after it's found."""

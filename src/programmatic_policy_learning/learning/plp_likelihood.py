@@ -64,23 +64,61 @@ def _compute_likelihood_worker(
     results: list[float] = []
     for plp in _WORKER_PLPS:
         ll = 0.0
-        valid = True
-        for obs, action in demonstrations.steps:
-            if not plp(obs, action):
-                ll = -np.inf
-                valid = False
-                break
 
+        # hyperparams
+        eps = 1e-4  # "slip" prob when expert action is not allowed by PLP
+        beta = 2.0  # >1 penalizes permissiveness more strongly
+
+        for obs, action in demonstrations.steps:
             rows, cols = obs.shape[:2]
-            size = 1
+
+            size = 0
             for r in range(rows):
                 for c in range(cols):
-                    if (r, c) == action:
-                        continue
                     if plp(obs, (r, c)):
                         size += 1
-            ll += np.log(1.0 / size)
-        results.append(ll if valid else -np.inf)
+
+            N = rows * cols  # total actions
+
+            # Numerical safety (avoid log(0))
+            size = max(0, min(size, N))
+
+            # if size == 0:
+            #     ll += -1e6  # or just continue; but penalize hard
+            #     continue
+
+            expert_allowed = plp(obs, action)
+            # Likelihood model:
+            # - If expert action is allowed: (1-eps) * Uniform(allowed set)
+            # - Else: eps * Uniform(disallowed set)
+            if expert_allowed:
+                # ensure size>=1
+                size_eff = max(1, size)
+                ll += np.log(1.0 - eps) - beta * np.log(size_eff)
+            else:
+                disallowed = max(1, N - size)
+                ll += np.log(eps) - np.log(disallowed)
+        results.append(ll)
+
+    # for plp in _WORKER_PLPS: #PREVIOUS APPROACH
+    #     ll = 0.0
+    #     valid = True
+    #     for obs, action in demonstrations.steps:
+    #         if not plp(obs, action):
+    #             ll = -np.inf
+    #             valid = False
+    #             break
+
+    #         rows, cols = obs.shape[:2]
+    #         size = 1
+    #         for r in range(rows):
+    #             for c in range(cols):
+    #                 if (r, c) == action:
+    #                     continue
+    #                 if plp(obs, (r, c)):
+    #                     size += 1
+    #         ll += np.log(1.0 / size)
+    #     results.append(ll if valid else -np.inf)
     return results
 
 
@@ -95,10 +133,6 @@ def compute_likelihood_plps(
     Uses fork-based multiprocessing and precompiled PLPs for speed.
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
-    for each in plps:
-        logging.info(each)
-        logging.info("***")
-    logging.info("PLPS printed")
 
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
@@ -130,6 +164,7 @@ def compute_likelihood_plps(
             initializer=likelihood_worker_init,
             initargs=(dsl_blob, module_map, plp_batch),
         ) as pool:
+
             # Each worker runs likelihood for its PLP batch on the same demonstrations
             results_iter = pool.imap(
                 _compute_likelihood_worker, [demonstrations], chunksize=1

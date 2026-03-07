@@ -1,0 +1,12 @@
+In each state, the expert's strategy is to first select the white queen (represented by 'Q') by clicking on its cell. This is always the only valid action in the initial step, as indicated by the action mask. After the queen is selected (it becomes 'Q*'), the expert then clicks on a specific empty cell ('.') elsewhere on the board, which is also the only valid action according to the action mask. The chosen destination for the queen is always a cell that is empty and, in all examples, is not occupied by any other piece. The expert does not select any other piece or cell, and the queen is always moved in a single, unambiguous two-step process: select, then move.
+
+The game dynamics observed are as follows: the environment is a grid-based board with chess-like pieces, but the only piece being manipulated is the white queen. The first click on the queen highlights it (changes 'Q' to 'Q*'), indicating it is selected. The next click on a valid empty cell moves the queen to that cell, and the queen's previous position becomes empty. The transition is deterministic, and only one queen can be selected and moved at a time. The action mask strictly enforces which cells can be clicked at each step: first, only the queen; then, only a specific empty cell, suggesting a puzzle or guided-move mechanic.
+
+TOKEN_MAP = {
+  ".": "ct.EMPTY",
+  "K": "ct.BLACK_KING",
+  "Q": "ct.WHITE_QUEEN",
+  "Q*": "ct.HIGHLIGHTED_WHITE_QUEEN",
+  "k": "ct.WHITE_KING",
+  "k*": "ct.HIGHLIGHTED_WHITE_KING"
+}

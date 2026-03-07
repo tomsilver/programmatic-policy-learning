@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=rfts_v9_20k
+#SBATCH --job-name=test_stf
 #SBATCH --account=aip-krallen
 #SBATCH --time=24:00:00
 #SBATCH --mem=16G
@@ -13,18 +13,26 @@ module load StdEnv/2023
 module load python/3.11
 
 export OPENAI_API_KEY="${OPENAI_API_KEY}"
+echo "Starting script..."
 
 source ~/projects/aip-krallen/zahrab98/programmatic-policy-learning/.venv/bin/activate
-cd ~/projects/aip-krallen/zahrab98/new/programmatic-policy-learning
+cd ~/projects/aip-krallen/zahrab98/baselines/programmatic-policy-learning
 
+echo "now..."
 
-
-python -u experiments/run_experiment.py\
-    env=ggg_rfts \
-    approach=lpp \
-    seed=0 \
-    approach.program_generation.dsl_generator_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/full/v9_hint.txt\
-    approach.num_programs=20000\
-    approach.program_generation_step_size=200\
-    approach.num_dts=5\
-    approach.max_num_particles=25\
+python3 hello_world.py
+# python -u experiments/run_experiment.py\
+#     env=ggg_stf \
+#     approach=lpp \
+#     seed=0 \
+#     approach.program_generation.py_feature_gen_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt_v1_0.txt\
+#     approach.program_generation.py_feature_gen_batch_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt\
+#     approach.program_generation.strategy=py_feature_gen \
+#     approach.program_generation.num_batches=10\
+#     approach.program_generation.num_features=1000\
+#     approach.program_generation.encoding_method="4" \
+#     approach.program_generation.hint_structured= True \
+#     approach.num_programs=10000\
+#     approach.program_generation_step_size=10\
+#     approach.num_dts=5\
+#     approach.max_num_particles=25

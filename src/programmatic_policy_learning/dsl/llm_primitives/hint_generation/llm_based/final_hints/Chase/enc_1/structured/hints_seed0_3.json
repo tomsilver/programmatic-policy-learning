@@ -1,0 +1,36 @@
+1) POLICY RULES:
+- If the action cell is empty (.), click to draw (seen in ~3/3 demos).
+- If the action cell is a target (T), click to draw (seen in ~3/3 demos).
+- If the action cell is an agent (A), click to move the agent to an adjacent empty cell (seen in ~3/3 demos).
+- If the action cell is a wall (#), do not click (seen in ~3/3 demos).
+- If there is a target (T) directly above the action cell, click the up arrow (^) to move the agent to the target (seen in ~2/3 demos).
+- If there is an agent (A) directly below the action cell, click the up arrow (^) to move the agent up (seen in ~2/3 demos).
+- If there is a drawn cell (*) adjacent to the action cell, click to draw in the next available empty cell (seen in ~2/3 demos).
+- If there is a wall (#) blocking the path to a target (T), do not click (seen in ~3/3 demos).
+
+2) COUNTERFACTUAL DISTRACTORS:
+- If the action cell is a wall (#), do not click (seen in ~3/3 demos).
+- If the action cell is empty (.) but surrounded by walls (#), do not click (seen in ~2/3 demos).
+- If the action cell is a target (T) but there is an agent (A) adjacent to it, do not click (seen in ~2/3 demos).
+- If the action cell is an agent (A) and there is no adjacent empty cell, do not click (seen in ~2/3 demos).
+- If the action cell is a drawn cell (*) and there is no target (T) nearby, do not click (seen in ~2/3 demos).
+
+3) GAME DYNAMICS:
+- Clicking on a target (T) changes it to an empty cell (.) and draws a new agent (A) in its place.
+- Clicking on an empty cell (.) changes it to a drawn cell (*) and may trigger the movement of an agent (A) if adjacent.
+- Clicking on an agent (A) moves it to an adjacent empty cell (.) if available.
+- Clicking on a wall (#) has no effect and does not change the state.
+- Clicking on an arrow (e.g., ^, >, <, v) moves the agent (A) in the specified direction, potentially changing the state of adjacent cells.
+
+4) TOKEN MAP:
+TOKEN_MAP = {
+  "#": "ec.WALL",
+  "*": "ec.DRAWN",
+  ".": "ec.EMPTY",
+  "<": "ec.LEFT_ARROW",
+  ">": "ec.RIGHT_ARROW",
+  "A": "ec.AGENT",
+  "T": "ec.TARGET",
+  "^": "ec.UP_ARROW",
+  "v": "ec.DOWN_ARROW"
+}

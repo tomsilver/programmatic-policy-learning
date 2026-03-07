@@ -1,0 +1,33 @@
+1) POLICY RULES:
+- Click on a cell containing `.` if it is directly below the agent's current position (seen in ~5/10 demos).
+- Click on a cell containing `.` if it is directly to the right of the agent's current position (seen in ~4/10 demos).
+- Click on a cell containing `.` if it is directly above the agent's current position (seen in ~3/10 demos).
+- Click on a cell containing `.` if it is directly to the left of the agent's current position (seen in ~3/10 demos).
+- Click on a cell containing `.` if it is in the same row as the agent and there are no barriers between them (seen in ~2/10 demos).
+- Click on a cell containing `.` if it is in the same column as the agent and there are no barriers between them (seen in ~2/10 demos).
+- Click on a cell containing `.` if it is the first empty cell encountered in a downward direction (seen in ~3/10 demos).
+- Click on a cell containing `.` if it is the first empty cell encountered in an upward direction (seen in ~2/10 demos).
+
+2) COUNTERFACTUAL DISTRACTORS:
+- Do not click on a cell containing `*` that is directly below the agent's current position (seen in ~4/10 demos).
+- Do not click on a cell containing `#` that is directly to the right of the agent's current position (seen in ~3/10 demos).
+- Do not click on a cell containing `#` that is directly above the agent's current position (seen in ~3/10 demos).
+- Do not click on a cell containing `#` that is directly to the left of the agent's current position (seen in ~3/10 demos).
+- Do not click on a cell containing `A` that is in the same row as the agent (seen in ~2/10 demos).
+
+3) GAME DYNAMICS:
+- Clicking on a cell containing `.` changes it to `#` (barrier) in the next state.
+- Clicking on a cell containing `A` changes it to `.` (empty) in the next state.
+- Clicking on a cell containing `*` changes it to `A` (agent) in the next state.
+- The agent can only move to adjacent cells that are empty (`.`) or contain the star (`*`).
+- The agent cannot move through barriers (`#`).
+
+4) TOKEN MAP:
+TOKEN_MAP = {
+  "#": "rfts.DRAWN",
+  "*": "rfts.STAR",
+  ".": "rfts.EMPTY",
+  "<": "rfts.LEFT_ARROW",
+  ">": "rfts.RIGHT_ARROW",
+  "A": "rfts.AGENT"
+}

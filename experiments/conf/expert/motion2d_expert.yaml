@@ -1,0 +1,2 @@
+# Expert policy for Motion2D: f_1 ∧ f_2 rejection sampling through passages.
+_target_: programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach

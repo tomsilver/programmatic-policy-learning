@@ -1,0 +1,18 @@
+You are given expert demonstrations from a grid-based environment.
+
+Each demonstration consists of:
+- State s_t (before action)
+- Action a_t (clicked cell: row, col)
+- State s_t+1 (after deterministic transition)
+
+DEMONSTRATIONS:
+<<DEMONSTRATIONS>>
+
+----
+Your task:
+Based on the demonstrations, describe the strategy the expert is using to take action a 
+given state s. Explain it in one paragraph. No extra output.
+In another paragraph, describe the dynamics of the game that you've observed.
+
+----
+<<PLACE_HOLDER>>

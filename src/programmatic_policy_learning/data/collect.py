@@ -39,6 +39,7 @@ def collect_demo(
         action = expert.step()
         obs_list.append(obs)
         act_list.append(action)
+
         step_out = env.step(action)
 
         # handle gym vs. gymnasium
@@ -54,6 +55,7 @@ def collect_demo(
                 # keep behavior parity with original: warn if didn’t succeed
                 logging.warning("WARNING: demo did not succeed!")
             break
+
     steps = list(zip(obs_list, act_list))
     return Trajectory(steps=steps)
 

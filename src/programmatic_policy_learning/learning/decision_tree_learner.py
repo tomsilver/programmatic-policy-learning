@@ -25,6 +25,9 @@ def learn_plps(
     program_prior_log_probs: list[float],
     num_dts: int = 5,
     program_generation_step_size: int = 10,
+    dt_splitter: str = "random",
+    cc_alpha: float = 0.0,
+    dt_max_depth: int | None = None,
     dsl_functions: dict | None = None,
 ) -> tuple[list[StateActionProgram], list[float]]:
     """
@@ -50,8 +53,15 @@ def learn_plps(
     logging.info(f"Total programs: {num_programs}")
 
     for i in range(0, num_programs, program_generation_step_size):
-        logging.info(f"Learning plps with {i} programs")
-        for clf in learn_single_batch_decision_trees(y, num_dts, X[:, : i + 1]):
+        logging.info(f"Learning plps with {i+1} programs")
+        for clf in learn_single_batch_decision_trees(
+            y,
+            num_dts,
+            X[:, : i + 1],
+            dt_splitter=dt_splitter,
+            cc_alpha=cc_alpha,
+            dt_max_depth=dt_max_depth,
+        ):
             plp, plp_prior_log_prob = extract_plp_from_dt(
                 clf, programs, program_prior_log_probs, dsl_functions
             )
@@ -62,7 +72,12 @@ def learn_plps(
 
 
 def learn_single_batch_decision_trees(
-    y: list[bool], num_dts: int, X_i: csr_matrix
+    y: list[bool],
+    num_dts: int,
+    X_i: csr_matrix,
+    dt_splitter: str = "random",
+    cc_alpha: float = 0.0,
+    dt_max_depth: int | None = None,
 ) -> list[DecisionTreeClassifier]:
     """
     Parameters
@@ -79,8 +94,35 @@ def learn_single_batch_decision_trees(
     clfs = []
 
     for seed in range(num_dts):
-        clf = DecisionTreeClassifier(random_state=seed)
+        # clf = DecisionTreeClassifier(random_state=seed)
+        clf = DecisionTreeClassifier(
+            random_state=seed,
+            splitter=dt_splitter,
+            class_weight="balanced",
+            max_depth=dt_max_depth,  # None means unbounded depth.
+            min_samples_leaf=1,  # 8,#1,
+            # min_samples_split = 10,
+            ccp_alpha=cc_alpha,
+        )
+
         clf.fit(X_i, y)
+        # logging.info(
+        #     "Trained DT seed=%d | nodes=%d depth=%d | train_acc=%.3f",
+        #     seed,
+        #     clf.tree_.node_count,
+        #     clf.tree_.max_depth,
+        #     clf.score(X_i, y),
+        # )
+        # from sklearn.tree import export_text
+
+        # feature_names = [
+        #     f"f{i}" for i in range(X_i.shape[1])
+        # ]  # or your program names
+        # logging.info(
+        #     "DT tree:\n%s",
+        #     export_text(clf, feature_names=feature_names, max_depth=10),
+        # )
+
         clfs.append(clf)
     return clfs
 
@@ -140,7 +182,7 @@ def get_disjunctive_program(
     """Combine conjunctive programs into a disjunctive StateActionProgram."""
 
     if len(conjunctive_programs) == 0:
-        return StateActionProgram("False")  # BUG?
+        return StateActionProgram("False")
 
     program = ""
 
