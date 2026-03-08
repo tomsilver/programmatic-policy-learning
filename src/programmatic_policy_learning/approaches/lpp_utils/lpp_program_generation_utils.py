@@ -6,10 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Callable, cast
 
+import numpy as np
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
-from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     convert_dir_lists_to_tuples,
     load_hint_text,
@@ -30,9 +30,6 @@ from programmatic_policy_learning.dsl.llm_primitives.feature_generator import (
 )
 from programmatic_policy_learning.dsl.llm_primitives.feature_priors import (
     compute_feature_log_probs,
-)
-from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
-    hint_extractor,
 )
 from programmatic_policy_learning.dsl.llm_primitives.llm_generator import (
     LLMPrimitivesGenerator,
@@ -63,6 +60,101 @@ HINTS_ROOT = (
 )
 
 
+def _resolve_demo_ids(
+    demo_numbers: Sequence[int] | None,
+    program_generation: dict[str, Any],
+) -> list[int]:
+    demos_included = program_generation.get("demos_included")
+    if demos_included is None:
+        return list(demo_numbers) if demo_numbers is not None else [0]
+    return list(demos_included)
+
+
+def _collect_full_episode_generic(
+    env: Any,
+    expert: Any,
+    *,
+    max_steps: int = 200,
+) -> list[tuple[Any, Any, Any]]:
+    """Roll out an instantiated expert and collect (obs, action, obs_next)."""
+    obs, info = env.reset()
+    expert.reset(obs, info)
+    trajectory: list[tuple[Any, Any, Any]] = []
+    for _ in range(max_steps):
+        action = expert.step()
+        obs_next, reward, terminated, truncated, step_info = env.step(action)
+        trajectory.append((obs, action, obs_next))
+        expert.update(obs_next, reward, terminated, step_info)
+        obs = obs_next
+        if terminated or truncated:
+            break
+    return trajectory
+
+
+def _summarize_vector(x: Any, max_items: int = 8) -> str:
+    arr = np.asarray(x, dtype=float).reshape(-1)
+    n = min(max_items, arr.size)
+    vals = ", ".join(f"{v:.3f}" for v in arr[:n])
+    suffix = " ..." if arr.size > n else ""
+    return f"[{vals}{suffix}]"
+
+
+def _build_discrete_demo_text(
+    trajectories: list[list[tuple[Any, Any, Any]]],
+    *,
+    base_class_name: str,
+    enc_method: str,
+    enc_id: str,
+) -> str:
+    symbol_map = grid_hint_config.get_symbol_map(base_class_name)
+    enc_cfg = grid_encoder.GridStateEncoderConfig(
+        symbol_map=symbol_map,
+        empty_token="empty",
+        coordinate_style="rc",
+    )
+    encoder = grid_encoder.GridStateEncoder(enc_cfg)
+    analyzer = transition_analyzer.GenericTransitionAnalyzer()
+    salient_tokens = grid_hint_config.SALIENT_TOKENS[base_class_name]
+    all_traj_texts: list[str] = []
+    for i, traj in enumerate(trajectories):
+        if enc_method == "enc_1":
+            text = trajectory_serializer.trajectory_to_diff_text(
+                traj,
+                encoder=encoder,
+                max_steps=50,
+            )
+        else:
+            text = trajectory_serializer.trajectory_to_text(
+                traj,
+                encoder=encoder,
+                analyzer=analyzer,
+                salient_tokens=salient_tokens,
+                encoding_method=enc_id,
+                max_steps=50,
+            )
+        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
+    return "\n\n".join(all_traj_texts)
+
+
+def _build_continuous_demo_text(
+    trajectories: list[list[tuple[Any, Any, Any]]],
+    *,
+    max_steps: int = 50,
+) -> str:
+    all_traj_texts: list[str] = []
+    for i, traj in enumerate(trajectories):
+        lines = [f"---[TRAJECTORY {i}]---"]
+        for t, (obs, action, obs_next) in enumerate(traj[:max_steps]):
+            lines.append(
+                f"t={t} "
+                f"s={_summarize_vector(obs)} "
+                f"a={_summarize_vector(action)} "
+                f"s_next={_summarize_vector(obs_next)}"
+            )
+        all_traj_texts.append("\n".join(lines))
+    return "\n\n".join(all_traj_texts)
+
+
 def _build_py_feature_functions(
     feature_programs: list[str],
     dsl_functions: dict[str, Any],
@@ -91,6 +183,7 @@ def get_program_set(
     num_programs: int,
     base_class_name: str,  # pylint: disable=unused-argument
     env_factory: EnvFactory,
+    expert: Any | None = None,
     env_specs: dict[str, Any] | None = None,
     start_symbol: int = 0,
     program_generation: dict[str, Any] | None = None,
@@ -172,48 +265,27 @@ def get_program_set(
 
         demo_text: str | None = None
         try:
-            expert = get_grid_expert(base_class_name)
             trajectories: list[list[tuple[Any, Any, Any]]] = []
-            demos_included = program_generation.get("demos_included")
-            if demos_included is None:
-                demo_ids = list(demo_numbers) if demo_numbers is not None else [0]
-            else:
-                demo_ids = list(demos_included)
+            demo_ids = _resolve_demo_ids(demo_numbers, program_generation)
+            if expert is None:
+                raise ValueError("No expert instance provided for demo serialization.")
             for init_idx in demo_ids:
                 env_demo = env_factory(init_idx)
-                traj = hint_extractor.collect_full_episode(
-                    env_demo, expert, max_steps=40, sample_count=None
-                )
+                traj = _collect_full_episode_generic(env_demo, expert, max_steps=40)
                 env_demo.close()
                 trajectories.append(traj)
-            symbol_map = grid_hint_config.get_symbol_map(base_class_name)
-            enc_cfg = grid_encoder.GridStateEncoderConfig(
-                symbol_map=symbol_map,
-                empty_token="empty",
-                coordinate_style="rc",
-            )
-            encoder = grid_encoder.GridStateEncoder(enc_cfg)
-            analyzer = transition_analyzer.GenericTransitionAnalyzer()
-            salient_tokens = grid_hint_config.SALIENT_TOKENS[base_class_name]
-            all_traj_texts: list[str] = []
-            for i, traj in enumerate(trajectories):
-                if enc_method == "enc_1":
-                    text = trajectory_serializer.trajectory_to_diff_text(
-                        traj,
-                        encoder=encoder,
-                        max_steps=50,
-                    )
-                else:
-                    text = trajectory_serializer.trajectory_to_text(
-                        traj,
-                        encoder=encoder,
-                        analyzer=analyzer,
-                        salient_tokens=salient_tokens,
-                        encoding_method=enc_id,
-                        max_steps=50,
-                    )
-                all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
-            demo_text = "\n\n".join(all_traj_texts)
+            action_mode = str((env_specs or {}).get("action_mode", "discrete"))
+            if action_mode == "discrete":
+                demo_text = _build_discrete_demo_text(
+                    trajectories,
+                    base_class_name=base_class_name,
+                    enc_method=enc_method,
+                    enc_id=enc_id,
+                )
+            elif action_mode == "continuous":
+                demo_text = _build_continuous_demo_text(trajectories)
+            else:
+                raise ValueError(f"Unsupported action_mode: {action_mode!r}")
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logging.info("Failed to build demonstration text: %s", exc)
 

@@ -718,6 +718,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             num_programs=self.num_programs,
             base_class_name=self.base_class_name,
             env_factory=self.env_factory,
+            expert=self.expert,
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
@@ -729,8 +730,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
-        print(programs_sa)
-        input("PROGRAM GENERATION COMPLETE. Press Enter to continue...")
+        # print(programs_sa)
+        # input("PROGRAM GENERATION COMPLETE. Press Enter to continue...")
         (
             X_train,
             y_train,
