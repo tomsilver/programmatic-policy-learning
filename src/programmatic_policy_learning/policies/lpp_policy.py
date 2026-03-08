@@ -3,6 +3,7 @@
 from typing import Any, Generic, Sequence, TypeVar, cast
 
 import numpy as np
+from gymnasium.spaces import Box, Space
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -19,6 +20,9 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         seed: int = 0,
         map_choices: bool = True,
         normalize_plp_actions: bool = False,
+        action_mode: str = "discrete",
+        action_space: Space[Any] | None = None,
+        continuous_num_candidates: int = 64,
     ) -> None:
         """Initialize the LPPPolicy.
 
@@ -41,6 +45,9 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self.probs = probs
         self.map_choices = map_choices
         self.normalize_plp_actions = normalize_plp_actions
+        self.action_mode = action_mode
+        self.action_space = action_space
+        self.continuous_num_candidates = max(1, int(continuous_num_candidates))
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
         self.map_program = ""
@@ -59,6 +66,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         action : _ActType
             Selected action.
         """
+        if self.action_mode == "continuous":
+            return cast(_ActType, self._select_continuous_action(obs))
         action_probs = self.get_action_probs(obs).flatten()
         if self.map_choices:
             idx = int(np.argmax(action_probs).squeeze())
@@ -83,6 +92,10 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         hash : Any
             Hashable representation of the observation.
         """
+        if self.action_mode == "continuous":
+            if isinstance(obs, np.ndarray):
+                return ("np", str(obs.dtype), tuple(obs.shape), obs.tobytes())
+            return ("repr", repr(obs))
         if not hasattr(obs, "__iter__"):
             raise NotImplementedError(
                 "hash_obs assumes obs is iterable. "
@@ -103,6 +116,11 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         action_probs : np.ndarray
             Array of action probabilities.
         """
+        if self.action_mode == "continuous":
+            raise NotImplementedError(
+                "get_action_probs is grid-specific. "
+                "Use get_continuous_action_score/get_action_prob for continuous mode."
+            )
         hashed_obs = self.hash_obs(obs)
 
         if hashed_obs in self._action_prob_cache:
@@ -173,6 +191,57 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
                     suggestions.append(action)  # type: ignore[arg-type]
 
         return cast(list[_ActType], suggestions)  # cast to match the return type
+
+    def get_action_prob(self, obs: _ObsType, action: _ActType) -> float:
+        """Return action probability proxy used by risk computation."""
+        if self.action_mode != "continuous":
+            action_probs = self.get_action_probs(obs)
+            return float(action_probs[cast(Any, action)])
+        return self._continuous_action_score(obs, action)
+
+    def _continuous_action_score(self, obs: _ObsType, action: _ActType) -> float:
+        """Score a continuous action by PLP posterior mass that accepts it."""
+        score = 0.0
+        for plp, prob in zip(self.plps, self.probs):
+            try:
+                if plp(obs, action):
+                    score += float(prob)
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+        return max(1e-12, min(1.0, score))
+
+    def _select_continuous_action(self, obs: _ObsType) -> Any:
+        """Pick a continuous action by scoring sampled candidates."""
+        if self.action_space is None:
+            raise ValueError("action_space is required for continuous LPPPolicy.")
+
+        candidates: list[Any] = []
+        if isinstance(self.action_space, Box):
+            # Include center action plus random samples from the box.
+            center = ((self.action_space.low + self.action_space.high) / 2.0).astype(
+                self.action_space.dtype
+            )
+            candidates.append(center)
+        for _ in range(self.continuous_num_candidates):
+            candidates.append(self.action_space.sample())
+
+        if not candidates:
+            raise RuntimeError("No action candidates generated for continuous policy.")
+
+        scores = np.array(
+            [self._continuous_action_score(obs, cast(_ActType, a)) for a in candidates],
+            dtype=np.float64,
+        )
+        if self.map_choices:
+            best_idx = int(np.argmax(scores))
+            return candidates[best_idx]
+        denom = float(scores.sum())
+        if denom <= 0.0:
+            probs = np.full(len(candidates), 1.0 / len(candidates), dtype=np.float64)
+        else:
+            probs = scores / denom
+        idx = int(self.rng.choice(len(candidates), p=probs))
+        return candidates[idx]
 
     def set_map_program(self, program: str, posterior: float) -> None:
         """Set the MAP program and its posterior value after it's found."""
