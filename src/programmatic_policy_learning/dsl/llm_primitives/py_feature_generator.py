@@ -455,15 +455,7 @@ class PyFeatureGenerator:
                         start_index=len(all_programs) + 1,
                     )
                 prompt = f"{prompt}\n\nSEED: {_seed}\n"
-                if self.llm_client is not None:
-                    prompt_label = Path(current_prompt_path).stem.replace("/", "-")
-                    env_label = (env_name or "unknown").replace("/", "-")
-                    prompt_path_out = (
-                        self.output_path
-                        / f"prompt_batch_{batch_idx + 1}_{prompt_label}_{env_label}.txt"
-                    )
-                    prompt_path_out.write_text(prompt, encoding="utf-8")
-                input()
+                # logging.info(prompt)
                 template_payload = self.query_llm(
                     prompt,
                     max_attempts=max_attempts,
@@ -476,9 +468,10 @@ class PyFeatureGenerator:
                     f"template_payload_{prompt_label}_{env_label}.json",
                     template_payload,
                 )
-                expanded_payload = self.expand_template_payload(
-                    template_payload, env_name, start_index=1
-                )
+                # expanded_payload = self.expand_template_payload(
+                #     template_payload, env_name, start_index=1
+                # )
+                expanded_payload = template_payload
                 feature_programs = self.parse_feature_programs(expanded_payload)
                 # all_descriptions.extend(self._extract_descriptions(template_payload))
                 all_programs.extend(feature_programs)
