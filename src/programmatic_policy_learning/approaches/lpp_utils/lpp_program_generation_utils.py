@@ -301,6 +301,7 @@ def get_program_set(
             _seed=seed,
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
             loading=program_generation.get("loading"),
+            action_mode=str((env_specs or {}).get("action_mode", "discrete")),
         )
         dsl_fns = get_dsl_functions_dict()
         dsl_fns.update(

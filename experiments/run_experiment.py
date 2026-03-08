@@ -12,7 +12,6 @@ from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 _MODE_TO_ID = {
@@ -20,6 +19,7 @@ _MODE_TO_ID = {
     "continuous": 2,
     "hybrid": 3,
 }
+
 
 def _infer_mode_from_provider(
     provider: str | None, *, kind: str, configured: str | None
@@ -82,7 +82,6 @@ def instantiate_approach(
             "observation_mode_id": _MODE_TO_ID[observation_mode],
             "action_mode_id": _MODE_TO_ID[action_mode],
         }
-
 
         expert = hydra.utils.instantiate(
             expert_cfg,

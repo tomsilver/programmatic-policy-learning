@@ -269,7 +269,7 @@ def sample_transition_example(
 def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
-    _examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    _examples: list[tuple[ObsT, ActT]] | None,
 ) -> list[dict[str, Any]]:
     """Log collisions where identical feature vectors have different labels."""
     if y is None:
@@ -297,7 +297,7 @@ def log_feature_collisions(
 
     if collisions:
         logging.info("Feature collisions found: %d", len(collisions))
-        for prev_idx, cur_idx, prev_label in collisions:
+        for prev_idx, cur_idx, prev_label in collisions[:10]:
             logging.info(
                 "Collision: row %d(label=%d) vs row %d(label=%d)",
                 prev_idx,

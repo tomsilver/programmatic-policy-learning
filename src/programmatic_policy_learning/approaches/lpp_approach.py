@@ -240,8 +240,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _handle_collision_feedback(
         self,
         collision_groups: list[dict[str, Any]],
-        examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+        examples: list[tuple[_ObsType, _ActType]] | None,
     ) -> str | None:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "discrete":
+            logging.info(
+                "Collision repair prompt generation is grid-specific; "
+                "skipping for action_mode=%s.",
+                action_mode,
+            )
+            return None
         if not collision_groups or examples is None:
             return None
         ranked_groups = sorted(
@@ -295,7 +303,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_bool: list[bool],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
         *,
         dt_max_depth: int | None,
@@ -388,7 +396,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _compute_policy_risk_on_demos(
         self,
         policy: LPPPolicy,
-        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations: Trajectory[_ObsType, _ActType],
         *,
         eps: float = 1e-12,
     ) -> float:
@@ -419,7 +427,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         *,
         train_demo_ids: tuple[int, ...],
         val_demo_ids: tuple[int, ...],
-        demo_dict_train: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        demo_dict_train: dict[int, Trajectory[_ObsType, _ActType]],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         dsl_functions: dict[str, Any],
@@ -430,7 +438,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Any,
         np.ndarray,
         list[bool],
-        list[tuple[np.ndarray, tuple[int, int]]] | None,
+        list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
     ]:
@@ -543,8 +551,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_bool: list[bool],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
-        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_train: Trajectory[_ObsType, _ActType],
+        demonstrations_val: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
     ) -> dict[str, Any]:
         """Select hyperparameters via validation risk.
@@ -609,7 +617,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         *,
         train_demo_ids: tuple[int, ...],
         val_demo_ids: tuple[int, ...],
-        demo_dict_val: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        demo_dict_val: dict[int, Trajectory[_ObsType, _ActType]],
         programs_sa: list[StateActionProgram],
         dsl_functions: dict[str, Any],
         data_imbalance_cfg: dict[str, Any] | None,
@@ -617,19 +625,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         X_train: Any,
         y_train: np.ndarray,
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
-        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_train: Trajectory[_ObsType, _ActType],
+        demonstrations_val: Trajectory[_ObsType, _ActType],
     ) -> tuple[
         Any,
         list[bool],
         list[StateActionProgram],
         list[float] | None,
-        Trajectory[np.ndarray, tuple[int, int]],
+        Trajectory[_ObsType, _ActType],
     ]:
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if len(train_demo_ids) == 0:
             raise ValueError("No demonstrations available for final retraining.")
-        demonstrations_final = Trajectory[np.ndarray, tuple[int, int]](
+        demonstrations_final = Trajectory[_ObsType, _ActType](
             steps=list(demonstrations_train.steps) + list(demonstrations_val.steps)
         )
 

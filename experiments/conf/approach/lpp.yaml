@@ -13,7 +13,7 @@ normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: true
+collision_feedback_enabled: false
 collision_feedback_enc: "enc_2"
 collision_template_feedback: true #false: means the feedback is just features/no templates
 collision_feedback_max_new_features: 5000

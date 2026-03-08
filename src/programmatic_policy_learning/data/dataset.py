@@ -45,7 +45,8 @@ ActT = TypeVar("ActT")
 
 
 def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
-    """Convert sampled array back to the demonstrated action's container type."""
+    """Convert sampled array back to the demonstrated action's container
+    type."""
     if isinstance(template, np.ndarray):
         return action_arr.astype(template.dtype, copy=False)
     if isinstance(template, tuple):
@@ -280,9 +281,7 @@ def extract_examples_from_demonstration(
     *,
     data_imbalance: dict[str, Any] | None = None,
     action_mode: str = "discrete",
-) -> tuple[
-    list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]
-]:
+) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
 
@@ -597,9 +596,7 @@ def run_all_programs_on_demonstrations(
     split_tag: str | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
-) -> tuple[
-    Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None
-]:
+) -> tuple[Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     examples_all: list[tuple[ObsT, ActT]] = []
