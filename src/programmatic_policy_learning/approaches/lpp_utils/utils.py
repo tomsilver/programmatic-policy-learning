@@ -13,7 +13,7 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Any, Callable, Generator, TypeVar
+from typing import Any, Callable, Generator, TypeVar, cast
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -32,6 +32,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_example
 
 GymnasiumEnvType: type | None = None
 GymnasiumRecordVideoType: type | None = None
@@ -399,19 +400,19 @@ def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
 
 
 def _format_one_example(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example for prompt text."""
+    s, (r, c) = require_grid_example(s, a, context="_format_one_example")
     rows = []
-    for r in range(s.shape[0]):
-        row = ", ".join(repr(str(x)) for x in s[r])
+    for rr in range(s.shape[0]):
+        row = ", ".join(repr(str(x)) for x in s[rr])
         rows.append(f"[{row}]")
     grid = "\n".join(f"  {row}" for row in rows)
-    r, c = int(a[0]), int(a[1])
     cell = s[r, c] if 0 <= r < s.shape[0] and 0 <= c < s.shape[1] else "OOB"
     return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
 
@@ -425,18 +426,18 @@ def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
 
 
 def _format_one_example_ascii(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
     symbol_map: dict[str, str],
 ) -> str:
     """Format one labeled (state, action) example using ASCII token codes."""
+    s, (r, c) = require_grid_example(s, a, context="_format_one_example_ascii")
     h, w = s.shape[0], s.shape[1]
     code_width = max((len(code) for code in symbol_map.values()), default=1)
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s[r, c] if in_bounds else "OOB"
     rows = []
@@ -455,20 +456,20 @@ def _format_one_example_ascii(
 
 
 def _format_one_example_coords(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example using coordinate lists."""
+    s, (r, c) = require_grid_example(s, a, context="_format_one_example_coords")
     s_str = s.astype(str)
     h, w = s_str.shape[0], s_str.shape[1]
     tokens, counts = np.unique(s_str, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_str[r, c] if in_bounds else "OOB"
 
@@ -491,8 +492,10 @@ PATCH_K = 7
 DIFF_LIMIT = 10
 
 
-def _maybe_map_ascii_tokens(s: np.ndarray, symbol_map: dict[str, str]) -> np.ndarray:
+def _maybe_map_ascii_tokens(s: Any, symbol_map: dict[str, str]) -> Any:
     """Map ASCII tokens to canonical names if symbol_map is provided."""
+    if not isinstance(s, np.ndarray):
+        raise ValueError("Expected s to be a numpy array.")
     s_str = s.astype(str)
     if not symbol_map:
         return s_str
@@ -688,7 +691,7 @@ def _diag_path_summary(
 def _select_diverse_examples(
     pos_indices: list[int],
     neg_indices: list[int],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     symbol_map: dict[str, str],
     max_pos: int = 2,
     max_neg: int = 3,
@@ -753,7 +756,7 @@ def _select_diverse_examples(
 def _build_diff_hints(
     pos_idx: int,
     neg_idx: int,
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     symbol_map: dict[str, str],
 ) -> str:
     s_pos, a_pos = examples[pos_idx]
@@ -764,7 +767,8 @@ def _build_diff_hints(
     star_pos = _find_token_positions(s_pos_tok, "star")
     agent_anchor = agent_pos[0] if agent_pos else None
     star_anchor = star_pos[0] if star_pos else None
-    action_pos = (int(a_pos[0]), int(a_pos[1]))
+    a_pos_idx = cast(Any, a_pos)
+    action_pos = (int(a_pos_idx[0]), int(a_pos_idx[1]))
     agent_minus_star = None
     if agent_anchor and star_anchor:
         agent_minus_star = (
@@ -787,8 +791,8 @@ def _build_diff_hints(
 
 
 def _format_one_example_enc2(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
@@ -797,13 +801,13 @@ def _format_one_example_enc2(
     patch_k: int = PATCH_K,
 ) -> str:
     """Format one labeled (state, action) example using enc_2."""
+    s, (r, c) = require_grid_example(s, a, context="_format_one_example_enc2")
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     h, w = s_tok.shape[0], s_tok.shape[1]
     tokens, counts = np.unique(s_tok, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_tok[r, c] if in_bounds else "OOB"
 
@@ -884,8 +888,8 @@ def _format_one_example_enc2(
 
 
 def _format_one_example_enc2_delta(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
@@ -893,12 +897,12 @@ def _format_one_example_enc2_delta(
     small_list_threshold: int = SMALL_LIST_THRESHOLD,
 ) -> str:
     """Compact delta-only summary for enc_2 collision evidence."""
+    s, (r, c) = require_grid_example(s, a, context="_format_one_example_enc2_delta")
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     tokens, counts = np.unique(s_tok, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < s_tok.shape[0] and 0 <= c < s_tok.shape[1]
     cell = s_tok[r, c] if in_bounds else "OOB"
 
@@ -935,7 +939,7 @@ def _format_one_example_enc2_delta(
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     *,
     env_name: str | None = None,
     existing_feature_summary: str | None = None,  # pylint: disable=unused-argument
@@ -1281,7 +1285,7 @@ def _safe_eval_bool(expr: str, locals_map: dict[str, bool]) -> bool:
 
 def build_dnf_failure_payload(
     policy_str: str,
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     y: list[bool] | np.ndarray,
     feature_fns: dict[str, Callable[[Any, Any], bool]],
     max_bad_clauses: int = 5,
@@ -1399,7 +1403,7 @@ def build_dnf_failure_payload(
 
 def build_dnf_failure_prompt(
     payload: dict[str, Any],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     max_examples: int = 5,
 ) -> str:
     """Create a prompt for repairing a DNF policy given failure payload."""

@@ -4,7 +4,7 @@ import inspect
 import logging
 import multiprocessing
 from importlib import import_module
-from typing import Any
+from typing import Any, TypeVar
 
 import cloudpickle
 import numpy as np
@@ -14,6 +14,10 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_example
+
+_ObsType = TypeVar("_ObsType")
+_ActType = TypeVar("_ActType")
 
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -54,7 +58,7 @@ def likelihood_worker_init(
 
 
 def _compute_likelihood_worker(
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demonstrations: Trajectory[_ObsType, _ActType],
 ) -> list[float]:
     """Compute log-likelihoods for all precompiled PLPs on the given
     demonstrations."""
@@ -70,38 +74,11 @@ def _compute_likelihood_worker(
         beta = 2.0  # >1 penalizes permissiveness more strongly
 
         for obs, action in demonstrations.steps:
-            is_grid = (
-                isinstance(obs, np.ndarray)
-                and obs.ndim >= 2
-                and isinstance(action, tuple)
-                and len(action) == 2
-            )
-            if is_grid:
-                rows, cols = obs.shape[:2]
-
-                size = 0
-                for r in range(rows):
-                    for c in range(cols):
-                        if plp(obs, (r, c)):
-                            size += 1
-
-                N = rows * cols  # total actions
-
-                # Numerical safety (avoid log(0))
-                size = max(0, min(size, N))
-
-                expert_allowed = plp(obs, action)
-                # Likelihood model:
-                # - If expert action is allowed: (1-eps) * Uniform(allowed set)
-                # - Else: eps * Uniform(disallowed set)
-                if expert_allowed:
-                    # ensure size>=1
-                    size_eff = max(1, size)
-                    ll += np.log(1.0 - eps) - beta * np.log(size_eff)
-                else:
-                    disallowed = max(1, N - size)
-                    ll += np.log(eps) - np.log(disallowed)
-            else:
+            try:
+                obs_grid, action_grid = require_grid_example(
+                    obs, action, context="_compute_likelihood_worker"
+                )
+            except TypeError:
                 # Continuous/non-grid fallback:
                 # evaluate only whether PLP accepts expert action.
                 expert_allowed = plp(obs, action)
@@ -109,6 +86,32 @@ def _compute_likelihood_worker(
                     ll += np.log(1.0 - eps)
                 else:
                     ll += np.log(eps)
+                continue
+
+            rows, cols = obs_grid.shape[:2]
+
+            size = 0
+            for r in range(rows):
+                for c in range(cols):
+                    if plp(obs_grid, (r, c)):
+                        size += 1
+
+            N = rows * cols  # total actions
+
+            # Numerical safety (avoid log(0))
+            size = max(0, min(size, N))
+
+            expert_allowed = plp(obs_grid, action_grid)
+            # Likelihood model:
+            # - If expert action is allowed: (1-eps) * Uniform(allowed set)
+            # - Else: eps * Uniform(disallowed set)
+            if expert_allowed:
+                # ensure size>=1
+                size_eff = max(1, size)
+                ll += np.log(1.0 - eps) - beta * np.log(size_eff)
+            else:
+                disallowed = max(1, N - size)
+                ll += np.log(eps) - np.log(disallowed)
         results.append(ll)
 
     # for plp in _WORKER_PLPS: #PREVIOUS APPROACH
@@ -135,7 +138,7 @@ def _compute_likelihood_worker(
 
 def compute_likelihood_plps(
     plps: list[StateActionProgram],
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demonstrations: Trajectory[_ObsType, _ActType],
     dsl_functions: dict[str, Any],
     plp_interval: int = 100,
     num_workers: int | None = None,

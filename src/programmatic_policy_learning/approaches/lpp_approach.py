@@ -274,7 +274,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
             neg_indices=best_group["neg"],
-            examples=cast(list[tuple[np.ndarray, tuple[int, int]]], examples),
+            # examples=cast(list[tuple[np.ndarray, tuple[int, int]]], examples),
+            examples=examples,
             env_name=self.base_class_name,
             existing_feature_summary=None,
             max_per_label=5,
@@ -353,7 +354,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         likelihoods = compute_likelihood_plps(
             plps,
-            cast(Trajectory[np.ndarray, tuple[int, int]], demonstrations),
+            demonstrations,
             dsl_functions,
         )
         logging.info("LIKELIHOODS: %s", likelihoods)

@@ -27,6 +27,7 @@ from programmatic_policy_learning.utils.cache_utils import (
     load_single_cache_output,
     manage_cache,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_example
 
 
 def allowed_cpus() -> int:
@@ -184,19 +185,6 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
-def _require_grid_state_action(
-    state: Any, action: Any, *, context: str
-) -> tuple[np.ndarray, Coord]:
-    """Validate grid-style (state, action) and return narrowed types."""
-    if not isinstance(state, np.ndarray) or not (
-        isinstance(action, tuple) and len(action) == 2
-    ):
-        raise TypeError(
-            f"{context} expects grid-style (np.ndarray state, (row, col) action)."
-        )
-    return state, action
-
-
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[ObsT, ActT],
     *,
@@ -243,7 +231,7 @@ def extract_examples_from_demonstration_item(
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
-    state_grid, action_grid = _require_grid_state_action(
+    state_grid, action_grid = require_grid_example(
         state,
         action,
         context="Discrete negative expansion",
