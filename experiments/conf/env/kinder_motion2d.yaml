@@ -1,4 +1,4 @@
-num_passages: 1
+num_passages: 0
 
 make_kwargs:
   base_name: "Motion2D-p${..num_passages}"
@@ -11,3 +11,6 @@ description: "KinDER Motion2D-p${.num_passages}. Navigate robot to target region
 
 expert:
   _target_: programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach
+
+observation_mode: continuous
+action_mode: continuous

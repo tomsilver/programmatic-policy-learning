@@ -11,7 +11,7 @@ import random
 from collections import defaultdict
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 import cloudpickle
 import numpy as np
@@ -40,6 +40,8 @@ def allowed_cpus() -> int:
 
 
 Coord = tuple[int, int]
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 
 
 def sample_negative_actions_stratified(
@@ -139,12 +141,13 @@ def sample_negative_actions_stratified(
 
 
 def extract_examples_from_demonstration_item(
-    demonstration_item: tuple[np.ndarray, tuple[int, int]],
+    demonstration_item: tuple[ObsT, ActT],
     *,
     data_imbalance: dict[str, Any] | None = None,
+    action_mode: str = "discrete",
 ) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]],
-    list[tuple[np.ndarray, tuple[int, int]]],
+    list[tuple[ObsT, ActT]],
+    list[tuple[ObsT, ActT]],
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
@@ -163,10 +166,22 @@ def extract_examples_from_demonstration_item(
     """
     state, action = demonstration_item
 
-    positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = [(state, action)]
-    negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
+    positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
+    negative_examples: list[tuple[ObsT, ActT]] = []
+
+    if action_mode == "continuous":
+        return positive_examples, negative_examples
+    if action_mode != "discrete":
+        raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
     if data_imbalance and data_imbalance.get("enabled", False):
+        if not isinstance(state, np.ndarray) or not (
+            isinstance(action, tuple) and len(action) == 2
+        ):
+            raise TypeError(
+                "data_imbalance sampling currently requires grid-style "
+                "(np.ndarray state, (row, col) action)."
+            )
         method = data_imbalance.get("method", "")
         if method == "downsample_majority":
             k = int(data_imbalance.get("K", 10))
@@ -181,25 +196,33 @@ def extract_examples_from_demonstration_item(
                 include_nearby=8,
             )
             for rc in neg_coords:
-                negative_examples.append((state, rc))
+                negative_examples.append((state, rc))  # type: ignore[arg-type]
         else:
             raise ValueError(f"Unknown data_imbalance.method: {method}")
     else:
+        if not isinstance(state, np.ndarray) or not (
+            isinstance(action, tuple) and len(action) == 2
+        ):
+            raise TypeError(
+                "Grid-style negative expansion expects "
+                "(np.ndarray state, (row, col) action)."
+            )
         for r in range(state.shape[0]):
             for c in range(state.shape[1]):
                 if (r, c) == action:
                     continue
-                negative_examples.append((state, (r, c)))
+                negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
     return positive_examples, negative_examples
 
 
 def extract_examples_from_demonstration(
-    demonstration: Trajectory[np.ndarray, tuple[int, int]],
+    demonstration: Trajectory[ObsT, ActT],
     *,
     data_imbalance: dict[str, Any] | None = None,
+    action_mode: str = "discrete",
 ) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
+    list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]
 ]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
@@ -216,13 +239,15 @@ def extract_examples_from_demonstration(
     negative_examples : [(np.ndarray, (int, int))]
         A list with negative examples of state, actions.
     """
-    positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
-    negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
+    positive_examples: list[tuple[ObsT, ActT]] = []
+    negative_examples: list[tuple[ObsT, ActT]] = []
 
     for demonstration_item in demonstration.steps:
         demo_positive_examples, demo_negative_examples = (
             extract_examples_from_demonstration_item(
-                demonstration_item, data_imbalance=data_imbalance
+                demonstration_item,
+                data_imbalance=data_imbalance,
+                action_mode=action_mode,
             )
         )
         positive_examples.extend(demo_positive_examples)
@@ -322,7 +347,7 @@ def worker_init(
     ]
 
 
-def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
+def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
     """Run all precompiled programs on one (state, action) example.
 
     Uses the DSL and program_batch already set up by worker_init.
@@ -348,7 +373,7 @@ def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
     programs: list[StateActionProgram] | list[str],
-    demo_traj: Trajectory[np.ndarray, tuple[int, int]],
+    demo_traj: Trajectory[ObsT, ActT],
     dsl_functions: dict,
     *,
     data_imbalance: dict[str, Any] | None = None,
@@ -358,12 +383,14 @@ def run_all_programs_on_single_demonstration(
     split_tag: str | None = None,  # pylint: disable=unused-argument
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
-        demo_traj, data_imbalance=data_imbalance
+        demo_traj,
+        data_imbalance=data_imbalance,
+        action_mode=action_mode,
     )
 
     fn_inputs = positive_examples + negative_examples
@@ -415,7 +442,7 @@ def run_all_programs_on_single_demonstration(
 
 def run_programs_on_examples(
     programs: list[StateActionProgram] | list[str],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     dsl_functions: dict,
     *,
     program_interval: int = 1000,
@@ -500,7 +527,7 @@ def run_all_programs_on_demonstrations(
     base_class_name: str,
     demo_numbers: tuple[int, ...],
     programs: list,
-    demo_dict: dict[int, Trajectory],
+    demo_dict: dict[int, Trajectory[ObsT, ActT]],
     dsl_functions: dict,
     *,
     data_imbalance: dict[str, Any] | None = None,
@@ -509,12 +536,13 @@ def run_all_programs_on_demonstrations(
     demos_included: Sequence[int] | None = None,
     split_tag: str | None = None,
     seed: int | None = None,
+    action_mode: str = "discrete",
 ) -> tuple[
-    Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
+    Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None
 ]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
-    examples_all: list[tuple[np.ndarray, tuple[int, int]]] = []
+    examples_all: list[tuple[ObsT, ActT]] = []
     for demo_number in demo_numbers:
         demo_X, demo_y, demo_examples = run_all_programs_on_single_demonstration(
             base_class_name,
@@ -528,6 +556,7 @@ def run_all_programs_on_demonstrations(
             demos_included=demos_included,
             split_tag=split_tag,
             seed=seed,
+            action_mode=action_mode,
         )
 
         if X is None:

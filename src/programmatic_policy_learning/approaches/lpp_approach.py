@@ -434,6 +434,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         list[StateActionProgram],
         list[float] | None,
     ]:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         val_split_tag = (
             "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
@@ -454,6 +455,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "__role_train_core"
             ),
             seed=self.seed_num,
+            action_mode=action_mode,
         )
         if X is None or y is None:
             raise ValueError(
@@ -624,6 +626,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         list[float] | None,
         Trajectory[np.ndarray, tuple[int, int]],
     ]:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if len(train_demo_ids) == 0:
             raise ValueError("No demonstrations available for final retraining.")
         demonstrations_final = Trajectory[np.ndarray, tuple[int, int]](
@@ -650,6 +653,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     "__role_val"
                 ),
                 seed=self.seed_num,
+                action_mode=action_mode,
             )
             if X_val is None or y_val is None:
                 raise ValueError(
@@ -703,6 +707,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             split_strategy=self.split_strategy,
             preserve_ordering=self.preserve_ordering,
             data_imbalance_cfg=data_imbalance_cfg,
+            action_mode=str(self.env_specs.get("action_mode", "discrete")),
         )
         (
             programs_sa,

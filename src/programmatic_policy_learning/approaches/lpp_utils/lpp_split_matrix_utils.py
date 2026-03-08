@@ -3,7 +3,7 @@
 import hashlib
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 
@@ -13,7 +13,8 @@ from programmatic_policy_learning.data.dataset import (
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
-
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 
 def split_and_collect_demonstrations(
     *,
@@ -26,13 +27,14 @@ def split_and_collect_demonstrations(
     split_strategy: str,
     preserve_ordering: bool,
     data_imbalance_cfg: dict[str, Any] | None,
+    action_mode: str = "discrete",
 ) -> tuple[
     tuple[int, ...],
     tuple[int, ...],
-    Trajectory[np.ndarray, tuple[int, int]],
-    Trajectory[np.ndarray, tuple[int, int]],
-    dict[int, Trajectory[np.ndarray, tuple[int, int]]],
-    dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+    Trajectory[ObsT, ActT],
+    Trajectory[ObsT, ActT],
+    dict[int, Trajectory[ObsT, ActT]],
+    dict[int, Trajectory[ObsT, ActT]],
 ]:
     """Split demo IDs, collect train/val demonstrations, and log split
     stats."""
@@ -53,8 +55,8 @@ def split_and_collect_demonstrations(
         expert,
         demo_numbers=train_demo_ids,  # type: ignore[arg-type]
     )
-    demonstrations_val = Trajectory[np.ndarray, tuple[int, int]](steps=[])
-    demo_dict_val: dict[int, Trajectory[np.ndarray, tuple[int, int]]] = {}
+    demonstrations_val = Trajectory[ObsT, ActT](steps=[])
+    demo_dict_val: dict[int, Trajectory[ObsT, ActT]] = {}
     demo_dict_all = dict(demo_dict_train)
     if val_demo_ids:
         demonstrations_val, demo_dict_val = get_demonstrations(
@@ -69,11 +71,13 @@ def split_and_collect_demonstrations(
         train_demo_ids,
         demo_dict_all,
         data_imbalance=data_imbalance_cfg,
+        action_mode=action_mode,
     )
     val_states, val_expanded = count_states_and_expanded_examples(
         val_demo_ids,
         demo_dict_all,
         data_imbalance=data_imbalance_cfg,
+        action_mode=action_mode,
     )
     logging.info(
         "Split stats | train: demos=%d states=%d expanded_examples=%d",
@@ -159,6 +163,7 @@ def count_states_and_expanded_examples(
     demo_dict: dict[int, Any],
     *,
     data_imbalance: dict[str, Any] | None = None,
+    action_mode: str = "discrete",
 ) -> tuple[int, int]:
     """Count states and expanded examples for a set of demo ids."""
     num_states = 0
@@ -167,7 +172,9 @@ def count_states_and_expanded_examples(
         traj = demo_dict[int(demo_id)]
         num_states += len(traj.steps)
         pos, neg = extract_examples_from_demonstration(
-            traj, data_imbalance=data_imbalance
+            traj,
+            data_imbalance=data_imbalance,
+            action_mode=action_mode,
         )
         expanded += len(pos) + len(neg)
     return num_states, expanded
