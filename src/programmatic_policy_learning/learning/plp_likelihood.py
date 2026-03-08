@@ -70,34 +70,45 @@ def _compute_likelihood_worker(
         beta = 2.0  # >1 penalizes permissiveness more strongly
 
         for obs, action in demonstrations.steps:
-            rows, cols = obs.shape[:2]
+            is_grid = (
+                isinstance(obs, np.ndarray)
+                and obs.ndim >= 2
+                and isinstance(action, tuple)
+                and len(action) == 2
+            )
+            if is_grid:
+                rows, cols = obs.shape[:2]
 
-            size = 0
-            for r in range(rows):
-                for c in range(cols):
-                    if plp(obs, (r, c)):
-                        size += 1
+                size = 0
+                for r in range(rows):
+                    for c in range(cols):
+                        if plp(obs, (r, c)):
+                            size += 1
 
-            N = rows * cols  # total actions
+                N = rows * cols  # total actions
 
-            # Numerical safety (avoid log(0))
-            size = max(0, min(size, N))
+                # Numerical safety (avoid log(0))
+                size = max(0, min(size, N))
 
-            # if size == 0:
-            #     ll += -1e6  # or just continue; but penalize hard
-            #     continue
-
-            expert_allowed = plp(obs, action)
-            # Likelihood model:
-            # - If expert action is allowed: (1-eps) * Uniform(allowed set)
-            # - Else: eps * Uniform(disallowed set)
-            if expert_allowed:
-                # ensure size>=1
-                size_eff = max(1, size)
-                ll += np.log(1.0 - eps) - beta * np.log(size_eff)
+                expert_allowed = plp(obs, action)
+                # Likelihood model:
+                # - If expert action is allowed: (1-eps) * Uniform(allowed set)
+                # - Else: eps * Uniform(disallowed set)
+                if expert_allowed:
+                    # ensure size>=1
+                    size_eff = max(1, size)
+                    ll += np.log(1.0 - eps) - beta * np.log(size_eff)
+                else:
+                    disallowed = max(1, N - size)
+                    ll += np.log(eps) - np.log(disallowed)
             else:
-                disallowed = max(1, N - size)
-                ll += np.log(eps) - np.log(disallowed)
+                # Continuous/non-grid fallback:
+                # evaluate only whether PLP accepts expert action.
+                expert_allowed = plp(obs, action)
+                if expert_allowed:
+                    ll += np.log(1.0 - eps)
+                else:
+                    ll += np.log(eps)
         results.append(ll)
 
     # for plp in _WORKER_PLPS: #PREVIOUS APPROACH
