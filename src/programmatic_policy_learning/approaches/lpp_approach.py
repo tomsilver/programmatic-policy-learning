@@ -385,6 +385,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 top_particles,
                 top_particle_probs,
                 normalize_plp_actions=self.normalize_plp_actions,
+                action_mode=str(self.env_specs.get("action_mode", "discrete")),
+                action_space=cast(Any, self._action_space),
             )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
@@ -395,6 +397,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             [StateActionProgram("False")],
             [1.0],
             normalize_plp_actions=self.normalize_plp_actions,
+            action_mode=str(self.env_specs.get("action_mode", "discrete")),
+            action_space=cast(Any, self._action_space),
         )
 
     def _compute_policy_risk_on_demos(
@@ -409,8 +413,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return float("inf")
         losses: list[float] = []
         for obs, action in demonstrations.steps:
-            action_probs = policy.get_action_probs(obs)
-            prob = float(action_probs[cast(Any, action)])
+            prob = float(policy.get_action_prob(obs, action))
             losses.append(-float(np.log(max(prob, eps))))
         return float(np.mean(losses))
 
