@@ -231,12 +231,12 @@ def extract_examples_from_demonstration_item(
         if k < 0:
             raise ValueError("data_imbalance.K must be >= 0")
         noise_scale = float((data_imbalance or {}).get("continuous_noise_scale", 0.2))
-        rng = np.random.default_rng(0)
+        rng_np = np.random.default_rng(0)
         for neg_action in sample_negative_actions_continuous(
             action,
             K=k,
             noise_scale=noise_scale,
-            rng=rng,
+            rng=rng_np,
         ):
             negative_examples.append((state, neg_action))
         return positive_examples, negative_examples
@@ -255,12 +255,12 @@ def extract_examples_from_demonstration_item(
             k = int(data_imbalance.get("K", 10))
             if k < 0:
                 raise ValueError("data_imbalance.K must be >= 0")
-            rng = random.Random(0)  # or pass seed from config
+            rng_py = random.Random(0)  # or pass seed from config
             neg_coords = sample_negative_actions_stratified(
                 state=state_grid,
                 expert_action=action_grid,
                 K=k,
-                rng=rng,
+                rng=rng_py,
                 include_nearby=8,
             )
             for rc in neg_coords:

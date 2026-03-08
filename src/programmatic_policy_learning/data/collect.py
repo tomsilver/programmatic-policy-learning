@@ -1,7 +1,6 @@
 """Demo collection utilities."""
 
 import logging
-from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import numpy as np
@@ -12,33 +11,6 @@ from programmatic_policy_learning.data.demo_types import Trajectory
 EnvFactory = Callable[[], Any]
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
-
-
-# def _maybe_frame(raw: Any) -> np.ndarray | None:
-#     """Normalize renderer output into a single frame when possible."""
-#     if raw is None:
-#         return None
-#     if isinstance(raw, list):
-#         if not raw:
-#             return None
-#         raw = raw[-1]
-#     frame = np.asarray(raw)
-#     if frame.ndim != 3:
-#         return None
-#     return frame
-
-
-# def _save_video(frames: list[np.ndarray], path: str) -> None:
-#     """Save rollout frames to an mp4 file."""
-#     clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
-#     try:
-#         from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
-#     except Exception as exc:  # pylint: disable=broad-exception-caught
-#         logging.warning("Video saving skipped: moviepy unavailable (%s)", exc)
-#         return
-#     clip = ImageSequenceClip(clean, fps=20)
-#     clip.write_videofile(path, codec="libx264", logger=None)
-#     logging.info("Demo video saved: %s (%d frames)", path, len(clean))
 
 
 def collect_demo(
@@ -52,20 +24,18 @@ def collect_demo(
 
     env = env_factory(env_num)  # type: ignore
 
-    # (because not all the providers have this 'env_num' attribute)
-    reset_out = env.reset(seed=env_num)
-    assert (
-        isinstance(reset_out, tuple) and len(reset_out) == 2
-    ), f"Expected env.reset() to return (obs, info), got {reset_out}"
-    obs, info = reset_out
+    # Support both gymnasium reset(seed=...) and older reset() signatures.
+    try:
+        reset_out = env.reset(seed=env_num)
+    except TypeError:
+        reset_out = env.reset()
+    if isinstance(reset_out, tuple) and len(reset_out) == 2:
+        obs, info = reset_out
+    else:
+        obs, info = reset_out, {}
 
     obs_list: list[ObsT] = []
     act_list: list[ActT] = []
-    # frames: list[np.ndarray] = []
-
-    # first_frame = _maybe_frame(env.render() if hasattr(env, "render") else None)
-    # if first_frame is not None:
-    #     frames.append(first_frame)
 
     t = 0
     expert.reset(obs, info)
@@ -82,9 +52,6 @@ def collect_demo(
             terminated, truncated = done, False
         else:
             obs, reward, terminated, truncated, info = step_out
-        # frame = _maybe_frame(env.render() if hasattr(env, "render") else None)
-        # if frame is not None:
-        #     frames.append(frame)
 
         t += 1
         expert.update(obs, reward, terminated, info)
@@ -96,10 +63,6 @@ def collect_demo(
             break
 
     steps = list(zip(obs_list, act_list))
-    # if frames:
-    #     video_dir = Path("videos")
-    #     video_dir.mkdir(exist_ok=True)
-    #     _save_video(frames, str(video_dir / f"collect_demo_{env_num}.mp4"))
 
     return Trajectory(steps=steps)
 

@@ -127,6 +127,7 @@ def compute_likelihood_plps(
     demonstrations: Trajectory[np.ndarray, tuple[int, int]],
     dsl_functions: dict[str, Any],
     plp_interval: int = 100,
+    num_workers: int | None = None,
 ) -> list[float]:
     """Compute log-likelihoods for PLPs given demonstrations.
 
@@ -152,7 +153,7 @@ def compute_likelihood_plps(
             multiprocessing.get_context()
         )  # macOS/Windows fallback (spawn)
 
-    num_workers = max(1, multiprocessing.cpu_count())
+    worker_count = max(1, num_workers or multiprocessing.cpu_count())
     likelihoods_all: list[float] = []
 
     for p_start in range(0, num_plps, plp_interval):
@@ -160,7 +161,7 @@ def compute_likelihood_plps(
         plp_batch = plp_strs[p_start:p_end]
 
         with ctx.Pool(
-            processes=num_workers,
+            processes=worker_count,
             initializer=likelihood_worker_init,
             initargs=(dsl_blob, module_map, plp_batch),
         ) as pool:

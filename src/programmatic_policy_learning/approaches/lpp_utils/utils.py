@@ -13,7 +13,7 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, TypeVar
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -35,6 +35,8 @@ from programmatic_policy_learning.dsl.state_action_program import (
 
 GymnasiumEnvType: type | None = None
 GymnasiumRecordVideoType: type | None = None
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 try:
     from gymnasium import Env as GymnasiumEnvType
     from gymnasium.wrappers import RecordVideo as GymnasiumRecordVideoType

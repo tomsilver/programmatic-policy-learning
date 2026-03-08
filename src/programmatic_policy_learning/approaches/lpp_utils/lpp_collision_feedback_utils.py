@@ -23,7 +23,6 @@ from programmatic_policy_learning.learning.prior_calculation import (
     priors_from_features_v2,
 )
 
-
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 _filter_constant_features = filter_constant_features
@@ -86,9 +85,7 @@ def run_collision_feedback_loop(
     generate_features: Callable[
         [str, int, int], tuple[list[str], dict[str, Any], Path]
     ],
-    make_prompt: Callable[
-        [list[dict[str, Any]], list[tuple[ObsT, ActT]]], str | None
-    ],
+    make_prompt: Callable[[list[dict[str, Any]], list[tuple[ObsT, ActT]]], str | None],
     prior_version: str = "uniform",
     prior_beta: float = 1.0,
 ) -> tuple[

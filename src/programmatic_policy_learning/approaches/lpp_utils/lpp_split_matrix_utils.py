@@ -13,8 +13,10 @@ from programmatic_policy_learning.data.dataset import (
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
+
 
 def split_and_collect_demonstrations(
     *,

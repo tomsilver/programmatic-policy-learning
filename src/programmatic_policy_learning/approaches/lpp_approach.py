@@ -5,7 +5,7 @@ import logging
 import random
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -274,7 +274,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
             neg_indices=best_group["neg"],
-            examples=examples,
+            examples=cast(list[tuple[np.ndarray, tuple[int, int]]], examples),
             env_name=self.base_class_name,
             existing_feature_summary=None,
             max_per_label=5,
@@ -351,7 +351,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
         plps = valid_plps
 
-        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
+        likelihoods = compute_likelihood_plps(
+            plps,
+            cast(Trajectory[np.ndarray, tuple[int, int]], demonstrations),
+            dsl_functions,
+        )
         logging.info("LIKELIHOODS: %s", likelihoods)
         logging.info("PRIORS: %s", plp_priors)
         particles = []
@@ -406,7 +410,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         losses: list[float] = []
         for obs, action in demonstrations.steps:
             action_probs = policy.get_action_probs(obs)
-            prob = float(action_probs[action])
+            prob = float(action_probs[cast(Any, action)])
             losses.append(-float(np.log(max(prob, eps))))
         return float(np.mean(losses))
 
@@ -698,14 +702,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         outer_feedback = None
         offline_path_name, data_imbalance_cfg = self._get_data_loading_config()
 
-        (
-            train_demo_ids,
-            val_demo_ids,
-            demonstrations_train,
-            demonstrations_val,
-            demo_dict_train,
-            demo_dict_val,
-        ) = split_and_collect_demonstrations(
+        split_result: tuple[
+            tuple[int, ...],
+            tuple[int, ...],
+            Trajectory[_ObsType, _ActType],
+            Trajectory[_ObsType, _ActType],
+            dict[int, Trajectory[_ObsType, _ActType]],
+            dict[int, Trajectory[_ObsType, _ActType]],
+        ] = split_and_collect_demonstrations(
             env_factory=self.env_factory,
             expert=self.expert,
             demo_numbers=self.demo_numbers,
@@ -717,6 +721,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             data_imbalance_cfg=data_imbalance_cfg,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
         )
+        (
+            train_demo_ids,
+            val_demo_ids,
+            demonstrations_train,
+            demonstrations_val,
+            demo_dict_train,
+            demo_dict_val,
+        ) = split_result
         (
             programs_sa,
             program_prior_log_probs_opt,
