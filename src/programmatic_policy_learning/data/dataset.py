@@ -27,7 +27,7 @@ from programmatic_policy_learning.utils.cache_utils import (
     load_single_cache_output,
     manage_cache,
 )
-from programmatic_policy_learning.utils.grid_validation import require_grid_example
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 
 def allowed_cpus() -> int:
@@ -231,7 +231,7 @@ def extract_examples_from_demonstration_item(
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
-    state_grid, action_grid = require_grid_example(
+    state_grid, action_grid = require_grid_state_action(
         state,
         action,
         context="Discrete negative expansion",

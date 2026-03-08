@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 
 
-def require_grid_example(
+def require_grid_state_action(
     s: Any, a: Any, *, context: str
 ) -> tuple[np.ndarray, tuple[int, int]]:
     """Validate and normalize a grid-style (state, action) example."""

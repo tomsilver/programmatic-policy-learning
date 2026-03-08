@@ -13,7 +13,7 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Any, Callable, Generator, TypeVar, cast
+from typing import Any, Callable, Generator, TypeVar
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -32,7 +32,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
-from programmatic_policy_learning.utils.grid_validation import require_grid_example
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 GymnasiumEnvType: type | None = None
 GymnasiumRecordVideoType: type | None = None
@@ -407,7 +407,7 @@ def _format_one_example(
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example for prompt text."""
-    s, (r, c) = require_grid_example(s, a, context="_format_one_example")
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example")
     rows = []
     for rr in range(s.shape[0]):
         row = ", ".join(repr(str(x)) for x in s[rr])
@@ -434,7 +434,7 @@ def _format_one_example_ascii(
     symbol_map: dict[str, str],
 ) -> str:
     """Format one labeled (state, action) example using ASCII token codes."""
-    s, (r, c) = require_grid_example(s, a, context="_format_one_example_ascii")
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_ascii")
     h, w = s.shape[0], s.shape[1]
     code_width = max((len(code) for code in symbol_map.values()), default=1)
 
@@ -463,7 +463,7 @@ def _format_one_example_coords(
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example using coordinate lists."""
-    s, (r, c) = require_grid_example(s, a, context="_format_one_example_coords")
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_coords")
     s_str = s.astype(str)
     h, w = s_str.shape[0], s_str.shape[1]
     tokens, counts = np.unique(s_str, return_counts=True)
@@ -761,14 +761,13 @@ def _build_diff_hints(
 ) -> str:
     s_pos, a_pos = examples[pos_idx]
     s_neg, _ = examples[neg_idx]
+    _, action_pos = require_grid_state_action(s_pos, a_pos, context="_build_diff_hints")
     s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
     s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
     agent_pos = _find_token_positions(s_pos_tok, "agent")
     star_pos = _find_token_positions(s_pos_tok, "star")
     agent_anchor = agent_pos[0] if agent_pos else None
     star_anchor = star_pos[0] if star_pos else None
-    a_pos_idx = cast(Any, a_pos)
-    action_pos = (int(a_pos_idx[0]), int(a_pos_idx[1]))
     agent_minus_star = None
     if agent_anchor and star_anchor:
         agent_minus_star = (
@@ -801,7 +800,7 @@ def _format_one_example_enc2(
     patch_k: int = PATCH_K,
 ) -> str:
     """Format one labeled (state, action) example using enc_2."""
-    s, (r, c) = require_grid_example(s, a, context="_format_one_example_enc2")
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_enc2")
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     h, w = s_tok.shape[0], s_tok.shape[1]
     tokens, counts = np.unique(s_tok, return_counts=True)
@@ -897,7 +896,9 @@ def _format_one_example_enc2_delta(
     small_list_threshold: int = SMALL_LIST_THRESHOLD,
 ) -> str:
     """Compact delta-only summary for enc_2 collision evidence."""
-    s, (r, c) = require_grid_example(s, a, context="_format_one_example_enc2_delta")
+    s, (r, c) = require_grid_state_action(
+        s, a, context="_format_one_example_enc2_delta"
+    )
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     tokens, counts = np.unique(s_tok, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1

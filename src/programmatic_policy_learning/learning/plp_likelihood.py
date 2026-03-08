@@ -14,7 +14,7 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
-from programmatic_policy_learning.utils.grid_validation import require_grid_example
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -75,7 +75,7 @@ def _compute_likelihood_worker(
 
         for obs, action in demonstrations.steps:
             try:
-                obs_grid, action_grid = require_grid_example(
+                obs_grid, action_grid = require_grid_state_action(
                     obs, action, context="_compute_likelihood_worker"
                 )
             except TypeError:
