@@ -44,6 +44,49 @@ ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 
 
+def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
+    """Convert sampled array back to the demonstrated action's container type."""
+    if isinstance(template, np.ndarray):
+        return action_arr.astype(template.dtype, copy=False)
+    if isinstance(template, tuple):
+        return tuple(float(x) for x in action_arr.tolist())
+    if isinstance(template, list):
+        return [float(x) for x in action_arr.tolist()]
+    if isinstance(template, (int, float, np.integer, np.floating)):
+        return float(action_arr.reshape(-1)[0])
+    raise TypeError(
+        "Unsupported continuous action type for sampling negatives: "
+        f"{type(template)!r}"
+    )
+
+
+def sample_negative_actions_continuous(
+    expert_action: ActT,
+    *,
+    K: int = 10,
+    noise_scale: float = 0.2,
+    rng: np.random.Generator | None = None,
+) -> list[ActT]:
+    """Sample continuous negative actions by perturbing the expert action."""
+    if K <= 0:
+        return []
+    if rng is None:
+        rng = np.random.default_rng(0)
+    base = np.asarray(expert_action, dtype=float)
+    if base.ndim == 0:
+        base = base.reshape(1)
+
+    sampled: list[ActT] = []
+    for _ in range(K * 5):
+        candidate = base + rng.normal(0.0, noise_scale, size=base.shape)
+        if np.allclose(candidate, base):
+            continue
+        sampled.append(_coerce_action_like(expert_action, candidate))
+        if len(sampled) >= K:
+            break
+    return sampled
+
+
 def sample_negative_actions_stratified(
     state: np.ndarray,
     expert_action: Coord,
@@ -140,6 +183,19 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
+def _require_grid_state_action(
+    state: Any, action: Any, *, context: str
+) -> tuple[np.ndarray, Coord]:
+    """Validate grid-style (state, action) and return narrowed types."""
+    if not isinstance(state, np.ndarray) or not (
+        isinstance(action, tuple) and len(action) == 2
+    ):
+        raise TypeError(
+            f"{context} expects grid-style (np.ndarray state, (row, col) action)."
+        )
+    return state, action
+
+
 def extract_examples_from_demonstration_item(
     demonstration_item: tuple[ObsT, ActT],
     *,
@@ -170,18 +226,29 @@ def extract_examples_from_demonstration_item(
     negative_examples: list[tuple[ObsT, ActT]] = []
 
     if action_mode == "continuous":
+        k = int((data_imbalance or {}).get("K", 10))
+        if k < 0:
+            raise ValueError("data_imbalance.K must be >= 0")
+        noise_scale = float((data_imbalance or {}).get("continuous_noise_scale", 0.2))
+        rng = np.random.default_rng(0)
+        for neg_action in sample_negative_actions_continuous(
+            action,
+            K=k,
+            noise_scale=noise_scale,
+            rng=rng,
+        ):
+            negative_examples.append((state, neg_action))
         return positive_examples, negative_examples
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
+    state_grid, action_grid = _require_grid_state_action(
+        state,
+        action,
+        context="Discrete negative expansion",
+    )
+
     if data_imbalance and data_imbalance.get("enabled", False):
-        if not isinstance(state, np.ndarray) or not (
-            isinstance(action, tuple) and len(action) == 2
-        ):
-            raise TypeError(
-                "data_imbalance sampling currently requires grid-style "
-                "(np.ndarray state, (row, col) action)."
-            )
         method = data_imbalance.get("method", "")
         if method == "downsample_majority":
             k = int(data_imbalance.get("K", 10))
@@ -189,8 +256,8 @@ def extract_examples_from_demonstration_item(
                 raise ValueError("data_imbalance.K must be >= 0")
             rng = random.Random(0)  # or pass seed from config
             neg_coords = sample_negative_actions_stratified(
-                state=state,
-                expert_action=action,
+                state=state_grid,
+                expert_action=action_grid,
                 K=k,
                 rng=rng,
                 include_nearby=8,
@@ -200,19 +267,11 @@ def extract_examples_from_demonstration_item(
         else:
             raise ValueError(f"Unknown data_imbalance.method: {method}")
     else:
-        if not isinstance(state, np.ndarray) or not (
-            isinstance(action, tuple) and len(action) == 2
-        ):
-            raise TypeError(
-                "Grid-style negative expansion expects "
-                "(np.ndarray state, (row, col) action)."
-            )
-        for r in range(state.shape[0]):
-            for c in range(state.shape[1]):
-                if (r, c) == action:
+        for r in range(state_grid.shape[0]):
+            for c in range(state_grid.shape[1]):
+                if (r, c) == action_grid:
                     continue
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
-
     return positive_examples, negative_examples
 
 
@@ -381,6 +440,7 @@ def run_all_programs_on_single_demonstration(
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
     demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
+    action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
@@ -555,8 +615,8 @@ def run_all_programs_on_demonstrations(
             offline_path_name=offline_path_name,
             demos_included=demos_included,
             split_tag=split_tag,
-            seed=seed,
             action_mode=action_mode,
+            seed=seed,
         )
 
         if X is None:

@@ -729,6 +729,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
+        print(programs_sa)
+        input("PROGRAM GENERATION COMPLETE. Press Enter to continue...")
         (
             X_train,
             y_train,

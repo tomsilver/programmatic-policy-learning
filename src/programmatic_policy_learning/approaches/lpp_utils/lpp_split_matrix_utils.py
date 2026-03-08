@@ -67,6 +67,8 @@ def split_and_collect_demonstrations(
         demo_dict_all.update(demo_dict_val)
 
     # assert_state_disjointness(demo_dict_all, train_demo_ids, val_demo_ids)
+    print(action_mode)
+    input()
     train_states, train_expanded = count_states_and_expanded_examples(
         train_demo_ids,
         demo_dict_all,

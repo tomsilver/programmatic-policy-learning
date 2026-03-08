@@ -160,7 +160,15 @@ def get_program_set(
         num_features = program_generation["num_features"]
         num_batches = program_generation.get("num_batches")
         py_generator = PyFeatureGenerator(llm_client)
-        hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
+        try:
+            hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
+        except FileNotFoundError:
+            logging.warning(
+                "No hint file found for env '%s' under %s; continuing with empty hints.",
+                base_class_name,
+                HINTS_ROOT,
+            )
+            hint_text = ""
 
         demo_text: str | None = None
         try:
