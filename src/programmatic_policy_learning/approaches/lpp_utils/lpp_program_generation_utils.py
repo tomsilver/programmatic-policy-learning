@@ -60,7 +60,7 @@ HINTS_ROOT = (
 )
 
 
-def _resolve_demo_ids(
+def _resolve_demos_included(
     demo_numbers: Sequence[int] | None,
     program_generation: dict[str, Any],
 ) -> list[int]:
@@ -266,7 +266,7 @@ def get_program_set(
         demo_text: str | None = None
         try:
             trajectories: list[list[tuple[Any, Any, Any]]] = []
-            demo_ids = _resolve_demo_ids(demo_numbers, program_generation)
+            demo_ids = _resolve_demos_included(demo_numbers, program_generation)
             if expert is None:
                 raise ValueError("No expert instance provided for demo serialization.")
             for init_idx in demo_ids:
@@ -284,6 +284,7 @@ def get_program_set(
                 )
             elif action_mode == "continuous":
                 demo_text = _build_continuous_demo_text(trajectories)
+
             else:
                 raise ValueError(f"Unsupported action_mode: {action_mode!r}")
         except Exception as exc:  # pylint: disable=broad-exception-caught

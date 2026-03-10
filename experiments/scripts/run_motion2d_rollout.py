@@ -199,7 +199,7 @@ def main(args: argparse.Namespace) -> None:
         video_dir.mkdir(exist_ok=True)
         save_video(
             frames,
-            str(video_dir / f"motion2d_p{args.passages}_rollout.mp4"),
+            str(video_dir / f"motion2d_p{args.passages}_s{args.seed}_rollout.mp4"),
         )
 
 

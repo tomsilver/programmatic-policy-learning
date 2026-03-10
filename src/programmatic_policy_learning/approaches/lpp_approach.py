@@ -427,7 +427,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         loading_cfg = (self.program_generation or {}).get("loading")
         if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
-        data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+        raw_data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+        data_imbalance_cfg = (
+            dict(raw_data_imbalance_cfg)
+            if isinstance(raw_data_imbalance_cfg, Mapping)
+            else raw_data_imbalance_cfg
+        )
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if (
+            action_mode == "continuous"
+            and isinstance(data_imbalance_cfg, dict)
+            and hasattr(self._action_space, "low")
+            and hasattr(self._action_space, "high")
+        ):
+            data_imbalance_cfg.setdefault(
+                "continuous_action_low",
+                np.asarray(getattr(self._action_space, "low"), dtype=float).tolist(),
+            )
+            data_imbalance_cfg.setdefault(
+                "continuous_action_high",
+                np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
+            )
         return offline_path_name, data_imbalance_cfg
 
     def _build_and_process_train_matrix(
@@ -733,6 +753,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict_train,
             demo_dict_val,
         ) = split_result
+
         (
             programs_sa,
             program_prior_log_probs_opt,

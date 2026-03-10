@@ -67,6 +67,8 @@ def sample_negative_actions_continuous(
     *,
     K: int = 10,
     noise_scale: float = 0.2,
+    action_low: Sequence[float] | np.ndarray | None = None,
+    action_high: Sequence[float] | np.ndarray | None = None,
     rng: np.random.Generator | None = None,
 ) -> list[ActT]:
     """Sample continuous negative actions by perturbing the expert action."""
@@ -77,15 +79,32 @@ def sample_negative_actions_continuous(
     base = np.asarray(expert_action, dtype=float)
     if base.ndim == 0:
         base = base.reshape(1)
+    low_arr = np.asarray(action_low, dtype=float) if action_low is not None else None
+    high_arr = (
+        np.asarray(action_high, dtype=float) if action_high is not None else None
+    )
+    if (low_arr is None) != (high_arr is None):
+        raise ValueError("action_low and action_high must be provided together.")
+    if low_arr is not None and high_arr is not None:
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+        if np.any(low_arr > high_arr):
+            raise ValueError("Each continuous action lower bound must be <= upper bound.")
 
     sampled: list[ActT] = []
     for _ in range(K * 5):
         candidate = base + rng.normal(0.0, noise_scale, size=base.shape)
+        if low_arr is not None and high_arr is not None:
+            candidate = np.clip(candidate, low_arr, high_arr)
         if np.allclose(candidate, base):
             continue
         sampled.append(_coerce_action_like(expert_action, candidate))
         if len(sampled) >= K:
             break
+
     return sampled
 
 
@@ -199,14 +218,14 @@ def extract_examples_from_demonstration_item(
 
     Parameters
     ----------
-    demonstrations : (np.ndarray, (int, int))
+    demonstrations : (ObsT, ActT)
         A state, action pair.
 
     Returns
     -------
-    positive_examples : [(np.ndarray, (int, int))]
+    positive_examples : [(ObsT, ActT)]
         A list with just the input state, action pair (for convenience).
-    negative_examples : [(np.ndarray, (int, int))]
+    negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
     """
     state, action = demonstration_item
@@ -219,11 +238,15 @@ def extract_examples_from_demonstration_item(
         if k < 0:
             raise ValueError("data_imbalance.K must be >= 0")
         noise_scale = float((data_imbalance or {}).get("continuous_noise_scale", 0.2))
+        action_low = (data_imbalance or {}).get("continuous_action_low")
+        action_high = (data_imbalance or {}).get("continuous_action_high")
         rng_np = np.random.default_rng(0)
-        for neg_action in sample_negative_actions_continuous(
+        for neg_action in sample_negative_actions_continuous( #TODOO
             action,
             K=k,
             noise_scale=noise_scale,
+            action_low=action_low,
+            action_high=action_high,
             rng=rng_np,
         ):
             negative_examples.append((state, neg_action))
@@ -354,7 +377,18 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     offline_path_name = kwargs.get("offline_path_name")
     enabled = data_imbalance.get("enabled", False)
     K = data_imbalance.get("K", "none") if enabled else "none"
-    imbalance_part = f"{imbalance_method}_K{K}" if enabled else "none"
+    if enabled:
+        continuous_noise = data_imbalance.get("continuous_noise_scale", "none")
+        continuous_low = data_imbalance.get("continuous_action_low")
+        continuous_high = data_imbalance.get("continuous_action_high")
+        bounds_sig = hashlib.sha1(
+            str((continuous_low, continuous_high)).encode("utf-8")
+        ).hexdigest()[:10]
+        imbalance_part = (
+            f"{imbalance_method}_K{K}_noise{continuous_noise}_b{bounds_sig}"
+        )
+    else:
+        imbalance_part = "none"
     offline_tag = "none"
     if offline_path_name:
         offline_tag = Path(str(offline_path_name)).name
