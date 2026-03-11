@@ -3,6 +3,7 @@
 import json
 import logging
 import random
+from itertools import product
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar, cast
@@ -117,7 +118,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         split_seed: int = 0,
         split_strategy: str = "random",
         preserve_ordering: bool = False,
-        dt_max_depth_candidates: Sequence[int | None] | None = None,
+        dt_max_depth: int | None = 5,
+        hyperparam_grid: Mapping[str, Sequence[Any] | Any] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -166,13 +168,68 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.split_seed = split_seed
         self.split_strategy = split_strategy
         self.preserve_ordering = preserve_ordering
-        self.dt_max_depth_candidates: list[int | None]
-        if dt_max_depth_candidates is None:
-            self.dt_max_depth_candidates = [None]
+        self.dt_max_depth = dt_max_depth
+        self.hyperparam_grid = (
+            dict(hyperparam_grid) if isinstance(hyperparam_grid, Mapping) else None
+        )
+
+    def _default_train_hyperparams(self) -> dict[str, Any]:
+        return {
+            "num_dts": int(self.num_dts),
+            "program_generation_step_size": int(self.program_generation_step_size),
+            "dt_splitter": self.dt_splitter,
+            "cc_alpha": float(self.cc_alpha),
+            "dt_max_depth": self.dt_max_depth,
+            "max_num_particles": int(self.max_num_particles),
+        }
+
+    @staticmethod
+    def _normalize_grid_values(raw_values: Sequence[Any] | Any) -> list[Any]:
+        if isinstance(raw_values, Sequence) and not isinstance(raw_values, (str, bytes)):
+            values = list(raw_values)
         else:
-            if len(dt_max_depth_candidates) == 0:
-                raise ValueError("dt_max_depth_candidates cannot be empty.")
-            self.dt_max_depth_candidates = list(dt_max_depth_candidates)
+            values = [raw_values]
+        if len(values) == 0:
+            raise ValueError("Hyperparameter candidate list cannot be empty.")
+        return values
+
+    def _build_hyperparam_candidates(self) -> list[dict[str, Any]]:
+        if self.hyperparam_grid is None:
+            return [{}]
+
+        supported = {
+            "dt_max_depth",
+            "num_dts",
+            "program_generation_step_size",
+            "dt_splitter",
+            "cc_alpha",
+            "max_num_particles",
+        }
+        unknown = set(self.hyperparam_grid.keys()) - supported
+        if unknown:
+            unknown_str = ", ".join(sorted(unknown))
+            raise ValueError(f"Unsupported hyperparameter(s) in hyperparam_grid: {unknown_str}")
+
+        keys = list(self.hyperparam_grid.keys())
+        value_lists = [
+            self._normalize_grid_values(self.hyperparam_grid[key]) for key in keys
+        ]
+        candidates: list[dict[str, Any]] = []
+        for values in product(*value_lists):
+            candidates.append({k: v for k, v in zip(keys, values)})
+        if len(candidates) == 0:
+            return [{}]
+        return candidates
+
+    def _resolve_train_hyperparams(
+        self, train_hyperparams: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        resolved = self._default_train_hyperparams()
+        if train_hyperparams is None:
+            return resolved
+        for key, value in train_hyperparams.items():
+            resolved[key] = value
+        return resolved
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -307,8 +364,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
         *,
-        dt_max_depth: int | None,
+        train_hyperparams: Mapping[str, Any] | None = None,
     ) -> LPPPolicy:
+        hp = self._resolve_train_hyperparams(train_hyperparams)
         gain = gini_gain_per_feature(X, y_bool)
         ranked_cols = np.argsort(-gain)
         X_ranked = X[:, ranked_cols]
@@ -323,11 +381,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             y_bool,
             programs_ranked,
             priors_ranked,
-            num_dts=self.num_dts,
-            program_generation_step_size=self.program_generation_step_size,
-            dt_splitter=self.dt_splitter,
-            cc_alpha=self.cc_alpha,
-            dt_max_depth=dt_max_depth,
+            num_dts=int(hp["num_dts"]),
+            program_generation_step_size=int(hp["program_generation_step_size"]),
+            dt_splitter=str(hp["dt_splitter"]),
+            cc_alpha=float(hp["cc_alpha"]),
+            dt_max_depth=cast(int | None, hp["dt_max_depth"]),
             dsl_functions=dsl_functions,
         )
         if self.prior_version == "uniform":
@@ -366,7 +424,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             particle_log_probs.append(prior + likelihood)
 
         top_particles, top_particle_log_probs = select_particles(
-            particles, particle_log_probs, self.max_num_particles
+            particles, particle_log_probs, int(hp["max_num_particles"])
         )
         if len(top_particle_log_probs) > 0:
             probs_arr = np.asarray(particle_log_probs)
@@ -588,30 +646,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Returns a dict so future tunable knobs can be added without
         changing training/evaluation orchestration code.
         """
-        candidate_hyperparams = [
-            {"dt_max_depth": depth} for depth in self.dt_max_depth_candidates
-        ]
+        candidate_hyperparams = self._build_hyperparam_candidates()
         has_validation = len(demonstrations_val.steps) > 0
         best_hyperparams = dict(candidate_hyperparams[0])
         if not has_validation:
             logging.info(
                 "No validation data available; skipping eval-risk minimization and "
-                "falling back to default dt_max_depth=None."
+                "falling back to the first candidate hyperparameter set."
             )
-            return {"dt_max_depth": None}
+            return best_hyperparams
         if len(candidate_hyperparams) == 1:
             logging.info(
-                "Single dt_max_depth candidate=%s; skipping validation model selection.",
-                best_hyperparams["dt_max_depth"],
+                "Single candidate hyperparameter set=%s; skipping validation model selection.",
+                best_hyperparams,
             )
             return best_hyperparams
 
         best_risk = float("inf")
         for hp in candidate_hyperparams:
-            dt_max_depth = hp.get("dt_max_depth")
             logging.info(
-                "Training candidate with dt_max_depth=%s on train_core.",
-                dt_max_depth,
+                "Training candidate on train_core with hyperparameters=%s.",
+                hp,
             )
             candidate_policy = self._train_policy_from_matrix(
                 X,
@@ -620,22 +675,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 program_prior_log_probs_opt,
                 demonstrations_train,
                 dsl_functions,
-                dt_max_depth=dt_max_depth,
+                train_hyperparams=hp,
             )
             val_risk = self._compute_policy_risk_on_demos(
                 candidate_policy, demonstrations_val
             )
             logging.info(
-                "Validation risk (mean NLL) for dt_max_depth=%s: %.6f",
-                dt_max_depth,
+                "Validation risk (mean NLL) for hyperparameters=%s: %.6f",
+                hp,
                 val_risk,
             )
             if val_risk < best_risk:
                 best_risk = val_risk
                 best_hyperparams = dict(hp)
         logging.info(
-            "Selected dt_max_depth=%s with best validation risk %.6f.",
-            best_hyperparams["dt_max_depth"],
+            "Selected hyperparameters=%s with best validation risk %.6f.",
+            best_hyperparams,
             best_risk,
         )
         return best_hyperparams
@@ -804,7 +859,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_val=demonstrations_val,
             dsl_functions=dsl_functions,
         )
-        selected_dt_max_depth = selected_hyperparams.get("dt_max_depth")
         (
             X_final,
             y_final_bool,
@@ -826,8 +880,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_val=demonstrations_val,
         )
         logging.info(
-            "Retraining final policy on train+val with dt_max_depth=%s.",
-            selected_dt_max_depth,
+            "Retraining final policy on train+val with hyperparameters=%s.",
+            selected_hyperparams,
         )
         return self._train_policy_from_matrix(
             X_final,
@@ -836,7 +890,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             final_program_priors,
             demonstrations_final,
             dsl_functions,
-            dt_max_depth=selected_dt_max_depth,
+            train_hyperparams=selected_hyperparams,
         )
 
     def test_policy_on_envs(

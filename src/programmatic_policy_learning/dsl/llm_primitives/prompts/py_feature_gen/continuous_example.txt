@@ -10,6 +10,13 @@ Environment:
 - Action a is continuous control (numeric vector).
 - Demonstrations are expert trajectories over (s, a, s').
 
+
+## INPUT: DEMONSTRATIONS
+You are given ....
+
+${DEMONSTRATION_DATA}
+
+
 Task:
 Propose a diverse set of boolean features f(s, a) that help distinguish good expert actions from alternatives.
 Include local, geometric, and dynamics-aware features that can generalize across episodes.
@@ -21,6 +28,8 @@ Return only valid JSON:
     {"id": "f1", "name": "f1", "source": "def f1(s, a):\\n    ..."}
   ]
 }
+
+
 
 Rules:
 - No placeholders.

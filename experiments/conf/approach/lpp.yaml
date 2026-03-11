@@ -7,13 +7,25 @@ num_dts: 5
 max_num_particles: 25
 start_symbol: 0 # for fixed dsl/grammar
 dt_splitter: best
-dt_max_depth_candidates: [5]  # e.g., [null, 5, 10, 20]
+dt_max_depth: 5
+# Optional full hyperparameter grid for validation model selection.
+# If set (non-null), evaluates all Cartesian-product combinations.
+# If null, no model-selection sweep is run; the single default config is used.
+# Supported keys: dt_max_depth, num_dts, program_generation_step_size,
+# dt_splitter, cc_alpha, max_num_particles
+hyperparam_grid: null
+# Example:
+# hyperparam_grid:
+#   dt_max_depth: [null, 5, 10]
+#   num_dts: [3, 5]
+#   cc_alpha: [0.0, 0.01]
+#   max_num_particles: [10, 25]
 cc_alpha: 0
 normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: false
+collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
 collision_template_feedback: true #false: means the feedback is just features/no templates
 collision_feedback_max_new_features: 5000
@@ -35,7 +47,7 @@ program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
   demos_included: [0,2,6,8,9]
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # new_hybrid.txt" new_hybrid
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/new_hybrid.txt"  # new_hybrid.txt" new_hybrid
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1 #keep this 1 for now
   removed_primitive: "" 
