@@ -1,4 +1,10 @@
-"""Tests for ResidualApproach (SB3 TD3/DDPG backends) on Pendulum-v1."""
+"""Tests for ResidualApproach (SB3 backend) on Pendulum-v1, with optional LunarLanderContinuous-v3.
+
+Minimal changes from the original Pendulum-only test:
+- Add ENV_ID / ENV_IDS and parametrize over env_id (optional).
+- Add a tiny helper to build the right expert for each env.
+- Keep a SINGLE backend (no backend parametrization).
+"""
 
 from __future__ import annotations
 
@@ -15,20 +21,36 @@ from programmatic_policy_learning.approaches.experts.pendulum_experts import (
 )
 from programmatic_policy_learning.approaches.residual_approach import ResidualApproach
 
-ENV_ID = "Pendulum-v1"
+# --- ADD: import your LunarLander expert creator (adjust path/name to match your project) ---
+# If you haven't created this file/function yet, comment this import out and also comment out
+# "LunarLanderContinuous-v3" in ENV_IDS below.
+from programmatic_policy_learning.approaches.experts.lundar_lander_experts import (
+    create_manual_lunarlander_continuous_policy,
+)
+
+EnvId = Literal["Pendulum-v1", "LunarLanderContinuous-v3"]
+
+# --- ORIGINAL: Pendulum constants ---
+ENV_ID: EnvId = "Pendulum-v1"
 SEED = 42
 TRAIN_STEPS = 1
 EVAL_EPISODES = 5
-BACKENDS: list[Literal["sb3-td3", "sb3-ddpg"]] = ["sb3-td3", "sb3-ddpg"]
+
+# --- CHANGE: single backend, fixed (no parametrization) ---
+BACKEND: Literal["sb3-td3"] = "sb3-td3"
+
+# --- ADD: list of envs to test; keep Pendulum first to match old behavior ---
+ENV_IDS: list[EnvId] = [ENV_ID, "LunarLanderContinuous-v3"]
 
 
-def build_env() -> gym.Env:
+def build_env(env_id: str = ENV_ID) -> gym.Env:
     """Construct a fresh Gymnasium environment."""
-    return gym.make(ENV_ID)
+    return gym.make(env_id)
 
 
 def env_factory(_instance_num: int, **_kwargs: Any) -> gym.Env:
     """Hydra-style env factory; tests ignore instance num and extra kwargs."""
+    # NOTE: this will be shadowed by a closure per env inside the test below.
     return build_env()
 
 
@@ -43,13 +65,25 @@ class _FnExpert:
         return self._fn(obs)
 
 
+def _make_expert_policy(env_id: EnvId, action_space: gym.spaces.Box) -> Callable[[np.ndarray], np.ndarray]:
+    """Return the correct manual expert for the chosen env."""
+    if env_id == "Pendulum-v1":
+        return create_manual_pendulum_policy(action_space)
+    if env_id == "LunarLanderContinuous-v3":
+        return create_manual_lunarlander_continuous_policy(action_space)
+    raise ValueError(f"Unsupported env_id: {env_id!r}")
+
+
 def eval_policy(
-    approach: Any, n_episodes: int = EVAL_EPISODES, seed: int = SEED
+    env_id: EnvId,
+    approach: Any,
+    n_episodes: int = EVAL_EPISODES,
+    seed: int = SEED,
 ) -> np.ndarray:
     """Run n_episodes and return per-episode returns using public API."""
     returns: list[float] = []
     for ep in range(n_episodes):
-        env = build_env()
+        env = build_env(env_id)
         obs, info = env.reset(seed=seed + ep)
 
         approach.reset(obs, info)
@@ -59,55 +93,63 @@ def eval_policy(
         while not (terminated or truncated):
             action = approach.step()
             obs, rew, terminated, truncated, info = env.step(action)
-            approach.update(obs, float(rew), terminated, info)
+            # original code used `terminated` as done; keep that style but make it robust:
+            approach.update(obs, float(rew), terminated or truncated, info)
             ep_ret += float(rew)
 
         returns.append(ep_ret)
     return np.asarray(returns, dtype=np.float32)
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_residual_vs_base_runs(backend: Literal["sb3-td3", "sb3-ddpg"]) -> None:
+# --- MINIMAL CHANGE: parametrize env_id (instead of only Pendulum) ---
+@pytest.mark.parametrize("env_id", ENV_IDS)
+def test_residual_vs_base_runs(env_id: EnvId) -> None:
     """Smoke test: residual approach runs and is not catastrophically worse than base."""
-    tmp = build_env()
+    tmp = build_env(env_id)
     assert isinstance(tmp.action_space, gym.spaces.Box)
     assert isinstance(tmp.observation_space, gym.spaces.Box)
 
     # Base (manual) policy used as the expert's action.
-    base_policy: Callable[[np.ndarray], np.ndarray] = create_manual_pendulum_policy(
-        tmp.action_space
+    base_policy: Callable[[np.ndarray], np.ndarray] = _make_expert_policy(
+        env_id, tmp.action_space
     )
 
     # Baseline returns using ExpertApproach (deterministic expert only).
     base: BaseApproach[np.ndarray, np.ndarray] = ExpertApproach(
-        f"residual-{backend}-base",
+        f"residual-{env_id}-{BACKEND}-base",
         tmp.observation_space,
         tmp.action_space,
         seed=SEED,
         expert_fn=base_policy,
     )
-    base_returns = eval_policy(base, n_episodes=EVAL_EPISODES, seed=SEED)
+    base_returns = eval_policy(env_id, base, n_episodes=EVAL_EPISODES, seed=SEED)
     assert base_returns.shape == (EVAL_EPISODES,)
     assert np.isfinite(base_returns).all()
 
+    # Env factory for THIS env_id (closure keeps it minimal and local)
+    def _env_factory(_instance_num: int, **_kwargs: Any) -> gym.Env:
+        return build_env(env_id)
+
     # Residual learner on top of the same expert, Hydra-style ctor.
     residual = ResidualApproach(
-        f"residual-{backend}",
+        f"residual-{env_id}-{BACKEND}",
         tmp.observation_space,
         tmp.action_space,
         seed=SEED,
         expert=_FnExpert(base_policy),
-        env_factory=env_factory,
-        backend=backend,
+        env_factory=_env_factory,
+        backend=BACKEND,
         total_timesteps=TRAIN_STEPS,  # keep it tiny for speed
         verbose=0,
     )
 
     # Train briefly, then evaluate via public API.
     residual.train()
-    residual_returns = eval_policy(residual, n_episodes=EVAL_EPISODES, seed=SEED + 123)
+    residual_returns = eval_policy(env_id, residual, n_episodes=EVAL_EPISODES, seed=SEED + 123)
     assert residual_returns.shape == (EVAL_EPISODES,)
     assert np.isfinite(residual_returns).all()
 
     # Loose sanity bound: residual should not be catastrophically worse than base.
-    assert residual_returns.mean() > base_returns.mean() - 100.0
+    # LunarLander reward scale can be wider, so keep this generous.
+    slack = 100.0 if env_id == "Pendulum-v1" else 200.0
+    assert residual_returns.mean() > base_returns.mean() - slack

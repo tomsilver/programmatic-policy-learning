@@ -1,0 +1,8 @@
+make_kwargs:
+  id: ALE/Breakout-v5
+  base_name: breakout
+  render_mode: "rgb_array"
+  # Optional but recommended for simple programmatic vision:
+  obs_type: "rgb"          # or "grayscale" (easier for thresholding)
+  full_action_space: false # keep Discrete(4)
+description: "Atari Breakout (ALE/Breakout-v5, discrete actions)"

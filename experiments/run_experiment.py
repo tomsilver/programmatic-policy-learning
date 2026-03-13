@@ -8,9 +8,13 @@ import numpy as np
 import pandas as pd
 from gymnasium.core import Env
 from omegaconf import DictConfig
-from prpl_utils.utils import sample_seed_from_rng
-from prpl_llm_utils.code import synthesize_python_function_with_llm, SyntaxRepromptCheck, FunctionOutputRepromptCheck
+from prpl_llm_utils.code import (
+    FunctionOutputRepromptCheck,
+    SyntaxRepromptCheck,
+    synthesize_python_function_with_llm,
+)
 from prpl_llm_utils.structs import Query
+from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.envs.registry import EnvRegistry
@@ -105,7 +109,7 @@ def instantiate_approach(
 
             # expert_fn is the callable policy function
             expert = expert_fn
-            
+
         else:
             expert = hydra.utils.instantiate(
                 cfg.expert,
@@ -165,6 +169,14 @@ def _main(cfg: DictConfig) -> None:
     # Aggregate and save results.
     df = pd.DataFrame(metrics)
     logging.info(df)
+
+    import os
+
+    # If RESULTS_PATH is set in the environment, use that.
+    # Otherwise, just write "results.csv" into the current working dir.
+    results_path = os.getenv("RESULTS_PATH", "results.csv")
+    logging.info("Writing results.csv to %s", os.path.abspath(results_path))
+    df.to_csv(results_path, index=False)
 
     # Test the approach on new envs
     if hasattr(approach, "test_policy_on_envs"):

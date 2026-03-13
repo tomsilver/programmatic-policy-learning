@@ -1,0 +1,5 @@
+make_kwargs:
+  id: "LunarLanderContinuous-v3"
+  render_mode: null
+
+description: "Continuous LunarLander in gymnasium, i.e., env = gymnasium.make('LunarLanderContinuous-v3')"

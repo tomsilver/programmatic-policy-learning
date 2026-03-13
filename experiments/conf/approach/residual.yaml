@@ -4,9 +4,9 @@ _target_: programmatic_policy_learning.approaches.residual_approach.ResidualAppr
 
 # Kwargs you can tune from CLI:
 backend: sb3-td3           # or "sb3-ddpg"
-total_timesteps: 100000
+total_timesteps: 1000
 lr: 0.001
 noise_std: 0.1
 verbose: 1
-train_before_eval: true
+train_before_eval: false
 train_env_instance: 0
