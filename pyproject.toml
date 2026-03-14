@@ -42,9 +42,6 @@ develop = [
 kinder = [
    "kinder[all]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=kinder",
 ]
-kinder_baselines = [
-   "kinder_bilevel_planning@git+https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git@main#subdirectory=kinder-bilevel-planning",
-]
 
 [tool.setuptools.packages.find]
 where = ["src"]
