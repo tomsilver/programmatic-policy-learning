@@ -760,32 +760,79 @@ def _build_diff_hints(
     symbol_map: dict[str, str],
 ) -> str:
     s_pos, a_pos = examples[pos_idx]
-    s_neg, _ = examples[neg_idx]
+    s_neg, a_neg = examples[neg_idx]
     _, action_pos = require_grid_state_action(s_pos, a_pos, context="_build_diff_hints")
+    _, action_neg = require_grid_state_action(s_neg, a_neg, context="_build_diff_hints")
     s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
     s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
-    agent_pos = _find_token_positions(s_pos_tok, "agent")
-    star_pos = _find_token_positions(s_pos_tok, "star")
-    agent_anchor = agent_pos[0] if agent_pos else None
-    star_anchor = star_pos[0] if star_pos else None
-    agent_minus_star = None
-    if agent_anchor and star_anchor:
-        agent_minus_star = (
-            agent_anchor[0] - star_anchor[0],
-            agent_anchor[1] - star_anchor[1],
-        )
-    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT)
-    diag_summary = _diag_path_summary(
-        s_pos_tok, star_anchor, agent_anchor, "drawn", limit_steps=None
+
+    uniq_pos, counts_pos = np.unique(s_pos_tok, return_counts=True)
+    uniq_neg, _ = np.unique(s_neg_tok, return_counts=True)
+    background = (
+        str(uniq_pos[int(np.argmax(counts_pos))]) if len(uniq_pos) > 0 else "EMPTY"
     )
+
+    pos_r, pos_c = action_pos
+    neg_r, neg_c = action_neg
+    in_bounds_pos = 0 <= pos_r < s_pos_tok.shape[0] and 0 <= pos_c < s_pos_tok.shape[1]
+    in_bounds_neg = 0 <= neg_r < s_neg_tok.shape[0] and 0 <= neg_c < s_neg_tok.shape[1]
+    action_cell_pos = str(s_pos_tok[pos_r, pos_c]) if in_bounds_pos else "OOB"
+    action_cell_neg = str(s_neg_tok[neg_r, neg_c]) if in_bounds_neg else "OOB"
+
+    common_non_bg = sorted(
+        set(str(t) for t in uniq_pos if str(t) != background)
+        & set(str(t) for t in uniq_neg if str(t) != background)
+    )
+    component_diffs: list[dict[str, int | str]] = []
+    nearest_dist_deltas: list[tuple[str, int]] = []
+    for tok in common_non_bg:
+        comps_pos, largest_pos = _connected_components(s_pos_tok, tok)
+        comps_neg, largest_neg = _connected_components(s_neg_tok, tok)
+        if comps_pos != comps_neg or largest_pos != largest_neg:
+            component_diffs.append(
+                {
+                    "token": tok,
+                    "num_components_pos": int(comps_pos),
+                    "num_components_neg": int(comps_neg),
+                    "largest_component_pos": int(largest_pos),
+                    "largest_component_neg": int(largest_neg),
+                }
+            )
+        d_pos = _manhattan_nearest(_find_token_positions(s_pos_tok, tok), action_pos)
+        d_neg = _manhattan_nearest(_find_token_positions(s_neg_tok, tok), action_neg)
+        if d_pos is not None and d_neg is not None and d_pos != d_neg:
+            nearest_dist_deltas.append((tok, int(d_pos - d_neg)))
+    component_diffs = component_diffs[:8]
+    nearest_dist_deltas.sort(key=lambda item: (-abs(item[1]), item[0]))
+    nearest_dist_deltas = nearest_dist_deltas[:8]
+
+    patch = _compute_patch(s_pos_tok, action_pos, PATCH_K)
+    rays = {
+        name: _raycast(s_pos_tok, action_pos, direction, background)
+        for name, direction in {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }.items()
+    }
+    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=min(6, DIFF_LIMIT))
+
     lines = []
     lines.append("DIFF HINTS:")
-    lines.append(f"- AGENT_POS: {agent_anchor}")
-    lines.append(f"- STAR_POS: {star_anchor}")
+    lines.append(f"- POS_EXAMPLE_IDX: {pos_idx}")
+    lines.append(f"- NEG_EXAMPLE_IDX: {neg_idx}")
+    lines.append(f"- BACKGROUND_TOKEN_POS: {background}")
     lines.append(f"- ACTION_POS: {action_pos}")
-    lines.append(f"- agent_minus_star: {agent_minus_star}")
-    lines.append(f"- top_k_diffs: {diffs}")
-    lines.append(f"- diag_path_from_star_toward_agent: {diag_summary}")
+    lines.append(f"- ACTION_NEG: {action_neg}")
+    lines.append(f"- ACTION_CELL_POS_TOKEN: {action_cell_pos}")
+    lines.append(f"- ACTION_CELL_NEG_TOKEN: {action_cell_neg}")
+    lines.append(f"- TOP_K_CELL_DIFFS(pos_vs_neg): {diffs}")
+    lines.append("- STRUCTURAL_CANDIDATES:")
+    lines.append(f"  COMPONENT_DIFFS: {component_diffs}")
+    lines.append(f"  ACTION_NEAREST_DIST_DELTAS_POS_MINUS_NEG: {nearest_dist_deltas}")
+    lines.append(f"- ACTION_PATCH_POS(window={PATCH_K}): {patch}")
+    lines.append(f"- ACTION_RAYS_POS(first_non_bg_token,dist): {rays}")
     return "\n".join(lines)
 
 

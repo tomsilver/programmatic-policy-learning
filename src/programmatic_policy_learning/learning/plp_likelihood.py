@@ -70,7 +70,8 @@ def _compute_likelihood_worker(
         ll = 0.0
 
         # hyperparams
-        eps = 1e-4  # "slip" prob when expert action is not allowed by PLP
+        # Prevents -inf when expert action is disallowed; models expert noise.
+        eps = 1e-4
         beta = 2.0  # >1 penalizes permissiveness more strongly
 
         for obs, action in demonstrations.steps:

@@ -12,7 +12,7 @@ Environment:
 
 
 ## INPUT: DEMONSTRATIONS
-You are given ....
+You are given the following expert demonstrations:
 
 ${DEMONSTRATION_DATA}
 

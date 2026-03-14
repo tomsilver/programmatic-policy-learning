@@ -128,7 +128,7 @@ The library should be expressive enough to:
 Once the necessary structural predicate families are covered, STOP.
 Do NOT inflate the library artificially.
 
-Generate only as many templates as needed for semantic coverage. In many environments this will be a few dozen, but there is no target count.z
+Generate only as many templates as needed for semantic coverage. In many environments this will be a few dozen, but there is no target count.
 
 ---
 

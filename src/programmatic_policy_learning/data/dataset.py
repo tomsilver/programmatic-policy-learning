@@ -80,9 +80,7 @@ def sample_negative_actions_continuous(
     if base.ndim == 0:
         base = base.reshape(1)
     low_arr = np.asarray(action_low, dtype=float) if action_low is not None else None
-    high_arr = (
-        np.asarray(action_high, dtype=float) if action_high is not None else None
-    )
+    high_arr = np.asarray(action_high, dtype=float) if action_high is not None else None
     if (low_arr is None) != (high_arr is None):
         raise ValueError("action_low and action_high must be provided together.")
     if low_arr is not None and high_arr is not None:
@@ -92,7 +90,9 @@ def sample_negative_actions_continuous(
                 f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
             )
         if np.any(low_arr > high_arr):
-            raise ValueError("Each continuous action lower bound must be <= upper bound.")
+            raise ValueError(
+                "Each continuous action lower bound must be <= upper bound."
+            )
 
     sampled: list[ActT] = []
     for _ in range(K * 5):
@@ -241,7 +241,7 @@ def extract_examples_from_demonstration_item(
         action_low = (data_imbalance or {}).get("continuous_action_low")
         action_high = (data_imbalance or {}).get("continuous_action_high")
         rng_np = np.random.default_rng(0)
-        for neg_action in sample_negative_actions_continuous( #TODOO
+        for neg_action in sample_negative_actions_continuous(  # TODOO
             action,
             K=k,
             noise_scale=noise_scale,

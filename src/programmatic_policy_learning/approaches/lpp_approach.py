@@ -3,8 +3,8 @@
 import json
 import logging
 import random
-from itertools import product
 from collections.abc import Mapping
+from itertools import product
 from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar, cast
 
@@ -38,6 +38,11 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     filter_constant_features,
     split_and_collect_demonstrations,
+)
+
+# pylint: disable-next=line-too-long
+from programmatic_policy_learning.approaches.lpp_utils.lpp_structural_complexity_utils import (
+    compute_program_structural_log_prior,
 )
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     assert_features_fire,
@@ -101,6 +106,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         cc_alpha: float = 0.0,
         collision_feedback_enc: str = "enc_1",
         collision_template_feedback: bool = True,
+        collision_feedback_num_buckets: int = 2,
         collision_feedback_enabled: bool = False,
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
@@ -146,6 +152,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.cc_alpha = cc_alpha
         self.collision_feedback_enc = collision_feedback_enc
         self.collision_template_feedback = collision_template_feedback
+        self.collision_feedback_num_buckets = max(
+            1, min(2, int(collision_feedback_num_buckets))
+        )
         self.collision_feedback_enabled = collision_feedback_enabled
         self.collision_feedback_max_new_features = collision_feedback_max_new_features
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
@@ -181,11 +190,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             "cc_alpha": float(self.cc_alpha),
             "dt_max_depth": self.dt_max_depth,
             "max_num_particles": int(self.max_num_particles),
+            "prior_version": self.prior_version,
+            "alpha": float(self.alpha),
+            "w_clauses": float(self.w_clauses),
+            "w_literals": float(self.w_literals),
+            "w_max_clause": float(self.w_max_clause),
+            "w_depth": float(self.w_depth),
+            "w_ops": float(self.w_ops),
         }
 
     @staticmethod
     def _normalize_grid_values(raw_values: Sequence[Any] | Any) -> list[Any]:
-        if isinstance(raw_values, Sequence) and not isinstance(raw_values, (str, bytes)):
+        if isinstance(raw_values, Sequence) and not isinstance(
+            raw_values, (str, bytes)
+        ):
             values = list(raw_values)
         else:
             values = [raw_values]
@@ -204,11 +222,21 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             "dt_splitter",
             "cc_alpha",
             "max_num_particles",
+            "prior_version",
+            "alpha",
+            "w_clauses",
+            "w_literals",
+            "w_max_clause",
+            "w_depth",
+            "w_ops",
+            "normalize_plp_actions",
         }
         unknown = set(self.hyperparam_grid.keys()) - supported
         if unknown:
             unknown_str = ", ".join(sorted(unknown))
-            raise ValueError(f"Unsupported hyperparameter(s) in hyperparam_grid: {unknown_str}")
+            raise ValueError(
+                f"Unsupported hyperparameter(s) in hyperparam_grid: {unknown_str}"
+            )
 
         keys = list(self.hyperparam_grid.keys())
         value_lists = [
@@ -216,7 +244,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ]
         candidates: list[dict[str, Any]] = []
         for values in product(*value_lists):
-            candidates.append({k: v for k, v in zip(keys, values)})
+            candidates.append(dict(zip(keys, values)))
         if len(candidates) == 0:
             return [{}]
         return candidates
@@ -326,7 +354,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 neg_list[:10],
             )
         best_group = ranked_groups[0]
-        second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
+        second_group = (
+            ranked_groups[1]
+            if self.collision_feedback_num_buckets >= 2 and len(ranked_groups) > 1
+            else None
+        )
 
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
@@ -352,6 +384,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         next_idx = len(existing) + 1
         out_path = output_dir / f"{prefix}{next_idx}.txt"
         out_path.write_text(prompt, encoding="utf-8")
+        mode = "template" if self.collision_template_feedback else "feature_only"
+        logging.info(
+            "Collision prompt stats: mode=%s enc=%s buckets=%d chars=%d",
+            mode,
+            self.collision_feedback_enc,
+            (2 if second_group is not None else 1),
+            len(prompt),
+        )
         logging.info("Collision repair prompt written to %s", out_path)
         return prompt
 
@@ -365,8 +405,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         dsl_functions: dict[str, Any],
         *,
         train_hyperparams: Mapping[str, Any] | None = None,
+        tie_break_demonstrations: Trajectory[_ObsType, _ActType] | None = None,
     ) -> LPPPolicy:
         hp = self._resolve_train_hyperparams(train_hyperparams)
+        prior_version = str(hp["prior_version"])
+        alpha = float(hp["alpha"])
+        w_clauses = float(hp["w_clauses"])
+        w_literals = float(hp["w_literals"])
+        w_max_clause = float(hp["w_max_clause"])
+        w_depth = float(hp["w_depth"])
+        w_ops = float(hp["w_ops"])
         gain = gini_gain_per_feature(X, y_bool)
         ranked_cols = np.argsort(-gain)
         X_ranked = X[:, ranked_cols]
@@ -388,8 +436,30 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dt_max_depth=cast(int | None, hp["dt_max_depth"]),
             dsl_functions=dsl_functions,
         )
-        if self.prior_version == "uniform":
+        if prior_version == "uniform":
             plp_priors = [-4.0] * len(plps)
+        if alpha != 0.0:
+            structural_log_priors = [
+                compute_program_structural_log_prior(
+                    plp,
+                    alpha=alpha,
+                    w_clauses=w_clauses,
+                    w_literals=w_literals,
+                    w_max_clause=w_max_clause,
+                    w_depth=w_depth,
+                    w_ops=w_ops,
+                )
+                for plp in plps
+            ]
+            plp_priors = [
+                base_prior + struct_prior
+                for base_prior, struct_prior in zip(plp_priors, structural_log_priors)
+            ]
+            logging.info(
+                "Applied structural prior to %d PLPs (alpha=%.4f).",
+                len(plps),
+                alpha,
+            )
 
         logging.info("LEN BEFORE FILTERING FALSE=%d", len(plps))
         filtered: list[tuple[StateActionProgram, float]] = []
@@ -422,6 +492,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
+            # print(f"Posterior: {prior + likelihood:.4f}")
 
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, int(hp["max_num_particles"])
@@ -430,7 +501,46 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             probs_arr = np.asarray(particle_log_probs)
             max_val = probs_arr.max()
             max_indices = np.flatnonzero(probs_arr == max_val)
-            map_idx = int(np.random.choice(max_indices))
+            if len(max_indices) == 1:
+                map_idx = int(max_indices[0])
+            elif (
+                tie_break_demonstrations is not None
+                and len(tie_break_demonstrations.steps) > 0
+            ):
+                tied_idx = [int(i) for i in max_indices.tolist()]
+                best_idx = tied_idx[0]
+                best_risk = float("inf")
+                for idx in tied_idx:
+                    tie_policy: LPPPolicy = LPPPolicy(
+                        [particles[idx]],
+                        [1.0],
+                        normalize_plp_actions=self.normalize_plp_actions,
+                        action_mode=str(self.env_specs.get("action_mode", "discrete")),
+                        action_space=cast(Any, self._action_space),
+                    )
+                    risk = self._compute_policy_risk_on_demos(
+                        tie_policy, tie_break_demonstrations
+                    )
+                    if risk < best_risk:
+                        best_risk = risk
+                        best_idx = idx
+                    elif risk == best_risk and str(particles[idx]) < str(
+                        particles[best_idx]
+                    ):
+                        best_idx = idx
+                map_idx = best_idx
+                logging.info(
+                    "Resolved MAP posterior tie using tie-break risk on %d demos "
+                    "(best risk=%.6f).",
+                    len(tie_break_demonstrations.steps),
+                    best_risk,
+                )
+            else:
+                # Deterministic fallback for reproducibility when ties remain.
+                map_idx = min(
+                    (int(i) for i in max_indices.tolist()),
+                    key=lambda i: str(particles[i]),
+                )
             logging.info("MAP program index=%d", map_idx)
             logging.info("MAP program (%s):", particle_log_probs[map_idx])
             logging.info(particles[map_idx])
@@ -657,7 +767,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return best_hyperparams
         if len(candidate_hyperparams) == 1:
             logging.info(
-                "Single candidate hyperparameter set=%s; skipping validation model selection.",
+                (
+                    "Single candidate hyperparameter set=%s; "
+                    "skipping validation model selection."
+                ),
                 best_hyperparams,
             )
             return best_hyperparams
@@ -676,6 +789,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 demonstrations_train,
                 dsl_functions,
                 train_hyperparams=hp,
+                tie_break_demonstrations=demonstrations_val,
             )
             val_risk = self._compute_policy_risk_on_demos(
                 candidate_policy, demonstrations_val
@@ -891,6 +1005,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_final,
             dsl_functions,
             train_hyperparams=selected_hyperparams,
+            tie_break_demonstrations=demonstrations_val,
         )
 
     def test_policy_on_envs(

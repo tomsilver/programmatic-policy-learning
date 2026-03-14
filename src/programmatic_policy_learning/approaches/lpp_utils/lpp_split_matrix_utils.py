@@ -174,7 +174,7 @@ def count_states_and_expanded_examples(
     for demo_id in demo_ids:
         traj = demo_dict[int(demo_id)]
         num_states += len(traj.steps)
-        #TODOO: we can later remove this for efficiency.
+        # TODOO: we can later remove this for efficiency.
         pos, neg = extract_examples_from_demonstration(
             traj,
             data_imbalance=data_imbalance,
