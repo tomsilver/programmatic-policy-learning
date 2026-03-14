@@ -261,7 +261,6 @@ loading:
 
 - `registry.py`: provider registry and fallback loader.
 - `providers/ggg_provider.py`: GGG adapter + object type exposure.
-- `providers/prbench_provider.py`: PRBench adapter.
 - `providers/maze_provider.py`: custom maze environment provider.
 
 Provider logic:

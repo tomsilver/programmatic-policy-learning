@@ -10,6 +10,7 @@ provider: kinder
 description: "KinDER Motion2D-p${.num_passages}. Navigate robot to target region through ${.num_passages} narrow passage(s)."
 
 expert:
+  # _target_: "programmatic_policy_learning.experts.motion2d_expert.Motion2DExpert"
   _target_: programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach
 
 observation_mode: continuous
