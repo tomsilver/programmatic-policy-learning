@@ -13,7 +13,7 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, TypeVar
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -32,9 +32,12 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 GymnasiumEnvType: type | None = None
 GymnasiumRecordVideoType: type | None = None
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 try:
     from gymnasium import Env as GymnasiumEnvType
     from gymnasium.wrappers import RecordVideo as GymnasiumRecordVideoType
@@ -269,7 +272,7 @@ def sample_transition_example(
 def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
-    _examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+    _examples: list[tuple[ObsT, ActT]] | None,
 ) -> list[dict[str, Any]]:
     """Log collisions where identical feature vectors have different labels."""
     if y is None:
@@ -297,7 +300,7 @@ def log_feature_collisions(
 
     if collisions:
         logging.info("Feature collisions found: %d", len(collisions))
-        for prev_idx, cur_idx, prev_label in collisions:
+        for prev_idx, cur_idx, prev_label in collisions[:10]:
             logging.info(
                 "Collision: row %d(label=%d) vs row %d(label=%d)",
                 prev_idx,
@@ -397,19 +400,19 @@ def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
 
 
 def _format_one_example(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example for prompt text."""
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example")
     rows = []
-    for r in range(s.shape[0]):
-        row = ", ".join(repr(str(x)) for x in s[r])
+    for rr in range(s.shape[0]):
+        row = ", ".join(repr(str(x)) for x in s[rr])
         rows.append(f"[{row}]")
     grid = "\n".join(f"  {row}" for row in rows)
-    r, c = int(a[0]), int(a[1])
     cell = s[r, c] if 0 <= r < s.shape[0] and 0 <= c < s.shape[1] else "OOB"
     return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
 
@@ -423,18 +426,18 @@ def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
 
 
 def _format_one_example_ascii(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
     symbol_map: dict[str, str],
 ) -> str:
     """Format one labeled (state, action) example using ASCII token codes."""
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_ascii")
     h, w = s.shape[0], s.shape[1]
     code_width = max((len(code) for code in symbol_map.values()), default=1)
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s[r, c] if in_bounds else "OOB"
     rows = []
@@ -453,20 +456,20 @@ def _format_one_example_ascii(
 
 
 def _format_one_example_coords(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
 ) -> str:
     """Format one labeled (state, action) example using coordinate lists."""
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_coords")
     s_str = s.astype(str)
     h, w = s_str.shape[0], s_str.shape[1]
     tokens, counts = np.unique(s_str, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_str[r, c] if in_bounds else "OOB"
 
@@ -489,8 +492,10 @@ PATCH_K = 7
 DIFF_LIMIT = 10
 
 
-def _maybe_map_ascii_tokens(s: np.ndarray, symbol_map: dict[str, str]) -> np.ndarray:
+def _maybe_map_ascii_tokens(s: Any, symbol_map: dict[str, str]) -> Any:
     """Map ASCII tokens to canonical names if symbol_map is provided."""
+    if not isinstance(s, np.ndarray):
+        raise ValueError("Expected s to be a numpy array.")
     s_str = s.astype(str)
     if not symbol_map:
         return s_str
@@ -686,7 +691,7 @@ def _diag_path_summary(
 def _select_diverse_examples(
     pos_indices: list[int],
     neg_indices: list[int],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     symbol_map: dict[str, str],
     max_pos: int = 2,
     max_neg: int = 3,
@@ -751,42 +756,89 @@ def _select_diverse_examples(
 def _build_diff_hints(
     pos_idx: int,
     neg_idx: int,
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     symbol_map: dict[str, str],
 ) -> str:
     s_pos, a_pos = examples[pos_idx]
-    s_neg, _ = examples[neg_idx]
+    s_neg, a_neg = examples[neg_idx]
+    _, action_pos = require_grid_state_action(s_pos, a_pos, context="_build_diff_hints")
+    _, action_neg = require_grid_state_action(s_neg, a_neg, context="_build_diff_hints")
     s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
     s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
-    agent_pos = _find_token_positions(s_pos_tok, "agent")
-    star_pos = _find_token_positions(s_pos_tok, "star")
-    agent_anchor = agent_pos[0] if agent_pos else None
-    star_anchor = star_pos[0] if star_pos else None
-    action_pos = (int(a_pos[0]), int(a_pos[1]))
-    agent_minus_star = None
-    if agent_anchor and star_anchor:
-        agent_minus_star = (
-            agent_anchor[0] - star_anchor[0],
-            agent_anchor[1] - star_anchor[1],
-        )
-    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=DIFF_LIMIT)
-    diag_summary = _diag_path_summary(
-        s_pos_tok, star_anchor, agent_anchor, "drawn", limit_steps=None
+
+    uniq_pos, counts_pos = np.unique(s_pos_tok, return_counts=True)
+    uniq_neg, _ = np.unique(s_neg_tok, return_counts=True)
+    background = (
+        str(uniq_pos[int(np.argmax(counts_pos))]) if len(uniq_pos) > 0 else "EMPTY"
     )
+
+    pos_r, pos_c = action_pos
+    neg_r, neg_c = action_neg
+    in_bounds_pos = 0 <= pos_r < s_pos_tok.shape[0] and 0 <= pos_c < s_pos_tok.shape[1]
+    in_bounds_neg = 0 <= neg_r < s_neg_tok.shape[0] and 0 <= neg_c < s_neg_tok.shape[1]
+    action_cell_pos = str(s_pos_tok[pos_r, pos_c]) if in_bounds_pos else "OOB"
+    action_cell_neg = str(s_neg_tok[neg_r, neg_c]) if in_bounds_neg else "OOB"
+
+    common_non_bg = sorted(
+        set(str(t) for t in uniq_pos if str(t) != background)
+        & set(str(t) for t in uniq_neg if str(t) != background)
+    )
+    component_diffs: list[dict[str, int | str]] = []
+    nearest_dist_deltas: list[tuple[str, int]] = []
+    for tok in common_non_bg:
+        comps_pos, largest_pos = _connected_components(s_pos_tok, tok)
+        comps_neg, largest_neg = _connected_components(s_neg_tok, tok)
+        if comps_pos != comps_neg or largest_pos != largest_neg:
+            component_diffs.append(
+                {
+                    "token": tok,
+                    "num_components_pos": int(comps_pos),
+                    "num_components_neg": int(comps_neg),
+                    "largest_component_pos": int(largest_pos),
+                    "largest_component_neg": int(largest_neg),
+                }
+            )
+        d_pos = _manhattan_nearest(_find_token_positions(s_pos_tok, tok), action_pos)
+        d_neg = _manhattan_nearest(_find_token_positions(s_neg_tok, tok), action_neg)
+        if d_pos is not None and d_neg is not None and d_pos != d_neg:
+            nearest_dist_deltas.append((tok, int(d_pos - d_neg)))
+    component_diffs = component_diffs[:8]
+    nearest_dist_deltas.sort(key=lambda item: (-abs(item[1]), item[0]))
+    nearest_dist_deltas = nearest_dist_deltas[:8]
+
+    patch = _compute_patch(s_pos_tok, action_pos, PATCH_K)
+    rays = {
+        name: _raycast(s_pos_tok, action_pos, direction, background)
+        for name, direction in {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }.items()
+    }
+    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=min(6, DIFF_LIMIT))
+
     lines = []
     lines.append("DIFF HINTS:")
-    lines.append(f"- AGENT_POS: {agent_anchor}")
-    lines.append(f"- STAR_POS: {star_anchor}")
+    lines.append(f"- POS_EXAMPLE_IDX: {pos_idx}")
+    lines.append(f"- NEG_EXAMPLE_IDX: {neg_idx}")
+    lines.append(f"- BACKGROUND_TOKEN_POS: {background}")
     lines.append(f"- ACTION_POS: {action_pos}")
-    lines.append(f"- agent_minus_star: {agent_minus_star}")
-    lines.append(f"- top_k_diffs: {diffs}")
-    lines.append(f"- diag_path_from_star_toward_agent: {diag_summary}")
+    lines.append(f"- ACTION_NEG: {action_neg}")
+    lines.append(f"- ACTION_CELL_POS_TOKEN: {action_cell_pos}")
+    lines.append(f"- ACTION_CELL_NEG_TOKEN: {action_cell_neg}")
+    lines.append(f"- TOP_K_CELL_DIFFS(pos_vs_neg): {diffs}")
+    lines.append("- STRUCTURAL_CANDIDATES:")
+    lines.append(f"  COMPONENT_DIFFS: {component_diffs}")
+    lines.append(f"  ACTION_NEAREST_DIST_DELTAS_POS_MINUS_NEG: {nearest_dist_deltas}")
+    lines.append(f"- ACTION_PATCH_POS(window={PATCH_K}): {patch}")
+    lines.append(f"- ACTION_RAYS_POS(first_non_bg_token,dist): {rays}")
     return "\n".join(lines)
 
 
 def _format_one_example_enc2(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
@@ -795,13 +847,13 @@ def _format_one_example_enc2(
     patch_k: int = PATCH_K,
 ) -> str:
     """Format one labeled (state, action) example using enc_2."""
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_enc2")
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     h, w = s_tok.shape[0], s_tok.shape[1]
     tokens, counts = np.unique(s_tok, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_tok[r, c] if in_bounds else "OOB"
 
@@ -882,8 +934,8 @@ def _format_one_example_enc2(
 
 
 def _format_one_example_enc2_delta(
-    s: np.ndarray,
-    a: tuple[int, int],
+    s: Any,
+    a: Any,
     *,
     label: int,
     idx: int,
@@ -891,12 +943,14 @@ def _format_one_example_enc2_delta(
     small_list_threshold: int = SMALL_LIST_THRESHOLD,
 ) -> str:
     """Compact delta-only summary for enc_2 collision evidence."""
+    s, (r, c) = require_grid_state_action(
+        s, a, context="_format_one_example_enc2_delta"
+    )
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     tokens, counts = np.unique(s_tok, return_counts=True)
     bg_idx = int(np.argmax(counts)) if tokens.size else -1
     background = tokens[bg_idx] if bg_idx >= 0 else ""
 
-    r, c = int(a[0]), int(a[1])
     in_bounds = 0 <= r < s_tok.shape[0] and 0 <= c < s_tok.shape[1]
     cell = s_tok[r, c] if in_bounds else "OOB"
 
@@ -933,7 +987,7 @@ def _format_one_example_enc2_delta(
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     *,
     env_name: str | None = None,
     existing_feature_summary: str | None = None,  # pylint: disable=unused-argument
@@ -1279,7 +1333,7 @@ def _safe_eval_bool(expr: str, locals_map: dict[str, bool]) -> bool:
 
 def build_dnf_failure_payload(
     policy_str: str,
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     y: list[bool] | np.ndarray,
     feature_fns: dict[str, Callable[[Any, Any], bool]],
     max_bad_clauses: int = 5,
@@ -1397,7 +1451,7 @@ def build_dnf_failure_payload(
 
 def build_dnf_failure_prompt(
     payload: dict[str, Any],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     max_examples: int = 5,
 ) -> str:
     """Create a prompt for repairing a DNF policy given failure payload."""

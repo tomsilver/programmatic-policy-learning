@@ -1,0 +1,21 @@
+{
+  "action_choice_hints": [
+    "The candidate action cell is adjacent to a cell containing a directional marker.",
+    "The candidate action cell is in the same row or column as a cell with a special object.",
+    "The candidate action cell is not already occupied by a previously marked cell.",
+    "The candidate action cell is positioned such that selecting it maintains a continuous path between two distinct object types.",
+    "The candidate action cell is chosen to avoid immediate adjacency to cells with a blocking object."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if the candidate cell is next to cells with special roles (e.g., markers, obstacles, or goals).",
+    "Path connectivity: Required to assess whether selecting a cell preserves or creates a connection between important objects.",
+    "Cell occupancy status: Necessary to check if the candidate cell is already marked or unmarked.",
+    "Relative position: Needed to compare the candidate cell's location with respect to other key objects (e.g., same row/column, directionality)."
+  ],
+  "causal_transition_hints": [
+    "Choosing a cell adjacent to a directional marker tends to enable movement or extension in the indicated direction.",
+    "Selecting a cell that maintains path connectivity tends to preserve access between important objects.",
+    "Choosing a cell already marked tends to have no effect or is avoided to prevent redundant actions.",
+    "Selecting a cell adjacent to a blocking object tends to risk breaking connectivity or creating an impassable region."
+  ]
+}

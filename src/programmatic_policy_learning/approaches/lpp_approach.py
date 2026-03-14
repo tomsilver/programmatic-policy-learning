@@ -4,8 +4,9 @@ import json
 import logging
 import random
 from collections.abc import Mapping
+from itertools import product
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Any, Callable, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -37,6 +38,11 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
     filter_constant_features,
     split_and_collect_demonstrations,
+)
+
+# pylint: disable-next=line-too-long
+from programmatic_policy_learning.approaches.lpp_utils.lpp_structural_complexity_utils import (
+    compute_program_structural_log_prior,
 )
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     assert_features_fire,
@@ -100,6 +106,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         cc_alpha: float = 0.0,
         collision_feedback_enc: str = "enc_1",
         collision_template_feedback: bool = True,
+        collision_feedback_num_buckets: int = 2,
         collision_feedback_enabled: bool = False,
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
@@ -117,7 +124,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         split_seed: int = 0,
         split_strategy: str = "random",
         preserve_ordering: bool = False,
-        dt_max_depth_candidates: Sequence[int | None] | None = None,
+        dt_max_depth: int | None = 5,
+        hyperparam_grid: Mapping[str, Sequence[Any] | Any] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -144,6 +152,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.cc_alpha = cc_alpha
         self.collision_feedback_enc = collision_feedback_enc
         self.collision_template_feedback = collision_template_feedback
+        self.collision_feedback_num_buckets = max(
+            1, min(2, int(collision_feedback_num_buckets))
+        )
         self.collision_feedback_enabled = collision_feedback_enabled
         self.collision_feedback_max_new_features = collision_feedback_max_new_features
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
@@ -166,13 +177,87 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.split_seed = split_seed
         self.split_strategy = split_strategy
         self.preserve_ordering = preserve_ordering
-        self.dt_max_depth_candidates: list[int | None]
-        if dt_max_depth_candidates is None:
-            self.dt_max_depth_candidates = [None]
+        self.dt_max_depth = dt_max_depth
+        self.hyperparam_grid = (
+            dict(hyperparam_grid) if isinstance(hyperparam_grid, Mapping) else None
+        )
+
+    def _default_train_hyperparams(self) -> dict[str, Any]:
+        return {
+            "num_dts": int(self.num_dts),
+            "program_generation_step_size": int(self.program_generation_step_size),
+            "dt_splitter": self.dt_splitter,
+            "cc_alpha": float(self.cc_alpha),
+            "dt_max_depth": self.dt_max_depth,
+            "max_num_particles": int(self.max_num_particles),
+            "prior_version": self.prior_version,
+            "alpha": float(self.alpha),
+            "w_clauses": float(self.w_clauses),
+            "w_literals": float(self.w_literals),
+            "w_max_clause": float(self.w_max_clause),
+            "w_depth": float(self.w_depth),
+            "w_ops": float(self.w_ops),
+        }
+
+    @staticmethod
+    def _normalize_grid_values(raw_values: Sequence[Any] | Any) -> list[Any]:
+        if isinstance(raw_values, Sequence) and not isinstance(
+            raw_values, (str, bytes)
+        ):
+            values = list(raw_values)
         else:
-            if len(dt_max_depth_candidates) == 0:
-                raise ValueError("dt_max_depth_candidates cannot be empty.")
-            self.dt_max_depth_candidates = list(dt_max_depth_candidates)
+            values = [raw_values]
+        if len(values) == 0:
+            raise ValueError("Hyperparameter candidate list cannot be empty.")
+        return values
+
+    def _build_hyperparam_candidates(self) -> list[dict[str, Any]]:
+        if self.hyperparam_grid is None:
+            return [{}]
+
+        supported = {
+            "dt_max_depth",
+            "num_dts",
+            "program_generation_step_size",
+            "dt_splitter",
+            "cc_alpha",
+            "max_num_particles",
+            "prior_version",
+            "alpha",
+            "w_clauses",
+            "w_literals",
+            "w_max_clause",
+            "w_depth",
+            "w_ops",
+            "normalize_plp_actions",
+        }
+        unknown = set(self.hyperparam_grid.keys()) - supported
+        if unknown:
+            unknown_str = ", ".join(sorted(unknown))
+            raise ValueError(
+                f"Unsupported hyperparameter(s) in hyperparam_grid: {unknown_str}"
+            )
+
+        keys = list(self.hyperparam_grid.keys())
+        value_lists = [
+            self._normalize_grid_values(self.hyperparam_grid[key]) for key in keys
+        ]
+        candidates: list[dict[str, Any]] = []
+        for values in product(*value_lists):
+            candidates.append(dict(zip(keys, values)))
+        if len(candidates) == 0:
+            return [{}]
+        return candidates
+
+    def _resolve_train_hyperparams(
+        self, train_hyperparams: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        resolved = self._default_train_hyperparams()
+        if train_hyperparams is None:
+            return resolved
+        for key, value in train_hyperparams.items():
+            resolved[key] = value
+        return resolved
 
     def configure_rng(self) -> None:
         """Seed Python/NumPy RNGs for deterministic rollouts."""
@@ -240,8 +325,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _handle_collision_feedback(
         self,
         collision_groups: list[dict[str, Any]],
-        examples: list[tuple[np.ndarray, tuple[int, int]]] | None,
+        examples: list[tuple[_ObsType, _ActType]] | None,
     ) -> str | None:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "discrete":
+            logging.info(
+                "Collision repair prompt generation is grid-specific; "
+                "skipping for action_mode=%s.",
+                action_mode,
+            )
+            return None
         if not collision_groups or examples is None:
             return None
         ranked_groups = sorted(
@@ -261,11 +354,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 neg_list[:10],
             )
         best_group = ranked_groups[0]
-        second_group = ranked_groups[1] if len(ranked_groups) > 1 else None
+        second_group = (
+            ranked_groups[1]
+            if self.collision_feedback_num_buckets >= 2 and len(ranked_groups) > 1
+            else None
+        )
 
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
             neg_indices=best_group["neg"],
+            # examples=cast(list[tuple[np.ndarray, tuple[int, int]]], examples),
             examples=examples,
             env_name=self.base_class_name,
             existing_feature_summary=None,
@@ -286,6 +384,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         next_idx = len(existing) + 1
         out_path = output_dir / f"{prefix}{next_idx}.txt"
         out_path.write_text(prompt, encoding="utf-8")
+        mode = "template" if self.collision_template_feedback else "feature_only"
+        logging.info(
+            "Collision prompt stats: mode=%s enc=%s buckets=%d chars=%d",
+            mode,
+            self.collision_feedback_enc,
+            (2 if second_group is not None else 1),
+            len(prompt),
+        )
         logging.info("Collision repair prompt written to %s", out_path)
         return prompt
 
@@ -295,11 +401,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_bool: list[bool],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
         *,
-        dt_max_depth: int | None,
+        train_hyperparams: Mapping[str, Any] | None = None,
+        tie_break_demonstrations: Trajectory[_ObsType, _ActType] | None = None,
     ) -> LPPPolicy:
+        hp = self._resolve_train_hyperparams(train_hyperparams)
+        prior_version = str(hp["prior_version"])
+        alpha = float(hp["alpha"])
+        w_clauses = float(hp["w_clauses"])
+        w_literals = float(hp["w_literals"])
+        w_max_clause = float(hp["w_max_clause"])
+        w_depth = float(hp["w_depth"])
+        w_ops = float(hp["w_ops"])
         gain = gini_gain_per_feature(X, y_bool)
         ranked_cols = np.argsort(-gain)
         X_ranked = X[:, ranked_cols]
@@ -314,15 +429,37 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             y_bool,
             programs_ranked,
             priors_ranked,
-            num_dts=self.num_dts,
-            program_generation_step_size=self.program_generation_step_size,
-            dt_splitter=self.dt_splitter,
-            cc_alpha=self.cc_alpha,
-            dt_max_depth=dt_max_depth,
+            num_dts=int(hp["num_dts"]),
+            program_generation_step_size=int(hp["program_generation_step_size"]),
+            dt_splitter=str(hp["dt_splitter"]),
+            cc_alpha=float(hp["cc_alpha"]),
+            dt_max_depth=cast(int | None, hp["dt_max_depth"]),
             dsl_functions=dsl_functions,
         )
-        if self.prior_version == "uniform":
+        if prior_version == "uniform":
             plp_priors = [-4.0] * len(plps)
+        if alpha != 0.0:
+            structural_log_priors = [
+                compute_program_structural_log_prior(
+                    plp,
+                    alpha=alpha,
+                    w_clauses=w_clauses,
+                    w_literals=w_literals,
+                    w_max_clause=w_max_clause,
+                    w_depth=w_depth,
+                    w_ops=w_ops,
+                )
+                for plp in plps
+            ]
+            plp_priors = [
+                base_prior + struct_prior
+                for base_prior, struct_prior in zip(plp_priors, structural_log_priors)
+            ]
+            logging.info(
+                "Applied structural prior to %d PLPs (alpha=%.4f).",
+                len(plps),
+                alpha,
+            )
 
         logging.info("LEN BEFORE FILTERING FALSE=%d", len(plps))
         filtered: list[tuple[StateActionProgram, float]] = []
@@ -343,7 +480,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
         plps = valid_plps
 
-        likelihoods = compute_likelihood_plps(plps, demonstrations, dsl_functions)
+        likelihoods = compute_likelihood_plps(
+            plps,
+            demonstrations,
+            dsl_functions,
+        )
         logging.info("LIKELIHOODS: %s", likelihoods)
         logging.info("PRIORS: %s", plp_priors)
         particles = []
@@ -351,15 +492,55 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
             particles.append(plp)
             particle_log_probs.append(prior + likelihood)
+            # print(f"Posterior: {prior + likelihood:.4f}")
 
         top_particles, top_particle_log_probs = select_particles(
-            particles, particle_log_probs, self.max_num_particles
+            particles, particle_log_probs, int(hp["max_num_particles"])
         )
         if len(top_particle_log_probs) > 0:
             probs_arr = np.asarray(particle_log_probs)
             max_val = probs_arr.max()
             max_indices = np.flatnonzero(probs_arr == max_val)
-            map_idx = int(np.random.choice(max_indices))
+            if len(max_indices) == 1:
+                map_idx = int(max_indices[0])
+            elif (
+                tie_break_demonstrations is not None
+                and len(tie_break_demonstrations.steps) > 0
+            ):
+                tied_idx = [int(i) for i in max_indices.tolist()]
+                best_idx = tied_idx[0]
+                best_risk = float("inf")
+                for idx in tied_idx:
+                    tie_policy: LPPPolicy = LPPPolicy(
+                        [particles[idx]],
+                        [1.0],
+                        normalize_plp_actions=self.normalize_plp_actions,
+                        action_mode=str(self.env_specs.get("action_mode", "discrete")),
+                        action_space=cast(Any, self._action_space),
+                    )
+                    risk = self._compute_policy_risk_on_demos(
+                        tie_policy, tie_break_demonstrations
+                    )
+                    if risk < best_risk:
+                        best_risk = risk
+                        best_idx = idx
+                    elif risk == best_risk and str(particles[idx]) < str(
+                        particles[best_idx]
+                    ):
+                        best_idx = idx
+                map_idx = best_idx
+                logging.info(
+                    "Resolved MAP posterior tie using tie-break risk on %d demos "
+                    "(best risk=%.6f).",
+                    len(tie_break_demonstrations.steps),
+                    best_risk,
+                )
+            else:
+                # Deterministic fallback for reproducibility when ties remain.
+                map_idx = min(
+                    (int(i) for i in max_indices.tolist()),
+                    key=lambda i: str(particles[i]),
+                )
             logging.info("MAP program index=%d", map_idx)
             logging.info("MAP program (%s):", particle_log_probs[map_idx])
             logging.info(particles[map_idx])
@@ -373,6 +554,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 top_particles,
                 top_particle_probs,
                 normalize_plp_actions=self.normalize_plp_actions,
+                action_mode=str(self.env_specs.get("action_mode", "discrete")),
+                action_space=cast(Any, self._action_space),
             )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
@@ -383,12 +566,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             [StateActionProgram("False")],
             [1.0],
             normalize_plp_actions=self.normalize_plp_actions,
+            action_mode=str(self.env_specs.get("action_mode", "discrete")),
+            action_space=cast(Any, self._action_space),
         )
 
     def _compute_policy_risk_on_demos(
         self,
         policy: LPPPolicy,
-        demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations: Trajectory[_ObsType, _ActType],
         *,
         eps: float = 1e-12,
     ) -> float:
@@ -397,8 +582,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return float("inf")
         losses: list[float] = []
         for obs, action in demonstrations.steps:
-            action_probs = policy.get_action_probs(obs)
-            prob = float(action_probs[action])
+            prob = float(policy.get_action_prob(obs, action))
             losses.append(-float(np.log(max(prob, eps))))
         return float(np.mean(losses))
 
@@ -411,7 +595,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         loading_cfg = (self.program_generation or {}).get("loading")
         if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
-        data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+        raw_data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
+        data_imbalance_cfg = (
+            dict(raw_data_imbalance_cfg)
+            if isinstance(raw_data_imbalance_cfg, Mapping)
+            else raw_data_imbalance_cfg
+        )
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if (
+            action_mode == "continuous"
+            and isinstance(data_imbalance_cfg, dict)
+            and hasattr(self._action_space, "low")
+            and hasattr(self._action_space, "high")
+        ):
+            data_imbalance_cfg.setdefault(
+                "continuous_action_low",
+                np.asarray(getattr(self._action_space, "low"), dtype=float).tolist(),
+            )
+            data_imbalance_cfg.setdefault(
+                "continuous_action_high",
+                np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
+            )
         return offline_path_name, data_imbalance_cfg
 
     def _build_and_process_train_matrix(
@@ -419,7 +623,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         *,
         train_demo_ids: tuple[int, ...],
         val_demo_ids: tuple[int, ...],
-        demo_dict_train: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        demo_dict_train: dict[int, Trajectory[_ObsType, _ActType]],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         dsl_functions: dict[str, Any],
@@ -430,10 +634,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Any,
         np.ndarray,
         list[bool],
-        list[tuple[np.ndarray, tuple[int, int]]] | None,
+        list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
     ]:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         val_split_tag = (
             "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
@@ -454,6 +659,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "__role_train_core"
             ),
             seed=self.seed_num,
+            action_mode=action_mode,
         )
         if X is None or y is None:
             raise ValueError(
@@ -541,8 +747,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_bool: list[bool],
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
-        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_train: Trajectory[_ObsType, _ActType],
+        demonstrations_val: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
     ) -> dict[str, Any]:
         """Select hyperparameters via validation risk.
@@ -550,30 +756,30 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Returns a dict so future tunable knobs can be added without
         changing training/evaluation orchestration code.
         """
-        candidate_hyperparams = [
-            {"dt_max_depth": depth} for depth in self.dt_max_depth_candidates
-        ]
+        candidate_hyperparams = self._build_hyperparam_candidates()
         has_validation = len(demonstrations_val.steps) > 0
         best_hyperparams = dict(candidate_hyperparams[0])
         if not has_validation:
             logging.info(
                 "No validation data available; skipping eval-risk minimization and "
-                "falling back to default dt_max_depth=None."
+                "falling back to the first candidate hyperparameter set."
             )
-            return {"dt_max_depth": None}
+            return best_hyperparams
         if len(candidate_hyperparams) == 1:
             logging.info(
-                "Single dt_max_depth candidate=%s; skipping validation model selection.",
-                best_hyperparams["dt_max_depth"],
+                (
+                    "Single candidate hyperparameter set=%s; "
+                    "skipping validation model selection."
+                ),
+                best_hyperparams,
             )
             return best_hyperparams
 
         best_risk = float("inf")
         for hp in candidate_hyperparams:
-            dt_max_depth = hp.get("dt_max_depth")
             logging.info(
-                "Training candidate with dt_max_depth=%s on train_core.",
-                dt_max_depth,
+                "Training candidate on train_core with hyperparameters=%s.",
+                hp,
             )
             candidate_policy = self._train_policy_from_matrix(
                 X,
@@ -582,22 +788,23 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 program_prior_log_probs_opt,
                 demonstrations_train,
                 dsl_functions,
-                dt_max_depth=dt_max_depth,
+                train_hyperparams=hp,
+                tie_break_demonstrations=demonstrations_val,
             )
             val_risk = self._compute_policy_risk_on_demos(
                 candidate_policy, demonstrations_val
             )
             logging.info(
-                "Validation risk (mean NLL) for dt_max_depth=%s: %.6f",
-                dt_max_depth,
+                "Validation risk (mean NLL) for hyperparameters=%s: %.6f",
+                hp,
                 val_risk,
             )
             if val_risk < best_risk:
                 best_risk = val_risk
                 best_hyperparams = dict(hp)
         logging.info(
-            "Selected dt_max_depth=%s with best validation risk %.6f.",
-            best_hyperparams["dt_max_depth"],
+            "Selected hyperparameters=%s with best validation risk %.6f.",
+            best_hyperparams,
             best_risk,
         )
         return best_hyperparams
@@ -607,7 +814,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         *,
         train_demo_ids: tuple[int, ...],
         val_demo_ids: tuple[int, ...],
-        demo_dict_val: dict[int, Trajectory[np.ndarray, tuple[int, int]]],
+        demo_dict_val: dict[int, Trajectory[_ObsType, _ActType]],
         programs_sa: list[StateActionProgram],
         dsl_functions: dict[str, Any],
         data_imbalance_cfg: dict[str, Any] | None,
@@ -615,18 +822,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         X_train: Any,
         y_train: np.ndarray,
         program_prior_log_probs_opt: list[float] | None,
-        demonstrations_train: Trajectory[np.ndarray, tuple[int, int]],
-        demonstrations_val: Trajectory[np.ndarray, tuple[int, int]],
+        demonstrations_train: Trajectory[_ObsType, _ActType],
+        demonstrations_val: Trajectory[_ObsType, _ActType],
     ) -> tuple[
         Any,
         list[bool],
         list[StateActionProgram],
         list[float] | None,
-        Trajectory[np.ndarray, tuple[int, int]],
+        Trajectory[_ObsType, _ActType],
     ]:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if len(train_demo_ids) == 0:
             raise ValueError("No demonstrations available for final retraining.")
-        demonstrations_final = Trajectory[np.ndarray, tuple[int, int]](
+        demonstrations_final = Trajectory[_ObsType, _ActType](
             steps=list(demonstrations_train.steps) + list(demonstrations_val.steps)
         )
 
@@ -650,6 +858,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     "__role_val"
                 ),
                 seed=self.seed_num,
+                action_mode=action_mode,
             )
             if X_val is None or y_val is None:
                 raise ValueError(
@@ -685,14 +894,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """Train the logical programmatic policy using demonstrations."""
         outer_feedback = None
         offline_path_name, data_imbalance_cfg = self._get_data_loading_config()
-        (
-            train_demo_ids,
-            val_demo_ids,
-            demonstrations_train,
-            demonstrations_val,
-            demo_dict_train,
-            demo_dict_val,
-        ) = split_and_collect_demonstrations(
+
+        split_result: tuple[
+            tuple[int, ...],
+            tuple[int, ...],
+            Trajectory[_ObsType, _ActType],
+            Trajectory[_ObsType, _ActType],
+            dict[int, Trajectory[_ObsType, _ActType]],
+            dict[int, Trajectory[_ObsType, _ActType]],
+        ] = split_and_collect_demonstrations(
             env_factory=self.env_factory,
             expert=self.expert,
             demo_numbers=self.demo_numbers,
@@ -702,7 +912,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             split_strategy=self.split_strategy,
             preserve_ordering=self.preserve_ordering,
             data_imbalance_cfg=data_imbalance_cfg,
+            action_mode=str(self.env_specs.get("action_mode", "discrete")),
         )
+        (
+            train_demo_ids,
+            val_demo_ids,
+            demonstrations_train,
+            demonstrations_val,
+            demo_dict_train,
+            demo_dict_val,
+        ) = split_result
+
         (
             programs_sa,
             program_prior_log_probs_opt,
@@ -712,6 +932,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             num_programs=self.num_programs,
             base_class_name=self.base_class_name,
             env_factory=self.env_factory,
+            expert=self.expert,
             env_specs=self.env_specs,
             start_symbol=self.start_symbol,
             program_generation=self.program_generation,
@@ -723,6 +944,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
+        # print(programs_sa)
+        # input("PROGRAM GENERATION COMPLETE. Press Enter to continue...")
         (
             X_train,
             y_train,
@@ -750,7 +973,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_val=demonstrations_val,
             dsl_functions=dsl_functions,
         )
-        selected_dt_max_depth = selected_hyperparams.get("dt_max_depth")
         (
             X_final,
             y_final_bool,
@@ -772,8 +994,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_val=demonstrations_val,
         )
         logging.info(
-            "Retraining final policy on train+val with dt_max_depth=%s.",
-            selected_dt_max_depth,
+            "Retraining final policy on train+val with hyperparameters=%s.",
+            selected_hyperparams,
         )
         return self._train_policy_from_matrix(
             X_final,
@@ -782,7 +1004,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             final_program_priors,
             demonstrations_final,
             dsl_functions,
-            dt_max_depth=selected_dt_max_depth,
+            train_hyperparams=selected_hyperparams,
+            tie_break_demonstrations=demonstrations_val,
         )
 
     def test_policy_on_envs(

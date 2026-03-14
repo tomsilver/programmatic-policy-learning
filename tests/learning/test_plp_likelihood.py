@@ -17,7 +17,7 @@ def test_compute_likelihood_plps() -> None:
         StateActionProgram("True"),
         StateActionProgram("False or True"),
     ]
-    likelihoods = compute_likelihood_plps(plps, traj, {})
+    likelihoods = compute_likelihood_plps(plps, traj, {}, num_workers=1)
     assert isinstance(likelihoods, list)
     assert all(isinstance(ll, float) for ll in likelihoods)
 
@@ -34,7 +34,7 @@ def test_compute_likelihood_plps_real() -> None:
         StateActionProgram("a[0] == 0"),  # top row
         StateActionProgram("a[0] == a[1]"),  # diagonal
     ]
-    likelihoods = compute_likelihood_plps(plps, traj, {})
+    likelihoods = compute_likelihood_plps(plps, traj, {}, num_workers=1)
     assert likelihoods[0] > -np.inf  # SelectTopRow accepts both actions
     assert isinstance(likelihoods, list)
     assert all(isinstance(ll, float) for ll in likelihoods)

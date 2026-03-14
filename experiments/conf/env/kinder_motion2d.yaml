@@ -1,10 +1,17 @@
-num_passages: 1
+num_passages: 0
 
 make_kwargs:
-  base_name: "Motion2D-p${num_passages}"
-  id: "kinder/Motion2D-p${num_passages}-v0"
+  base_name: "Motion2D-p${..num_passages}"
+  id: "kinder/Motion2D-p${..num_passages}-v0"
   render_mode: null
 
 provider: kinder
 
-description: "KinDER Motion2D-p${num_passages}. Navigate robot to target region through ${num_passages} narrow passage(s)."
+description: "KinDER Motion2D-p${.num_passages}. Navigate robot to target region through ${.num_passages} narrow passage(s)."
+
+expert:
+  # _target_: "programmatic_policy_learning.experts.motion2d_expert.Motion2DExpert"
+  _target_: programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach
+
+observation_mode: continuous
+action_mode: continuous

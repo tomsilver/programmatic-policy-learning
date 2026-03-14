@@ -44,6 +44,7 @@ def create_kinder_expert(
     """
     env_name = canonicalize_env_name(env_name)
     if env_name == "Motion2D":
+        input("INJAAAAAAAA")
         return create_motion2d_expert(action_space, seed=seed)
     raise KeyError(
         f"No KinDER expert configured for '{env_name}'. "

@@ -19,7 +19,6 @@ Return ONLY a JSON object with exactly these keys:
 {
   "action_choice_hints": [ ... ],
   "feature_family_hints": [ ... ],
-  "causal_transition_hints": [ ... ]
 }
 No extra text. No markdown. No commentary.
 
@@ -31,33 +30,23 @@ Rules:
 - Do NOT mention specific raw token characters (see TOKEN_MAP below).
 - Do NOT mention exact coordinates.
 - Each hint must be actionable enough to suggest a feature-template pattern.
-- Avoid repeatedly focusing on the same token role. Hints should reflect multiple structural relations present in the demonstrations rather than emphasizing a single object type.
+- Avoid repeatedly focusing on the same token role.  Hints should reflect multiple structural relations present in the demonstrations rather than emphasizing a single object type.
 
 ### B) feature_family_hints (flexible size)
 Provide a set of **feature-family types** needed to model this environment's decision policy.
 Rules:
 - Each item should name one family and briefly state why it is needed.
 - Focus on structurally distinct families (not near-duplicates).
-- Do NOT suggest global count/threshold families (e.g., ‘number of X ≥ K’).
-  If global context is needed, express it as existence (present/absent) or relative comparisons (more of X than Y), not absolute counts.
+- Do NOT suggest global count/threshold families (e.g., ‘number of X ≥ K’). 
+   If global context is needed, express it as existence (present/absent) or relative comparisons (more of X than Y), not absolute counts.
 - Do not mention raw token characters; use token roles.
-
-### C) causal_transition_hints (flexible size)
-Each string should describe a **causal action-to-next-state relation** implied by demonstrations, useful for deciding actions from current state.
-Rules:
-- Express what type of local/global transition is induced or avoided by choosing a candidate action.
-- Keep statements environment-agnostic and structural (e.g., blocking, enabling path, preserving support, avoiding unsafe adjacency, triggering movement).
-- Do NOT use raw token characters or exact coordinates.
-- Do NOT encode fixed numeric thresholds.
-- Prefer counterfactual form where possible: “choosing cells with property P tends to cause/avoid transition T.”
 
 ## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
 1) Compare chosen actions vs nearby plausible alternative cells.
 2) Identify what observable information in the state must influence the expert’s decision.
    Focus on relations between the candidate action and relevant elements of the state.
 3) Output the minimal predicate schemas that could separate chosen actions from non-chosen ones.
-4) Consider how the action relates simultaneously to multiple important objects (e.g., goal objects, structures created so far, or moving agents).
-5) Use (s_t, a_t, s_{t+1}) to infer causal transition regularities, not only static geometry.
+4) Consider how the action relates simultaneously to multiple important objects  (e.g., goal objects, structures created so far, or moving agents).
 
 ## DEMONSTRATIONS
 {trajectories_text}

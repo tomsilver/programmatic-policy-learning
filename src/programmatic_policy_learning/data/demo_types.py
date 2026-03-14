@@ -9,7 +9,7 @@ ActT = TypeVar("ActT")
 
 @dataclass(frozen=True)
 class Trajectory(Generic[ObsT, ActT]):
-    """A sequence of (observation, action) steps."""
+    """A generic sequence of ``(observation, action)`` steps."""
 
     steps: list[tuple[ObsT, ActT]]
 

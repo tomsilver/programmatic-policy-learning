@@ -11,7 +11,7 @@ import random
 from collections import defaultdict
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 import cloudpickle
 import numpy as np
@@ -27,6 +27,7 @@ from programmatic_policy_learning.utils.cache_utils import (
     load_single_cache_output,
     manage_cache,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 
 def allowed_cpus() -> int:
@@ -40,6 +41,71 @@ def allowed_cpus() -> int:
 
 
 Coord = tuple[int, int]
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
+
+
+def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
+    """Convert sampled array back to the demonstrated action's container
+    type."""
+    if isinstance(template, np.ndarray):
+        return action_arr.astype(template.dtype, copy=False)
+    if isinstance(template, tuple):
+        return tuple(float(x) for x in action_arr.tolist())
+    if isinstance(template, list):
+        return [float(x) for x in action_arr.tolist()]
+    if isinstance(template, (int, float, np.integer, np.floating)):
+        return float(action_arr.reshape(-1)[0])
+    raise TypeError(
+        "Unsupported continuous action type for sampling negatives: "
+        f"{type(template)!r}"
+    )
+
+
+def sample_negative_actions_continuous(
+    expert_action: ActT,
+    *,
+    K: int = 10,
+    noise_scale: float = 0.2,
+    action_low: Sequence[float] | np.ndarray | None = None,
+    action_high: Sequence[float] | np.ndarray | None = None,
+    rng: np.random.Generator | None = None,
+) -> list[ActT]:
+    """Sample continuous negative actions by perturbing the expert action."""
+    if K <= 0:
+        return []
+    if rng is None:
+        rng = np.random.default_rng(0)
+    base = np.asarray(expert_action, dtype=float)
+    if base.ndim == 0:
+        base = base.reshape(1)
+    low_arr = np.asarray(action_low, dtype=float) if action_low is not None else None
+    high_arr = np.asarray(action_high, dtype=float) if action_high is not None else None
+    if (low_arr is None) != (high_arr is None):
+        raise ValueError("action_low and action_high must be provided together.")
+    if low_arr is not None and high_arr is not None:
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+        if np.any(low_arr > high_arr):
+            raise ValueError(
+                "Each continuous action lower bound must be <= upper bound."
+            )
+
+    sampled: list[ActT] = []
+    for _ in range(K * 5):
+        candidate = base + rng.normal(0.0, noise_scale, size=base.shape)
+        if low_arr is not None and high_arr is not None:
+            candidate = np.clip(candidate, low_arr, high_arr)
+        if np.allclose(candidate, base):
+            continue
+        sampled.append(_coerce_action_like(expert_action, candidate))
+        if len(sampled) >= K:
+            break
+
+    return sampled
 
 
 def sample_negative_actions_stratified(
@@ -138,67 +204,61 @@ def sample_negative_actions_stratified(
     return picked[:K]
 
 
-def sample_negative_actions_hard_negative(
-    state: np.ndarray,
-    expert_action: Coord,
-    K: int = 30,
-    rng: random.Random | None = None,
-) -> list[Coord]:
-    """Hard-negative sampling by proximity to the expert action.
-
-    Picks the K closest coordinates (by Manhattan distance) to the
-    expert action, excluding the expert action itself. Ties are shuffled
-    for variety.
-    """
-    if rng is None:
-        rng = random.Random(0)
-
-    h = state.shape[0]
-    w = state.shape[1]
-    er, ec = expert_action
-
-    candidates: list[Coord] = []
-    for r in range(h):
-        for c in range(w):
-            if (r, c) == (er, ec):
-                continue
-            candidates.append((r, c))
-
-    if not candidates:
-        return []
-
-    rng.shuffle(candidates)
-    candidates.sort(key=lambda rc: abs(rc[0] - er) + abs(rc[1] - ec))
-    return candidates[:K]
-
-
 def extract_examples_from_demonstration_item(
-    demonstration_item: tuple[np.ndarray, tuple[int, int]],
+    demonstration_item: tuple[ObsT, ActT],
     *,
     data_imbalance: dict[str, Any] | None = None,
+    action_mode: str = "discrete",
 ) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]],
-    list[tuple[np.ndarray, tuple[int, int]]],
+    list[tuple[ObsT, ActT]],
+    list[tuple[ObsT, ActT]],
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
 
     Parameters
     ----------
-    demonstrations : (np.ndarray, (int, int))
+    demonstrations : (ObsT, ActT)
         A state, action pair.
 
     Returns
     -------
-    positive_examples : [(np.ndarray, (int, int))]
+    positive_examples : [(ObsT, ActT)]
         A list with just the input state, action pair (for convenience).
-    negative_examples : [(np.ndarray, (int, int))]
+    negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
     """
     state, action = demonstration_item
 
-    positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = [(state, action)]
-    negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
+    positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
+    negative_examples: list[tuple[ObsT, ActT]] = []
+
+    if action_mode == "continuous":
+        k = int((data_imbalance or {}).get("K", 10))
+        if k < 0:
+            raise ValueError("data_imbalance.K must be >= 0")
+        noise_scale = float((data_imbalance or {}).get("continuous_noise_scale", 0.2))
+        action_low = (data_imbalance or {}).get("continuous_action_low")
+        action_high = (data_imbalance or {}).get("continuous_action_high")
+        rng_np = np.random.default_rng(0)
+        for neg_action in sample_negative_actions_continuous(  # TODOO
+            action,
+            K=k,
+            noise_scale=noise_scale,
+            action_low=action_low,
+            action_high=action_high,
+            rng=rng_np,
+        ):
+            negative_examples.append((state, neg_action))
+        return positive_examples, negative_examples
+    if action_mode != "discrete":
+        raise ValueError(f"Unknown action_mode: {action_mode!r}")
+
+    state_grid, action_grid = require_grid_state_action(
+        state,
+        action,
+        context="Discrete negative expansion",
+    )
 
     if data_imbalance and data_imbalance.get("enabled", False):
         method = data_imbalance.get("method", "")
@@ -206,48 +266,33 @@ def extract_examples_from_demonstration_item(
             k = int(data_imbalance.get("K", 10))
             if k < 0:
                 raise ValueError("data_imbalance.K must be >= 0")
-            rng = random.Random(0)  # or pass seed from config
+            rng_py = random.Random(0)  # or pass seed from config
             neg_coords = sample_negative_actions_stratified(
-                state=state,
-                expert_action=action,
+                state=state_grid,
+                expert_action=action_grid,
                 K=k,
-                rng=rng,
+                rng=rng_py,
                 include_nearby=8,
             )
             for rc in neg_coords:
-                negative_examples.append((state, rc))
-        elif method == "hard_negative":
-            k = int(data_imbalance.get("K", 10))
-            if k < 0:
-                raise ValueError("data_imbalance.K must be >= 0")
-            rng = random.Random(0)
-            neg_coords = sample_negative_actions_hard_negative(
-                state=state,
-                expert_action=action,
-                K=k,
-                rng=rng,
-            )
-            for rc in neg_coords:
-                negative_examples.append((state, rc))
+                negative_examples.append((state, rc))  # type: ignore[arg-type]
         else:
             raise ValueError(f"Unknown data_imbalance.method: {method}")
     else:
-        for r in range(state.shape[0]):
-            for c in range(state.shape[1]):
-                if (r, c) == action:
+        for r in range(state_grid.shape[0]):
+            for c in range(state_grid.shape[1]):
+                if (r, c) == action_grid:
                     continue
-                negative_examples.append((state, (r, c)))
-
+                negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
     return positive_examples, negative_examples
 
 
 def extract_examples_from_demonstration(
-    demonstration: Trajectory[np.ndarray, tuple[int, int]],
+    demonstration: Trajectory[ObsT, ActT],
     *,
     data_imbalance: dict[str, Any] | None = None,
-) -> tuple[
-    list[tuple[np.ndarray, tuple[int, int]]], list[tuple[np.ndarray, tuple[int, int]]]
-]:
+    action_mode: str = "discrete",
+) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
 
@@ -263,13 +308,15 @@ def extract_examples_from_demonstration(
     negative_examples : [(np.ndarray, (int, int))]
         A list with negative examples of state, actions.
     """
-    positive_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
-    negative_examples: list[tuple[np.ndarray, tuple[int, int]]] = []
+    positive_examples: list[tuple[ObsT, ActT]] = []
+    negative_examples: list[tuple[ObsT, ActT]] = []
 
     for demonstration_item in demonstration.steps:
         demo_positive_examples, demo_negative_examples = (
             extract_examples_from_demonstration_item(
-                demonstration_item, data_imbalance=data_imbalance
+                demonstration_item,
+                data_imbalance=data_imbalance,
+                action_mode=action_mode,
             )
         )
         positive_examples.extend(demo_positive_examples)
@@ -330,7 +377,18 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     offline_path_name = kwargs.get("offline_path_name")
     enabled = data_imbalance.get("enabled", False)
     K = data_imbalance.get("K", "none") if enabled else "none"
-    imbalance_part = f"{imbalance_method}_K{K}" if enabled else "none"
+    if enabled:
+        continuous_noise = data_imbalance.get("continuous_noise_scale", "none")
+        continuous_low = data_imbalance.get("continuous_action_low")
+        continuous_high = data_imbalance.get("continuous_action_high")
+        bounds_sig = hashlib.sha1(
+            str((continuous_low, continuous_high)).encode("utf-8")
+        ).hexdigest()[:10]
+        imbalance_part = (
+            f"{imbalance_method}_K{K}_noise{continuous_noise}_b{bounds_sig}"
+        )
+    else:
+        imbalance_part = "none"
     offline_tag = "none"
     if offline_path_name:
         offline_tag = Path(str(offline_path_name)).name
@@ -369,7 +427,7 @@ def worker_init(
     ]
 
 
-def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bool]:
+def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
     """Run all precompiled programs on one (state, action) example.
 
     Uses the DSL and program_batch already set up by worker_init.
@@ -395,7 +453,7 @@ def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
     programs: list[StateActionProgram] | list[str],
-    demo_traj: Trajectory[np.ndarray, tuple[int, int]],
+    demo_traj: Trajectory[ObsT, ActT],
     dsl_functions: dict,
     *,
     data_imbalance: dict[str, Any] | None = None,
@@ -403,14 +461,17 @@ def run_all_programs_on_single_demonstration(
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
     demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
+    action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-) -> tuple[Any, np.ndarray, list[tuple[np.ndarray, tuple[int, int]]] | None]:
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
     positive_examples, negative_examples = extract_examples_from_demonstration(
-        demo_traj, data_imbalance=data_imbalance
+        demo_traj,
+        data_imbalance=data_imbalance,
+        action_mode=action_mode,
     )
 
     fn_inputs = positive_examples + negative_examples
@@ -462,7 +523,7 @@ def run_all_programs_on_single_demonstration(
 
 def run_programs_on_examples(
     programs: list[StateActionProgram] | list[str],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     dsl_functions: dict,
     *,
     program_interval: int = 1000,
@@ -547,7 +608,7 @@ def run_all_programs_on_demonstrations(
     base_class_name: str,
     demo_numbers: tuple[int, ...],
     programs: list,
-    demo_dict: dict[int, Trajectory],
+    demo_dict: dict[int, Trajectory[ObsT, ActT]],
     dsl_functions: dict,
     *,
     data_imbalance: dict[str, Any] | None = None,
@@ -556,12 +617,11 @@ def run_all_programs_on_demonstrations(
     demos_included: Sequence[int] | None = None,
     split_tag: str | None = None,
     seed: int | None = None,
-) -> tuple[
-    Any | None, np.ndarray | None, list[tuple[np.ndarray, tuple[int, int]]] | None
-]:
+    action_mode: str = "discrete",
+) -> tuple[Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
-    examples_all: list[tuple[np.ndarray, tuple[int, int]]] = []
+    examples_all: list[tuple[ObsT, ActT]] = []
     for demo_number in demo_numbers:
         demo_X, demo_y, demo_examples = run_all_programs_on_single_demonstration(
             base_class_name,
@@ -574,6 +634,7 @@ def run_all_programs_on_demonstrations(
             offline_path_name=offline_path_name,
             demos_included=demos_included,
             split_tag=split_tag,
+            action_mode=action_mode,
             seed=seed,
         )
 

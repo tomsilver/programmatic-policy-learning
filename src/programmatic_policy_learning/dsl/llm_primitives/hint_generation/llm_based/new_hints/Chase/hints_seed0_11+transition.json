@@ -1,0 +1,24 @@
+{
+  "action_choice_hints": [
+    "The candidate action cell is adjacent to a cell with a special directional marker.",
+    "The candidate action cell is not blocked by impassable elements in the immediate neighborhood.",
+    "The candidate action cell is positioned such that selecting it extends a contiguous path or structure.",
+    "The candidate action cell is aligned with the current position of a movable entity.",
+    "The candidate action cell is not already part of a previously marked or completed structure.",
+    "The candidate action cell is positioned to maintain connectivity between key objects or regions."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if a candidate cell is next to important objects or markers.",
+    "Path connectivity: Required to assess whether selecting a cell extends or preserves a continuous structure.",
+    "Occupancy status: Necessary to distinguish between empty, occupied, or already marked cells.",
+    "Alignment with movable entities: Needed to relate candidate actions to the positions of agents or targets.",
+    "Connectivity preservation: To ensure that actions do not disconnect important regions or objects."
+  ],
+  "causal_transition_hints": [
+    "Choosing a cell adjacent to a directional marker tends to enable movement or extension in that direction.",
+    "Selecting a cell that is not blocked allows the creation or continuation of a path.",
+    "Choosing a cell already marked tends to avoid any state change or may be disallowed.",
+    "Selecting a cell that maintains connectivity prevents fragmentation of important structures.",
+    "Choosing a cell aligned with a movable entity tends to cause that entity to advance or interact with the environment."
+  ]
+}

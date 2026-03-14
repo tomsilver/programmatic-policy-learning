@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 import numpy as np
 from scipy.sparse import hstack
@@ -23,6 +23,8 @@ from programmatic_policy_learning.learning.prior_calculation import (
     priors_from_features_v2,
 )
 
+ObsT = TypeVar("ObsT")
+ActT = TypeVar("ActT")
 _filter_constant_features = filter_constant_features
 
 
@@ -32,7 +34,7 @@ def _append_new_features_from_sources(
     program_prior_log_probs: list[float] | None,
     dsl_functions: dict[str, Any],
     new_feature_sources: list[str],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     *,
     start_index: int,
     collision_loop_idx: int,
@@ -71,7 +73,7 @@ def _append_new_features_from_sources(
 def run_collision_feedback_loop(
     *,
     collision_groups: list[dict[str, Any]],
-    examples: list[tuple[np.ndarray, tuple[int, int]]],
+    examples: list[tuple[ObsT, ActT]],
     max_rounds: int,
     target_collisions: int,
     start_index: int,
@@ -83,9 +85,7 @@ def run_collision_feedback_loop(
     generate_features: Callable[
         [str, int, int], tuple[list[str], dict[str, Any], Path]
     ],
-    make_prompt: Callable[
-        [list[dict[str, Any]], list[tuple[np.ndarray, tuple[int, int]]]], str | None
-    ],
+    make_prompt: Callable[[list[dict[str, Any]], list[tuple[ObsT, ActT]]], str | None],
     prior_version: str = "uniform",
     prior_beta: float = 1.0,
 ) -> tuple[

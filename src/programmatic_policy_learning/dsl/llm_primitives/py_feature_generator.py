@@ -390,6 +390,23 @@ class PyFeatureGenerator:
             programs.append(source.replace("\\n", "\n"))  # LATER REMOVE
         return programs
 
+    def _postprocess_payload_by_mode(
+        self,
+        payload: dict[str, Any],
+        *,
+        action_mode: str,
+        env_name: str | None,
+        start_index: int = 1,
+    ) -> dict[str, Any]:
+        """Apply payload post-processing based on action modality."""
+        if action_mode == "discrete":
+            return self.expand_template_payload(
+                payload, env_name, start_index=start_index
+            )
+        if action_mode == "continuous":
+            return payload
+        raise ValueError(f"Unsupported action_mode: {action_mode!r}")
+
     def generate(  # pylint: disable=unused-argument
         self,
         prompt_path: str | Path,
@@ -404,6 +421,7 @@ class PyFeatureGenerator:
         _seed: int = 0,
         reprompt_checks: list[RepromptCheck] | None = None,
         loading: dict[str, Any] | None = None,
+        action_mode: str = "discrete",
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
         load_offline = bool(loading and loading.get("offline", 0))
@@ -455,7 +473,8 @@ class PyFeatureGenerator:
                         start_index=len(all_programs) + 1,
                     )
                 prompt = f"{prompt}\n\nSEED: {_seed}\n"
-                # logging.info(prompt)
+                logging.info(prompt)
+
                 template_payload = self.query_llm(
                     prompt,
                     max_attempts=max_attempts,
@@ -468,8 +487,11 @@ class PyFeatureGenerator:
                     f"template_payload_{prompt_label}_{env_label}.json",
                     template_payload,
                 )
-                expanded_payload = self.expand_template_payload(
-                    template_payload, env_name, start_index=1
+                expanded_payload = self._postprocess_payload_by_mode(
+                    template_payload,
+                    action_mode=action_mode,
+                    env_name=env_name,
+                    start_index=1,
                 )
                 feature_programs = self.parse_feature_programs(expanded_payload)
                 # all_descriptions.extend(self._extract_descriptions(template_payload))
@@ -502,7 +524,12 @@ class PyFeatureGenerator:
             raise ValueError("offline_json_path is required when running offline.")
         payload_text = Path(offline_json_path).read_text(encoding="utf-8")
         payload = json.loads(payload_text)
-        payload = self.expand_template_payload(payload, env_name, start_index=1)
+        payload = self._postprocess_payload_by_mode(
+            payload,
+            action_mode=action_mode,
+            env_name=env_name,
+            start_index=1,
+        )
         feature_programs = self.parse_feature_programs(payload)
         self.write_json("py_feature_payload.json", payload)
         # logging.info(feature_programs)

@@ -153,11 +153,13 @@ def run_rollout(
 
     for step in range(_MAX_STEPS):
         raw: np.ndarray | list[np.ndarray] | None = env.render()
+
         if raw is not None:
             frames.append(np.asarray(raw))
 
         action = expert(obs)
         obs, reward, terminated, truncated, _ = env.step(action)
+
         total_reward += float(reward)
 
         if terminated or truncated:
@@ -197,7 +199,7 @@ def main(args: argparse.Namespace) -> None:
         video_dir.mkdir(exist_ok=True)
         save_video(
             frames,
-            str(video_dir / f"motion2d_p{args.passages}_rollout.mp4"),
+            str(video_dir / f"motion2d_p{args.passages}_s{args.seed}_rollout.mp4"),
         )
 
 
