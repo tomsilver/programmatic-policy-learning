@@ -218,6 +218,7 @@ def _sample_continuous_mixture_negatives(
     Note: trajectory-based negatives are not implemented yet; `w_traj` is
     redistributed over local/uniform.
     """
+    _ = w_traj  # trajectory negatives are intentionally disabled for now
     if k_total <= 0:
         return []
     base = np.asarray(expert_action, dtype=float)
@@ -229,6 +230,7 @@ def _sample_continuous_mixture_negatives(
     has_bounds = low_arr is not None and high_arr is not None
 
     if has_bounds:
+        assert low_arr is not None and high_arr is not None
         if low_arr.shape != base.shape or high_arr.shape != base.shape:
             raise ValueError(
                 "continuous action bounds shape mismatch: "
@@ -268,6 +270,7 @@ def _sample_continuous_mixture_negatives(
 
     # Uniform negatives across valid action box.
     if has_bounds:
+        assert low_arr is not None and high_arr is not None
         local_target = len(sampled)
         target_total = local_target + k_uniform
         for _ in range(max(1, k_uniform) * 6):
@@ -280,6 +283,7 @@ def _sample_continuous_mixture_negatives(
     while len(sampled) < k_total:
         candidate = base + rng.normal(0.0, local_noise_scale, size=base.shape)
         if has_bounds:
+            assert low_arr is not None and high_arr is not None
             candidate = np.clip(candidate, low_arr, high_arr)
         _add_candidate(candidate)
         if len(sampled_vecs) > (k_total * 20):
