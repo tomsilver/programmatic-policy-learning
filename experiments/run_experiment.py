@@ -29,7 +29,7 @@ def _infer_mode_from_provider(
         return configured
     if provider in {"ggg"}:
         return "discrete"
-    if provider in {"kinder", "prbench"}:
+    if provider in {"kinder"}:
         return "continuous"
     logging.warning(
         "Unknown %s_mode '%s' for provider '%s'; defaulting to discrete.",

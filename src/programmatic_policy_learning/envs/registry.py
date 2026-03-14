@@ -9,9 +9,6 @@ from programmatic_policy_learning.envs.providers.kinder_provider import (
     create_kinder_env,
 )
 from programmatic_policy_learning.envs.providers.maze_provider import create_maze_env
-from programmatic_policy_learning.envs.providers.prbench_provider import (
-    create_prbench_env,
-)
 
 
 class EnvRegistry:
@@ -22,7 +19,6 @@ class EnvRegistry:
             "ggg": create_ggg_env,
             "kinder": create_kinder_env,
             "maze": create_maze_env,
-            "prbench": create_prbench_env,
         }
 
     def load(self, env_config: Any, instance_num: int | None = None) -> Any:
