@@ -462,7 +462,6 @@ class PyFeatureGenerator:
                         demonstration_data=demonstration_data,
                     )
                     # print(prompt)
-                    # input()
 
                 else:
                     prompt = self.fill_batch_prompt(

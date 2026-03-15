@@ -595,28 +595,26 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         loading_cfg = (self.program_generation or {}).get("loading")
         if isinstance(loading_cfg, Mapping) and loading_cfg.get("offline"):
             offline_path_name = loading_cfg.get("offline_json_path")
-        raw_data_imbalance_cfg = (self.program_generation or {}).get("data_imbalance")
-        data_imbalance_cfg = (
-            dict(raw_data_imbalance_cfg)
-            if isinstance(raw_data_imbalance_cfg, Mapping)
-            else raw_data_imbalance_cfg
+        raw_sampling_cfg = (self.program_generation or {}).get("negative_sampling")
+        negative_sampling_cfg = (
+            dict(raw_sampling_cfg) if isinstance(raw_sampling_cfg, Mapping) else None
         )
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if (
             action_mode == "continuous"
-            and isinstance(data_imbalance_cfg, dict)
+            and isinstance(negative_sampling_cfg, dict)
             and hasattr(self._action_space, "low")
             and hasattr(self._action_space, "high")
         ):
-            data_imbalance_cfg.setdefault(
-                "continuous_action_low",
+            negative_sampling_cfg.setdefault(
+                "action_low",
                 np.asarray(getattr(self._action_space, "low"), dtype=float).tolist(),
             )
-            data_imbalance_cfg.setdefault(
-                "continuous_action_high",
+            negative_sampling_cfg.setdefault(
+                "action_high",
                 np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
             )
-        return offline_path_name, data_imbalance_cfg
+        return offline_path_name, negative_sampling_cfg
 
     def _build_and_process_train_matrix(
         self,
@@ -627,7 +625,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         dsl_functions: dict[str, Any],
-        data_imbalance_cfg: dict[str, Any] | None,
+        negative_sampling_cfg: dict[str, Any] | None,
         offline_path_name: str | None,
         start_index: int,
     ) -> tuple[
@@ -648,7 +646,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs_sa,
             demo_dict_train,
             dsl_functions,
-            data_imbalance=data_imbalance_cfg,
+            negative_sampling=negative_sampling_cfg,
             return_examples=True,
             offline_path_name=offline_path_name,
             demos_included=(self.program_generation or {}).get("demos_included"),
@@ -817,7 +815,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demo_dict_val: dict[int, Trajectory[_ObsType, _ActType]],
         programs_sa: list[StateActionProgram],
         dsl_functions: dict[str, Any],
-        data_imbalance_cfg: dict[str, Any] | None,
+        negative_sampling_cfg: dict[str, Any] | None,
         offline_path_name: str | None,
         X_train: Any,
         y_train: np.ndarray,
@@ -847,7 +845,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 list(programs_sa),
                 demo_dict_val,
                 dsl_functions,
-                data_imbalance=data_imbalance_cfg,
+                negative_sampling=negative_sampling_cfg,
                 return_examples=False,
                 offline_path_name=offline_path_name,
                 demos_included=(self.program_generation or {}).get("demos_included"),
@@ -893,7 +891,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _train_policy(self) -> LPPPolicy:
         """Train the logical programmatic policy using demonstrations."""
         outer_feedback = None
-        offline_path_name, data_imbalance_cfg = self._get_data_loading_config()
+        offline_path_name, negative_sampling_cfg = self._get_data_loading_config()
 
         split_result: tuple[
             tuple[int, ...],
@@ -911,7 +909,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             split_seed=self.split_seed,
             split_strategy=self.split_strategy,
             preserve_ordering=self.preserve_ordering,
-            data_imbalance_cfg=data_imbalance_cfg,
+            negative_sampling_cfg=negative_sampling_cfg,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
         )
         (
@@ -945,7 +943,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             extract_feature_names_fn=_extract_feature_names,
         )
         # print(programs_sa)
-        # input("PROGRAM GENERATION COMPLETE. Press Enter to continue...")
         (
             X_train,
             y_train,
@@ -960,7 +957,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             programs_sa=programs_sa,
             program_prior_log_probs_opt=program_prior_log_probs_opt,
             dsl_functions=dsl_functions,
-            data_imbalance_cfg=data_imbalance_cfg,
+            negative_sampling_cfg=negative_sampling_cfg,
             offline_path_name=offline_path_name,
             start_index=start_index,
         )
@@ -985,7 +982,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict_val=demo_dict_val,
             programs_sa=programs_sa,
             dsl_functions=dsl_functions,
-            data_imbalance_cfg=data_imbalance_cfg,
+            negative_sampling_cfg=negative_sampling_cfg,
             offline_path_name=offline_path_name,
             X_train=X_train,
             y_train=y_train,

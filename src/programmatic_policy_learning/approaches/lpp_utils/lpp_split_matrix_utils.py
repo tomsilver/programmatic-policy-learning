@@ -28,7 +28,7 @@ def split_and_collect_demonstrations(
     split_seed: int,
     split_strategy: str,
     preserve_ordering: bool,
-    data_imbalance_cfg: dict[str, Any] | None,
+    negative_sampling_cfg: dict[str, Any] | None = None,
     action_mode: str = "discrete",
 ) -> tuple[
     tuple[int, ...],
@@ -73,13 +73,13 @@ def split_and_collect_demonstrations(
     train_states, train_expanded = count_states_and_expanded_examples(
         train_demo_ids,
         demo_dict_all,
-        data_imbalance=data_imbalance_cfg,
+        negative_sampling=negative_sampling_cfg,
         action_mode=action_mode,
     )
     val_states, val_expanded = count_states_and_expanded_examples(
         val_demo_ids,
         demo_dict_all,
-        data_imbalance=data_imbalance_cfg,
+        negative_sampling=negative_sampling_cfg,
         action_mode=action_mode,
     )
     logging.info(
@@ -165,7 +165,7 @@ def count_states_and_expanded_examples(
     demo_ids: Sequence[int],
     demo_dict: dict[int, Any],
     *,
-    data_imbalance: dict[str, Any] | None = None,
+    negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
 ) -> tuple[int, int]:
     """Count states and expanded examples for a set of demo ids."""
@@ -177,7 +177,7 @@ def count_states_and_expanded_examples(
         # TODOO: we can later remove this for efficiency.
         pos, neg = extract_examples_from_demonstration(
             traj,
-            data_imbalance=data_imbalance,
+            negative_sampling=negative_sampling,
             action_mode=action_mode,
         )
         expanded += len(pos) + len(neg)

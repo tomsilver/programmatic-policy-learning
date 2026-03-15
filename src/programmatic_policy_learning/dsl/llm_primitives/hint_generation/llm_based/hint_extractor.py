@@ -442,7 +442,6 @@ def main() -> None:
                     structured,
                 )
                 # print(combined_text)
-                # input()
                 # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
                 # output = extract_dsl(llm_client, dsl_prompt)
 
