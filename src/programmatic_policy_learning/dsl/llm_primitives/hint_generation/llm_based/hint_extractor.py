@@ -30,6 +30,9 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
     trajectory_serializer,
     transition_analyzer,
 )
+from programmatic_policy_learning.dsl.llm_primitives.env_specs import (
+    get_env_llm_spec,
+)
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
@@ -159,62 +162,7 @@ def build_hint_prompt_v1(
 
 
 def _build_token_map(env_name: str) -> dict[str, str]:
-    token_to_canonical = {
-        "StopTheFall": {
-            "empty": "stf.EMPTY",
-            "red_token": "stf.RED",
-            "static_token": "stf.STATIC",
-            "falling_token": "stf.FALLING",
-            "drawn_token": "stf.DRAWN",
-            "advance_token": "stf.ADVANCE",
-        },
-        "TwoPileNim": {
-            "empty": "tpn.EMPTY",
-            "token": "tpn.TOKEN",
-        },
-        "ReachForTheStar": {
-            "empty": "rfts.EMPTY",
-            "agent": "rfts.AGENT",
-            "star": "rfts.STAR",
-            "left_arrow": "rfts.LEFT_ARROW",
-            "right_arrow": "rfts.RIGHT_ARROW",
-            "drawn": "rfts.DRAWN",
-        },
-        "Chase": {
-            "empty": "ec.EMPTY",
-            "agent": "ec.AGENT",
-            "target": "ec.TARGET",
-            "wall": "ec.WALL",
-            "drawn": "ec.DRAWN",
-            "left_arrow": "ec.LEFT_ARROW",
-            "right_arrow": "ec.RIGHT_ARROW",
-            "up_arrow": "ec.UP_ARROW",
-            "down_arrow": "ec.DOWN_ARROW",
-        },
-        "CheckmateTactic": {
-            "empty": "ct.EMPTY",
-            "black_king": "ct.BLACK_KING",
-            "white_king": "ct.WHITE_KING",
-            "white_queen": "ct.WHITE_QUEEN",
-            "highlighted_white_king": "ct.HIGHLIGHTED_WHITE_KING",
-            "highlighted_white_queen": "ct.HIGHLIGHTED_WHITE_QUEEN",
-        },
-    }
-    try:
-        mapping = token_to_canonical[env_name]
-    except KeyError as exc:
-        raise KeyError(f"No TOKEN_MAP configured for {env_name}") from exc
-
-    symbol_map = grid_hint_config.get_symbol_map(env_name)
-    token_map: dict[str, str] = {}
-    for token_name, char in symbol_map.items():
-        canonical = mapping.get(token_name)
-        if canonical is None:
-            raise KeyError(
-                f"Missing canonical token mapping for {env_name}: {token_name}"
-            )
-        token_map[char] = canonical
-    return token_map
+    return get_env_llm_spec(env_name).token_map()
 
 
 def build_token_map(env_name: str) -> dict[str, str]:

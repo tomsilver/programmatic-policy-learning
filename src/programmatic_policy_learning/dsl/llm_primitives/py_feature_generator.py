@@ -15,8 +15,8 @@ from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
-from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
-    hint_extractor,
+from programmatic_policy_learning.dsl.llm_primitives.env_specs import (
+    get_env_llm_spec,
 )
 
 
@@ -94,7 +94,7 @@ class PyFeatureGenerator:
             if env_name is None:
                 raise ValueError("env_name is required to fill token map placeholders.")
 
-            token_map = hint_extractor.build_token_map(env_name)
+            token_map = get_env_llm_spec(env_name).token_map()
 
             raw_chars = sorted(token_map.keys())
             canonical_list = [token_map[ch] for ch in raw_chars]
@@ -251,7 +251,7 @@ class PyFeatureGenerator:
         if env_name is None:
             raise ValueError("env_name is required to expand template payloads.")
 
-        token_map = hint_extractor.build_token_map(env_name)
+        token_map = get_env_llm_spec(env_name).token_map()
         tokens = sorted(set(token_map.values()))
         dirs8 = [
             (1, 0),
