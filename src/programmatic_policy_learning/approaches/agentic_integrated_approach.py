@@ -1,11 +1,5 @@
 """An approach that uses an LLM to generate a class-based policy with planner
 access.
-
-Unlike IntegratedApproach (which uses SynthesizedPythonFunction and runs
-each call in an isolated subprocess), this approach generates a full
-class that is loaded in-process via exec/compile.  This means the
-generated class can maintain state across calls (cached plans,
-accumulated search metrics, etc.).
 """
 
 import ast
@@ -33,7 +27,13 @@ _ActType = TypeVar("_ActType")
 _State = tuple[int, int]
 
 PLANNER_DOC = '''
+    ## Planner
+
+    You have access to an A* search planner. Import it at the top of each file:
+
+    ```
     from prpl_utils.search import run_astar, SearchMetrics
+    ```
 
     def run_astar(
         initial_state,
@@ -80,6 +80,41 @@ PLANNER_DOC = '''
             heuristic=heuristic,
         )
     """
+
+    To build a `get_successors` function for A*, use the `get_actions`,
+    `get_next_state`, and `get_cost` stored in `self`:
+
+    ```
+    def get_successors(state):
+        for action in self.get_actions():
+            next_state = self.get_next_state(state, action)
+            if next_state != state:  # Valid move (not blocked)
+                yield (action, next_state, self.get_cost())
+    ```
+
+    ## Plan Caching
+
+    Since this is a class, you can cache plans across calls using self.
+    `expected_obs` should be set to the CURRENT observation when a plan is
+    first created, then advanced each time an action is consumed:
+
+    ```
+    # After planning:
+    self.plan = list(actions)          # action sequence from planner
+    self.expected_obs = obs            # obs we planned FROM (current obs)
+
+    # In get_action:
+    if self.plan and self.expected_obs == obs:
+        action = self.plan.pop(0)
+        self.expected_obs = self.get_next_state(obs, action)
+        return action
+    ```
+
+    IMPORTANT: A cached plan is only valid if the current obs matches where the
+    plan expects you to be. If you use reactive control for some steps and then
+    switch to a cached plan, the plan will be wrong because it was computed from a
+    different state. Either replan from the current obs, or only cache a plan when
+    you will follow it without interruption.
 '''
 
 
@@ -104,10 +139,11 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         get_next_state: Callable[[_State, _ActType], _State],
         get_cost: Callable[[], float],
         check_goal: Callable[[_State, Any], bool],
-        num_candidates: int = 3,
+        num_candidates: int = 7,
         scoring_max_timesteps: int = 1000,
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
+        self._seed = seed
         self._llm = llm
         self._get_actions = get_actions
         self._get_next_state = get_next_state
@@ -116,6 +152,25 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         self._num_candidates = num_candidates
         self._scoring_max_timesteps = scoring_max_timesteps
         self._generated: Any = None
+        self._all_candidate_codes: list[str] = []
+        self._all_candidate_scores: list[tuple[bool, int] | None] = []
+
+    def update_env_callables(
+        self,
+        get_actions: Callable[[], List[_ActType]],
+        get_next_state: Callable[[_State, _ActType], _State],
+        get_cost: Callable[[], float],
+        check_goal: Callable[[_State, Any], bool],
+    ) -> None:
+        """Update the environment-specific transition functions.
+
+        Call this before reset() when evaluating on a new environment
+        instance so the generated policy uses the correct dynamics.
+        """
+        self._get_actions = get_actions
+        self._get_next_state = get_next_state
+        self._get_cost = get_cost
+        self._check_goal = check_goal
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
@@ -130,10 +185,13 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                 self._last_observation,
                 self._action_space,
                 self._num_candidates,
+                seed=self._seed,
             )
 
             best_code = None
             best_score: tuple[bool, int] = (False, -(2**63))
+            self._all_candidate_codes = list(code_strings)
+            self._all_candidate_scores = []
 
             for i, code_str in enumerate(code_strings):
                 try:
@@ -147,6 +205,7 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                     score = _score_policy(
                         policy,
                         self._last_observation,
+                        self._last_info,
                         goal,
                         self._get_next_state,
                         self._check_goal,
@@ -154,16 +213,19 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                     )
                     logger.info("Policy %d score: %s", i, score)
                     print(f"Policy {i} score: {score}")
+                    self._all_candidate_scores.append(score)
                     if score > best_score:
                         best_score = score
                         best_code = code_str
                 except Exception as e:  # pylint: disable=broad-except
                     logger.warning("Policy %d failed to load/score: %s", i, e)
                     print(f"Policy {i} failed: {e}")
+                    self._all_candidate_scores.append(None)
 
             if best_code is None:
                 raise RuntimeError("No valid policies were generated.")
 
+            self._best_code = best_code
             self._generated = _load_generated_policy(
                 best_code,
                 self._get_actions,
@@ -171,7 +233,12 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                 self._get_cost,
                 self._check_goal,
             )
-            self._generated.reset(self._last_observation)
+
+        self._generated.get_actions = self._get_actions
+        self._generated.get_next_state = self._get_next_state
+        self._generated.get_cost = self._get_cost
+        self._generated.check_goal = self._check_goal
+        self._generated.reset(self._last_observation, self._last_info)
 
     def _get_action(self) -> _ActType:
         assert self._generated is not None, "Call reset() first."
@@ -203,6 +270,7 @@ def _read_and_clear_astar_metrics() -> int:
 def _score_policy(
     policy: Any,
     initial_obs: Any,
+    initial_info: Any,
     goal: Any,
     get_next_state: Callable,
     check_goal: Callable,
@@ -216,7 +284,7 @@ def _score_policy(
     file written by run_astar, not from the policy itself.
     """
     _read_and_clear_astar_metrics()
-    policy.reset(initial_obs)
+    policy.reset(initial_obs, initial_info)
     state = initial_obs
     goal_reached = False
     for _ in range(max_timesteps):
@@ -301,6 +369,7 @@ def _synthesize_policy_classes(
     example_observation: _ObsType,
     action_space: Space[_ActType],
     num_candidates: int,
+    seed: int = 0,
 ) -> list[str]:
     """Use the LLM to synthesize N GeneratedPolicy classes and return their
     code strings."""
@@ -315,17 +384,19 @@ def _synthesize_policy_classes(
                 \"\"\"Initialize with environment transition functions.
 
                 Args:
-                    get_actions(): Returns a list of all possible actions (integers).
+                    get_actions(): Returns a list of all possible actions.
                     get_next_state(state, action): Returns the resulting state after
-                        taking an action. If blocked (e.g. by a wall), returns the
-                        same state unchanged. States are tuples like (row, col).
+                        taking an action. If the action is invalid or blocked,
+                        returns the same state unchanged.
                     get_cost(): Returns the cost of a single action (a float).
-                    check_goal(state, goal): Returns True if the state matches the goal.
+                    check_goal(state, goal): Returns True if the state satisfies
+                        the goal condition.
                 \"\"\"
                 ...
 
-            def reset(self, obs):
-                \"\"\"Called at the start of each episode with the initial observation.\"\"\"
+            def reset(self, obs, info):
+                \"\"\"Called at the start of each episode with the initial observation
+                and info dict (which may contain environment metadata).\"\"\"
                 ...
 
             def get_action(self, obs):
@@ -337,52 +408,11 @@ def _synthesize_policy_classes(
                 ...
         ```
 
-        Each class can maintain internal state between calls (e.g. a cached A* plan,
+        Each class can maintain internal state between calls (e.g. a cached plan,
         accumulated search metrics, etc.). The `reset` method is called once at the
         start of each episode. The `get_action` method is called each step.
 
-        ## A* Planner
-
-        You have access to an A* search planner. Import it at the top of each file:
-
-        ```
-        from prpl_utils.search import run_astar, SearchMetrics
-        ```
-
         {PLANNER_DOC}
-
-        To build a `get_successors` function for A*, use the `get_actions`,
-        `get_next_state`, and `get_cost` stored in `self`:
-
-        ```
-        def get_successors(state):
-            for action in self.get_actions():
-                next_state = self.get_next_state(state, action)
-                if next_state != state:  # Valid move (not blocked by wall)
-                    yield (action, next_state, self.get_cost())
-        ```
-
-        ## Plan Caching
-
-        Since this is a class, you can cache plans across calls using self:
-
-        ```
-        # In __init__:
-        self.plan = []
-        self.expected_obs = None
-
-        # In get_action:
-        if self.plan and self.expected_obs == obs:
-            action = self.plan.pop(0)
-            self.expected_obs = self.get_next_state(obs, action)
-            return action
-        ```
-
-        IMPORTANT: A cached plan is only valid if the current obs matches where the
-        plan expects you to be. If you use reactive control for some steps and then
-        switch to a cached plan, the plan will be wrong because it was computed from a
-        different state. Either replan from the current obs, or only cache a plan when
-        you will follow it without interruption.
 
         ## Environment Description
 
@@ -405,24 +435,31 @@ def _synthesize_policy_classes(
         Each policy should represent a DIFFERENT strategy along the
         planning-reactivity spectrum:
 
-        - REACTIVE policies use simple rules based on the current observation and goal
-          position (e.g., move toward the goal greedily). They are computationally
-          cheap but may fail when obstacles block direct paths.
-        - PLANNING-HEAVY policies use A* search liberally, even for straightforward
-          navigation. They are computationally expensive but robust to obstacles.
-        - HYBRID policies use reactive control when the path is straightforward (e.g.,
-          in open areas with no obstacles) and fall back to A* planning only when
-          obstacles or complex structure make reactive control insufficient.
+        - REACTIVE policies use simple heuristic rules based on the current
+          observation (e.g., greedily reducing distance to the goal). They are
+          computationally cheap but may fail in complex environments.
+        - PLANNING-HEAVY policies use the planner liberally, even when simpler
+          strategies might suffice. They are computationally expensive but robust.
+        - HYBRID policies use reactive control when the situation is simple and
+          fall back to the planner only when reactive control is insufficient.
+          These are often the best approach: they minimize computation by only
+          invoking the planner when genuinely needed.
+
+        A good policy should be both effective (reach the goal) and efficient
+        (minimize unnecessary computation). Prefer reactive control when the
+        path is straightforward and only fall back to planning when it is
+        genuinely required.
 
         Vary the strategies meaningfully across the {num_candidates} policies. For
-        example, one policy might be purely reactive, another might always plan with
-        A*, and others might use different heuristics for when to switch between
-        reactive and planning modes.
+        example, one policy might be purely reactive, another might always plan, and
+        others might use different criteria for when to switch between reactive and
+        planning modes.
 
-        get_action must ALWAYS return a valid action integer. Never return None.
+        get_action must ALWAYS return a valid action. Never return None.
 
         Do not include example usages or test code.
-        """
+        """,
+        hyperparameters={"seed": seed},
     )
 
     reprompt_checks: list[RepromptCheck] = [
