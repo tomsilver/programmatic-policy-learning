@@ -398,7 +398,7 @@ def trajectory_to_text(
             f"obs = {np.array2string(final_obs, precision=4, separator=', ')}\n"
             f"action = None (terminal state)"
         )
-    else:
+    else:  # TODOO: later clean this up to assert if the encoding is not available
         blocks.append(encoder.encode_obs(final_obs, final_display_idx))
         blocks.append("Action: None (terminal state).")
         if encoding_method == "4":
