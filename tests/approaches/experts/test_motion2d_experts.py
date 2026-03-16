@@ -2,7 +2,7 @@
 
 # pylint: disable=redefined-outer-name
 
-from typing import Iterator
+from typing import Any, Callable, Iterator, cast
 
 import gymnasium as gym
 import kinder
@@ -23,13 +23,19 @@ kinder.register_all_environments()
 EnvObs = tuple[gym.Env, np.ndarray]
 
 
+def _close_env(env: Any) -> None:
+    close_fn = cast(Callable[[], None] | None, getattr(env, "close", None))
+    if close_fn is not None:
+        close_fn()
+
+
 @pytest.fixture()
 def p1_env_and_obs() -> Iterator[EnvObs]:
     """Create Motion2D-p1 env and return (env, initial_obs)."""
     env = kinder.make("kinder/Motion2D-p1-v0", render_mode="rgb_array")
     obs, _ = env.reset(seed=42)
     yield env, obs
-    env.close()
+    _close_env(env)
 
 
 # -- _is_y_aligned -----------------------------------------------------------
