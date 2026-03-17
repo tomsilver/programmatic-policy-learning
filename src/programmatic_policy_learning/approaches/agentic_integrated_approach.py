@@ -445,6 +445,12 @@ def _synthesize_policy_classes(
           These are often the best approach: they minimize computation by only
           invoking the planner when genuinely needed.
 
+        The PRIMARY objective is robustness: the policy must reliably reach
+        the goal across diverse, unseen instances of the environment — not just
+        the small samples shown during training. A policy that fails on novel
+        instances is strictly worse than one that uses more computation but
+        succeeds reliably.
+        
         A good policy should be both effective (reach the goal) and efficient
         (minimize unnecessary computation). Prefer reactive control when the
         path is straightforward and only fall back to planning when it is
