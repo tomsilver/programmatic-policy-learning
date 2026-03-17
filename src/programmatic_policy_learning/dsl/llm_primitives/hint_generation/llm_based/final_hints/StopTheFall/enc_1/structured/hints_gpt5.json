@@ -1,0 +1,37 @@
+1) POLICY RULES (8–15 bullets)
+
+- Action target constraint: s[a] ∈ {stf.EMPTY, stf.ADVANCE} (never click stf.RED, stf.STATIC, stf.FALLING, or existing stf.DRAWN). (seen in ~5/5 demos)
+- Column alignment: If s[a]==stf.EMPTY, then a.col == col(stf.FALLING) (same column as the unique stf.FALLING). (seen in ~5/5 demos)
+- Below the falling token: If s[a]==stf.EMPTY, then a.row > row(stf.FALLING) (in the downward ray from stf.FALLING). (seen in ~5/5 demos)
+- Supported placement: If s[a]==stf.EMPTY, require support directly below: s[a.row+1, a.col] ∈ {stf.STATIC, stf.DRAWN, stf.RED} (i.e., not stf.EMPTY). (seen in ~5/5 demos)
+- Lowest supported choice in the column: Let C = col(stf.FALLING). Choose a as the maximum row index such that s[a.row, C]==stf.EMPTY and s[a.row+1, C] is supported (not stf.EMPTY). (seen in ~5/5 demos)
+- Stack upward after placement: If you just placed stf.DRAWN at (r, C), then next prefer (r-1, C) if s[r-1, C]==stf.EMPTY and it remains a valid supported candidate under the rule above. (seen in ~4/5 demos)
+- Stay within the “red-adjacent band”: While stacking, require horizontal adjacency to red terrain: s[a.row, a.col-1]==stf.RED OR s[a.row, a.col+1]==stf.RED. (seen in ~5/5 demos)
+- Stop when red-adjacency would break: Do not place further upward in col(stf.FALLING) once the next stf.EMPTY cell above would fail the red-adjacency predicate (even if it is still in the falling column). (seen in ~5/5 demos)
+- Advance when placement is exhausted: If there is no stf.EMPTY in col(stf.FALLING) that satisfies (supported + within red-adjacent band), click stf.ADVANCE. (seen in ~5/5 demos)
+- Ignore other empties: stf.EMPTY cells outside col(stf.FALLING) are not selected, even if they are supported or red-adjacent. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS (5 bullets)
+- stf.EMPTY cells that are red-adjacent but not in col(stf.FALLING) are not clicked.
+- stf.EMPTY cells in col(stf.FALLING) that are above the red-adjacent vertical segment (left/right not stf.RED) are not clicked.
+- stf.EMPTY cells that are unsupported (s[a.row+1, a.col]==stf.EMPTY) are not clicked (no floating stf.DRAWN).
+- Existing stf.DRAWN cells are not re-clicked; the policy moves to a neighboring valid stf.EMPTY candidate instead.
+- stf.RED blocks and stf.STATIC floor tiles are never clicked, even when adjacent to the chosen action cell.
+
+3) GAME DYNAMICS (5–10 bullets)
+- Clicking an stf.EMPTY cell deterministically turns that cell into stf.DRAWN in s_{t+1}; other cells remain unchanged in the shown transitions.
+- The stf.FALLING token remains stationary during the provided stf.DRAWN placement steps (no observed movement between s_t and s_{t+1} for those actions).
+- stf.RED and stf.STATIC tiles are immutable terrain/obstacles in the shown transitions.
+- stf.DRAWN blocks persist and accumulate; each placement adds exactly one stf.DRAWN.
+- Clicking stf.ADVANCE appears to trigger a phase/tick change (no immediate local cell edit is visible in the provided frames).
+
+4) TOKEN MAP (required, last section)
+
+TOKEN_MAP = {
+".": "stf.EMPTY",
+"A": "stf.ADVANCE",
+"D": "stf.DRAWN",
+"F": "stf.FALLING",
+"R": "stf.RED",
+"S": "stf.STATIC"
+}

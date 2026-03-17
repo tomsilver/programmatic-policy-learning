@@ -1,0 +1,39 @@
+1) POLICY RULES
+
+- The expert always clicks the first cell containing a TOKEN ('*') in the rightmost column (col=1) when scanning from top to bottom, skipping any above. (seen in ~4/5 demos)
+- If there are no TOKENs in the rightmost column above, the expert clicks the first TOKEN in the leftmost column (col=0) from top to bottom. (seen in ~2/5 demos)
+- The expert never clicks a TOKEN if there is a TOKEN in the same column but in a lower (further down) row. (seen in ~5/5 demos)
+- The expert only clicks TOKENs that are the highest (topmost) remaining TOKEN in their column. (seen in ~5/5 demos)
+- The expert never clicks a TOKEN if there is an EMPTY cell ('.') directly above it in the same column, unless all above are EMPTY. (seen in ~5/5 demos)
+- The expert never clicks a TOKEN in the left column if there is any TOKEN in the right column at the same or a lower row. (seen in ~5/5 demos)
+- The expert always clicks the TOKEN that is the "first hit" when scanning each column from top to bottom, preferring the right column over the left. (seen in ~5/5 demos)
+- The expert never clicks a TOKEN if it is not the only clickable TOKEN in the action mask. (seen in ~5/5 demos)
+- The expert only clicks a TOKEN if its action mask entry is 1 (i.e., it is the only legal action at that step). (seen in ~5/5 demos)
+- The expert never clicks a TOKEN if there is a TOKEN in the same row but in a column to the right. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- TOKENs in the left column (col=0) that have a TOKEN in the right column (col=1) at the same or a lower row are never clicked.
+- TOKENs in the right column that are not the topmost TOKEN in that column are never clicked.
+- TOKENs in any column that have another TOKEN below them in the same column are never clicked.
+- TOKENs in the left column that are above any TOKEN in the right column are never clicked.
+- TOKENs in any column that are not the first TOKEN encountered when scanning from top to bottom in that column are never clicked.
+
+3) GAME DYNAMICS
+
+- Clicking a TOKEN removes all TOKENs above and including that cell in the same column, replacing them with EMPTY ('.').
+- After a TOKEN is clicked, all cells above in the same column become EMPTY, but other columns are unaffected except for the clicked cell’s row.
+- If a TOKEN is clicked in the right column, all TOKENs above in that column are cleared, but the left column remains unchanged unless the action mask allows.
+- The action mask always restricts the action to a single cell containing a TOKEN at each step.
+- After each click, the next available action is always the next lowest TOKEN in the same column, or, if none, the next column (right to left).
+- The grid never adds new TOKENs; only removal occurs.
+- The number of rows in the grid may vary between demonstrations, but the column structure is always two columns.
+- The environment does not allow clicking EMPTY cells; only TOKENs with action mask 1 can be clicked.
+- The process continues until all TOKENs are removed from the grid.
+
+4) TOKEN MAP
+
+TOKEN_MAP = {
+  "*": "tpn.TOKEN",
+  ".": "tpn.EMPTY"
+}

@@ -1,0 +1,36 @@
+1) POLICY RULES
+
+- If there is a falling_token in the grid, select the lowest empty cell in the same column as the falling_token, directly above the first non-empty cell (red_token, static_token, or advance_token) in that column. (seen in ~10/10 demos)
+- If the falling_token is at the top of the grid and the column below is entirely empty, select the bottom-most empty cell in that column. (seen in ~10/10 demos)
+- If the falling_token is above a contiguous block of static_tokens, select the empty cell immediately above the static_token cluster in the same column. (seen in ~7/10 demos)
+- If the falling_token is above a red_token cluster, select the empty cell immediately above the red_token cluster in the same column. (seen in ~7/10 demos)
+- If the falling_token is above an advance_token, select the empty cell immediately above the advance_token in the same column. (seen in ~10/10 demos)
+- If the falling_token is above a gap (empty cells) and then a static_token/advance_token, select the empty cell just above the first non-empty cell encountered downward. (seen in ~10/10 demos)
+- If the falling_token is above a red_token cluster that is not contiguous (has empty cells), clear the empty cells in the column until the path is open to the bottom. (seen in ~7/10 demos)
+- If the falling_token is above a static_token cluster that is not contiguous (has empty cells), clear the empty cells in the column until the path is open to the bottom. (seen in ~7/10 demos)
+- If the falling_token is above an advance_token and all cells below are static_tokens, select the advance_token cell. (seen in ~10/10 demos)
+- If the falling_token is above a static_token cluster and the bottom-most cell is an advance_token, select the advance_token cell. (seen in ~10/10 demos)
+- If the falling_token is above a red_token cluster and the bottom-most cell is an advance_token, select the advance_token cell. (seen in ~10/10 demos)
+- If the falling_token is above a static_token cluster and there are empty cells above, clear those empty cells first before selecting the advance_token. (seen in ~7/10 demos)
+- If the falling_token is above a red_token cluster and there are empty cells above, clear those empty cells first before selecting the advance_token. (seen in ~7/10 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- Empty cells to the left or right of the falling_token’s column, even if they are adjacent to red_token or static_token clusters, are not selected.
+- Empty cells above the falling_token are never selected.
+- Empty cells in columns with no falling_token above them are not selected, even if they are above an advance_token.
+- Red_token or static_token cells themselves are never selected (only empty or advance_token cells).
+- Empty cells that are not in the direct vertical path below a falling_token are not selected, even if they are closer to an advance_token.
+
+3) GAME DYNAMICS
+
+- The falling_token does not move automatically; the expert must clear a path by selecting empty cells below it.
+- When an empty cell is selected below a falling_token, the falling_token remains in place until all empty cells in its column below are cleared.
+- When the path is clear, the falling_token can "fall" (presumably in the environment, though not shown in the transitions).
+- Red_token and static_token cells act as barriers; the falling_token cannot pass through them.
+- Advance_token cells are the goal; the expert selects the advance_token cell once the path is clear for the falling_token to reach it.
+- Static_token clusters are contiguous and form a solid barrier at the bottom of the grid.
+- Red_token clusters may be contiguous or have gaps; gaps must be cleared for the falling_token to reach the bottom.
+- The environment is redrawn after each action, with the only change being the selected cell becoming empty (if it was empty) or the advance_token being selected.
+- The expert never selects non-empty, non-advance_token cells (i.e., never clicks red_token or static_token).
+- The process repeats until the falling_token can reach the advance_token, at which point the advance_token cell is selected.

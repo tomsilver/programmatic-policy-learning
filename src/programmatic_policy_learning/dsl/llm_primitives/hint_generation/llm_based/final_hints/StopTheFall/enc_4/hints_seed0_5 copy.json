@@ -1,0 +1,35 @@
+1) POLICY RULES
+
+- If there is a 'falling_token' in the topmost row, select the cell in the same column, in the lowest available row above the first non-empty cell, and clear a vertical path down to the bottom (seen in ~5/5 demos).
+- Select the cell directly below the 'falling_token' if it is 'empty', proceeding stepwise downwards until reaching a non-empty cell (seen in ~5/5 demos).
+- When a 'falling_token' is above a contiguous vertical stack of 'red_token's, clear the 'red_token's in that column, one by one, from top to bottom, to create a path (seen in ~4/5 demos).
+- If the cell below the 'falling_token' is already 'empty', skip to the next non-empty cell below and clear it (seen in ~5/5 demos).
+- When the 'falling_token' is directly above a 'static_token' or 'advance_token', clear the 'advance_token' to allow the 'falling_token' to reach the goal (seen in ~5/5 demos).
+- Only select cells in the same column as the 'falling_token' (never left/right of the vertical path) (seen in ~5/5 demos).
+- When the lowest cell in the column is an 'advance_token', select it as the final action in the sequence (seen in ~5/5 demos).
+- Do not select cells that are already 'empty' unless they are directly in the vertical path and are the next step for the 'falling_token' to descend (seen in ~5/5 demos).
+- Ignore all cells not in the vertical path beneath the 'falling_token', even if they are adjacent horizontally or diagonally (seen in ~5/5 demos).
+- If multiple 'red_token's are stacked, clear them sequentially from top to bottom, never skipping a 'red_token' in the path (seen in ~4/5 demos).
+- Never select 'static_token' cells unless they are at the bottom row and are the only way to reach the 'advance_token' (seen in ~0/5 demos; i.e., static_tokens are not cleared).
+- The action sequence always terminates on the 'advance_token' at the bottom of the column (seen in ~5/5 demos).
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- Red tokens or empty cells in columns adjacent (left/right) to the falling_token’s column are never selected, even if they are close (seen in all demos).
+- Red tokens or empty cells diagonally adjacent to the vertical path are ignored (seen in all demos).
+- Static_tokens in the bottom two rows, not in the falling_token’s column, are never selected (seen in all demos).
+- Empty cells above or beside the falling_token, or anywhere not directly in the vertical path, are never selected (seen in all demos).
+- Red tokens in the same column but above the first non-empty cell below the falling_token are not selected (i.e., only the lowest blocking token is selected at each step) (seen in all demos).
+
+3) GAME DYNAMICS
+
+- When a cell in the vertical path is cleared, the 'falling_token' remains in place until the next cell below is cleared, then it can descend one step.
+- Clearing a 'red_token' or 'empty' cell in the vertical path does not affect other columns; only the vertical path is relevant for the falling_token’s descent.
+- The 'falling_token' only moves down if the cell below is 'empty' after the action.
+- The 'falling_token' never moves horizontally; it only descends vertically.
+- The sequence of actions always proceeds from the top of the column to the bottom, clearing one cell at a time.
+- The 'advance_token' at the bottom acts as a goal; when it is selected, the episode ends.
+- 'Static_token's are never cleared; they act as barriers or the floor.
+- The environment redraws the grid after each action, updating only the affected cell and the position of the 'falling_token'.
+- No new tokens appear during the episode; the only changes are due to the agent’s actions and the falling_token’s descent.
+- The agent never interacts with cells outside the vertical path beneath the falling_token.

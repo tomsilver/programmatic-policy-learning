@@ -1,0 +1,33 @@
+1) POLICY RULES:
+- Click if the cell (row, col) is empty ('.') and is adjacent to a falling token ('F') (seen in ~3/5 demos).
+- Click if the cell (row, col) is empty ('.') and is adjacent to a drawn token ('D') (seen in ~2/5 demos).
+- Click if the cell (row, col) is empty ('.') and there are no red tokens ('R') in the same row to the left (seen in ~4/5 demos).
+- Click if the cell (row, col) is empty ('.') and there are no red tokens ('R') in the same column above (seen in ~3/5 demos).
+- Click if the cell (row, col) is empty ('.') and there are static tokens ('S') in the same row below (seen in ~2/5 demos).
+- Click if the cell (row, col) is empty ('.') and there is an advance token ('A') in the same row (seen in ~2/5 demos).
+- Click if the cell (row, col) is empty ('.') and there are no drawn tokens ('D') in the same column below (seen in ~3/5 demos).
+- Click if the cell (row, col) is empty ('.') and there is a static token ('S') in the same column above (seen in ~2/5 demos).
+
+2) COUNTERFACTUAL DISTRACTORS:
+- Do not click if the cell (row, col) contains a red token ('R') (seen in ~4/5 demos).
+- Do not click if the cell (row, col) is empty ('.') and there is a falling token ('F') directly above (seen in ~3/5 demos).
+- Do not click if the cell (row, col) is empty ('.') and there is a drawn token ('D') directly below (seen in ~2/5 demos).
+- Do not click if the cell (row, col) is empty ('.') and there are static tokens ('S') in the same row above (seen in ~3/5 demos).
+- Do not click if the cell (row, col) is empty ('.') and there are red tokens ('R') in the same column below (seen in ~2/5 demos).
+
+3) GAME DYNAMICS:
+- Clicking an empty cell ('.') can lead to the appearance of a drawn token ('D') in the next state (s_t+1).
+- Clicking an empty cell ('.') adjacent to a falling token ('F') can lead to the falling token being removed in the next state (s_t+1).
+- Clicking an empty cell ('.') can also lead to the appearance of static tokens ('S') in the next state (s_t+1).
+- If a drawn token ('D') is clicked, it may lead to the removal of adjacent red tokens ('R') in the next state (s_t+1).
+- Clicking an advance token ('A') can lead to the advancement of the game state, potentially changing the layout of tokens in the next state (s_t+1).
+
+4) TOKEN MAP:
+TOKEN_MAP = {
+  ".": "stf.EMPTY",
+  "A": "stf.ADVANCE",
+  "D": "stf.DRAWN",
+  "F": "stf.FALLING",
+  "R": "stf.RED",
+  "S": "stf.STATIC"
+}

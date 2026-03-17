@@ -1,0 +1,13 @@
+You will be given a few grid game trajectories as illustrative examples.
+
+Grids are 0-indexed: (row, col) with (0,0) at top-left.
+Actions click a cell (r, c).
+Each trajectory is represented in a **diff-based format**:
+
+- The initial state is provided once as `s_0` (a 2D grid).
+- Each step `t` provides:
+  - The action `a_t = (row, col)` (clicked cell).
+  - A diff describing the transition `s_t -> s_{t+1}` as a small list of changed cells:
+    - `(r, c): old_value -> new_value`
+  - A statement that all other cells are unchanged from `s_t`.
+- A trajectory ends when a terminal state is reached (Action: None).

@@ -193,9 +193,13 @@ plots/
 #ignore hints files
 hints/
 exp_hints/
+final_prompts/
 
 # ignore output files
 *.out
 
 # ignore astar metrics
 astar_metrics.json
+
+.cursor/
+.pylint_cache/

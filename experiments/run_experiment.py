@@ -12,9 +12,32 @@ from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-
-# from programmatic_policy_learning.dsl.llm_primitives.baseline_vlam import run_baseline
 from programmatic_policy_learning.envs.registry import EnvRegistry
+
+_MODE_TO_ID = {
+    "discrete": 1,
+    "continuous": 2,
+    "hybrid": 3,
+}
+
+
+def _infer_mode_from_provider(
+    provider: str | None, *, kind: str, configured: str | None
+) -> str:
+    """Infer observation/action mode with provider defaults."""
+    if configured in _MODE_TO_ID:
+        return configured
+    if provider in {"ggg"}:
+        return "discrete"
+    if provider in {"kinder"}:
+        return "continuous"
+    logging.warning(
+        "Unknown %s_mode '%s' for provider '%s'; defaulting to discrete.",
+        kind,
+        configured,
+        provider,
+    )
+    return "discrete"
 
 
 def instantiate_approach(
@@ -26,19 +49,42 @@ def instantiate_approach(
     """
 
     env_factory = lambda instance_num: registry.load(cfg.env, instance_num=instance_num)
+    expert_cfg = OmegaConf.select(cfg, "env.expert", default=None)
+    if expert_cfg is None:
+        expert_cfg = OmegaConf.select(cfg, "expert", default=None)
 
     if cfg.approach_name == "lpp":
-
-        if not hasattr(env, "get_object_types"):
-            raise AttributeError(
-                f"Environment {cfg.env_name} does not support `get_object_types`."
+        if expert_cfg is None:
+            raise ValueError(
+                "Missing expert config. Set env.expert or top-level expert."
             )
 
-        object_types = env.get_object_types()
-        env_specs = {"object_types": object_types}
+        if not hasattr(env, "get_object_types"):
+            object_types = []
+        else:
+            object_types = env.get_object_types()
+
+        provider = OmegaConf.select(cfg, "env.provider", default=None)
+        observation_mode = _infer_mode_from_provider(
+            provider,
+            kind="observation",
+            configured=OmegaConf.select(cfg, "env.observation_mode", default=None),
+        )
+        action_mode = _infer_mode_from_provider(
+            provider,
+            kind="action",
+            configured=OmegaConf.select(cfg, "env.action_mode", default=None),
+        )
+        env_specs = {
+            "object_types": object_types,
+            "observation_mode": observation_mode,
+            "action_mode": action_mode,
+            "observation_mode_id": _MODE_TO_ID[observation_mode],
+            "action_mode_id": _MODE_TO_ID[action_mode],
+        }
 
         expert = hydra.utils.instantiate(
-            cfg.expert,
+            expert_cfg,
             cfg.env.description,
             env.observation_space,
             env.action_space,
@@ -60,9 +106,13 @@ def instantiate_approach(
 
     # Handle residual learning.
     if cfg.approach_name == "residual":
+        if expert_cfg is None:
+            raise ValueError(
+                "Missing expert config. Set env.expert or top-level expert."
+            )
 
         expert = hydra.utils.instantiate(
-            cfg.expert,
+            expert_cfg,
             cfg.env.description,
             env.observation_space,
             env.action_space,
@@ -245,6 +295,10 @@ def evaluate_all(cfg: DictConfig) -> None:
 
 @hydra.main(version_base=None, config_name="config", config_path="conf/")
 def _main(cfg: DictConfig) -> None:
+    logging.info(
+        "Approach config (cfg.approach):\n%s",
+        OmegaConf.to_yaml(cfg.approach, resolve=True),
+    )
 
     if cfg.eval.mode == 1:
         evaluate_all(cfg)
@@ -278,6 +332,17 @@ def _main(cfg: DictConfig) -> None:
 
         # Test the approach on new envs
         if hasattr(approach, "test_policy_on_envs"):
+            train_accuracies = approach.test_policy_on_envs(
+                base_class_name=cfg.env.make_kwargs.base_name,
+                test_env_nums=range(0, 11),
+                max_num_steps=50,
+                record_videos=False,
+                video_format="mp4",
+            )
+            logging.info(train_accuracies)
+            # logging.info(df["total_rewards"].iloc[0])
+            logging.info(sum(train_accuracies) / len(train_accuracies))
+
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(11, 20),
@@ -286,7 +351,7 @@ def _main(cfg: DictConfig) -> None:
                 video_format="mp4",
             )
             logging.info(test_accuracies)
-            logging.info(df["total_rewards"].iloc[0])
+            # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(test_accuracies) / len(test_accuracies))
         else:
             logging.warning(
@@ -324,4 +389,9 @@ if __name__ == "__main__":
     try:
         _main()  # pylint: disable=no-value-for-parameter
     except BaseException as e:  # pylint: disable=broad-exception-caught
-        logging.error(str(e))
+        logging.exception(
+            "Unhandled exception in run_experiment (%s): %s",
+            type(e).__name__,
+            e,
+        )
+        raise

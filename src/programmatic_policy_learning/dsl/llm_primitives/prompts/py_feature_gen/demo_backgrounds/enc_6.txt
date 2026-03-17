@@ -1,0 +1,17 @@
+You will be given several grid game trajectories.
+
+Grids are 0-indexed: (row, col) with (0,0) at top-left.
+Actions click a cell (r, c).
+
+Each trajectory is shown in a compact JSON-per-step format:
+
+- A header may include BOARD: HxW.
+- Each step begins with "== STEP t ==" followed by a single JSON object.
+- The JSON object includes:
+  - action (row, col, token, validity)
+  - legend (description of fields)
+  - local (patch window around action, rays, nearest distances)
+  - state (background token, components, global bins, object samples)
+  - transition (created/removed/overwritten/moved, num_cells_changed, terminal)
+
+A trajectory continues with subsequent "== STEP t ==" blocks and ends when terminal is reached.

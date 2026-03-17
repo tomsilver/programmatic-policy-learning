@@ -1,0 +1,15 @@
+The expert’s strategy is to first repeatedly click the top-left wall cell (0, 0) until a target ('T') token appears in a location accessible to the agent. Once the target is accessible, the expert clicks on a specific empty cell along the path between the agent and the target, which marks it as drawn ('*'). After this, the expert repeatedly clicks on a specific arrow token (e.g., right, up, left, or down arrow) in the control row/column at the edge of the grid. This causes the agent to move step by step in the direction indicated by the arrow, and the expert continues clicking the same arrow until the agent reaches the desired position (usually the target or along a path toward it). The expert may switch to a different arrow when a change in direction is needed, always using the arrow controls to guide the agent along the intended path.
+
+The game dynamics observed are as follows: Clicking the wall at (0, 0) causes the target ('T') to move or appear in a new location, often progressing it closer to the agent or making it accessible. Clicking on an empty cell between the agent and the target marks it as drawn ('*'), possibly indicating a path or activating that cell. Clicking on an arrow token in the control row/column at the grid’s edge moves the agent one step in the corresponding direction (right, up, left, or down), provided there are no walls blocking the way. The agent continues to move in the direction of the clicked arrow as long as the expert keeps clicking it, and the expert switches arrows to change the agent’s direction as needed to reach the target or follow a specific path.
+
+TOKEN_MAP = {
+  "#": "ec.WALL",
+  "*": "ec.DRAWN",
+  ".": "ec.EMPTY",
+  "<": "ec.LEFT_ARROW",
+  ">": "ec.RIGHT_ARROW",
+  "A": "ec.AGENT",
+  "T": "ec.TARGET",
+  "^": "ec.UP_ARROW",
+  "v": "ec.DOWN_ARROW"
+}

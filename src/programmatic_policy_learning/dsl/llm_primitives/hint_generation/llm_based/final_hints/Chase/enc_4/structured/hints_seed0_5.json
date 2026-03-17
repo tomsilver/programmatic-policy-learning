@@ -1,0 +1,35 @@
+1) POLICY RULES
+
+- If the action cell contains a directional arrow (right_arrow, left_arrow, up_arrow, down_arrow) and following that direction moves the agent closer to the target, click the arrow. (seen in ~5/5 demos)
+- If the action cell is in the same column as the agent and above the agent, and contains an up_arrow, click the up_arrow to move up. (seen in ~5/5 demos)
+- If the action cell is in the same row as the agent and to the right of the agent, and contains a right_arrow, click the right_arrow to move right. (seen in ~5/5 demos)
+- If the action cell is in the same row as the agent and to the left of the agent, and contains a left_arrow, click the left_arrow to move left. (seen in ~2/5 demos)
+- If the action cell is in the same column as the agent and below the agent, and contains a down_arrow, click the down_arrow to move down. (seen in ~2/5 demos)
+- If the action cell is an empty cell directly in the path of the target (i.e., the target will move into it), click the cell to "draw" and block the target’s path. (seen in ~2/5 demos)
+- If the agent is adjacent to a wall in the direction of the arrow, do not click the arrow (blocked by wall). (seen in ~5/5 demos)
+- If the action cell is a wall, do not click (never click walls). (seen in ~5/5 demos)
+- If the action cell is not adjacent or reachable from the agent’s current position (i.e., not in the agent’s row/column or blocked by walls), do not click. (seen in ~5/5 demos)
+- If the action cell is a drawn cell, do not click. (seen in ~5/5 demos)
+- If the action cell is not in the direction of the target (i.e., does not reduce the agent-target distance), do not click. (seen in ~5/5 demos)
+- If the action cell is an empty cell not in the agent’s path or not blocking the target, do not click. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- Empty cells adjacent to the agent but not in the direction of the target are not clicked.
+- Arrow cells that would move the agent away from the target are not clicked.
+- Wall cells adjacent to the agent are never clicked.
+- Drawn cells (cells already marked as "drawn") are not clicked, even if adjacent.
+- Arrow cells that are blocked by a wall in the direction of movement are not clicked.
+
+3) GAME DYNAMICS
+
+- Clicking a directional arrow moves the agent one cell in the indicated direction, if not blocked by a wall.
+- The target moves one cell per step, typically along a path (left/right/up/down) until blocked.
+- If the agent clicks an empty cell in the target’s path, that cell becomes "drawn" and blocks the target’s movement.
+- The agent cannot move into walls; movement is blocked.
+- The agent can only move one cell per action.
+- The target cannot move into walls or drawn cells; it is blocked and may change direction or stop.
+- Clicking a wall cell has no effect; the agent does not move.
+- The agent can only interact with arrows or empty cells; other cell types (walls, drawn) are inert to clicks.
+- The agent’s goal is to reduce the distance to the target, either by moving or by blocking the target’s path.
+- The environment is grid-based and deterministic: actions and target movements are predictable given the current state.

@@ -1,0 +1,16 @@
+{
+  "action_choice_hints": [
+    "The candidate action cell is adjacent to a cell containing a directional marker.",
+    "The candidate action cell is in a straight line path extending from a directional marker.",
+    "The candidate action cell is adjacent to a previously marked or modified cell.",
+    "The candidate action cell is part of a contiguous sequence of cells leading from a starting structure toward a target structure.",
+    "The candidate action cell is not already marked or modified.",
+    "The candidate action cell is positioned such that selecting it extends an existing structure in the direction indicated by a nearby marker."
+  ],
+  "feature_family_hints": [
+    "Local neighborhood patterns: Needed to detect the presence and arrangement of special objects or markers adjacent to the candidate action cell.",
+    "Directional relationships: Required to capture alignment or extension of structures in the direction indicated by markers.",
+    "Contiguity and connectivity: Necessary to determine whether the candidate action cell continues or connects existing structures.",
+    "Cell state predicates: Needed to distinguish between unmarked and already marked or modified cells."
+  ]
+}

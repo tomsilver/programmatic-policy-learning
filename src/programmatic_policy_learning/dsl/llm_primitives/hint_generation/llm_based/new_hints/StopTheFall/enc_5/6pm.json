@@ -1,0 +1,36 @@
+{
+  "action_choice_hints": [
+    "Whether the action cell is in the same row or column as a special control token",
+    "If the action cell is the nearest unblocked cell to a control token along a cardinal direction",
+    "Whether there exists a contiguous segment of empty cells between the action cell and a boundary",
+    "If the action cell is adjacent to a static or obstacle token",
+    "Whether the action cell is within K steps of a moving or advance token",
+    "If the action cell is the first empty cell encountered in a scan from a control token",
+    "Whether the action cell is part of a contiguous run of empty cells of length at least N",
+    "If the action cell is blocked by an obstacle before reaching a boundary in a given direction",
+    "Whether the action cell is in a top or bottom band region of the grid",
+    "If all cells between the action cell and a control token are empty",
+    "Whether the action cell is directly above or below a drawn trace",
+    "If the action cell is the only candidate in its row or column satisfying a certain predicate",
+    "Whether the action cell is adjacent to a drawn trace or moving token",
+    "If the action cell is at the edge of a contiguous region of empty cells",
+    "Whether the action cell is the first available cell in a prioritized direction from a control token"
+  ],
+  "feature_family_hints": [
+    "Directional scan features: needed to detect first available or blocked cells along rows or columns",
+    "Contiguity features: to capture runs or regions of empty or drawn trace cells",
+    "Adjacency features: to determine if a cell is next to a static, obstacle, or drawn trace token",
+    "Relative position features: to encode distance or steps from control or moving tokens",
+    "Band/region features: to distinguish actions in top, bottom, or central grid regions",
+    "Obstacle constraint features: to check if a path is blocked before reaching a boundary",
+    "Edge detection features: to identify if a cell is at the edge of a region or the grid",
+    "Global count features: to represent the number of special tokens present in the grid",
+    "Unique candidate features: to determine if a cell is the only one in its row/column satisfying a predicate",
+    "Path extension features: to model whether a trace can be extended from a given cell",
+    "Support features: to check if a cell is supported by a static or drawn trace below",
+    "Nearest neighbor features: to find the closest control or moving token to a candidate cell",
+    "Blocked path features: to encode whether a direction is blocked by an obstacle before reaching a target",
+    "Local context features: to capture the configuration of a cell and its immediate neighbors",
+    "Transition-triggering features: to detect if an action will cause a state change in the grid"
+  ]
+  }
