@@ -43,7 +43,9 @@ def create_environment_description(env: MazeEnv, description_type: str) -> str:
     """
 
     if description_type == "maze_with_obstacles":
-        return base_description + f"""
+        return (
+            base_description
+            + f"""
         - There is a {env.inner_h}x{env.inner_w} inner maze with walls/obstacles (1s) that block movement.
         - The inner maze is surrounded by a wall border with a single entrance at the north.
         - The outer region (void) has no obstacles.
@@ -51,8 +53,11 @@ def create_environment_description(env: MazeEnv, description_type: str) -> str:
 
         Write a policy function that takes (row, col) and returns an action (0, 1, 2, or 3).
     """
+        )
     if description_type == "empty_inner":
-        return base_description + f"""
+        return (
+            base_description
+            + f"""
         - There is a {env.inner_h}x{env.inner_w} inner area that is completely open (no obstacles inside).
         - The inner area is surrounded by a wall border with a single entrance at the north.
         - The outer region (void) has no obstacles.
@@ -60,13 +65,17 @@ def create_environment_description(env: MazeEnv, description_type: str) -> str:
 
         Write a policy function that takes (row, col) and returns an action (0, 1, 2, or 3).
     """
+        )
     # completely_empty
-    return base_description + """
+    return (
+        base_description
+        + """
         - The grid is completely open with no obstacles.
         - Navigate from start to goal.
 
         Write a policy function that takes (row, col) and returns an action (0, 1, 2, or 3).
     """
+    )
 
 
 def run_trial(

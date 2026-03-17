@@ -1,6 +1,5 @@
 """An approach that uses an LLM to generate a class-based policy with planner
-access.
-"""
+access."""
 
 import ast
 import json
@@ -152,6 +151,7 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         self._num_candidates = num_candidates
         self._scoring_max_timesteps = scoring_max_timesteps
         self._generated: Any = None
+        self._best_code: str = ""
         self._all_candidate_codes: list[str] = []
         self._all_candidate_scores: list[tuple[bool, int] | None] = []
 
@@ -263,7 +263,7 @@ def _read_and_clear_astar_metrics() -> int:
             line = line.strip()
             if line:
                 total_expansions += json.loads(line)["num_expansions"]
-    path.write_text("")
+    path.write_text("", encoding="utf-8")
     return total_expansions
 
 
@@ -306,7 +306,9 @@ def _load_generated_policy(
 ) -> Any:
     """Load a GeneratedPolicy class from a code string and instantiate it."""
     namespace: dict[str, Any] = {}
-    exec(compile(code_str, "<generated_policy>", "exec"), namespace)  # noqa: S102
+    exec(  # pylint: disable=exec-used  # noqa: S102
+        compile(code_str, "<generated_policy>", "exec"), namespace
+    )
     cls = namespace["GeneratedPolicy"]
     return cls(
         get_actions=get_actions,

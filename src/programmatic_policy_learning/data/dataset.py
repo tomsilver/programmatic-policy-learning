@@ -162,8 +162,10 @@ def worker_eval_example(fn_input: tuple[np.ndarray, tuple[int, int]]) -> list[bo
     s, a = fn_input
 
     if _WORKER_PROGRAMS is None:
-        raise RuntimeError("_WORKER_PROGRAMS is not initialized.\
-            Ensure worker_init is called before using worker_eval_example.")
+        raise RuntimeError(
+            "_WORKER_PROGRAMS is not initialized.\
+            Ensure worker_init is called before using worker_eval_example."
+        )
 
     results = []
     for f in _WORKER_PROGRAMS:

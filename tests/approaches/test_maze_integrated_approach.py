@@ -189,7 +189,7 @@ def test_integrated_approach_maze_with_real_llm() -> None:
         environment_description,
         env.observation_space,
         env.action_space,
-        seed=None,
+        seed=0,
         llm=llm,
         get_actions=env.get_actions,
         get_next_state=env.get_next_state,
@@ -199,7 +199,7 @@ def test_integrated_approach_maze_with_real_llm() -> None:
 
     obs, info = env.reset(seed=None)
     approach.reset(obs, info)
-    print(approach._policy)
+    # print(approach._policy)  # pylint: disable=protected-access
     goal_reached = False
     for _ in range(1000):
         action = approach.step()
@@ -214,7 +214,7 @@ def test_integrated_approach_maze_with_real_llm() -> None:
     print("Goal reached:", goal_reached)
 
     # Print search metrics (accumulated by the synthesized policy)
-    policy_fn = approach._policy
+    policy_fn = approach._policy  # pylint: disable=protected-access
     print("Search Metrics:")
     print("Num_evals:", getattr(policy_fn, "total_num_evals", 0))
     print("Num_expansions:", getattr(policy_fn, "total_num_expansions", 0))

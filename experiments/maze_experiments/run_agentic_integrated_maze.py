@@ -84,7 +84,7 @@ def run_evaluation(
     # policies plan inside reset).
     metrics_path_str = os.environ.get("astar_metrics_path")
     if metrics_path_str:
-        Path(metrics_path_str).write_text("")
+        Path(metrics_path_str).write_text("", encoding="utf-8")
 
     approach.reset(obs, info)
 
@@ -191,9 +191,9 @@ def main() -> None:
     all_candidate_scores: dict[int, list] = {}
 
     for seed in seeds:
-        logging.info("\n" + "=" * 80)
+        logging.info("%s", "\n" + "=" * 80)
         logging.info("SEED %d", seed)
-        logging.info("=" * 80)
+        logging.info("%s", "=" * 80)
 
         # Create training env and get initial obs
         train_env = MazeEnv(
@@ -277,8 +277,7 @@ def main() -> None:
             f.write("EVALUATION RESULTS\n")
             f.write("=" * 80 + "\n")
             f.write(
-                f"{'Maze':<16} {'Reached':<9} {'Steps':<7} "
-                f"{'Expansions':<12}\n"
+                f"{'Maze':<16} {'Reached':<9} {'Steps':<7} " f"{'Expansions':<12}\n"
             )
             f.write("-" * 44 + "\n")
             for r in seed_results:
@@ -291,9 +290,9 @@ def main() -> None:
         logging.info("Seed %d results written to: %s", seed, seed_file)
 
     # ── Summary across all seeds ──────────────────────────────────────────
-    logging.info("\n" + "=" * 80)
+    logging.info("%s", "\n" + "=" * 80)
     logging.info("AGGREGATE RESULTS (5 seeds x %d mazes)", len(maze_files))
-    logging.info("=" * 80)
+    logging.info("%s", "=" * 80)
 
     # Per-seed summary
     for seed in seeds:
@@ -303,8 +302,11 @@ def main() -> None:
         avg_exp = np.mean(solved_exp) if solved_exp else float("nan")
         logging.info(
             "Seed %d: %d/%d solved (%.1f%%), avg expansions %.1f",
-            seed, successes, len(results),
-            successes / len(results) * 100, avg_exp,
+            seed,
+            successes,
+            len(results),
+            successes / len(results) * 100,
+            avg_exp,
         )
 
     # Per-maze summary (averaged across seeds)
@@ -326,19 +328,30 @@ def main() -> None:
         tag = " *" if maze_name == train_name else ""
         logging.info(
             "%-16s %d/%-5d %-11.1f %-10.1f %-10d %-10d%s",
-            maze_name, solved, len(seeds), avg_steps, avg_exp,
-            search_exp, oracle_exp, tag,
+            maze_name,
+            solved,
+            len(seeds),
+            avg_steps,
+            avg_exp,
+            search_exp,
+            oracle_exp,
+            tag,
         )
 
     all_results_flat = [r for rs in all_seed_results.values() for r in rs]
     total_solved = sum(1 for r in all_results_flat if r["goal_reached"])
     total_count = len(all_results_flat)
-    solved_exp_flat = [r["num_expansions"] for r in all_results_flat if r["goal_reached"]]
+    solved_exp_flat = [
+        r["num_expansions"] for r in all_results_flat if r["goal_reached"]
+    ]
     overall_avg_exp = np.mean(solved_exp_flat) if solved_exp_flat else float("nan")
     logging.info("-" * 65)
     logging.info(
         "Overall: %d/%d (%.1f%%)  |  Avg expansions: %.1f",
-        total_solved, total_count, total_solved / total_count * 100, overall_avg_exp,
+        total_solved,
+        total_count,
+        total_solved / total_count * 100,
+        overall_avg_exp,
     )
 
     # Write aggregate results file
@@ -357,8 +370,7 @@ def main() -> None:
             f.write(f"\n--- Seed {seed} ---\n")
             results = all_seed_results[seed]
             f.write(
-                f"{'Maze':<16} {'Reached':<9} {'Steps':<7} "
-                f"{'Expansions':<12}\n"
+                f"{'Maze':<16} {'Reached':<9} {'Steps':<7} " f"{'Expansions':<12}\n"
             )
             f.write("-" * 44 + "\n")
             for r in results:
@@ -382,7 +394,9 @@ def main() -> None:
             maze_results = [all_seed_results[s][i] for s in seeds]
             solved = sum(1 for r in maze_results if r["goal_reached"])
             avg_steps = np.mean([r["total_steps"] for r in maze_results])
-            solved_exp = [r["num_expansions"] for r in maze_results if r["goal_reached"]]
+            solved_exp = [
+                r["num_expansions"] for r in maze_results if r["goal_reached"]
+            ]
             avg_exp = np.mean(solved_exp) if solved_exp else float("nan")
             search_exp, oracle_exp = BASELINE_RESULTS.get(maze_name, (0, 0))
             tag = " *" if maze_name == train_name else ""
@@ -390,11 +404,21 @@ def main() -> None:
                 f"{maze_name:<16} {solved}/{len(seeds):<5} {avg_steps:<11.1f} "
                 f"{avg_exp:<10.1f} {search_exp:<10} {oracle_exp:<10}{tag}\n"
             )
-        f.write(f"\nOverall: {total_solved}/{total_count} "
-                f"({total_solved / total_count * 100:.1f}%)\n")
-        f.write(f"Avg expansions — Agentic: {overall_avg_exp:.1f}  "
-                f"Search: {sum(v[0] for v in BASELINE_RESULTS.values()) / len(BASELINE_RESULTS):.1f}  "
-                f"Oracle: {sum(v[1] for v in BASELINE_RESULTS.values()) / len(BASELINE_RESULTS):.1f}\n")
+        f.write(
+            f"\nOverall: {total_solved}/{total_count} "
+            f"({total_solved / total_count * 100:.1f}%)\n"
+        )
+        avg_search = sum(v[0] for v in BASELINE_RESULTS.values()) / len(
+            BASELINE_RESULTS
+        )
+        avg_oracle = sum(v[1] for v in BASELINE_RESULTS.values()) / len(
+            BASELINE_RESULTS
+        )
+        f.write(
+            f"Avg expansions — Agentic: {overall_avg_exp:.1f}  "
+            f"Search: {avg_search:.1f}  "
+            f"Oracle: {avg_oracle:.1f}\n"
+        )
 
         # Chosen policies
         for seed in seeds:
