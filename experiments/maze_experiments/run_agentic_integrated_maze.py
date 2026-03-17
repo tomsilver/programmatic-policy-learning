@@ -79,12 +79,14 @@ def run_evaluation(
         get_cost=env.get_cost,
         check_goal=env.check_goal,
     )
-    approach.reset(obs, info)
 
-    # Clear metrics before evaluation
+    # Clear metrics before evaluation (must be before reset, since some
+    # policies plan inside reset).
     metrics_path_str = os.environ.get("astar_metrics_path")
     if metrics_path_str:
         Path(metrics_path_str).write_text("")
+
+    approach.reset(obs, info)
 
     goal_reached = False
     total_steps = 0
@@ -155,6 +157,7 @@ def main() -> None:
     outer_margin = 10
     max_steps = 1000
     seeds = [123, 124, 125, 126, 127]
+    env_seed = 123  # Fixed seed for all env-related operations
 
     # Set up astar metrics path
     metrics_path = Path(tempfile.NamedTemporaryFile(suffix=".json", delete=False).name)
@@ -196,8 +199,8 @@ def main() -> None:
         train_env = MazeEnv(
             inner_maze=train_maze, outer_margin=outer_margin, enable_render=False
         )
-        train_env.action_space.seed(seed)
-        obs, info = train_env.reset(seed=seed)
+        train_env.action_space.seed(env_seed)
+        obs, info = train_env.reset(seed=env_seed)
 
         logging.info(
             "Training on %s (%dx%d)",
@@ -296,7 +299,8 @@ def main() -> None:
     for seed in seeds:
         results = all_seed_results[seed]
         successes = sum(1 for r in results if r["goal_reached"])
-        avg_exp = np.mean([r["num_expansions"] for r in results])
+        solved_exp = [r["num_expansions"] for r in results if r["goal_reached"]]
+        avg_exp = np.mean(solved_exp) if solved_exp else float("nan")
         logging.info(
             "Seed %d: %d/%d solved (%.1f%%), avg expansions %.1f",
             seed, successes, len(results),
@@ -316,7 +320,8 @@ def main() -> None:
         maze_results = [all_seed_results[s][i] for s in seeds]
         solved = sum(1 for r in maze_results if r["goal_reached"])
         avg_steps = np.mean([r["total_steps"] for r in maze_results])
-        avg_exp = np.mean([r["num_expansions"] for r in maze_results])
+        solved_exp = [r["num_expansions"] for r in maze_results if r["goal_reached"]]
+        avg_exp = np.mean(solved_exp) if solved_exp else float("nan")
         search_exp, oracle_exp = BASELINE_RESULTS.get(maze_name, (0, 0))
         tag = " *" if maze_name == train_name else ""
         logging.info(
@@ -328,7 +333,8 @@ def main() -> None:
     all_results_flat = [r for rs in all_seed_results.values() for r in rs]
     total_solved = sum(1 for r in all_results_flat if r["goal_reached"])
     total_count = len(all_results_flat)
-    overall_avg_exp = np.mean([r["num_expansions"] for r in all_results_flat])
+    solved_exp_flat = [r["num_expansions"] for r in all_results_flat if r["goal_reached"]]
+    overall_avg_exp = np.mean(solved_exp_flat) if solved_exp_flat else float("nan")
     logging.info("-" * 65)
     logging.info(
         "Overall: %d/%d (%.1f%%)  |  Avg expansions: %.1f",
@@ -376,7 +382,8 @@ def main() -> None:
             maze_results = [all_seed_results[s][i] for s in seeds]
             solved = sum(1 for r in maze_results if r["goal_reached"])
             avg_steps = np.mean([r["total_steps"] for r in maze_results])
-            avg_exp = np.mean([r["num_expansions"] for r in maze_results])
+            solved_exp = [r["num_expansions"] for r in maze_results if r["goal_reached"]]
+            avg_exp = np.mean(solved_exp) if solved_exp else float("nan")
             search_exp, oracle_exp = BASELINE_RESULTS.get(maze_name, (0, 0))
             tag = " *" if maze_name == train_name else ""
             f.write(
