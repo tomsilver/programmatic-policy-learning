@@ -193,6 +193,9 @@ plots/
 #ignore hints files
 hints/
 exp_hints/
+final_prompts/
 
 # ignore output files
 *.out
+.cursor/
+.pylint_cache/

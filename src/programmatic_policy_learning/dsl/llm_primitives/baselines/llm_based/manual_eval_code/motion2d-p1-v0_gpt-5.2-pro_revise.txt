@@ -1,0 +1,116 @@
+```python
+import numpy as np
+import math
+
+def policy(obs):
+    """
+    Drive a circular robot to a rectangular target while passing through a single vertical-wall
+    passage formed by two aligned rectangular obstacles.
+
+    Policy (geometry + staged controller):
+    1) Read robot position (rx, ry) and radius r; read target rectangle and use its center (tcx,tcy)
+       as the final waypoint.
+    2) Build the passage from the two obstacles:
+       - Wall x-interval: [wall_left, wall_right] from min/max of each obstacle's x and x+width.
+       - Order obstacles by vertical bottom y to identify the lower obstacle (with top) and upper
+         obstacle (with bottom).
+       - Valid gap for the robot center: [gap_low, gap_high] where
+            gap_low  = lower_top + r
+            gap_high = upper_bottom - r
+         If invalid (gap_high <= gap_low), ignore the passage and go straight to target.
+       - Desired passage y is the gap midpoint, clamped to remain slightly inside the gap.
+    3) Stages:
+       - If not yet cleared the wall (rx < wall_right + r + clearance):
+           a) If still before the wall (rx < wall_left - r - small), move toward an x staging line
+              just left of the wall while aligning ry to desired passage y; reduce dx when y error is
+              large to prioritize alignment.
+           b) Near/inside the wall x-zone, only move right if ry is safely within the gap; otherwise
+              hold dx=0 and correct y.
+       - After clearing the wall, move directly toward the target center.
+    4) For pure navigation: dtheta=darm=0 and vac=0 always.
+
+    Returns an action [dx, dy, 0, 0, 0] with dx,dy clipped to [-0.05, 0.05].
+    """
+    rx = float(obs[0])
+    ry = float(obs[1])
+    r = float(obs[3])
+
+    tx = float(obs[9])
+    ty = float(obs[10])
+    tw = float(obs[17])
+    th = float(obs[18])
+    tcx = tx + 0.5 * tw
+    tcy = ty + 0.5 * th
+
+    # If already inside target rectangle, stop.
+    if (tx <= rx <= tx + tw) and (ty <= ry <= ty + th):
+        return np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    # Obstacles (two rectangles that share x, forming one gap)
+    o0x, o0y, o0w, o0h = float(obs[19]), float(obs[20]), float(obs[27]), float(obs[28])
+    o1x, o1y, o1w, o1h = float(obs[29]), float(obs[30]), float(obs[37]), float(obs[38])
+
+    wall_left = min(o0x, o1x)
+    wall_right = max(o0x + o0w, o1x + o1w)
+
+    o0_bottom, o0_top = o0y, o0y + o0h
+    o1_bottom, o1_top = o1y, o1y + o1h
+
+    if o0_bottom <= o1_bottom:
+        lower_top = o0_top
+        upper_bottom = o1_bottom
+    else:
+        lower_top = o1_top
+        upper_bottom = o0_bottom
+
+    gap_low = lower_top + r
+    gap_high = upper_bottom - r
+    has_gap = (gap_high - gap_low) > 1e-6
+
+    if has_gap:
+        gap_center = 0.5 * (gap_low + gap_high)
+        buf = 0.02
+        safe_low = gap_low + buf
+        safe_high = gap_high - buf
+        if safe_high <= safe_low:
+            safe_low, safe_high = gap_low, gap_high
+        desired_y = float(np.clip(gap_center, safe_low, safe_high))
+    else:
+        safe_low, safe_high = -1e9, 1e9
+        desired_y = tcy
+
+    clearance = 0.02
+    x_clear = wall_right + r + clearance
+    x_align_zone = wall_left - r - 0.03
+    x_stage = wall_left - r - 0.005
+
+    dx = 0.0
+    dy = 0.0
+
+    if rx < x_clear:
+        y_err = desired_y - ry
+
+        if rx < x_align_zone:
+            x_err = x_stage - rx
+            dx_raw = float(np.clip(x_err, -0.05, 0.05))
+            slow = 1.0 - min(1.0, abs(y_err) / 0.2)
+            dx = dx_raw * max(0.0, slow)
+            dy = float(np.clip(y_err, -0.05, 0.05))
+        else:
+            in_gap = (ry >= safe_low) and (ry <= safe_high)
+            if not has_gap:
+                in_gap = True
+            if in_gap:
+                dx = float(np.clip(x_clear - rx, 0.0, 0.05))
+                dy = float(np.clip(y_err, -0.02, 0.02))
+            else:
+                dx = 0.0
+                dy = float(np.clip(y_err, -0.05, 0.05))
+    else:
+        dx = float(np.clip(tcx - rx, -0.05, 0.05))
+        dy = float(np.clip(tcy - ry, -0.05, 0.05))
+
+    dx = float(np.clip(dx, -0.05, 0.05))
+    dy = float(np.clip(dy, -0.05, 0.05))
+    return np.array([dx, dy, 0.0, 0.0, 0.0], dtype=np.float32)
+```

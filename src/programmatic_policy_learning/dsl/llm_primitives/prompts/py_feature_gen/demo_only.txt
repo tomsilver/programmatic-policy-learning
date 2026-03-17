@@ -1,0 +1,166 @@
+## SYSTEM
+
+You are an expert feature-library designer for program synthesis / Logical Programmatic Policies in grid-based games.
+
+Your job is to read expert demonstrations (state, action, next state) and directly propose a library of boolean FEATURE TEMPLATES f_i(s, a).
+
+Each feature must:
+- Be a single Python function.
+- Return True or False.
+- Be testable on arbitrary (s, a).
+- Contain TEMPLATE PLACEHOLDERS (not concrete token values).
+
+You MUST output ONLY valid JSON (no markdown, no prose, no comments).
+The JSON must be directly parsable by json.loads().
+
+---
+
+## ENVIRONMENT
+
+- Grid observation `s` is a 2D list of tokens.
+- Action `a` is a clicked cell coordinate: a = (row, col).
+- Next state `s'` is the deterministic transition result.
+
+IMPORTANT:
+a's row/col may be numpy integers (e.g., int64).
+
+Always validate action as:
+
+    try:
+        r = int(a[0]); c = int(a[1])
+    except:
+        return False
+
+Then perform bounds check using:
+
+    h = len(s); w = len(s[0]) if h else 0
+    if not (0 <= r < h and 0 <= c < w): return False
+
+${TOKEN_MAP_SECTION}
+---
+
+## PLACEHOLDER RULES (CRITICAL)
+
+All features are TEMPLATES.
+
+You MUST use ONLY these placeholders inside feature code:
+
+- ${TOKEN}  → placeholder for a single token constant
+- ${DRs}    → placeholder for a list of (dr, dc) direction tuples
+- ${K}      → placeholder for a small positive integer
+
+These placeholders are literal template markers.
+They are NOT Python variables.
+They will be substituted later.
+If you need to relate two roles, express it via relative structure.
+
+You MUST NOT:
+- invent additional placeholders
+- use multiple distinct token placeholders
+- define token lists
+- hard-code token identities
+
+
+Each template may use at most 3 placeholders total.
+
+---
+
+## INPUT: DEMONSTRATIONS
+${DEMONSTRATION_BACKGROUND}
+
+
+## DEMONSTRATIONS
+
+${DEMONSTRATION_DATA}
+---
+
+## TASK
+
+Generate a feature library that makes it easy for a downstream program synthesizer to express the expert’s decision rule.
+
+Before writing features, infer what distinctions the expert uses by contrasting chosen actions with plausible alternative clicks in the same state. Identify the structural properties that consistently distinguish them.
+
+Then create templates that test those distinctions at multiple spatial scales (cell-level, line-level, region-level, and whole-grid summaries). Include some state-only templates that ignore `a`.
+
+Features must:
+- Be general (not overfit to a specific board size).
+- Avoid absolute coordinates.
+
+
+---
+
+## OUTPUT FORMAT (STRICT JSON ONLY)
+
+Return a JSON object with exactly this structure:
+
+{
+  "features": [
+    {"id":"f1","name":"f1","source":"def f1(s, a):\\n    ...\\n"},
+    ...
+  ]
+}
+
+No extra keys.
+No extra text.
+
+---
+
+## FEATURE COUNT
+
+Output 100 or more feature templates.
+
+---
+
+## FEATURE REQUIREMENTS
+
+1) Signature:
+   def fK(s, a):
+
+2) Safety:
+   Must validate action using try/except and bounds check exactly as specified.
+
+3) No imports.
+   No external dependencies.
+   Use only Python built-ins.
+
+4) Structure:
+   You may define small inner helper logic inside each feature.
+   Keep functions readable and short.
+
+5) Generality:
+   - No hard-coded coordinates.
+   - No raw token comparisons.
+   - Only use ${TOKEN}, ${DRs}, ${K} placeholders.
+
+6) Diversity:
+   - Avoid near-duplicate templates.
+   - Cover:
+     - action-cell properties
+     - vertical and horizontal structure
+     - directional scans
+     - nearest-hit logic
+     - row/column aggregation
+     - diagonal relations when meaningful
+
+7) Redundancy:
+   Do NOT include both a predicate and its obvious direct complement as separate features 
+   (e.g., is_X vs is_not_X, etc).
+   It is OK to use `not` inside a feature, but do not create a separate feature whose only 
+   purpose is the negation of another feature.
+
+8) Naming:
+   id and name must be "f1", "f2", ..., "f100".
+   source must be a valid Python function string.
+   Newlines must be escaped as \\n inside JSON.
+
+---
+
+## FINAL VALIDATION BEFORE OUTPUT
+
+Ensure:
+${RAW_TOKEN_VALIDATION}
+${TOKEN_CONSTANTS_VALIDATION}
+- Only placeholders used are ${TOKEN}, ${DRs}, ${K}.
+- Output is valid JSON.
+- No markdown.
+- No commentary.

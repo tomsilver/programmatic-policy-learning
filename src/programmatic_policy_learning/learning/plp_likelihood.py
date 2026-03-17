@@ -4,7 +4,7 @@ import inspect
 import logging
 import multiprocessing
 from importlib import import_module
-from typing import Any
+from typing import Any, TypeVar
 
 import cloudpickle
 import numpy as np
@@ -14,6 +14,10 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
+
+_ObsType = TypeVar("_ObsType")
+_ActType = TypeVar("_ActType")
 
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -54,7 +58,7 @@ def likelihood_worker_init(
 
 
 def _compute_likelihood_worker(
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demonstrations: Trajectory[_ObsType, _ActType],
 ) -> list[float]:
     """Compute log-likelihoods for all precompiled PLPs on the given
     demonstrations."""
@@ -64,41 +68,87 @@ def _compute_likelihood_worker(
     results: list[float] = []
     for plp in _WORKER_PLPS:
         ll = 0.0
-        valid = True
-        for obs, action in demonstrations.steps:
-            if not plp(obs, action):
-                ll = -np.inf
-                valid = False
-                break
 
-            rows, cols = obs.shape[:2]
-            size = 1
+        # hyperparams
+        # Prevents -inf when expert action is disallowed; models expert noise.
+        eps = 1e-4
+        beta = 2.0  # >1 penalizes permissiveness more strongly
+
+        for obs, action in demonstrations.steps:
+            try:
+                obs_grid, action_grid = require_grid_state_action(
+                    obs, action, context="_compute_likelihood_worker"
+                )
+            except TypeError:
+                # Continuous/non-grid fallback:
+                # evaluate only whether PLP accepts expert action.
+                expert_allowed = plp(obs, action)
+                if expert_allowed:
+                    ll += np.log(1.0 - eps)
+                else:
+                    ll += np.log(eps)
+                continue
+
+            rows, cols = obs_grid.shape[:2]
+
+            size = 0
             for r in range(rows):
                 for c in range(cols):
-                    if (r, c) == action:
-                        continue
-                    if plp(obs, (r, c)):
+                    if plp(obs_grid, (r, c)):
                         size += 1
-            ll += np.log(1.0 / size)
-        results.append(ll if valid else -np.inf)
+
+            N = rows * cols  # total actions
+
+            # Numerical safety (avoid log(0))
+            size = max(0, min(size, N))
+
+            expert_allowed = plp(obs_grid, action_grid)
+            # Likelihood model:
+            # - If expert action is allowed: (1-eps) * Uniform(allowed set)
+            # - Else: eps * Uniform(disallowed set)
+            if expert_allowed:
+                # ensure size>=1
+                size_eff = max(1, size)
+                ll += np.log(1.0 - eps) - beta * np.log(size_eff)
+            else:
+                disallowed = max(1, N - size)
+                ll += np.log(eps) - np.log(disallowed)
+        results.append(ll)
+
+    # for plp in _WORKER_PLPS: #PREVIOUS APPROACH
+    #     ll = 0.0
+    #     valid = True
+    #     for obs, action in demonstrations.steps:
+    #         if not plp(obs, action):
+    #             ll = -np.inf
+    #             valid = False
+    #             break
+
+    #         rows, cols = obs.shape[:2]
+    #         size = 1
+    #         for r in range(rows):
+    #             for c in range(cols):
+    #                 if (r, c) == action:
+    #                     continue
+    #                 if plp(obs, (r, c)):
+    #                     size += 1
+    #         ll += np.log(1.0 / size)
+    #     results.append(ll if valid else -np.inf)
     return results
 
 
 def compute_likelihood_plps(
     plps: list[StateActionProgram],
-    demonstrations: Trajectory[np.ndarray, tuple[int, int]],
+    demonstrations: Trajectory[_ObsType, _ActType],
     dsl_functions: dict[str, Any],
     plp_interval: int = 100,
+    num_workers: int | None = None,
 ) -> list[float]:
     """Compute log-likelihoods for PLPs given demonstrations.
 
     Uses fork-based multiprocessing and precompiled PLPs for speed.
     """
     logging.info(f"Computing likelihoods for {len(plps)} PLPs...")
-    for each in plps:
-        logging.info(each)
-        logging.info("***")
-    logging.info("PLPS printed")
 
     # Prepare DSL serialization
     base_dsl, module_map = _split_dsl(dsl_functions)
@@ -118,7 +168,7 @@ def compute_likelihood_plps(
             multiprocessing.get_context()
         )  # macOS/Windows fallback (spawn)
 
-    num_workers = max(1, multiprocessing.cpu_count())
+    worker_count = max(1, num_workers or multiprocessing.cpu_count())
     likelihoods_all: list[float] = []
 
     for p_start in range(0, num_plps, plp_interval):
@@ -126,10 +176,11 @@ def compute_likelihood_plps(
         plp_batch = plp_strs[p_start:p_end]
 
         with ctx.Pool(
-            processes=num_workers,
+            processes=worker_count,
             initializer=likelihood_worker_init,
             initargs=(dsl_blob, module_map, plp_batch),
         ) as pool:
+
             # Each worker runs likelihood for its PLP batch on the same demonstrations
             results_iter = pool.imap(
                 _compute_likelihood_worker, [demonstrations], chunksize=1

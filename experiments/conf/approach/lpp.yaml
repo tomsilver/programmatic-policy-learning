@@ -1,17 +1,79 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # Use a list, Hydra will convert to tuple if needed
-program_generation_step_size: 10
-num_programs: 10000
-num_dts: 5 #5
-max_num_particles: 25 #25
-start_symbol: 0
+demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+program_generation_step_size: 100
+num_programs: 100 #for fixed
+num_dts: 5
+max_num_particles: 25
+start_symbol: 0 # for fixed dsl/grammar
+dt_splitter: best
+dt_max_depth: null
+# Optional full hyperparameter grid for validation model selection.
+hyperparam_grid: null
+# hyperparam_grid:
+#   normalize_plp_actions: [true, false]
+#   alpha: [0.1, 1, 0.0]
+#   program_generation_step_size: [100, 50, 10]
+#   prior_version: ["uniform", "v2", "v1"]
+#   dt_max_depth: [null, 5, 10, 15]
+#   cc_alpha: [0.0, 0.01]
+#   max_num_particles: [25, 10]
+#   dt_splitter: ["best", "random"]
+
+cc_alpha: 0
+normalize_plp_actions: true
+permissive_filter_enabled: false
+permissive_filter_max_avg_frac: 0.2
+permissive_filter_max_avg_count: 2
+collision_feedback_enabled: true
+collision_feedback_enc: "enc_2"
+collision_template_feedback: true #false: means the feedback is just features/no templates
+collision_feedback_num_buckets: 2
+collision_feedback_max_new_features: 5000
+collision_feedback_max_rounds: 5
+collision_feedback_target_collisions: 0
+prior_version: "uniform" # v1 | v2 | uniform
+prior_beta: 2
+alpha: 0
+w_clauses: 0.1
+w_literals: 0.05
+w_max_clause: 0.1
+w_depth: 0.05
+w_ops: 0.03
+val_frac: 0.2
+val_size: null
+split_seed: 0
+split_strategy: "random"
 program_generation:
-  strategy: "py_feature_gen"  # Options: "py_feature_gen" "fixed_grid_v1", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
+  strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
+  llm_model: "gpt-4.1"
+  demos_included: [0,2,6,8,9]
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # continuous_examplenew_hybrid.txt" new_hybrid
+  py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
+  num_batches: 1 #keep this 1 for now
+  removed_primitive: "" 
+  num_features: 50
+  encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
+  loading:
+    offline: 0 # 0 for using LLM / 1 for using the following path data
+    offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
+  negative_sampling:
+    enabled: true
+    discrete:
+      K: 60
+      local_radius: 2
+      w_local: 0.55
+      w_struct: 0.3
+      w_random: 0.15
+    continuous:
+      K: 10
+      local_noise_scale: 0.2
+      lambda_local: 0.7
+      lambda_uniform: 0.3
+      lambda_traj: 0.0
+  # NOTE: The fields below are legacy from earlier experiments.
+  # They are not used by the current config unless you switch strategy.
+  hint_structured: True # used for hint generation
   offline_loader_run_id:  2025-11-25_14-29-23 # Only used for "offline_loader"
   dsl_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/dsl_generation/full/v4_checkmate.txt"
   feature_generator_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/feature_generation/prompt.txt"
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/prompt.txt"
-  removed_primitive: ""
-  num_features: 100
-  encoding_method: "enc_4"

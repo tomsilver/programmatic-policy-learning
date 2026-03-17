@@ -1,0 +1,21 @@
+{
+  "action_choice_hints": [
+    "The candidate cell is adjacent to a region containing a distinct token role not present in the majority of the grid.",
+    "The candidate cell is part of a contiguous structure that connects two or more regions with different token roles.",
+    "The candidate cell is positioned such that selecting it would maintain the connectivity of a specific structure in the grid.",
+    "The candidate cell is not adjacent to any cell with a token role associated with instability or change.",
+    "The candidate cell is at the boundary between two regions with contrasting token roles."
+  ],
+  "feature_family_hints": [
+    "Adjacency relations: Needed to determine if a candidate cell is next to cells with specific token roles.",
+    "Connectivity features: Required to assess whether selecting a cell preserves or alters the connectedness of structures.",
+    "Boundary detection: Useful for identifying cells that lie at the interface between regions of different token roles.",
+    "Contiguity features: To capture whether a cell is part of a continuous region with shared properties."
+  ],
+  "causal_transition_hints": [
+    "Choosing a cell adjacent to a region with a distinct token role tends to trigger a change in the local configuration of that region.",
+    "Selecting a cell that maintains the connectivity of a structure tends to avoid fragmentation of that structure in the next state.",
+    "Choosing a cell at the boundary between regions tends to cause a transition where the boundary shifts or merges.",
+    "Selecting a cell not adjacent to unstable regions tends to avoid triggering transitions associated with instability."
+  ]
+}

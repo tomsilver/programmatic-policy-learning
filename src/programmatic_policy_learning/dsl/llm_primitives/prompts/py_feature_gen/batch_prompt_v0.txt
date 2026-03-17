@@ -1,0 +1,120 @@
+# SYSTEM:
+You are a feature generator for a grid-based imitation/RL setting.
+
+Your job is to expand an existing library of boolean feature functions used by a programmatic logical policy learner.
+Each feature must be a valid, self-contained Python function that returns True or False for a given (state, action) pair.
+
+You MUST follow the output schema exactly and return ONLY valid JSON.
+Any deviation from the schema is considered an error.
+
+
+# USER:
+
+## CONTEXT
+You are generating a NEW batch of boolean Python feature functions f_i(s, a).
+
+These features will be added to an existing feature library and must:
+- meaningfully expand the expressiveness of the library,
+- introduce new structural or procedural patterns,
+- and avoid rephrasing or trivially varying existing features.
+
+Each feature must be usable by a logical programmatic policy learner (e.g., LPP).
+
+## ENVIRONMENT SEMANTICS (IMPORTANT)
+- An action is selecting a cell on the grid. Concretely, choosing action a = (r, c) means clicking the cell at row r and column c.
+- Each grid cell stores exactly one value from the provided ${OBJECT_TYPES} list.
+- Although the action corresponds to selecting a specific cell, features are not restricted to inspecting only the action cell or its immediate neighbors. Features may compare the action cell to other cells or reason about larger grid structure.
+
+## OBJECT TYPES (CELL VALUES)
+The set of possible cell values is:
+${OBJECT_TYPES}
+Use values exactly as provided (e.g., tpn.EMPTY, tpn.TOKEN, None) without quotes; do NOT emit string literals like 'tpn.EMPTY'
+
+
+## EXISTING FEATURE INVENTORY (SUMMARY)
+The following feature descriptions summarize the patterns that are already present in the feature library.
+You must NOT re-express or trivially vary any of these patterns.
+
+${EXISTING_FEATURE_DOCSTRINGS}
+
+
+## NOVELTY AND DIVERSITY REQUIREMENTS (IMPORTANT)
+The new features MUST explore patterns that are structurally different from those above.
+
+In particular:
+- Vary **structure**: use different control flow (simple predicates, loops, directional traversal).
+- Vary **scope**: include local, regional, global, and multi-step predicates.
+- Vary **computation**: include existence checks, comparisons, counts, nearest/farthest relations, or multi-step spatial traversal.
+- Avoid near-duplicates: changing only constants, offsets, or directions is NOT sufficient.
+
+Before emitting each feature, ensure its logic is not equivalent to any existing feature described above.
+
+
+## HINT (SOFT GUIDANCE)
+The following natural-language hint summarizes expert decision patterns.
+Use it only as a bias toward relevant relations; do not hard-code specific strategies.
+
+${HINT_TEXT}
+
+
+## FEATURE GENERATION REQUEST
+Generate exactly ${BATCH_SIZE} NEW features.
+
+- Feature numbering MUST continue from the existing library.
+- The next available feature index is: ${START_INDEX}
+
+Therefore, generate features named:
+f${START_INDEX}, f${START_INDEX + 1}, ..., f${START_INDEX + BATCH_SIZE - 1}
+
+Each feature MUST:
+- Be a boolean predicate over (s, a)
+- Introduce a new structural or procedural template
+- Be self-contained and executable
+- Be safe under all inputs
+
+
+## OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON of the following form:
+
+{
+  "features": [
+    {
+      "id": "f<index>",
+      "name": "f<index>",
+      "description": "<short one-sentence or keyword-style explanation of the general pattern this feature represents>",
+      "source": "<python source code as a single string>"
+    }
+  ]
+}
+
+You MUST output exactly ${BATCH_SIZE} feature objects.
+The JSON must end immediately after the final closing brace '}'.
+Be careful about the feature indexes. They should start from f${START_INDEX}.
+
+
+## DESCRIPTION RULES (STRICT)
+- Each feature MUST include a "description" field.
+- The description must be one short sentence or a few keywords.
+- The description must explain the general intent or spatial / relational pattern of the feature.
+- Do NOT reference variable names, function names, or code structure.
+- Do NOT describe implementation details.
+
+
+## PYTHON SOURCE RULES (STRICT)
+For each feature object's "source" string:
+- It must define exactly one function with the same name as "name".
+- Signature must be: def f_i(s, a):
+- No imports.
+- No global variables.
+- All helper logic must be inside the function body (inner helpers allowed).
+- Must ALWAYS return a bool.
+- Must NEVER raise an exception.
+- Must treat s as a 2D indexable object: use s[r][c], len(s), len(s[0]).
+- Must validate bounds before accessing neighbors.
+- Runtime should be reasonable: O(H*W) or O(H*W*constant) is acceptable.
+
+
+## ACTION PARSING (MANDATORY IN EACH FUNCTION)
+Inside each function:
+- Assume a is a tuple (r,c). If a is not length-2, return False. Then parse coordinates with: try: r=int(a[0]); c=int(a[1]) except: return False.
+- If (r, c) is out of bounds, return False.

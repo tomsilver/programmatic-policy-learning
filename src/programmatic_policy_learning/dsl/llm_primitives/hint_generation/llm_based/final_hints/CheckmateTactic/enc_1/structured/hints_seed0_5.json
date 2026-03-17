@@ -1,0 +1,44 @@
+1) POLICY RULES
+
+- The expert always clicks a cell containing a WHITE_QUEEN ('Q') as the first action in each trajectory. (seen in ~5/5 demos)
+- The chosen WHITE_QUEEN is never blocked by any other piece in the direction of its intended move (the next action). (seen in ~5/5 demos)
+- The WHITE_QUEEN selected is the only one present on the board at the time of selection. (seen in ~5/5 demos)
+- The WHITE_QUEEN is never adjacent to a KING (either color) at the time of selection. (seen in ~5/5 demos)
+- The action is only taken on a cell where the action mask is 1 (i.e., only legal moves are considered). (seen in ~5/5 demos)
+- The second action is always on a cell that is EMPTY ('.') and is in a straight line (horizontal, vertical, or diagonal) from the previously selected WHITE_QUEEN. (seen in ~5/5 demos)
+- The EMPTY cell chosen for the second action is the first available EMPTY cell in the intended direction from the selected WHITE_QUEEN, not skipping over any intervening pieces. (seen in ~5/5 demos)
+- The EMPTY cell chosen for the second action is never occupied by any KING or QUEEN at the time of selection. (seen in ~5/5 demos)
+- The move always consists of two steps: select a WHITE_QUEEN, then select a reachable EMPTY cell in a straight line. (seen in ~5/5 demos)
+- The direction of movement (for the second action) is always a legal queen move (orthogonal or diagonal). (seen in ~5/5 demos)
+- The expert never selects a cell outside the board or a cell not highlighted by the action mask. (seen in ~5/5 demos)
+- The expert never selects a cell containing a KING or another QUEEN as the second action. (seen in ~5/5 demos)
+
+2) COUNTERFACTUAL DISTRACTORS
+
+- EMPTY cells adjacent to the WHITE_QUEEN but not in the direction of the intended move are not selected.
+- Cells containing a KING (either color) are never selected, even if adjacent to the WHITE_QUEEN.
+- Other EMPTY cells in the same row, column, or diagonal as the WHITE_QUEEN but blocked by another piece are not selected.
+- Other WHITE_QUEENs (if present) are not selected if they are not the only one on the board.
+- EMPTY cells not aligned (not in a straight line) with the selected WHITE_QUEEN are not selected.
+
+3) GAME DYNAMICS
+
+- After selecting a WHITE_QUEEN, its representation changes to HIGHLIGHTED_WHITE_QUEEN ('Q*') in the next observation.
+- No other pieces change state after the first action; only the selected WHITE_QUEEN is highlighted.
+- After the second action (on an EMPTY cell), the HIGHLIGHTED_WHITE_QUEEN moves to the selected EMPTY cell, and its previous cell becomes EMPTY.
+- The move is always completed in two steps: select, then move.
+- The action mask at each step only allows legal actions: first, only the WHITE_QUEEN can be selected; second, only legal destination cells (EMPTY, reachable in a straight line) are allowed.
+- No pieces are captured or removed except for the movement of the WHITE_QUEEN.
+- The positions of the KINGS and other pieces remain unchanged during the queen's move.
+- The board size and shape can vary between demonstrations, but the movement rules remain consistent.
+
+4) TOKEN MAP
+
+TOKEN_MAP = {
+  ".": "ct.EMPTY",
+  "K": "ct.BLACK_KING",
+  "Q": "ct.WHITE_QUEEN",
+  "Q*": "ct.HIGHLIGHTED_WHITE_QUEEN",
+  "k": "ct.WHITE_KING",
+  "k*": "ct.HIGHLIGHTED_WHITE_KING"
+}
