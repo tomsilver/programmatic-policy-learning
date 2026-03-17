@@ -196,3 +196,6 @@ exp_hints/
 
 # ignore output files
 *.out
+
+# ignore astar metrics
+astar_metrics.json
