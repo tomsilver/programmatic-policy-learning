@@ -1,0 +1,888 @@
+Agentic Integrated Approach - Seed 125
+================================================================================
+
+Seed: 125
+Max steps per maze: 1000
+Outer margin: 10
+Training maze: maze1_10x10
+
+ALL CANDIDATE POLICIES
+--------------------------------------------------------------------------------
+
+--- Policy 0 | goal_reached=False, expansions=0 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Purely reactive, no planning:
+    - In the outer void: navigate to the entrance approach point (-2, 0), then to entrance (-1, 0), then into maze.
+    - In the maze: greedy Manhattan descent toward goal; if blocked, try alternates.
+    Robustness is limited in complex mazes (can loop), but very cheap.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal = check_goal
+
+        self.goal = None
+        self.last_obs = None
+        self.stuck_count = 0
+        self.last_action = 0
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.last_obs = obs
+        self.stuck_count = 0
+        self.last_action = 0
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _valid(self, obs, a):
+        return self.get_next_state(obs, a) != obs
+
+    def _pick_greedy(self, obs, target):
+        # Try actions that reduce Manhattan distance; if none, try any valid action.
+        candidates = []
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            candidates.append((self._manhattan(ns, target), a))
+        if not candidates:
+            return 0  # must return something valid; environment likely ignores invalid? but spec says must be valid
+        candidates.sort()
+        return candidates[0][1]
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self._valid(obs, preferred):
+            return preferred
+        for a in self.get_actions():
+            if self._valid(obs, a):
+                return a
+        # If truly boxed in, return 0 (won't move but is still an integer action)
+        return 0
+
+    def get_action(self, obs):
+        if self.goal is None:
+            # Fallback: move South then East-ish
+            return self._ensure_valid_action(obs, 1)
+
+        # Track stuckness
+        if self.last_obs == obs:
+            self.stuck_count += 1
+        else:
+            self.stuck_count = 0
+        self.last_obs = obs
+
+        r, c = obs
+        gr, gc = self.goal
+
+        # Outer void behavior: go to (-2,0) then to (-1,0) then South into maze.
+        if r <= -1:
+            if (r, c) == (-1, 0):
+                return self._ensure_valid_action(obs, 1)  # South into (0,0)
+            # First align column to 0 while staying at row <= -2 to avoid row -1 wall trap.
+            if r == -1 and c != 0:
+                # We're in the row -1 trap zone; only escape is North to -2.
+                return self._ensure_valid_action(obs, 0)
+            # Prefer get to row -2 and col 0
+            target = (-2, 0)
+            a = self._pick_greedy(obs, target)
+            return self._ensure_valid_action(obs, a)
+
+        # Inside maze: greedy toward goal with a little anti-stuck bias.
+        target = self.goal
+        greedy = self._pick_greedy(obs, target)
+
+        # If stuck repeatedly, try a different valid action than last_action
+        if self.stuck_count >= 2:
+            for a in self.get_actions():
+                if a != self.last_action and self._valid(obs, a):
+                    self.last_action = a
+                    return a
+
+        a = self._ensure_valid_action(obs, greedy)
+        self.last_action = a
+        return a
+
+
+--- Policy 1 | goal_reached=True, expansions=233 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Planning-heavy: always (re)plan with A* from the current observation to the goal.
+    Very robust, potentially expensive. Uses a simple Manhattan heuristic.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.plan = []
+        self.expected_obs = None
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.plan = []
+        self.expected_obs = None
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _check_goal(self, state):
+        return state == self.goal if self.goal is not None else False
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _plan_from(self, obs):
+        if self.goal is None:
+            return []
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=self._check_goal,
+            get_successors=self._get_successors,
+            heuristic=lambda s: self._manhattan(s, self.goal),
+            max_expansions=2_000_000,
+            max_evals=2_000_000,
+            timeout=2.0,
+            lazy_expansion=False,
+        )
+        return list(actions) if actions is not None else []
+
+    def _ensure_valid_action(self, obs, preferred):
+        ns = self.get_next_state(obs, preferred)
+        if ns != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def get_action(self, obs):
+        # Follow cached plan only if we're exactly where we expect.
+        if self.plan and self.expected_obs == obs:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Otherwise, replan from scratch every step.
+        self.plan = self._plan_from(obs)
+        self.expected_obs = obs
+
+        if self.plan:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # If no plan found (timeout/limits), do a safe move preference toward entrance/goal.
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+        # Greedy fallback
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+
+--- Policy 2 | goal_reached=False, expansions=0 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Hybrid: reactive navigation to the entrance, then A* inside the maze with plan caching.
+    Replans only when:
+      - no plan exists, or
+      - execution deviates from expected state.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.plan = []
+        self.expected_obs = None
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.plan = []
+        self.expected_obs = None
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _check_goal(self, s):
+        return s == self.goal if self.goal is not None else False
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self.get_next_state(obs, preferred) != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def _react_to_entrance(self, obs):
+        r, c = obs
+        # Stay off row -1 except at col 0 to avoid trap.
+        if (r, c) == (-1, 0):
+            return self._ensure_valid_action(obs, 1)  # South into maze
+        if r == -1 and c != 0:
+            return self._ensure_valid_action(obs, 0)  # go back to -2
+        # Move toward (-2,0)
+        target = (-2, 0)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, target)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+    def _plan_from(self, obs):
+        if self.goal is None:
+            return []
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=self._check_goal,
+            get_successors=self._get_successors,
+            heuristic=lambda s: self._manhattan(s, self.goal),
+            max_expansions=1_500_000,
+            max_evals=1_500_000,
+            timeout=1.5,
+            lazy_expansion=False,
+        )
+        return list(actions) if actions is not None else []
+
+    def get_action(self, obs):
+        r, c = obs
+        # Outer void / entrance handling reactively
+        if r <= -1:
+            self.plan = []
+            self.expected_obs = None
+            return self._react_to_entrance(obs)
+
+        # Inside maze: follow cached plan if consistent
+        if self.plan and self.expected_obs == obs:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Otherwise plan
+        self.plan = self._plan_from(obs)
+        self.expected_obs = obs
+
+        if self.plan:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Fallback: local greedy if planner fails
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+
+--- Policy 3 | goal_reached=False, expansions=0 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Hybrid with "try greedy first":
+    - Uses greedy descent (Manhattan) inside maze.
+    - If greedy doesn't make progress for several steps, switch to A* and cache plan.
+    - Reverts to greedy when plan finishes.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.plan = []
+        self.expected_obs = None
+
+        self.last_obs = None
+        self.no_progress = 0
+        self.last_dist = None
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.plan = []
+        self.expected_obs = None
+        self.last_obs = obs
+        self.no_progress = 0
+        self.last_dist = None
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self.get_next_state(obs, preferred) != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def _check_goal(self, s):
+        return s == self.goal if self.goal is not None else False
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _plan_from(self, obs):
+        if self.goal is None:
+            return []
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=self._check_goal,
+            get_successors=self._get_successors,
+            heuristic=lambda s: self._manhattan(s, self.goal),
+            max_expansions=2_000_000,
+            max_evals=2_000_000,
+            timeout=2.0,
+            lazy_expansion=True,
+        )
+        return list(actions) if actions is not None else []
+
+    def _react_to_entrance(self, obs):
+        r, c = obs
+        if (r, c) == (-1, 0):
+            return self._ensure_valid_action(obs, 1)
+        if r == -1 and c != 0:
+            return self._ensure_valid_action(obs, 0)
+        target = (-2, 0)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, target)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+    def _greedy_step(self, obs):
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+    def get_action(self, obs):
+        r, c = obs
+
+        # Entrance navigation
+        if r <= -1:
+            self.plan = []
+            self.expected_obs = None
+            self.no_progress = 0
+            self.last_dist = None
+            return self._react_to_entrance(obs)
+
+        # Update progress counters (only when goal known)
+        if self.goal is not None:
+            d = self._manhattan(obs, self.goal)
+            if self.last_dist is None:
+                self.last_dist = d
+            if d >= self.last_dist:
+                self.no_progress += 1
+            else:
+                self.no_progress = 0
+            self.last_dist = d
+
+        # Follow plan if valid
+        if self.plan and self.expected_obs == obs:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # If we've been failing to make greedy progress, plan
+        if self.no_progress >= 6:
+            self.plan = self._plan_from(obs)
+            self.expected_obs = obs
+            self.no_progress = 0  # reset after replanning attempt
+            if self.plan:
+                a = self.plan.pop(0)
+                self.expected_obs = self.get_next_state(obs, a)
+                return self._ensure_valid_action(obs, a)
+
+        # Default greedy
+        return self._greedy_step(obs)
+
+
+--- Policy 4 | goal_reached=True, expansions=76 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Planning-first with waypointing:
+    - First plan to the entrance cell (-1, 0) (from anywhere in void), execute it.
+    - Then plan from (0,0) to goal.
+    Uses caching and replans on deviation.
+    This reduces planning difficulty in huge voids and avoids row -1 trap issues.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.phase = "to_entrance"  # to_entrance, to_goal
+        self.plan = []
+        self.expected_obs = None
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.phase = "to_entrance"
+        self.plan = []
+        self.expected_obs = None
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self.get_next_state(obs, preferred) != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _plan_to_target(self, obs, target, timeout=1.5):
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=lambda s: s == target,
+            get_successors=self._get_successors,
+            heuristic=lambda s: self._manhattan(s, target),
+            max_expansions=1_500_000,
+            max_evals=1_500_000,
+            timeout=timeout,
+            lazy_expansion=False,
+        )
+        return list(actions) if actions is not None else []
+
+    def get_action(self, obs):
+        # Phase transitions
+        if self.phase == "to_entrance":
+            if obs == (-1, 0):
+                self.phase = "to_goal"
+                self.plan = []
+                self.expected_obs = None
+            else:
+                # If already inside maze, skip to goal phase
+                if obs[0] >= 0:
+                    self.phase = "to_goal"
+                    self.plan = []
+                    self.expected_obs = None
+
+        # Follow cached plan if consistent
+        if self.plan and self.expected_obs == obs:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Need to (re)plan depending on phase
+        if self.phase == "to_entrance":
+            # Plan to (-1,0); if that is hard (due to border), fallback to reactive to (-2,0) then south.
+            self.plan = self._plan_to_target(obs, (-1, 0), timeout=1.0)
+            self.expected_obs = obs
+            if not self.plan:
+                r, c = obs
+                if (r, c) == (-1, 0):
+                    return self._ensure_valid_action(obs, 1)
+                if r == -1 and c != 0:
+                    return self._ensure_valid_action(obs, 0)
+                # go to (-2,0) reactively
+                target = (-2, 0)
+                best = None
+                best_d = None
+                for a in self.get_actions():
+                    ns = self.get_next_state(obs, a)
+                    if ns == obs:
+                        continue
+                    d = self._manhattan(ns, target)
+                    if best is None or d < best_d:
+                        best, best_d = a, d
+                return self._ensure_valid_action(obs, best if best is not None else 0)
+
+        else:  # to_goal
+            if self.goal is None:
+                return self._ensure_valid_action(obs, 1)
+            self.plan = self._plan_to_target(obs, self.goal, timeout=2.0)
+            self.expected_obs = obs
+
+        if self.plan:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Last-resort fallback: greedy to goal or south
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+
+--- Policy 5 | goal_reached=False, expansions=0 ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Receding-horizon planner:
+    - Plans with A* but only executes the first K actions ("model predictive control").
+    - Replans after K steps or on deviation.
+    - Reactive entrance handling to avoid row -1 trap.
+    Often robust while bounding time spent following stale plans.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.plan = []
+        self.expected_obs = None
+        self.horizon = 12
+        self.steps_left_in_horizon = 0
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.plan = []
+        self.expected_obs = None
+        self.steps_left_in_horizon = 0
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self.get_next_state(obs, preferred) != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def _check_goal(self, s):
+        return s == self.goal if self.goal is not None else False
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _react_to_entrance(self, obs):
+        r, c = obs
+        if (r, c) == (-1, 0):
+            return self._ensure_valid_action(obs, 1)
+        if r == -1 and c != 0:
+            return self._ensure_valid_action(obs, 0)
+        target = (-2, 0)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, target)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+    def _plan_from(self, obs):
+        if self.goal is None:
+            return []
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=self._check_goal,
+            get_successors=self._get_successors,
+            heuristic=lambda s: self._manhattan(s, self.goal),
+            max_expansions=1_000_000,
+            max_evals=1_000_000,
+            timeout=1.0,
+            lazy_expansion=True,
+        )
+        return list(actions) if actions is not None else []
+
+    def get_action(self, obs):
+        # Outer void: reactive entrance approach
+        if obs[0] <= -1:
+            self.plan = []
+            self.expected_obs = None
+            self.steps_left_in_horizon = 0
+            return self._react_to_entrance(obs)
+
+        # If within horizon and plan consistent, execute
+        if (
+            self.plan
+            and self.expected_obs == obs
+            and self.steps_left_in_horizon > 0
+        ):
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            self.steps_left_in_horizon -= 1
+            return self._ensure_valid_action(obs, a)
+
+        # Replan
+        self.plan = self._plan_from(obs)
+        self.expected_obs = obs
+        self.steps_left_in_horizon = self.horizon
+
+        if self.plan:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            self.steps_left_in_horizon -= 1
+            return self._ensure_valid_action(obs, a)
+
+        # Fallback: greedy step toward goal
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+
+--- Policy 6 | goal_reached=True, expansions=48 << CHOSEN ---
+
+from prpl_utils.search import run_astar, SearchMetrics
+
+
+class GeneratedPolicy:
+    """
+    Planning-heavy with robustness tweaks:
+    - Uses A* with a heuristic that heavily prioritizes getting to/through the entrance when outside.
+    - Once inside, uses normal Manhattan-to-goal heuristic.
+    - Caches and follows plans; replans on mismatch.
+
+    This helps avoid wasting search exploring the infinite outer void.
+    """
+
+    def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+        self.get_actions = get_actions
+        self.get_next_state = get_next_state
+        self.get_cost = get_cost
+        self.check_goal_env = check_goal
+
+        self.goal = None
+        self.plan = []
+        self.expected_obs = None
+
+    def reset(self, obs, info):
+        self.goal = info.get("goal", None)
+        self.plan = []
+        self.expected_obs = None
+
+    @staticmethod
+    def _manhattan(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def _ensure_valid_action(self, obs, preferred):
+        if self.get_next_state(obs, preferred) != obs:
+            return preferred
+        for a in self.get_actions():
+            if self.get_next_state(obs, a) != obs:
+                return a
+        return 0
+
+    def _check_goal(self, s):
+        return s == self.goal if self.goal is not None else False
+
+    def _get_successors(self, state):
+        for action in self.get_actions():
+            ns = self.get_next_state(state, action)
+            if ns != state:
+                yield (action, ns, float(self.get_cost()))
+
+    def _heuristic(self, s):
+        if self.goal is None:
+            return 0.0
+        r, c = s
+        # Outside/at border: bias to reach (-2,0)->(-1,0)->(0,0) quickly.
+        if r <= -1:
+            # Penalize being on row -1 away from col 0 (trap)
+            trap_pen = 50.0 if (r == -1 and c != 0) else 0.0
+            return (
+                5.0 * self._manhattan(s, (-2, 0))
+                + 2.0 * self._manhattan(s, (-1, 0))
+                + trap_pen
+            )
+        # Inside maze: standard Manhattan to goal
+        return float(self._manhattan(s, self.goal))
+
+    def _plan_from(self, obs):
+        if self.goal is None:
+            return []
+        states, actions, metrics = run_astar(
+            initial_state=obs,
+            check_goal=self._check_goal,
+            get_successors=self._get_successors,
+            heuristic=self._heuristic,
+            max_expansions=2_500_000,
+            max_evals=2_500_000,
+            timeout=2.5,
+            lazy_expansion=False,
+        )
+        return list(actions) if actions is not None else []
+
+    def get_action(self, obs):
+        # Execute cached plan if consistent
+        if self.plan and self.expected_obs == obs:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # Otherwise plan from current observation (including outer void)
+        self.plan = self._plan_from(obs)
+        self.expected_obs = obs
+
+        if self.plan:
+            a = self.plan.pop(0)
+            self.expected_obs = self.get_next_state(obs, a)
+            return self._ensure_valid_action(obs, a)
+
+        # If planning fails, use safe reactive entrance handling or greedy to goal.
+        if obs[0] <= -1:
+            r, c = obs
+            if (r, c) == (-1, 0):
+                return self._ensure_valid_action(obs, 1)
+            if r == -1 and c != 0:
+                return self._ensure_valid_action(obs, 0)
+            target = (-2, 0)
+            best = None
+            best_d = None
+            for a in self.get_actions():
+                ns = self.get_next_state(obs, a)
+                if ns == obs:
+                    continue
+                d = self._manhattan(ns, target)
+                if best is None or d < best_d:
+                    best, best_d = a, d
+            return self._ensure_valid_action(obs, best if best is not None else 0)
+
+        if self.goal is None:
+            return self._ensure_valid_action(obs, 1)
+
+        best = None
+        best_d = None
+        for a in self.get_actions():
+            ns = self.get_next_state(obs, a)
+            if ns == obs:
+                continue
+            d = self._manhattan(ns, self.goal)
+            if best is None or d < best_d:
+                best, best_d = a, d
+        return self._ensure_valid_action(obs, best if best is not None else 0)
+
+
+================================================================================
+EVALUATION RESULTS
+================================================================================
+Maze             Reached   Steps   Expansions  
+--------------------------------------------
+maze1_10x10      True      35      48          
+maze1_15x15      True      44      58          
+maze2_10x10      True      45      79          
+maze2_15x15      True      68      198         
+maze3_10x10      True      31      40          
+maze3_15x15      True      54      147         
+maze4_10x10      True      51      90          
+maze4_15x15      True      46      83          
+maze5_10x10      True      31      41          
+maze5_15x15      True      48      99          
+
+Success: 10/10
