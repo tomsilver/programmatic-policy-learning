@@ -203,3 +203,10 @@ astar_metrics.json
 
 .cursor/
 .pylint_cache/
+
+# Maze experiment results and graphs
+experiments/maze_experiments/maze_results/
+
+# Integrated approach (WIP)
+src/programmatic_policy_learning/approaches/integrated_approach.py
+tests/approaches/test_maze_integrated_approach.py
