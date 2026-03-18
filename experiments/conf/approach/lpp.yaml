@@ -53,7 +53,7 @@ program_generation:
   num_batches: 1 #keep this 1 for now
   removed_primitive: "" 
   num_features: 50
-  encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
+  encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
   loading:
     offline: 0 # 0 for using LLM / 1 for using the following path data
     offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
