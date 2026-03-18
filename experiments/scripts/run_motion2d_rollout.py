@@ -186,7 +186,7 @@ def main(args: argparse.Namespace) -> None:
     log_obs(obs)
 
     frames, total_reward, steps, terminated = run_rollout(env, obs, expert)
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
     if terminated:
         logging.info("Done at step %d!", steps)
