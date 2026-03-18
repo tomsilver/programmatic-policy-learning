@@ -1190,6 +1190,7 @@ NEGATIVE EXAMPLES (label = 0):
         / "llm_primitives"
         / "prompts"
         / "py_feature_gen"
+        / "collision_prompts"
         / feature_prompt_filename
     )
     prompt_feature = feature_prompt_path.read_text(encoding="utf-8")
@@ -1219,6 +1220,7 @@ NEGATIVE EXAMPLES (label = 0):
             / "llm_primitives"
             / "prompts"
             / "py_feature_gen"
+            / "collision_prompts"
             / template_prompt_filename
         )
         prompt_template = template_prompt_path.read_text(encoding="utf-8")
