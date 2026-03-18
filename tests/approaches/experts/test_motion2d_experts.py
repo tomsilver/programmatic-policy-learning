@@ -29,7 +29,7 @@ def p1_env_and_obs() -> Iterator[EnvObs]:
     env = kinder.make("kinder/Motion2D-p1-v0", render_mode="rgb_array")
     obs, _ = env.reset(seed=42)
     yield env, obs
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
 
 # -- _is_y_aligned -----------------------------------------------------------
