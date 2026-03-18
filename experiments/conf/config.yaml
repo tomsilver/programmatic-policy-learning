@@ -28,7 +28,7 @@ eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   
 defaults:
   - _self_
-  - approach: random_actions
-  - env: ggg_nim
+  - approach: search
+  - env: maze
   - llm: openai
   - expert: ggg_expert
