@@ -32,7 +32,7 @@ def create_kinder_expert(
     *,
     observation_space: Any | None = None,
     num_passages: int = 0,
-    expert_kind: str = "rejection",
+    expert_kind: str = "bilevel",
     max_abstract_plans: int = 10,
     samples_per_step: int = 3,
     max_skill_horizon: int = 100,
