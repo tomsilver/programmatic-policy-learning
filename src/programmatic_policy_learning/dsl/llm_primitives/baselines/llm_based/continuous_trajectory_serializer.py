@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+from itertools import combinations
+from typing import Any, Mapping, Sequence
+
 import numpy as np
 
 # pylint: disable=line-too-long
@@ -185,9 +189,609 @@ def extract_continuous_relational_facts(
 # Trajectory → text  (analogous to trajectory_serializer.trajectory_to_text)
 # ---------------------------------------------------------------------------
 
+_CENTER_X_CANDIDATES = ("center_x", "cx", "x")
+_CENTER_Y_CANDIDATES = ("center_y", "cy", "y")
+_WIDTH_CANDIDATES = ("width", "w", "gripper_width")
+_HEIGHT_CANDIDATES = ("height", "h", "gripper_height")
+_RADIUS_CANDIDATES = ("radius", "r", "base_radius", "robot_base_radius")
+_POSE_ATTRS = ("x", "y", "theta")
+_CHANGE_THRESHOLD = 1e-4
+_RELATION_DELTA_THRESHOLD = 1e-4
+
+
+def _natural_sort_key(text: str) -> list[Any]:
+    parts = re.split(r"(\d+)", text)
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
+def _to_python_scalar(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _is_numeric_scalar(value: Any) -> bool:
+    value = _to_python_scalar(value)
+    return isinstance(value, (int, float, bool, np.number))
+
+
+def _to_float(value: Any) -> float | None:
+    value = _to_python_scalar(value)
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float, np.number)):
+        return float(value)
+    return None
+
+
+def _format_value(value: Any, precision: int = 3) -> str:
+    value = _to_python_scalar(value)
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)):
+        return f"{float(value):.{precision}f}"
+    return str(value)
+
+
+def _format_delta(value: float, precision: int = 3) -> str:
+    return f"{value:+.{precision}f}"
+
+
+def _normalize_attr_name(attr_name: str) -> str:
+    if attr_name == "base_radius":
+        return "radius"
+    return attr_name
+
+
+def _split_object_attr(field_name: str) -> tuple[str, str]:
+    if "_" not in field_name:
+        return "global", field_name
+    object_name, attr_name = field_name.split("_", maxsplit=1)
+    return object_name, _normalize_attr_name(attr_name)
+
+
+def _infer_object_type(object_name: str, attrs: Mapping[str, Any]) -> str:
+    if "type" in attrs:
+        return str(attrs["type"])
+    suffix_match = re.match(r"([a-zA-Z_]+)\d+$", object_name)
+    if suffix_match:
+        return suffix_match.group(1).rstrip("_")
+    return object_name
+
+
+def _ordered_object_names(objects: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    return sorted(
+        objects,
+        key=lambda name: (0 if name == "robot" else 1, _natural_sort_key(name)),
+    )
+
+
+def _mapping_looks_object_centric(obs: Mapping[str, Any]) -> bool:
+    if not obs:
+        return False
+    return any(isinstance(value, Mapping) for value in obs.values())
+
+
+def _extract_objects_from_flat_mapping(obs: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    objects: dict[str, dict[str, Any]] = {}
+    for field_name, value in obs.items():
+        if not _is_numeric_scalar(value):
+            continue
+        object_name, attr_name = _split_object_attr(str(field_name))
+        record = objects.setdefault(object_name, {})
+        record[attr_name] = _to_python_scalar(value)
+        record["type"] = _infer_object_type(object_name, record)
+    return objects
+
+
+def _extract_objects_from_vector(
+    obs: np.ndarray,
+    encoder: ContinuousStateEncoder | None,
+) -> dict[str, dict[str, Any]]:
+    field_names = list(encoder.cfg.obs_field_names) if encoder is not None else []
+    objects: dict[str, dict[str, Any]] = {}
+    flat_obs = np.asarray(obs).reshape(-1)
+    for i, value in enumerate(flat_obs):
+        field_name = field_names[i] if i < len(field_names) else f"obs_{i}"
+        object_name, attr_name = _split_object_attr(field_name)
+        record = objects.setdefault(object_name, {})
+        record[attr_name] = _to_python_scalar(value)
+        record["type"] = _infer_object_type(object_name, record)
+    return objects
+
+
+def _extract_objects_from_object_mapping(
+    obs: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    objects: dict[str, dict[str, Any]] = {}
+    for object_name, value in obs.items():
+        if not isinstance(value, Mapping):
+            continue
+        record = {
+            str(attr_name): _to_python_scalar(attr_value)
+            for attr_name, attr_value in value.items()
+            if _is_numeric_scalar(attr_value) or attr_name in {"type", "name"}
+        }
+        stable_name = str(record.pop("name", object_name))
+        record["type"] = _infer_object_type(stable_name, record)
+        objects[stable_name] = record
+    return objects
+
+
+def _extract_objects_from_sequence(
+    obs: Sequence[Any],
+) -> dict[str, dict[str, Any]]:
+    objects: dict[str, dict[str, Any]] = {}
+    for index, value in enumerate(obs):
+        if not isinstance(value, Mapping):
+            continue
+        record = {
+            str(attr_name): _to_python_scalar(attr_value)
+            for attr_name, attr_value in value.items()
+            if _is_numeric_scalar(attr_value) or attr_name in {"type", "name"}
+        }
+        stable_name = str(record.pop("name", f"obj{index}"))
+        record["type"] = _infer_object_type(stable_name, record)
+        objects[stable_name] = record
+    return objects
+
+
+def _extract_objects(
+    obs: Any,
+    encoder: ContinuousStateEncoder | None,
+) -> dict[str, dict[str, Any]]:
+    if isinstance(obs, np.ndarray):
+        return _extract_objects_from_vector(obs, encoder)
+    if isinstance(obs, Mapping):
+        if _mapping_looks_object_centric(obs):
+            objects = _extract_objects_from_object_mapping(obs)
+            if objects:
+                return objects
+        return _extract_objects_from_flat_mapping(obs)
+    if isinstance(obs, Sequence) and not isinstance(obs, (str, bytes)):
+        objects = _extract_objects_from_sequence(obs)
+        if objects:
+            return objects
+    raise TypeError(f"Unsupported observation type for enc_5: {type(obs)!r}")
+
+
+def _get_attr(attrs: Mapping[str, Any], candidates: Sequence[str]) -> Any | None:
+    for candidate in candidates:
+        if candidate in attrs:
+            return attrs[candidate]
+    return None
+
+
+def _object_center(attrs: Mapping[str, Any]) -> tuple[float, float] | None:
+    raw_x = _get_attr(attrs, _CENTER_X_CANDIDATES)
+    raw_y = _get_attr(attrs, _CENTER_Y_CANDIDATES)
+    x = _to_float(raw_x)
+    y = _to_float(raw_y)
+    if x is None or y is None:
+        return None
+
+    width = _to_float(_get_attr(attrs, _WIDTH_CANDIDATES))
+    height = _to_float(_get_attr(attrs, _HEIGHT_CANDIDATES))
+    radius = _to_float(_get_attr(attrs, _RADIUS_CANDIDATES))
+
+    if radius is not None:
+        return x, y
+    if width is not None and height is not None:
+        return x + width / 2.0, y + height / 2.0
+    return x, y
+
+
+def _object_bbox(attrs: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+    raw_x = _get_attr(attrs, _CENTER_X_CANDIDATES)
+    raw_y = _get_attr(attrs, _CENTER_Y_CANDIDATES)
+    x = _to_float(raw_x)
+    y = _to_float(raw_y)
+    if x is None or y is None:
+        return None
+
+    width = _to_float(_get_attr(attrs, _WIDTH_CANDIDATES))
+    height = _to_float(_get_attr(attrs, _HEIGHT_CANDIDATES))
+    radius = _to_float(_get_attr(attrs, _RADIUS_CANDIDATES))
+
+    if radius is not None:
+        return x - radius, y - radius, x + radius, y + radius
+    if width is not None and height is not None:
+        return x, y, x + width, y + height
+    return None
+
+
+def _boxes_intersect(
+    box_a: tuple[float, float, float, float],
+    box_b: tuple[float, float, float, float],
+) -> bool:
+    ax0, ay0, ax1, ay1 = box_a
+    bx0, by0, bx1, by1 = box_b
+    return ax0 <= bx1 and bx0 <= ax1 and ay0 <= by1 and by0 <= ay1
+
+
+def _compute_relation(
+    object_a: Mapping[str, Any],
+    object_b: Mapping[str, Any],
+) -> dict[str, Any]:
+    relation: dict[str, Any] = {}
+    center_a = _object_center(object_a)
+    center_b = _object_center(object_b)
+    if center_a is not None and center_b is not None:
+        ax, ay = center_a
+        bx, by = center_b
+        dx = bx - ax
+        dy = by - ay
+        relation["center_dx"] = dx
+        relation["center_dy"] = dy
+        relation["euclidean_dist"] = float(np.hypot(dx, dy))
+        relation["left_of"] = ax < bx
+        relation["right_of"] = ax > bx
+        relation["above"] = ay > by
+        relation["below"] = ay < by
+
+    box_a = _object_bbox(object_a)
+    box_b = _object_bbox(object_b)
+    if box_a is not None and box_b is not None:
+        relation["intersects"] = _boxes_intersect(box_a, box_b)
+    return relation
+
+
+def _relation_line(
+    name_a: str,
+    name_b: str,
+    relation: Mapping[str, Any],
+    precision: int,
+) -> str:
+    ordered_keys = (
+        "center_dx",
+        "center_dy",
+        "euclidean_dist",
+        "left_of",
+        "right_of",
+        "above",
+        "below",
+        "intersects",
+    )
+    entries = [
+        f"{key}={_format_value(relation[key], precision)}"
+        for key in ordered_keys
+        if key in relation
+    ]
+    return f"rel({name_a}, {name_b}): " + ", ".join(entries)
+
+
+def _relation_delta_lines(
+    name_a: str,
+    name_b: str,
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    precision: int,
+) -> list[str]:
+    lines: list[str] = []
+
+    before_dist = _to_float(before.get("euclidean_dist"))
+    after_dist = _to_float(after.get("euclidean_dist"))
+    if before_dist is not None and after_dist is not None:
+        dist_change = after_dist - before_dist
+        lines.append(
+            f"dist_change({name_a}, {name_b})={_format_delta(dist_change, precision)}"
+        )
+        lines.append(
+            f"moved_toward({name_a}, {name_b})="
+            f"{str(after_dist < before_dist - _RELATION_DELTA_THRESHOLD).lower()}"
+        )
+
+    for key in ("left_of", "right_of", "above", "below", "intersects"):
+        if key in before and key in after and before[key] != after[key]:
+            lines.append(
+                f"{key}({name_a}, {name_b}): "
+                f"{_format_value(before[key], precision)} -> "
+                f"{_format_value(after[key], precision)}"
+            )
+
+    for key in ("center_dx", "center_dy"):
+        before_value = _to_float(before.get(key))
+        after_value = _to_float(after.get(key))
+        if (
+            before_value is not None
+            and after_value is not None
+            and abs(after_value - before_value) >= _RELATION_DELTA_THRESHOLD
+        ):
+            lines.append(
+                f"{key}_change({name_a}, {name_b})="
+                f"{_format_delta(after_value - before_value, precision)}"
+            )
+    return lines
+
+
+def _format_object_line(
+    object_name: str,
+    attrs: Mapping[str, Any],
+    precision: int,
+) -> str:
+    ordered_attrs: list[str] = []
+    for attr_name in ("type", "x", "y", "theta", "radius", "width", "height"):
+        if attr_name in attrs:
+            ordered_attrs.append(attr_name)
+    for attr_name in sorted(attrs, key=_natural_sort_key):
+        if attr_name not in ordered_attrs:
+            ordered_attrs.append(attr_name)
+    entries = [
+        f"{attr_name}={_format_value(attrs[attr_name], precision)}"
+        for attr_name in ordered_attrs
+    ]
+    return f"{object_name}(" + ", ".join(entries) + ")"
+
+
+def _format_action_lines(
+    action: Any,
+    encoder: ContinuousStateEncoder | None,
+    precision: int,
+) -> list[str]:
+    if action is None:
+        return ["Action: None (terminal state)"]
+    if isinstance(action, np.ndarray):
+        flat_action = np.asarray(action).reshape(-1)
+        field_names = list(encoder.cfg.action_field_names) if encoder is not None else []
+        entries = []
+        for index, value in enumerate(flat_action):
+            name = field_names[index] if index < len(field_names) else f"a{index}"
+            entries.append(f"- {name}={_format_value(value, precision)}")
+        return ["Action:"] + entries
+    if isinstance(action, Mapping):
+        entries = [
+            f"- {name}={_format_value(value, precision)}"
+            for name, value in sorted(
+                action.items(),
+                key=lambda item: _natural_sort_key(str(item[0])),
+            )
+        ]
+        return ["Action:"] + entries
+    return [f"Action: {_format_value(action, precision)}"]
+
+
+def _object_change_lines(
+    before_objects: Mapping[str, Mapping[str, Any]],
+    after_objects: Mapping[str, Mapping[str, Any]],
+    precision: int,
+) -> tuple[list[str], set[str]]:
+    lines: list[str] = []
+    changed_objects: set[str] = set()
+    all_object_names = sorted(
+        set(before_objects) | set(after_objects),
+        key=lambda name: (0 if name == "robot" else 1, _natural_sort_key(name)),
+    )
+    for object_name in all_object_names:
+        before_attrs = before_objects.get(object_name)
+        after_attrs = after_objects.get(object_name)
+        if before_attrs is None or after_attrs is None:
+            changed_objects.add(object_name)
+            status = "added" if before_attrs is None else "removed"
+            lines.append(f"{object_name}: {status}")
+            continue
+        attr_names = sorted(set(before_attrs) | set(after_attrs), key=_natural_sort_key)
+        for attr_name in attr_names:
+            if attr_name == "type":
+                continue
+            before_value = before_attrs.get(attr_name)
+            after_value = after_attrs.get(attr_name)
+            if before_value == after_value:
+                continue
+            before_float = _to_float(before_value)
+            after_float = _to_float(after_value)
+            if (
+                before_float is not None
+                and after_float is not None
+                and abs(after_float - before_float) < _CHANGE_THRESHOLD
+            ):
+                continue
+            changed_objects.add(object_name)
+            line = (
+                f"{object_name}.{attr_name}: "
+                f"{_format_value(before_value, precision)} -> "
+                f"{_format_value(after_value, precision)}"
+            )
+            if before_float is not None and after_float is not None:
+                line += f" (delta={_format_delta(after_float - before_float, precision)})"
+            lines.append(line)
+    return lines, changed_objects
+
+
+def _select_relation_pairs(
+    objects: Mapping[str, Mapping[str, Any]],
+    changed_objects: set[str],
+) -> list[tuple[str, str]]:
+    object_names = _ordered_object_names(objects)
+    if len(object_names) < 2:
+        return []
+
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def maybe_add(pair: tuple[str, str]) -> None:
+        if pair not in seen:
+            seen.add(pair)
+            pairs.append(pair)
+
+    if "robot" in objects:
+        for other_name in object_names:
+            if other_name != "robot":
+                maybe_add(("robot", other_name))
+
+    non_robot = [name for name in object_names if name != "robot"]
+    important_non_robot = [name for name in non_robot if name in changed_objects][:3]
+    for name_a, name_b in combinations(important_non_robot, 2):
+        maybe_add((name_a, name_b))
+
+    if not pairs:
+        for pair in combinations(object_names[:4], 2):
+            maybe_add(pair)
+    return pairs[:6]
+
+
+def _robot_pose_summary(
+    objects: Mapping[str, Mapping[str, Any]],
+    precision: int,
+) -> str | None:
+    robot = objects.get("robot")
+    if robot is None:
+        return None
+    pose_parts = [
+        f"{attr}={_format_value(robot[attr], precision)}"
+        for attr in _POSE_ATTRS
+        if attr in robot
+    ]
+    if not pose_parts:
+        return None
+    return ", ".join(pose_parts)
+
+
+def enc_5(
+    trajectory: list[tuple[Any, Any, Any]],
+    *,
+    encoder: ContinuousStateEncoder | None,
+) -> str:
+    """Object-centric continuous trajectory encoding for KinDER-style tasks."""
+    if not trajectory:
+        raise ValueError("trajectory must be non-empty")
+
+
+    steps_with_idx = list(enumerate(trajectory))
+    precision = encoder.cfg.precision if encoder is not None else 3
+
+    initial_objects = _extract_objects(steps_with_idx[0][1][0], encoder)
+    final_objects = _extract_objects(steps_with_idx[-1][1][2], encoder)
+    object_types = sorted(
+        {
+            str(attrs.get("type", _infer_object_type(name, attrs)))
+            for name, attrs in {**initial_objects, **final_objects}.items()
+        },
+        key=_natural_sort_key,
+    )
+
+    trajectory_changed_objects: set[str] = set()
+    for _, (obs_t, _, obs_t1) in steps_with_idx:
+        _, changed_objects = _object_change_lines(
+            _extract_objects(obs_t, encoder),
+            _extract_objects(obs_t1, encoder),
+            precision,
+        )
+        trajectory_changed_objects.update(changed_objects)
+
+    summary_lines = [
+        "Trajectory summary:",
+        f"- number of shown steps: {len(steps_with_idx) + 1}",
+        f"- object types present: {', '.join(object_types) if object_types else '(unknown)'}",
+    ]
+    initial_robot_pose = _robot_pose_summary(initial_objects, precision)
+    final_robot_pose = _robot_pose_summary(final_objects, precision)
+    if initial_robot_pose is not None:
+        summary_lines.append(f"- initial robot pose: {initial_robot_pose}")
+    if final_robot_pose is not None:
+        summary_lines.append(f"- final robot pose: {final_robot_pose}")
+    summary_lines.append(
+        "- changed objects: "
+        + (
+            ", ".join(
+                sorted(
+                    trajectory_changed_objects,
+                    key=lambda name: (
+                        0 if name == "robot" else 1,
+                        _natural_sort_key(name),
+                    ),
+                )
+            )
+            if trajectory_changed_objects
+            else "(none)"
+        )
+    )
+
+    blocks: list[str] = ["\n".join(summary_lines)]
+
+    for original_idx, (obs_t, action, obs_t1) in steps_with_idx:
+        before_objects = _extract_objects(obs_t, encoder)
+        after_objects = _extract_objects(obs_t1, encoder)
+        object_change_lines, changed_objects = _object_change_lines(
+            before_objects,
+            after_objects,
+            precision,
+        )
+        relation_pairs = _select_relation_pairs(before_objects, changed_objects)
+
+        block_lines = [f"*** Step {original_idx} ***", "", "Objects:"]
+        for object_name in _ordered_object_names(before_objects):
+            block_lines.append(
+                f"- {_format_object_line(object_name, before_objects[object_name], precision)}"
+            )
+        block_lines.extend(["", *_format_action_lines(action, encoder, precision), ""])
+
+        if object_change_lines:
+            block_lines.append("Object changes:")
+            block_lines.extend(f"- {line}" for line in object_change_lines)
+        else:
+            block_lines.extend(["Object changes:", "- (no changed attributes)"])
+
+        if relation_pairs:
+            before_relations = {
+                pair: _compute_relation(before_objects[pair[0]], before_objects[pair[1]])
+                for pair in relation_pairs
+            }
+            after_relations = {
+                pair: _compute_relation(after_objects[pair[0]], after_objects[pair[1]])
+                for pair in relation_pairs
+                if pair[0] in after_objects and pair[1] in after_objects
+            }
+
+            block_lines.extend(["", "Pairwise relations before action:"])
+            block_lines.extend(
+                f"- {_relation_line(name_a, name_b, relation, precision)}"
+                for (name_a, name_b), relation in before_relations.items()
+                if relation
+            )
+
+            after_relation_lines = [
+                f"- {_relation_line(name_a, name_b, relation, precision)}"
+                for (name_a, name_b), relation in after_relations.items()
+                if relation
+            ]
+            if after_relation_lines:
+                block_lines.extend(["", "Pairwise relations after action:"])
+                block_lines.extend(after_relation_lines)
+
+            delta_lines: list[str] = []
+            for pair in relation_pairs:
+                if pair in before_relations and pair in after_relations:
+                    delta_lines.extend(
+                        _relation_delta_lines(
+                            pair[0],
+                            pair[1],
+                            before_relations[pair],
+                            after_relations[pair],
+                            precision,
+                        )
+                    )
+            if delta_lines:
+                block_lines.extend(["", "Relation deltas:"])
+                block_lines.extend(f"- {line}" for line in delta_lines)
+
+        blocks.append("\n".join(block_lines))
+
+    last_original_idx, (_, _, final_obs) = steps_with_idx[-1]
+    final_step_lines = [f"*** Step {last_original_idx + 1} ***", "", "Objects:"]
+    for object_name in _ordered_object_names(final_objects):
+        final_step_lines.append(
+            f"- {_format_object_line(object_name, final_objects[object_name], precision)}"
+        )
+    final_step_lines.extend(["", "Action: None (terminal state)"])
+    blocks.append("\n".join(final_step_lines))
+
+    return "\n\n".join(blocks)
+
 
 def trajectory_to_text(
-    trajectory: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    trajectory: list[tuple[Any, Any, Any]],
     *,
     encoder: ContinuousStateEncoder,
     num_passages: int,
@@ -331,24 +935,11 @@ def trajectory_to_text(
     if not trajectory:
         raise ValueError("trajectory must be non-empty")
 
-    # e.g. trajectory = [(obs0, act0, obs1), (obs1, act1, obs2), ...]
-    # -> indexed_traj = [(0, (obs0, act0, obs1)), (1, (obs1, act1, obs2)), ...]
-    indexed_traj = list(enumerate(trajectory))
+    if encoding_method == "5":
+        return enc_5(trajectory, encoder=encoder)
 
-    if skip_rate > 1:
-        sampled = indexed_traj[::skip_rate]
-        if max_steps:
-            sampled = sampled[: max_steps - 1]
-        if sampled[-1][0] != indexed_traj[-1][0]:
-            sampled.append(indexed_traj[-1])
-        steps_with_idx = sampled
-        header = (
-            f"[NOTE: Trajectory sub-sampled. Showing 1 in every {skip_rate} steps, "
-            f"plus the final terminal step.]\n\n"
-        )
-    else:
-        steps_with_idx = indexed_traj[:max_steps] if max_steps else indexed_traj
-        header = ""
+
+    steps_with_idx = list(enumerate(trajectory))
 
     blocks: list[str] = []
 
@@ -407,4 +998,4 @@ def trajectory_to_text(
                 "Relational Facts:\n" + "\n".join(f"- {f}" for f in rel_facts)
             )
 
-    return header + "\n\n".join(blocks)
+    return "\n\n".join(blocks)
