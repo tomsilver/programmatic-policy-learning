@@ -68,9 +68,9 @@ class SearchApproach(BaseApproach[_ObsType, _ActType]):
                     yield (action, next_state, cost)
 
         _, plan, search_metrics = run_astar(
-            initial_state=tuple(start),
+            initial_state=(int(start[0]), int(start[1])),
             check_goal=lambda state: self._check_goal(state, goal),
-            get_successors=get_successors,
+            get_successors=get_successors,  # type: ignore[arg-type]
             heuristic=lambda s: abs(s[0] - goal[0]) + abs(s[1] - goal[1]),
         )
         return (plan, search_metrics)

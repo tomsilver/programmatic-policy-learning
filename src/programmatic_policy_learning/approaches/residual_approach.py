@@ -2,14 +2,7 @@
 
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    Iterable,
-    Literal,
-    SupportsFloat,
-    cast,
-)
+from typing import Any, Callable, Iterable, Literal, SupportsFloat, cast
 
 import gymnasium as gym
 import numpy as np

@@ -18,9 +18,7 @@ from typing import Any, Callable, Generator, TypeVar
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from programmatic_policy_learning.approaches.experts.grid_experts import (
-    get_grid_expert,
-)
+from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
     grid_encoder,
     grid_hint_config,
