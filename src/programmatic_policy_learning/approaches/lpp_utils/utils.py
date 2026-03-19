@@ -46,9 +46,14 @@ except Exception:  # pylint: disable=broad-exception-caught
     GymnasiumRecordVideoType = None
 
 
+def _is_stateful_policy(policy: Any) -> bool:
+    """Return whether *policy* exposes the agent-style rollout protocol."""
+    return all(hasattr(policy, attr) for attr in ("reset", "step", "update"))
+
+
 def run_single_episode(
     env: Any,
-    policy: Callable[[Any], Any],
+    policy: Any,
     record_video: bool = False,
     video_out_path: str | None = None,
     max_num_steps: int = 100,
@@ -95,11 +100,15 @@ def run_single_episode(
                 # Fallback: manual frame capture for legacy gym envs.
                 record_frames = []
 
+    stateful_policy = _is_stateful_policy(policy)
     reset_out = env.reset()
     if isinstance(reset_out, tuple) and len(reset_out) == 2:
-        obs, _ = reset_out
+        obs, info = reset_out
     else:
         obs = reset_out
+        info = {}
+    if stateful_policy:
+        policy.reset(obs, info)
     if record_frames is not None and hasattr(env, "render"):
         try:
             frame = env.render()
@@ -110,14 +119,16 @@ def run_single_episode(
     total_reward = 0.0
     episode_terminated: np.bool_ = np.bool_(False)
     for _ in range(max_num_steps):
-        action = policy(obs)
+        action = policy.step() if stateful_policy else policy(obs)
         step_out = env.step(action)
         if isinstance(step_out, tuple) and len(step_out) == 4:
-            new_obs, reward, done, _ = step_out
+            new_obs, reward, done, info = step_out
             terminated, truncated = done, False
         else:
-            new_obs, reward, terminated, truncated, _ = step_out
+            new_obs, reward, terminated, truncated, info = step_out
         total_reward += reward
+        if stateful_policy:
+            policy.update(new_obs, reward, terminated or truncated, info)
 
         obs = new_obs
         if record_frames is not None and hasattr(env, "render"):

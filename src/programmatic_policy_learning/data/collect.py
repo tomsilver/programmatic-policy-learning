@@ -54,7 +54,7 @@ def collect_demo(
             obs, reward, terminated, truncated, info = step_out
 
         t += 1
-        expert.update(obs, reward, terminated, info)
+        expert.update(obs, reward, terminated or truncated, info)
         if terminated or truncated or (t >= max_demo_length):
             print("REWARD WHEN DONE:", reward)
             if not reward > 0:

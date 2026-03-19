@@ -149,6 +149,9 @@ def _rollout(
     video_path: Path | None = None,
     double_reset_like_eval: bool = False,
 ) -> dict[str, Any]:
+    stateful_policy = all(
+        hasattr(policy, attr) for attr in ("reset", "step", "update")
+    )
     env, obs = cap_baseline.continuous_env_factory(
         env_name, num_passages, seed=reset_seed
     )
@@ -159,6 +162,8 @@ def _rollout(
             obs, _ = reset_out
         else:
             obs = reset_out
+    if stateful_policy:
+        policy.reset(obs, {})
 
     frames: list[np.ndarray] = []
     if record_video:
@@ -176,11 +181,14 @@ def _rollout(
     final_obs = obs
 
     for step_idx in range(max_steps):
-        action = np.asarray(policy(obs), dtype=env.action_space.dtype)
+        raw_action = policy.step() if stateful_policy else policy(obs)
+        action = np.asarray(raw_action, dtype=env.action_space.dtype)
         action = action.reshape(env.action_space.shape)
         action = np.clip(action, env.action_space.low, env.action_space.high)
 
         obs_next, reward, terminated, truncated, _ = env.step(action)
+        if stateful_policy:
+            policy.update(obs_next, float(reward), terminated or truncated, {})
         total_reward += float(reward)
 
         next_xy = np.asarray(obs_next[:2], dtype=np.float32).copy()
@@ -275,7 +283,14 @@ def main() -> None:
     expert_policy: Callable[[Any], Any] | None = None
     if args.compare_expert:
         ref_env, _ = cap_baseline.continuous_env_factory(env_name, num_passages, seed=0)
-        expert_policy = create_kinder_expert(env_name, ref_env.action_space, seed=0)
+        expert_policy = create_kinder_expert(
+            env_name,
+            ref_env.action_space,
+            seed=0,
+            observation_space=ref_env.observation_space,
+            num_passages=num_passages,
+            expert_kind="bilevel",
+        )
         ref_env.close()
 
     print(

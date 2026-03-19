@@ -47,8 +47,8 @@ split_strategy: "random"
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
-  demos_included: [0,2,6,8,9]
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # continuous_example - new_hybrid.txt" new_hybrid
+  demos_included: [0,2,6,9] #,8
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/hybrid.txt"  # continuous_example - new_hybrid.txt" new_hybrid
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1 #keep this 1 for now
   removed_primitive: "" 
@@ -58,9 +58,9 @@ program_generation:
     offline: 0 # 0 for using LLM / 1 for using the following path data
     offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
-    enabled: false
+    enabled: true
     discrete:
-      K: 60
+      K: 16
       local_radius: 2
       w_local: 0.55
       w_struct: 0.3
