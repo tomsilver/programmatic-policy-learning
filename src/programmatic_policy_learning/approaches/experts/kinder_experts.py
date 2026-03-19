@@ -10,11 +10,11 @@ from typing import Any
 
 import gymnasium as gym
 
-from programmatic_policy_learning.approaches.experts.motion2d_experts import (
-    create_motion2d_expert,
-)
 from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts import (
     create_motion2d_bilevel_expert,
+)
+from programmatic_policy_learning.approaches.experts.motion2d_experts import (
+    create_motion2d_expert,
 )
 
 # pylint: disable=line-too-long
@@ -58,9 +58,7 @@ def create_kinder_expert(
     if env_name == "Motion2D":
         if expert_kind == "bilevel":
             if observation_space is None:
-                raise ValueError(
-                    "Motion2D bilevel expert requires observation_space."
-                )
+                raise ValueError("Motion2D bilevel expert requires observation_space.")
             return create_motion2d_bilevel_expert(
                 observation_space,
                 action_space,

@@ -21,8 +21,38 @@ def collect_demo(
 ) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
-
     env = env_factory(env_num)  # type: ignore
+
+    # print(type(expert))
+    # print(max_demo_length)
+    # obs, info = env.reset(seed=0)
+    # expert.reset(obs, info)
+    # for t in range(1000):
+    #     action = expert.step()
+    #     print("t", t, "action", action)
+    #     obs, reward, terminated, truncated, info = env.step(action)
+    #     print("reward", reward, "terminated", terminated, "truncated", truncated)
+    #     expert.update(obs, reward, terminated or truncated, info)
+    #     if terminated or truncated:
+    #         print("final reward:", reward)
+    #         print("final terminated:", terminated)
+    #         print("final truncated:", truncated)
+    #         print("final info:", info)
+    #         print("final obs:", obs)
+    #         print("robot xy:", obs[0], obs[1])
+    #         print("target xy:", obs[9], obs[10])
+
+    #         rx, ry, r = obs[0], obs[1], obs[3]
+    #         tx, ty, tw, th = obs[9], obs[10], obs[17], obs[18]
+
+    #         print("robot center:", (rx, ry))
+    #         print("target rect:", (tx, ty, tw, th))
+    #         print("target center:", (tx + tw / 2, ty + th / 2))
+    #         print("feasible success center x-range:", (tx + r, tx + tw - r))
+    #         print("feasible success center y-range:", (ty + r, ty + th - r))
+
+    #         break
+    # input()
 
     # Support both gymnasium reset(seed=...) and older reset() signatures.
     try:

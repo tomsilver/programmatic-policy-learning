@@ -149,9 +149,7 @@ def _rollout(
     video_path: Path | None = None,
     double_reset_like_eval: bool = False,
 ) -> dict[str, Any]:
-    stateful_policy = all(
-        hasattr(policy, attr) for attr in ("reset", "step", "update")
-    )
+    stateful_policy = all(hasattr(policy, attr) for attr in ("reset", "step", "update"))
     env, obs = cap_baseline.continuous_env_factory(
         env_name, num_passages, seed=reset_seed
     )

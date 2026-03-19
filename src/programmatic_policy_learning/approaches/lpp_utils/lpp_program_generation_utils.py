@@ -71,18 +71,29 @@ def _collect_full_episode_generic(
     expert: Any,
     *,
     max_steps: int = 200,
+    skip_rate: int = 1,
 ) -> list[tuple[Any, Any, Any]]:
-    """Roll out an instantiated expert and collect (obs, action, obs_next)."""
+    """Roll out an instantiated expert and collect sampled transitions.
+
+    The environment is still stepped at every timestep, but only every
+    ``skip_rate``-th transition is retained. The terminal transition is always
+    kept so the prompt can still see how the episode ended.
+    """
     obs, info = env.reset()
     expert.reset(obs, info)
     trajectory: list[tuple[Any, Any, Any]] = []
-    for _ in range(max_steps):
+    skip_rate = max(1, int(skip_rate))
+    for step_idx in range(max_steps):
         action = expert.step()
         obs_next, reward, terminated, truncated, step_info = env.step(action)
-        trajectory.append((obs, action, obs_next))
+        transition = (obs, action, obs_next)
+        if step_idx % skip_rate == 0:
+            trajectory.append(transition)
         expert.update(obs_next, reward, terminated, step_info)
         obs = obs_next
         if terminated or truncated:
+            if not trajectory or trajectory[-1] is not transition:
+                trajectory.append(transition)
             break
     return trajectory
 
@@ -199,11 +210,17 @@ def get_program_set(
         try:
             trajectories: list[list[tuple[Any, Any, Any]]] = []
             demo_ids = _resolve_demos_included(demo_numbers, program_generation)
+            demo_skip_rate = int(program_generation.get("skip_rate", 1))
             if expert is None:
                 raise ValueError("No expert instance provided for demo serialization.")
             for init_idx in demo_ids:
                 env_demo = env_factory(init_idx)
-                traj = _collect_full_episode_generic(env_demo, expert, max_steps=40)
+                traj = _collect_full_episode_generic(
+                    env_demo,
+                    expert,
+                    max_steps=200,
+                    skip_rate=demo_skip_rate,
+                )
                 env_demo.close()
                 trajectories.append(traj)
             llm_env_spec = get_env_llm_spec(base_class_name, env_specs)
