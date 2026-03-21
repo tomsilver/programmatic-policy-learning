@@ -50,7 +50,8 @@ from programmatic_policy_learning.approaches.experts.kinder_experts import (
     create_kinder_expert,
 )
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    CaP_baseline as cap_baseline,)
+    CaP_baseline as cap_baseline,
+)
 
 
 def _parse_args() -> argparse.Namespace:
