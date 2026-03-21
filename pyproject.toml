@@ -87,3 +87,8 @@ module = [
     "kinder.*",
 ]
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+]

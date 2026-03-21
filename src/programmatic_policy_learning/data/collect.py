@@ -51,9 +51,6 @@ def collect_demo(
     #         print("feasible success center x-range:", (tx + r, tx + tw - r))
     #         print("feasible success center y-range:", (ty + r, ty + th - r))
 
-    #         break
-    # input()
-
     # Support both gymnasium reset(seed=...) and older reset() signatures.
     try:
         reset_out = env.reset(seed=env_num)
