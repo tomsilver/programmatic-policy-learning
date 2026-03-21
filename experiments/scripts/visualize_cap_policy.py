@@ -150,6 +150,7 @@ def _rollout(
     double_reset_like_eval: bool = False,
 ) -> dict[str, Any]:
     stateful_policy = all(hasattr(policy, attr) for attr in ("reset", "step", "update"))
+    stateful_policy_obj = cast(Any, policy) if stateful_policy else None
     env, obs = cap_baseline.continuous_env_factory(
         env_name, num_passages, seed=reset_seed
     )
@@ -161,7 +162,8 @@ def _rollout(
         else:
             obs = reset_out
     if stateful_policy:
-        policy.reset(obs, {})
+        assert stateful_policy_obj is not None
+        stateful_policy_obj.reset(obs, {})
 
     frames: list[np.ndarray] = []
     if record_video:
@@ -179,14 +181,21 @@ def _rollout(
     final_obs = obs
 
     for step_idx in range(max_steps):
-        raw_action = policy.step() if stateful_policy else policy(obs)
+        if stateful_policy:
+            assert stateful_policy_obj is not None
+            raw_action = stateful_policy_obj.step()
+        else:
+            raw_action = policy(obs)
         action = np.asarray(raw_action, dtype=env.action_space.dtype)
         action = action.reshape(env.action_space.shape)
         action = np.clip(action, env.action_space.low, env.action_space.high)
 
         obs_next, reward, terminated, truncated, _ = env.step(action)
         if stateful_policy:
-            policy.update(obs_next, float(reward), terminated or truncated, {})
+            assert stateful_policy_obj is not None
+            stateful_policy_obj.update(
+                obs_next, float(reward), terminated or truncated, {}
+            )
         total_reward += float(reward)
 
         next_xy = np.asarray(obs_next[:2], dtype=np.float32).copy()

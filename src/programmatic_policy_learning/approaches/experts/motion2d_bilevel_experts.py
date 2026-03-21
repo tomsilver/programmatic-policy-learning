@@ -8,6 +8,7 @@ from typing import Any
 def _load_bilevel_components() -> tuple[Any, Any]:
     """Import bilevel-planning modules lazily with a helpful error."""
     try:
+        # pylint: disable=import-outside-toplevel
         from kinder_bilevel_planning.agent import BilevelPlanningAgent
         from kinder_bilevel_planning.env_models import create_bilevel_planning_models
     except ImportError as exc:  # pragma: no cover - depends on optional install

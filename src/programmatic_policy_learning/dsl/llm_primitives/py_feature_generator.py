@@ -15,6 +15,9 @@ from prpl_llm_utils.models import PretrainedLargeModel
 from prpl_llm_utils.reprompting import RepromptCheck, query_with_reprompts
 from prpl_llm_utils.structs import Query
 
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    continuous_hint_config,
+)
 from programmatic_policy_learning.dsl.llm_primitives.env_specs import (
     get_env_llm_spec,
 )
@@ -43,6 +46,70 @@ class PyFeatureGenerator:
             raise ValueError(f"Prompt file is empty: {prompt_file}")
         return text
 
+    def _resolve_demo_background_path(
+        self,
+        encoding_method: str,
+        *,
+        action_mode: str,
+    ) -> Path:
+        prompt_dir = Path(__file__).parent / "prompts" / "py_feature_gen"
+        domain_dir = "kinder" if action_mode == "continuous" else "ggg"
+        candidate = (
+            prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
+        )
+        if candidate.exists():
+            return candidate
+
+        fallback = prompt_dir / "demo_backgrounds" / f"{encoding_method}.txt"
+        if fallback.exists():
+            return fallback
+
+        raise FileNotFoundError(
+            f"No demo background found for encoding={encoding_method!r}, "
+            f"action_mode={action_mode!r}."
+        )
+
+    def _motion2d_num_passages(self, env_name: str) -> int:
+        match = re.search(r"-p(\d+)", env_name)
+        return int(match.group(1)) if match else 0
+
+    def _build_continuous_observation_field_guide(self, env_name: str | None) -> str:
+        if env_name is None:
+            return "- Observation fields are environment-specific continuous values."
+
+        base_env_name = env_name.split("-p", maxsplit=1)[0]
+        canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
+
+        if canonical_name != "Motion2D":
+            return (
+                "- Observation fields are object-centric continuous attributes.\n"
+                "- Use the serialized object names and attributes shown in the "
+                "demonstrations as the source of truth."
+            )
+
+        num_passages = self._motion2d_num_passages(env_name)
+        obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
+        action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
+
+        obs_lines = [
+            f"- obs[{idx}] = {field_name}" for idx, field_name in enumerate(obs_fields)
+        ]
+        action_lines = [
+            f"- a[{idx}] = {field_name}" for idx, field_name in enumerate(action_fields)
+        ]
+
+        return "\n".join(
+            [
+                f"- Environment variant: {canonical_name}-p{num_passages}",
+                "- When raw arrays are used, index them with the following schema:",
+                *obs_lines,
+                "- Action dimensions:",
+                *action_lines,
+                "- These raw fields are also summarized into stable "
+                "object-centric names like robot, target, obstacle0, obstacle1, etc.",
+            ]
+        )
+
     def fill_prompt(
         self,
         template: str,
@@ -52,6 +119,7 @@ class PyFeatureGenerator:
         *,
         env_name: str | None = None,
         demonstration_data: str | None = None,
+        action_mode: str = "discrete",
     ) -> str:
         """Replace prompt placeholders with provided values."""
         rendered = template
@@ -70,14 +138,17 @@ class PyFeatureGenerator:
                     "encoding_method is required for demonstration background."
                 )
             enc_label = str(encoding_method)
-            background_dir = (
-                Path(__file__).parent
-                / "prompts"
-                / "py_feature_gen"
-                / "demo_backgrounds"
+            background_path = self._resolve_demo_background_path(
+                enc_label,
+                action_mode=action_mode,
             )
-            background_path = background_dir / f"{enc_label}.txt"
             background_text = background_path.read_text(encoding="utf-8").strip()
+            if "${OBSERVATION_FIELD_GUIDE}" in background_text:
+                field_guide = self._build_continuous_observation_field_guide(env_name)
+                background_text = background_text.replace(
+                    "${OBSERVATION_FIELD_GUIDE}",
+                    field_guide,
+                )
             rendered = rendered.replace("${DEMONSTRATION_BACKGROUND}", background_text)
 
         needs_token_map = any(
@@ -460,6 +531,7 @@ class PyFeatureGenerator:
                         encoding_method=encoding_method,
                         env_name=env_name,
                         demonstration_data=demonstration_data,
+                        action_mode=action_mode,
                     )
                     # print(prompt)
 

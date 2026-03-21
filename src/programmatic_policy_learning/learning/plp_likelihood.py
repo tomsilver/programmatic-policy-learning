@@ -20,6 +20,55 @@ _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
+def _continuous_probe_actions(action: Any) -> list[Any]:
+    """Return a fixed probe set for estimating continuous permissiveness."""
+    base = np.asarray(action, dtype=float)
+    if base.ndim == 0:
+        base = base.reshape(1)
+    if base.shape[0] < 2:
+        return [action]
+
+    dx = float(base[0])
+    dy = float(base[1])
+    suffix = base[2:].copy()
+    zero_suffix = np.zeros_like(suffix)
+    half_dx = 0.5 * dx
+    half_dy = 0.5 * dy
+    large_dx = 1.5 * dx
+    large_dy = 1.5 * dy
+
+    candidates = [
+        base.copy(),
+        np.concatenate([np.array([-dx, dy]), zero_suffix]),
+        np.concatenate([np.array([dx, -dy]), zero_suffix]),
+        np.concatenate([np.array([-dx, -dy]), zero_suffix]),
+        np.concatenate([np.array([dx, -half_dy]), zero_suffix]),
+        np.concatenate([np.array([-half_dx, dy]), zero_suffix]),
+        np.concatenate([np.array([half_dx, 0.0]), zero_suffix]),
+        np.concatenate([np.array([0.0, half_dy]), zero_suffix]),
+        np.concatenate([np.array([half_dx, half_dy]), zero_suffix]),
+        np.concatenate([np.array([large_dx, large_dy]), zero_suffix]),
+        np.concatenate([np.array([dx, half_dy]), zero_suffix]),
+    ]
+
+    deduped: list[np.ndarray] = []
+    seen: set[tuple[float, ...]] = set()
+    for candidate in candidates:
+        key = tuple(float(x) for x in np.asarray(candidate).reshape(-1).tolist())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(np.asarray(candidate, dtype=base.dtype))
+
+    if isinstance(action, np.ndarray):
+        return [candidate.astype(action.dtype, copy=False) for candidate in deduped]
+    if isinstance(action, tuple):
+        return [tuple(float(x) for x in candidate.tolist()) for candidate in deduped]
+    if isinstance(action, list):
+        return [[float(x) for x in candidate.tolist()] for candidate in deduped]
+    return list(deduped)
+
+
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Return (base, module_map) — base is pickleable; module_map is
     name→import_path.
@@ -81,12 +130,20 @@ def _compute_likelihood_worker(
                 )
             except TypeError:
                 # Continuous/non-grid fallback:
-                # evaluate only whether PLP accepts expert action.
+                # estimate permissiveness from a fixed probe set around the
+                # expert action, since continuous actions cannot be enumerated.
                 expert_allowed = plp(obs, action)
+                probe_actions = _continuous_probe_actions(action)
+                size = 0
+                for probe_action in probe_actions:
+                    if plp(obs, probe_action):
+                        size += 1
+                size_eff = max(1, size)
+                disallowed = max(1, len(probe_actions) - size)
                 if expert_allowed:
-                    ll += np.log(1.0 - eps)
+                    ll += np.log(1.0 - eps) - beta * np.log(size_eff)
                 else:
-                    ll += np.log(eps)
+                    ll += np.log(eps) - np.log(disallowed)
                 continue
 
             rows, cols = obs_grid.shape[:2]

@@ -106,7 +106,7 @@ def get_demonstrations(
     """Collect multiple demonstration trajectories using an expert policy."""
     demonstrations: list[Trajectory] = []
     demo_dict: dict[int, Trajectory] = {}
-
+    print(demo_numbers)
     for i in demo_numbers:
         traj: Trajectory = collect_demo(
             env_factory,
@@ -116,6 +116,5 @@ def get_demonstrations(
         )
         demonstrations.append(traj)
         demo_dict[i] = traj
-
     all_steps = [step for traj in demonstrations for step in traj.steps]
     return Trajectory(steps=all_steps), demo_dict

@@ -18,6 +18,7 @@ def test_motion2d_bilevel_expert_returns_valid_action() -> None:
     pytest.importorskip("bilevel_planning")
     pytest.importorskip("kinder_models")
 
+    # pylint: disable=import-outside-toplevel
     from gymnasium.envs.registration import register, registry
 
     env_id = "kinder/Motion2D-p0-v0"

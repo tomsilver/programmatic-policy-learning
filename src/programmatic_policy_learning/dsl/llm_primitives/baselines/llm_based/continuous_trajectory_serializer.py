@@ -274,7 +274,9 @@ def _mapping_looks_object_centric(obs: Mapping[str, Any]) -> bool:
     return any(isinstance(value, Mapping) for value in obs.values())
 
 
-def _extract_objects_from_flat_mapping(obs: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+def _extract_objects_from_flat_mapping(
+    obs: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
     objects: dict[str, dict[str, Any]] = {}
     for field_name, value in obs.items():
         if not _is_numeric_scalar(value):
@@ -534,7 +536,9 @@ def _format_action_lines(
         return ["Action: None (terminal state)"]
     if isinstance(action, np.ndarray):
         flat_action = np.asarray(action).reshape(-1)
-        field_names = list(encoder.cfg.action_field_names) if encoder is not None else []
+        field_names = (
+            list(encoder.cfg.action_field_names) if encoder is not None else []
+        )
         entries = []
         for index, value in enumerate(flat_action):
             name = field_names[index] if index < len(field_names) else f"a{index}"
@@ -594,7 +598,9 @@ def _object_change_lines(
                 f"{_format_value(after_value, precision)}"
             )
             if before_float is not None and after_float is not None:
-                line += f" (delta={_format_delta(after_float - before_float, precision)})"
+                line += (
+                    f" (delta={_format_delta(after_float - before_float, precision)})"
+                )
             lines.append(line)
     return lines, changed_objects
 
@@ -656,7 +662,6 @@ def enc_5(
     """Object-centric continuous trajectory encoding for KinDER-style tasks."""
     if not trajectory:
         raise ValueError("trajectory must be non-empty")
-
 
     steps_with_idx = list(enumerate(trajectory))
     precision = encoder.cfg.precision if encoder is not None else 3
@@ -735,7 +740,9 @@ def enc_5(
 
         if relation_pairs:
             before_relations = {
-                pair: _compute_relation(before_objects[pair[0]], before_objects[pair[1]])
+                pair: _compute_relation(
+                    before_objects[pair[0]], before_objects[pair[1]]
+                )
                 for pair in relation_pairs
             }
             after_relations = {
@@ -778,7 +785,7 @@ def enc_5(
 
         blocks.append("\n".join(block_lines))
 
-    last_original_idx, (_, _, final_obs) = steps_with_idx[-1]
+    last_original_idx, (_, _, _final_obs) = steps_with_idx[-1]
     final_step_lines = [f"*** Step {last_original_idx + 1} ***", "", "Objects:"]
     for object_name in _ordered_object_names(final_objects):
         final_step_lines.append(
@@ -932,12 +939,14 @@ def trajectory_to_text(
       [0.800+r, 1.700-r] (robot_y=0.980, radius=0.100)
     - robot y offset from passage_0 center = -0.270
     """
+    del max_steps
+    del skip_rate
+
     if not trajectory:
         raise ValueError("trajectory must be non-empty")
 
     if encoding_method == "5":
         return enc_5(trajectory, encoder=encoder)
-
 
     steps_with_idx = list(enumerate(trajectory))
 

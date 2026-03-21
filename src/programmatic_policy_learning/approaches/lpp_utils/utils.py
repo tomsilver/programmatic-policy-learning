@@ -374,6 +374,7 @@ def log_plp_violation_counts(
                     all_acts.append(action)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(e)
+                print(plp)
                 logging.info("EXCEPTION")
                 violations += 1
         counts.append((violations, plp, all_obs, all_acts))

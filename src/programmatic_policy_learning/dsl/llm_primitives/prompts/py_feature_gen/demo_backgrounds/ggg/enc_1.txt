@@ -2,7 +2,7 @@ You will be given a few grid game trajectories as illustrative examples.
 
 Grids are 0-indexed: (row, col) with (0,0) at top-left.
 Actions click a cell (r, c).
-Each trajectory is represented in a **diff-based format**:
+Each trajectory is represented in a diff-based format:
 
 - The initial state is provided once as `s_0` (a 2D grid).
 - Each step `t` provides:

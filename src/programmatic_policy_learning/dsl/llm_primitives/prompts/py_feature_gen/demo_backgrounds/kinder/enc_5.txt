@@ -1,0 +1,32 @@
+You will be given several continuous KinDER trajectories.
+
+Observations are continuous-valued and actions are continuous control vectors.
+The demonstrations are serialized in an object-centric format so feature code can
+reason about objects, attributes, and action effects rather than task-specific
+goal fields.
+
+Observation / action field guide:
+${OBSERVATION_FIELD_GUIDE}
+
+Each trajectory is shown as a sequence of `*** Step t ***` blocks:
+
+- `Objects:` lists stable object names such as `robot`, `target`, and
+  `obstacle0`, along with their available attributes.
+- `Action:` lists the continuous action dimensions for that step.
+- `Object changes:` includes only attributes that changed from `s_t` to `s_{t+1}`.
+- `Pairwise relations before action:` reports generic relations like:
+  - `center_dx`, `center_dy`
+  - `euclidean_dist`
+  - `left_of`, `right_of`
+  - `above`, `below`
+  - `intersects` when shape information is available
+- `Pairwise relations after action:` reports the same relations at `s_{t+1}`.
+- `Relation deltas:` summarizes how those relations changed because of the action.
+
+The trajectory summary may also include:
+- object types present
+- initial/final robot pose
+- which objects changed during the trajectory
+
+Use the serialized object names and action names from the demonstrations as the
+main reference for writing features.
