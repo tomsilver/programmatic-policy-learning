@@ -67,7 +67,7 @@ def learn_plps(
             )
             plps.append(plp)
             plp_priors.append(plp_prior_log_prob)
-
+    print(plps)
     return plps, plp_priors
 
 

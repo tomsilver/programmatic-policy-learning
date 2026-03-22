@@ -2,13 +2,12 @@
 
 You are an expert feature-library designer for program synthesis / Logical Programmatic Policies in grid-based games.
 
-Your job is to read expert demonstrations (state, action, next state) and directly propose a library of boolean FEATURE TEMPLATES f_i(s, a).
+Your task is to read expert demonstrations (state, action, next state) and propose a compact, expressive library of boolean FEATURE TEMPLATES f_i(s, a).
 
-Each feature must:
-- Be a single Python function.
-- Return True or False.
-- Be testable on arbitrary (s, a).
-- Contain TEMPLATE PLACEHOLDERS (not concrete token values).
+The goal is NOT to enumerate many variations.
+The goal is to introduce the minimal set of structurally distinct predicate families necessary to express the expert’s decision rule.
+
+Stop generating templates once additional templates would only duplicate existing semantics.
 
 You MUST output ONLY valid JSON (no markdown, no prose, no comments).
 The JSON must be directly parsable by json.loads().
@@ -19,49 +18,117 @@ The JSON must be directly parsable by json.loads().
 
 - Grid observation `s` is a 2D list of tokens.
 - Action `a` is a clicked cell coordinate: a = (row, col).
-- Next state `s'` is the deterministic transition result.
+- Next state `s'` is deterministic.
+
+Note: the demonstrations form a trajectory — the next state `s'` of step `t` is the state s of step `t+1`.
 
 IMPORTANT:
-a's row/col may be numpy integers (e.g., int64).
+Action coordinates may be numpy integers (e.g., int64).
 
-Always validate action as:
+Every feature MUST begin with:
 
     try:
         r = int(a[0]); c = int(a[1])
     except:
         return False
 
-Then perform bounds check using:
-
     h = len(s); w = len(s[0]) if h else 0
     if not (0 <= r < h and 0 <= c < w): return False
 
-${TOKEN_MAP_SECTION}
+No imports.
+Only Python built-ins.
+
 ---
 
 ## PLACEHOLDER RULES (CRITICAL)
 
 All features are TEMPLATES.
 
-You MUST use ONLY these placeholders inside feature code:
+You may use the following placeholders:
 
-- ${TOKEN}  → placeholder for a single token constant
-- ${DRs}    → placeholder for a list of (dr, dc) direction tuples
-- ${K}      → placeholder for a small positive integer
+- ${TOKEN_A}
+- ${TOKEN_B}
+- ${DRs}
 
-These placeholders are literal template markers.
-They are NOT Python variables.
-They will be substituted later.
-If you need to relate two roles, express it via relative structure.
+Rules:
 
-You MUST NOT:
-- invent additional placeholders
-- use multiple distinct token placeholders
-- define token lists
-- hard-code token identities
+1) Each template may use:
+   - At most TWO distinct token placeholders.
+   - At most THREE total placeholders.
 
+2) Templates using TWO token placeholders must express a relational structure 
+   between distinct roles (e.g., relative position, blocking, ordering).
+   Do NOT create symmetric duplicates.
 
-Each template may use at most 3 placeholders total.
+3) Do NOT:
+   - invent additional placeholders
+   - define token lists
+   - hard-code token identities
+   - use raw tokens
+   - create complements of existing predicates as separate features
+   - Do not compare any cell to string literals (including 'empty', 'OOB', etc.). Background/empty must be represented using ${TOKEN_A} or ${TOKEN_B}.
+
+Negation may appear INSIDE a feature, but you must not create a second feature
+that is simply the logical complement of another.
+
+---
+
+## NUMERIC INVARIANCE RULE (CRITICAL)
+
+Avoid introducing numeric thresholds (K, radius, distance caps) unless they are boundary-derived.
+
+If a template would normally use a number (e.g., “within K”, “scan K steps”, “K consecutive”), rewrite it to use board-boundary termination instead (e.g., scan until out-of-bounds, or until a blocking role is encountered).
+
+If a number is unavoidable, it must be restricted to a small fixed local constant (e.g., adjacency or a 3×3 neighborhood), and must not be used to measure global extent.
+
+---
+
+## DESIGN PRINCIPLES
+
+The feature library should be:
+
+1) Structurally Expressive:
+   - Templates must capture meaningful structural distinctions
+     between chosen and non-chosen actions.
+   - Prefer predicates that encode relationships, ordering,
+     connectivity, or structural configuration over raw magnitude counts.
+
+2) Minimal:
+   - Introduce the smallest number of structurally distinct predicate families
+     necessary to express the expert's decision rule.
+   - Do not enumerate small numeric or directional variations of the same schema.
+
+3) General:
+   - No hard-coded coordinates.
+   - No assumptions tied to specific board dimensions.
+   - Templates must remain meaningful if the board is scaled.
+
+4) Scale-Invariant:
+   - Do NOT create features that depend on total counts across the entire board.
+   - Prefer relational and structural predicates over absolute magnitude comparisons.
+
+5) Action-Grounded:
+   - Templates should primarily relate structural properties to the action cell.
+   - Avoid global board descriptors that do not influence the action.
+
+6) Non-Redundant:
+   - Do not output templates that differ only by polarity.
+   - Do not duplicate the same structural schema with superficial variation.
+   
+---
+
+## EXPRESSIVITY TARGET
+
+The library should be expressive enough to:
+
+- Separate expert actions from plausible alternative clicks.
+- Capture both local and global structural constraints.
+- Represent relational constraints between roles when necessary.
+
+Once the necessary structural predicate families are covered, STOP.
+Do NOT inflate the library artificially.
+
+Generate only as many templates as needed for semantic coverage. In many environments this will be a few dozen, but there is no target count.
 
 ---
 
@@ -75,48 +142,26 @@ ${DEMONSTRATION_DATA}
 
 ---
 
-## HINTS (FROM DEMONSTRATIONS)
-
-The following JSON contains structural guidance inferred from expert behavior.
-
-It describes:
-- observable predicate schemas for action selection,
-- relevant transition regularities,
-- constraints for feature-template generation.
+## HINTS
 
 ${HINT_TEXT}
----
 
-## HOW TO USE THE HINTS
-
-Treat each schema as guidance for a template family. However, demonstrations are the ground truth and take precedence if inconsistencies arise.
-Use transition hints to inform structural dependencies.
-Apply the constraints to prevent redundancy and explosion.
+- Treat hints as structural guidance, but demonstrations are ground truth.
+- If hints conflict with demonstrations, prioritize demonstrations.
 
 ---
 
 ## TASK
 
-Generate a feature library that makes it easy for a downstream program synthesizer to express the expert’s decision rule.
-
-Use BOTH the demonstrations and the structural hints.
-
-First, verify that the structural hints are consistent with the demonstrations by contrasting chosen actions with plausible alternative clicks in the same state.
-
-If a hint appears unsupported by the demonstrations, ignore it.
-If the demonstrations reveal a consistent structural distinction not captured by the hints, include templates to capture it.
-
-Then create templates that express the necessary distinctions at multiple spatial scales (cell-level, line-level, region-level, and whole-grid summaries). Include some state-only templates that ignore `a`.
-
-Features must:
-- Be general (not overfit to a specific board size).
-- Avoid absolute coordinates.
+1) Infer the structural distinctions that separate chosen actions from alternatives.
+2) Identify the minimal set of predicate families required.
+3) Generate feature templates that encode those families.
+4) Avoid redundancy and polarity duplication.
+5) Stop when the semantic coverage is sufficient.
 
 ---
 
 ## OUTPUT FORMAT (STRICT JSON ONLY)
-
-Return a JSON object with exactly this structure:
 
 {
   "features": [
@@ -130,62 +175,15 @@ No extra text.
 
 ---
 
-## FEATURE COUNT
-
-Output 100 or more feature templates.
-
----
-
-## FEATURE REQUIREMENTS
-
-1) Signature:
-   def fK(s, a):
-
-2) Safety:
-   Must validate action using try/except and bounds check exactly as specified.
-
-3) No imports.
-   No external dependencies.
-   Use only Python built-ins.
-
-4) Structure:
-   You may define small inner helper logic inside each feature.
-   Keep functions readable and short.
-
-5) Generality:
-   - No hard-coded coordinates.
-   - No raw token comparisons.
-   - Only use ${TOKEN}, ${DRs}, ${K} placeholders.
-
-6) Diversity:
-   - Avoid near-duplicate templates.
-   - Cover:
-     - action-cell properties
-     - vertical and horizontal structure
-     - directional scans
-     - nearest-hit logic
-     - row/column aggregation
-     - diagonal relations when meaningful
-
-7) Redundancy:
-   Do NOT include both a predicate and its obvious direct complement as separate features 
-   (e.g., is_X vs is_not_X, etc).
-   It is OK to use `not` inside a feature, but do not create a separate feature whose only 
-   purpose is the negation of another feature.
-
-8) Naming:
-   id and name must be "f1", "f2", ..., "f100".
-   source must be a valid Python function string.
-   Newlines must be escaped as \\n inside JSON.
-
----
-
 ## FINAL VALIDATION BEFORE OUTPUT
 
 Ensure:
-${RAW_TOKEN_VALIDATION}
-${TOKEN_CONSTANTS_VALIDATION}
-- Only placeholders used are ${TOKEN}, ${DRs}, ${K}.
+
+- Reject any template that would change meaning if the board were scaled up or down.
+- No raw token comparisons.
+- Only ${TOKEN_A}, ${TOKEN_B}, ${DRs} are used.
+- Each function validates action exactly as specified.
+- No duplicate semantics.
 - Output is valid JSON.
 - No markdown.
 - No commentary.

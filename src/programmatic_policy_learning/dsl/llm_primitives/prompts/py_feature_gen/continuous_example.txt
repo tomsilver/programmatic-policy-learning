@@ -12,6 +12,8 @@ Environment:
 
 
 ## INPUT: DEMONSTRATIONS
+${DEMONSTRATION_BACKGROUND}
+
 You are given the following expert demonstrations:
 
 ${DEMONSTRATION_DATA}
@@ -19,7 +21,7 @@ ${DEMONSTRATION_DATA}
 
 Task:
 Propose a diverse set of boolean features f(s, a) that help distinguish good expert actions from alternatives.
-Include local, geometric, and dynamics-aware features that can generalize across episodes.
+Include features that can generalize across episodes. At least generate 50 features.
 
 Output:
 Return only valid JSON:
@@ -37,3 +39,4 @@ Rules:
 - No commentary.
 - No imports.
 - Each feature returns True/False.
+- Treat s and a as raw arrays only; access them only with numeric indices from the field guide.

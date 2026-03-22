@@ -2,12 +2,13 @@
 
 # pylint: disable=redefined-outer-name
 
-from typing import Iterator
+from typing import Any, Callable, Iterator, cast
 
 import gymnasium as gym
 import kinder
 import numpy as np
 import pytest
+from gymnasium.envs.registration import register, registry
 
 from programmatic_policy_learning.approaches.experts.motion2d_experts import (
     Motion2DRejectionSamplingExpert,
@@ -18,9 +19,26 @@ from programmatic_policy_learning.approaches.experts.motion2d_experts import (
     f_2,
 )
 
-kinder.register_all_environments()
+_MOTION2D_P1 = "kinder/Motion2D-p1-v0"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _register_motion2d_env() -> None:
+    if _MOTION2D_P1 not in registry:
+        register(
+            id=_MOTION2D_P1,
+            entry_point="kinder.envs.kinematic2d.motion2d:Motion2DEnv",
+            kwargs={"num_passages": 1},
+        )
+
 
 EnvObs = tuple[gym.Env, np.ndarray]
+
+
+def _close_env(env: Any) -> None:
+    close_fn = cast(Callable[[], None] | None, getattr(env, "close", None))
+    if close_fn is not None:
+        close_fn()
 
 
 @pytest.fixture()
@@ -29,7 +47,7 @@ def p1_env_and_obs() -> Iterator[EnvObs]:
     env = kinder.make("kinder/Motion2D-p1-v0", render_mode="rgb_array")
     obs, _ = env.reset(seed=42)
     yield env, obs
-    env.close()  # type: ignore[no-untyped-call]
+    _close_env(env)
 
 
 # -- _is_y_aligned -----------------------------------------------------------

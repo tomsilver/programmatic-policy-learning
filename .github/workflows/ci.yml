@@ -67,7 +67,7 @@ jobs:
     - name: Install LAPACK and BLAS
       run: |
         sudo apt-get update
-        sudo apt-get install -y liblapack-dev libblas-dev
+        sudo apt-get install -y liblapack-dev libblas-dev libosmesa6-dev
     - uses: actions/checkout@v4
     - name: Install uv
       uses: astral-sh/setup-uv@v3
@@ -79,5 +79,8 @@ jobs:
     - name: Install the project
       run: uv sync --all-extras --dev
     - name: Pytest
+      env:
+          MUJOCO_GL: osmesa
+          PYOPENGL_PLATFORM: osmesa
       run: |
        uv run pytest tests/

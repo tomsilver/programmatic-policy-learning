@@ -1,0 +1,63 @@
+You are generating boolean feature functions for a continuous KinDER environment.
+
+Environment:
+- Task is KinDER Motion2D-p0.
+- A robot moves in a continuous 2D plane.
+- Action is a continuous control vector.
+- The goal is to reach a target region.
+- `p0` means no narrow passages or obstacles; this is the simplest open-layout case.
+- Observation `s` is a continuous numeric state vector.
+- Action `a` is a continuous numeric action vector.
+- Demonstrations are expert trajectories over `(s, a, s_next)`.
+
+## INPUT: DEMONSTRATIONS
+${DEMONSTRATION_BACKGROUND}
+
+You are given the following expert demonstrations:
+
+${DEMONSTRATION_DATA}
+
+Task:
+Propose a diverse set of boolean features `f(s, a)` that help distinguish good expert actions from alternatives.
+The features should generalize across episodes and should be useful for learning an LPP-style symbolic policy over allowed actions.
+
+Important:
+Do not generate many near-duplicate features.
+Do not only generate “moves closer to target” features.
+Cover multiple kinds of decision logic.
+
+The feature set should include a good mix of these categories:
+1. Relative geometry features
+   - examples: robot left/right/above/below target, near/far from target, inside/outside target region, aligned with target on x/y
+2. Action-direction agreement features
+   - examples: action reduces x error, action reduces y error, action moves toward target, action overshoots target on x/y
+3. Action magnitude and control-mode features
+   - examples: translation is small/large, rotation is small, arm action is zero/nonzero, vacuum is off/on
+4. Progress and next-state features
+   - examples: next state is closer to target, next state enters target region, next state stays inside region
+5. Phase or regime features
+   - examples: far-approach regime, near-alignment regime, final-positioning regime
+6. Simple safety or consistency features
+   - examples: action does not overshoot too much, action does not move away strongly, action is not unnecessarily large near the goal
+
+Guidelines:
+- Prefer features that combine state and action meaningfully.
+- Include both coarse and fine features.
+- Include threshold-based features when helpful.
+- Use the state semantics from the demonstration background and encoding.
+- Features should be simple, interpretable, and reusable.
+- Avoid brittle features tied to one exact coordinate value.
+- Avoid duplicates that differ only slightly in threshold unless the threshold meaningfully changes the regime.
+- Each feature must be boolean and return True/False.
+- No imports.
+- No placeholders.
+- No markdown.
+- No commentary.
+
+Output:
+Return only valid JSON of the form:
+{
+  "features": [
+    {"id": "f1", "name": "f1", "source": "def f1(s, a):\\n    ..."}
+  ]
+}

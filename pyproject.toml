@@ -17,6 +17,8 @@ dependencies = [
    "tomsgeoms2d@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=toms-geoms-2d",
    "relational_structs@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=relational-structs",
    "generalization_grid_games@git+https://github.com/zahraabashir/generalization_grid_games.git@2af420ecc08f239ff1c7d255b8a790195a9b2865",
+   "kinder-bilevel-planning@git+https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git#subdirectory=kinder-bilevel-planning",
+   "kinder-models@git+https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git#subdirectory=kinder-models",
    "moviepy",
    "pandas",
    "pandas-stubs",
@@ -27,6 +29,7 @@ dependencies = [
     "cloudpickle>=2.0.0",
     "tqdm",
     "types-tqdm",
+    "kindergarden",
 ]
 
 [project.optional-dependencies]
@@ -39,9 +42,7 @@ develop = [
     "pytest-pylint>=0.18.0",
     "pytest>=7.2.2",
 ]
-kinder = [
-   "kinder[all]@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-mono.git@bd61b1170856e33c73629245cfedc109d6a12e54#subdirectory=kinder",
-]
+
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -86,3 +87,8 @@ module = [
     "kinder.*",
 ]
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+]

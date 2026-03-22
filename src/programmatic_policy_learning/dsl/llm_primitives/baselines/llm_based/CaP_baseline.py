@@ -46,7 +46,7 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 
 def collect_full_episode(
     env: Any,
-    expert_fn: Callable[[Any], Any],
+    expert_fn: Any,
     max_steps: int = 200,
     sample_count: int | None = None,
     *,
@@ -91,15 +91,27 @@ def collect_full_episode(
 
         traj = collect_full_episode(env, expert_fn, sample_count=5)
     """
+    expert_is_stateful = all(
+        hasattr(expert_fn, attr) for attr in ("reset", "step", "update")
+    )
     if start_obs is None:
-        obs, _ = env.reset()
+        reset_out = env.reset()
+        if isinstance(reset_out, tuple) and len(reset_out) == 2:
+            obs, info = reset_out
+        else:
+            obs, info = reset_out, {}
     else:
         obs = start_obs
+        info = {}
+    if expert_is_stateful:
+        expert_fn.reset(obs, info)
     trajectory = []
 
     for _ in range(max_steps):
-        action = expert_fn(obs)
-        obs_next, _, term, trunc, _ = env.step(action)
+        action = expert_fn.step() if expert_is_stateful else expert_fn(obs)
+        obs_next, reward, term, trunc, info = env.step(action)
+        if expert_is_stateful:
+            expert_fn.update(obs_next, reward, term or trunc, info)
         trajectory.append((obs, action, obs_next))
         obs = obs_next
         if term or trunc:
@@ -554,7 +566,14 @@ def run_continuous(
     )
     ref_env, ref_obs = continuous_env_factory(env_name, num_passages, seed=seed)
     assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
-    expert = create_kinder_expert(env_name, ref_env.action_space, seed=seed)
+    expert = create_kinder_expert(
+        env_name,
+        ref_env.action_space,
+        seed=seed,
+        observation_space=ref_env.observation_space,
+        num_passages=num_passages,
+        expert_kind="bilevel",
+    )
     action_space = ref_env.action_space
     logging.info(
         "Action space: shape=%s dtype=%s low=%s high=%s",
@@ -917,7 +936,7 @@ def _evaluate_policy_function(
     max_num_steps: int,
     *,
     run_expert: bool,
-    expert_fn: Callable[[Any], Any] | None = None,
+    expert_fn: Any | None = None,
     env_type: str = "grid",
 ) -> tuple[list[bool], list[bool]]:
     """Roll out CaP (and optional expert) policies on the requested envs.
@@ -934,8 +953,9 @@ def _evaluate_policy_function(
         Maximum steps per evaluation rollout.
     run_expert : bool
         Whether to also evaluate the expert policy.
-    expert_fn : Callable[[Any], Any] | None, optional
-        Expert policy function (required when ``run_expert`` is ``True``).
+    expert_fn : Any | None, optional
+        Expert policy object. May be a simple ``(obs) -> action`` callable or
+        a stateful agent exposing ``reset()``, ``step()``, and ``update()``.
     env_type : str, optional
         ``"grid"`` or ``"continuous"`` — selects the action guard
         (default ``"grid"``).
@@ -1366,14 +1386,21 @@ def manual_eval() -> None:
     code_str = _strip_code_block(final_code)
     policy_fn = _compile_policy_function(code_str, "policy")
     run_expert = True
-    eval_expert: Callable[[Any], Any] | None
+    eval_expert: Any | None
     if args.env_type == "continuous":
         env_builder: Callable[[int], Any] = lambda idx: continuous_env_factory(
             args.env, args.num_passages, seed=idx
         )[0]
         ref_env, _ = continuous_env_factory(args.env, args.num_passages, seed=0)
         assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
-        eval_expert = create_kinder_expert(args.env, ref_env.action_space, seed=0)
+        eval_expert = create_kinder_expert(
+            args.env,
+            ref_env.action_space,
+            seed=0,
+            observation_space=ref_env.observation_space,
+            num_passages=args.num_passages,
+            expert_kind="bilevel",
+        )
         ref_env.close()
     else:
         env_builder = lambda idx: env_factory(idx, args.env)
@@ -1566,7 +1593,7 @@ def main() -> None:
                 else:
                     env_builder = lambda idx: env_factory(idx, args.env)
                 run_expert = args.eval_run_expert and seed == args.expert_reference_seed
-                eval_expert: Callable[[Any], Any] | None = None
+                eval_expert: Any | None = None
                 if run_expert:
                     if args.env_type == "continuous":
                         ref_env, _ = continuous_env_factory(
@@ -1574,7 +1601,12 @@ def main() -> None:
                         )
                         assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
                         eval_expert = create_kinder_expert(
-                            args.env, ref_env.action_space, seed=seed
+                            args.env,
+                            ref_env.action_space,
+                            seed=seed,
+                            observation_space=ref_env.observation_space,
+                            num_passages=args.num_passages,
+                            expert_kind="bilevel",
                         )
                         ref_env.close()
                     else:

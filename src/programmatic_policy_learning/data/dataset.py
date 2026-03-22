@@ -110,6 +110,90 @@ def sample_negative_actions_continuous(  # TODOO: can be simpler
     return sampled
 
 
+def sample_manual_negative_actions_continuous(
+    expert_action: ActT,
+    *,
+    action_low: Sequence[float] | np.ndarray | None = None,
+    action_high: Sequence[float] | np.ndarray | None = None,
+) -> list[ActT]:
+    """Build a fixed set of manual continuous negatives from the expert action.
+
+    The generated variants are:
+    1. wrong_x_sign
+    2. wrong_y_sign
+    3. wrong_both_signs
+    4. correct_x_wrong_y
+    5. wrong_x_correct_y
+    6. x_only_partial_correction
+    7. y_only_partial_correction
+    8. too_small_same_direction
+    9. too_large_same_direction
+    10. misaligned_same_quadrant
+    """
+    base = np.asarray(expert_action, dtype=float)
+    if base.ndim == 0:
+        base = base.reshape(1)
+    if base.shape[0] < 2:
+        raise ValueError(
+            "Manual continuous negative sampling requires at least 2 action dimensions."
+        )
+
+    low_arr = np.asarray(action_low, dtype=float) if action_low is not None else None
+    high_arr = np.asarray(action_high, dtype=float) if action_high is not None else None
+    if (low_arr is None) != (high_arr is None):
+        raise ValueError("action_low and action_high must be provided together.")
+    if low_arr is not None and high_arr is not None:
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+
+    dx = float(base[0])
+    dy = float(base[1])
+    suffix = base[2:].copy()
+    zero_suffix = np.zeros_like(suffix)
+    half_dx = 0.5 * dx
+    half_dy = 0.5 * dy
+    large_dx = 1.5 * dx
+    large_dy = 1.5 * dy
+
+    candidates = [
+        # wrong_x_sign
+        np.concatenate([np.array([-dx, dy]), zero_suffix]),
+        # wrong_y_sign
+        np.concatenate([np.array([dx, -dy]), zero_suffix]),
+        # wrong_both_signs
+        np.concatenate([np.array([-dx, -dy]), zero_suffix]),
+        # correct_x_wrong_y
+        np.concatenate([np.array([dx, -half_dy]), zero_suffix]),
+        # wrong_x_correct_y
+        np.concatenate([np.array([-half_dx, dy]), zero_suffix]),
+        # x_only_partial_correction
+        np.concatenate([np.array([half_dx, 0.0]), zero_suffix]),
+        # y_only_partial_correction
+        np.concatenate([np.array([0.0, half_dy]), zero_suffix]),
+        # too_small_same_direction
+        np.concatenate([np.array([half_dx, half_dy]), zero_suffix]),
+        # too_large_same_direction
+        np.concatenate([np.array([large_dx, large_dy]), zero_suffix]),
+        # misaligned_same_quadrant
+        np.concatenate([np.array([dx, half_dy]), zero_suffix]),
+    ]
+
+    sampled: list[ActT] = []
+    seen: set[tuple[float, ...]] = set()
+    for candidate in candidates:
+        if low_arr is not None and high_arr is not None:
+            candidate = np.clip(candidate, low_arr, high_arr)
+        key = tuple(float(x) for x in candidate.tolist())
+        if key in seen or np.allclose(candidate, base):
+            continue
+        seen.add(key)
+        sampled.append(_coerce_action_like(expert_action, candidate))
+    return sampled
+
+
 def _normalized_weights(*weights: float) -> list[float]:
     arr = [max(0.0, float(w)) for w in weights]
     total = sum(arr)
@@ -326,26 +410,38 @@ def extract_examples_from_demonstration_item(
         rng_np = np.random.default_rng(0)
         if enabled:
             cfg_cont = dict(sampling_cfg.get("continuous", {}))
-            k_total = int(cfg_cont.get("K", CONTINUOUS_NEGATIVE_K))
-            local_noise = float(
-                cfg_cont.get("local_noise_scale", CONTINUOUS_NEGATIVE_NOISE_SCALE)
-            )
-            w_local = float(cfg_cont.get("lambda_local", 0.7))
-            w_uniform = float(cfg_cont.get("lambda_uniform", 0.3))
-            w_traj = float(cfg_cont.get("lambda_traj", 0.0))
+            mode = str(cfg_cont.get("mode", "mixture"))
             action_low = sampling_cfg.get("action_low")
             action_high = sampling_cfg.get("action_high")
-            neg_actions = _sample_continuous_mixture_negatives(
-                action,
-                k_total=k_total,
-                local_noise_scale=local_noise,
-                action_low=action_low,
-                action_high=action_high,
-                w_local=w_local,
-                w_uniform=w_uniform,
-                w_traj=w_traj,
-                rng=rng_np,
-            )
+            if mode == "manual":
+                neg_actions = sample_manual_negative_actions_continuous(
+                    action,
+                    action_low=action_low,
+                    action_high=action_high,
+                )
+            elif mode == "mixture":
+                k_total = int(cfg_cont.get("K", CONTINUOUS_NEGATIVE_K))
+                local_noise = float(
+                    cfg_cont.get("local_noise_scale", CONTINUOUS_NEGATIVE_NOISE_SCALE)
+                )
+                w_local = float(cfg_cont.get("lambda_local", 0.7))
+                w_uniform = float(cfg_cont.get("lambda_uniform", 0.3))
+                w_traj = float(cfg_cont.get("lambda_traj", 0.0))
+                neg_actions = _sample_continuous_mixture_negatives(
+                    action,
+                    k_total=k_total,
+                    local_noise_scale=local_noise,
+                    action_low=action_low,
+                    action_high=action_high,
+                    w_local=w_local,
+                    w_uniform=w_uniform,
+                    w_traj=w_traj,
+                    rng=rng_np,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported continuous negative sampling mode: {mode!r}"
+                )
         else:
             neg_actions = sample_negative_actions_continuous(
                 action,
@@ -391,6 +487,7 @@ def extract_examples_from_demonstration_item(
                 if (r, c) == action_grid:
                     continue
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
+
     return positive_examples, negative_examples
 
 

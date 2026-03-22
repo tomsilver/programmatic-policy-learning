@@ -12,6 +12,7 @@ Usage::
 import argparse
 import logging
 from pathlib import Path
+from typing import Any, Callable, cast
 
 import gymnasium as gym
 import kinder
@@ -28,6 +29,12 @@ _MAX_STEPS = 500
 
 
 _ACTION_FIELD_NAMES = ["dx", "dy", "dtheta", "darm", "vac"]
+
+
+def _close_env(env: Any) -> None:
+    close_fn = cast(Callable[[], None] | None, getattr(env, "close", None))
+    if close_fn is not None:
+        close_fn()
 
 
 def log_obs(obs: np.ndarray) -> None:
@@ -186,7 +193,7 @@ def main(args: argparse.Namespace) -> None:
     log_obs(obs)
 
     frames, total_reward, steps, terminated = run_rollout(env, obs, expert)
-    env.close()  # type: ignore[no-untyped-call]
+    _close_env(env)
 
     if terminated:
         logging.info("Done at step %d!", steps)
