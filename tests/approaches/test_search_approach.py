@@ -3,9 +3,7 @@
 import numpy as np
 
 from programmatic_policy_learning.approaches.search_approach import SearchApproach
-from programmatic_policy_learning.envs.providers.maze_provider import (
-    MazeEnv,
-)
+from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
 
 
 def test_search_approach_maze_env() -> None:

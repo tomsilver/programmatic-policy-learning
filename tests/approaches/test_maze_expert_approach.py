@@ -6,9 +6,7 @@ from programmatic_policy_learning.approaches.expert_approach import ExpertApproa
 from programmatic_policy_learning.approaches.experts.maze_experts import (
     create_expert_maze_with_outer_world_policy,
 )
-from programmatic_policy_learning.envs.providers.maze_provider import (
-    MazeEnv,
-)
+from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
 
 
 def test_maze_expert_approach() -> None:
