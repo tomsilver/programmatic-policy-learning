@@ -820,13 +820,22 @@ def run_all_programs_on_single_demonstration(
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
+
+    # Sample weighting is config-driven and only applies in continuous mode.
+    compute_sample_weights = False
+    if action_mode == "continuous" and isinstance(negative_sampling, dict):
+        cont_cfg = negative_sampling.get("continuous")
+        if isinstance(cont_cfg, dict):
+            weight_cfg = cont_cfg.get("weight_config")
+            if isinstance(weight_cfg, dict):
+                compute_sample_weights = bool(weight_cfg.get("enabled", False))
+
     positive_examples, negative_examples, sample_weights = (
         extract_examples_from_demonstration(
             demo_traj,
             negative_sampling=negative_sampling,
             action_mode=action_mode,
-            compute_sample_weights=False,  # Step 2 prep: weights returned
-            # but not yet used
+            compute_sample_weights=compute_sample_weights,
         )
     )
 
