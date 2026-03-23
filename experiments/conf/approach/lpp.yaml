@@ -72,6 +72,14 @@ program_generation:
       # int => equal odd bucket count for dx and dy (e.g., 5 -> 25 actions total)
       # list => per-dimension odd bucket counts, e.g. [3, 7]
       bucket_counts: 5
+      # Cost-sensitive weighting over quantized action buckets.
+      # Disabled by default to preserve baseline behavior.
+      weight_config:
+        enabled: false
+        beta_pos: 1.0
+        beta_neg: 1.0
+        alpha: 1.0
+        lambda_per_dim: [1.0, 1.0]
 
   
   # NOTE: The fields below are legacy from earlier experiments.
