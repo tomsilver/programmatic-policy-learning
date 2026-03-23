@@ -459,19 +459,21 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         feats[0, j] = 0.0
                 return float(reg.predict(feats)[0])
 
-            policy: LPPPolicy = LPPPolicy(
+            continuous_policy: LPPPolicy = LPPPolicy(
                 [StateActionProgram("False")],
                 [1.0],
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=action_mode,
                 action_space=cast(Any, self._action_space),
-                continuous_action_projection_indices=self._get_action_projection_indices(),
+                continuous_action_projection_indices=(
+                    self._get_action_projection_indices()
+                ),
                 continuous_score_fn=_score_fn,
                 continuous_score_is_probability=False,
             )
-            policy.map_program = "REGRESSION_TREE"
-            policy.map_posterior = float(np.mean(y_reg))
-            return policy
+            continuous_policy.map_program = "REGRESSION_TREE"
+            continuous_policy.map_posterior = float(np.mean(y_reg))
+            return continuous_policy
 
         prior_version = str(hp["prior_version"])
         alpha = float(hp["alpha"])
@@ -583,7 +585,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
-                        continuous_action_projection_indices=self._get_action_projection_indices(),
+                        continuous_action_projection_indices=(
+                            self._get_action_projection_indices()
+                        ),
                     )
                     risk = self._compute_policy_risk_on_demos(
                         tie_policy, tie_break_demonstrations
@@ -617,17 +621,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             top_particle_probs = np.exp(top_particle_log_probs)
             logging.info("top_particle_probs: %s", top_particle_probs)
-            policy: LPPPolicy = LPPPolicy(
+            discrete_policy: LPPPolicy = LPPPolicy(
                 top_particles,
                 top_particle_probs,
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
-                continuous_action_projection_indices=self._get_action_projection_indices(),
+                continuous_action_projection_indices=(
+                    self._get_action_projection_indices()
+                ),
             )
-            policy.map_program = str(particles[map_idx])
-            policy.map_posterior = particle_log_probs[map_idx]
-            return policy
+            discrete_policy.map_program = str(particles[map_idx])
+            discrete_policy.map_posterior = particle_log_probs[map_idx]
+            return discrete_policy
 
         logging.info("no nontrivial particles found")
         return LPPPolicy(
@@ -645,7 +651,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations: Trajectory[_ObsType, _ActType],
         *,
         eps: float = 1e-12,
-    ) -> float: #TODO: check
+    ) -> float:  # TODOO: check
         """Compute validation risk for current action mode."""
         if len(demonstrations.steps) == 0:
             return float("inf")

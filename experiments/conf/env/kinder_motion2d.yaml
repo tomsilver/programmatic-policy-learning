@@ -3,7 +3,7 @@ num_passages: 0
 make_kwargs:
   base_name: "Motion2D-p${..num_passages}"
   id: "kinder/Motion2D-p${..num_passages}-v0"
-  render_mode: "null"
+  render_mode: null
 
 provider: kinder
 

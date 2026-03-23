@@ -47,11 +47,12 @@ split_strategy: "random"
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
-  demos_included: [0,1,2,3,4,5,6,7,8,9,10] #,6,8, 9
+  demos_included: [0,1,2] #,6,8, 9
   skip_rate: 1
   py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # continuous_example - new_hybrid.txt" new_hybrid
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1 #keep this 1 for now
+  action_projection_indices: [0, 1] # e.g. [0, 1] to keep only dx,dy; null keeps all action dims
   removed_primitive: "" 
   num_features: 50
   encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options

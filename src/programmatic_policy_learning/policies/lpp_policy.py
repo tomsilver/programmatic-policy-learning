@@ -56,7 +56,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
             if continuous_action_projection_indices is not None
             else None
         )
-        #TODO: what are these two
+        # TODOO: what are these two
         self.continuous_score_fn = continuous_score_fn
         self.continuous_score_is_probability = bool(continuous_score_is_probability)
         self.rng = np.random.RandomState(seed)
@@ -211,7 +211,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         return self._continuous_action_score(obs, action)
 
     def _continuous_action_score(self, obs: _ObsType, action: _ActType) -> float:
-        #TODO: read
+        # TODOO: read
         """Score a continuous action by PLP posterior mass that accepts it."""
         action_eval = self._project_continuous_action(action)
         if self.continuous_score_fn is not None:
@@ -277,7 +277,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         if self.map_choices:
             best_idx = int(np.argmax(scores))
             return candidates[best_idx]
-        #TODO: check the logic
+        # TODOO: check the logic
         scores_nonneg = scores.copy()
         min_score = float(np.min(scores_nonneg))
         if min_score < 0.0:
