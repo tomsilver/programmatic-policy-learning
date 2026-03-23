@@ -17,6 +17,7 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 from scipy.sparse import vstack
 from scipy.special import logsumexp
+from sklearn.tree import DecisionTreeRegressor
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 
@@ -60,7 +61,10 @@ from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import
 from programmatic_policy_learning.dsl.llm_primitives.utils import (
     JSONStructureRepromptCheck,
 )
-from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
+from programmatic_policy_learning.dsl.state_action_program import (
+    StateActionProgram,
+    set_dsl_functions,
+)
 from programmatic_policy_learning.learning.decision_tree_learner import learn_plps
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
@@ -394,7 +398,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def _train_policy_from_matrix(
         self,
         X: Any,
-        y_bool: list[bool],
+        y_values: np.ndarray,
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         demonstrations: Trajectory[_ObsType, _ActType],
@@ -404,6 +408,71 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         tie_break_demonstrations: Trajectory[_ObsType, _ActType] | None = None,
     ) -> LPPPolicy:
         hp = self._resolve_train_hyperparams(train_hyperparams)
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode == "continuous":
+            y_reg = np.asarray(y_values, dtype=float).reshape(-1)
+            if y_reg.shape[0] != X.shape[0]:
+                raise ValueError(
+                    "Regression targets must align with matrix rows: "
+                    f"len(y)={y_reg.shape[0]} rows={X.shape[0]}"
+                )
+            n = X.shape[0]
+            if n == 0:
+                raise ValueError("Cannot train continuous policy with empty matrix.")
+            sum_y = float(np.sum(y_reg))
+            col_nnz = np.asarray(X.getnnz(axis=0)).ravel().astype(float)
+            col_sum = np.asarray(X.T.dot(y_reg)).reshape(-1)
+            mean1 = np.divide(
+                col_sum,
+                np.maximum(col_nnz, 1.0),
+                out=np.zeros_like(col_sum, dtype=float),
+                where=col_nnz > 0,
+            )
+            denom0 = np.maximum(float(n) - col_nnz, 1.0)
+            mean0 = np.divide(
+                (sum_y - col_sum),
+                denom0,
+                out=np.zeros_like(col_sum, dtype=float),
+                where=(float(n) - col_nnz) > 0,
+            )
+            gain = np.abs(mean1 - mean0)
+            ranked_cols = np.argsort(-gain)
+            X_ranked = X[:, ranked_cols]
+            programs_ranked = [programs_sa[i] for i in ranked_cols]
+
+            reg = DecisionTreeRegressor(
+                random_state=self.seed_num,
+                splitter=str(hp["dt_splitter"]),
+                max_depth=cast(int | None, hp["dt_max_depth"]),
+                ccp_alpha=float(hp["cc_alpha"]),
+                min_samples_leaf=1,
+            )
+            reg.fit(X_ranked, y_reg)
+            set_dsl_functions(dsl_functions)
+
+            def _score_fn(obs: _ObsType, action: _ActType) -> float:
+                feats = np.zeros((1, len(programs_ranked)), dtype=np.float32)
+                for j, prog in enumerate(programs_ranked):
+                    try:
+                        feats[0, j] = 1.0 if prog(obs, action) else 0.0
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        feats[0, j] = 0.0
+                return float(reg.predict(feats)[0])
+
+            policy: LPPPolicy = LPPPolicy(
+                [StateActionProgram("False")],
+                [1.0],
+                normalize_plp_actions=self.normalize_plp_actions,
+                action_mode=action_mode,
+                action_space=cast(Any, self._action_space),
+                continuous_action_projection_indices=self._get_action_projection_indices(),
+                continuous_score_fn=_score_fn,
+                continuous_score_is_probability=False,
+            )
+            policy.map_program = "REGRESSION_TREE"
+            policy.map_posterior = float(np.mean(y_reg))
+            return policy
+
         prior_version = str(hp["prior_version"])
         alpha = float(hp["alpha"])
         w_clauses = float(hp["w_clauses"])
@@ -411,6 +480,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         w_max_clause = float(hp["w_max_clause"])
         w_depth = float(hp["w_depth"])
         w_ops = float(hp["w_ops"])
+        y_bool: list[bool] = list(np.asarray(y_values).astype(bool).flatten())
         gain = gini_gain_per_feature(X, y_bool)
         ranked_cols = np.argsort(-gain)
         X_ranked = X[:, ranked_cols]
@@ -513,6 +583,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
+                        continuous_action_projection_indices=self._get_action_projection_indices(),
                     )
                     risk = self._compute_policy_risk_on_demos(
                         tie_policy, tie_break_demonstrations
@@ -552,6 +623,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
+                continuous_action_projection_indices=self._get_action_projection_indices(),
             )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
@@ -564,6 +636,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             normalize_plp_actions=self.normalize_plp_actions,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
             action_space=cast(Any, self._action_space),
+            continuous_action_projection_indices=self._get_action_projection_indices(),
         )
 
     def _compute_policy_risk_on_demos(
@@ -572,15 +645,31 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations: Trajectory[_ObsType, _ActType],
         *,
         eps: float = 1e-12,
-    ) -> float:
-        """Compute empirical validation risk: mean NLL of expert actions."""
+    ) -> float: #TODO: check
+        """Compute validation risk for current action mode."""
         if len(demonstrations.steps) == 0:
             return float("inf")
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         losses: list[float] = []
         for obs, action in demonstrations.steps:
-            prob = float(policy.get_action_prob(obs, action))
-            losses.append(-float(np.log(max(prob, eps))))
+            score_or_prob = float(policy.get_action_prob(obs, action))
+            if action_mode == "continuous":
+                losses.append(-score_or_prob)
+            else:
+                losses.append(-float(np.log(max(score_or_prob, eps))))
         return float(np.mean(losses))
+
+    def _get_action_projection_indices(self) -> tuple[int, ...] | None:
+        """Return continuous action projection indices from config, if any."""
+        if str(self.env_specs.get("action_mode", "discrete")) != "continuous":
+            return None
+        raw = (self.program_generation or {}).get("action_projection_indices")
+        if raw is None:
+            raw = self.env_specs.get("action_projection_indices")
+        if raw is None:
+            return None
+        indices = tuple(int(i) for i in raw)
+        return indices if len(indices) > 0 else None
 
     def _get_data_loading_config(
         self,
@@ -602,13 +691,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             and hasattr(self._action_space, "low")
             and hasattr(self._action_space, "high")
         ):
+            projection_indices = self._get_action_projection_indices()
+            low = np.asarray(getattr(self._action_space, "low"), dtype=float)
+            high = np.asarray(getattr(self._action_space, "high"), dtype=float)
+            if projection_indices:
+                idx = np.asarray(projection_indices, dtype=int)
+                low = low[idx]
+                high = high[idx]
             negative_sampling_cfg.setdefault(
                 "action_low",
-                np.asarray(getattr(self._action_space, "low"), dtype=float).tolist(),
+                low.tolist(),
             )
             negative_sampling_cfg.setdefault(
                 "action_high",
-                np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
+                high.tolist(),
             )
         return offline_path_name, negative_sampling_cfg
 
@@ -627,7 +723,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     ) -> tuple[
         Any,
         np.ndarray,
-        list[bool],
         list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
@@ -654,6 +749,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             ),
             seed=self.seed_num,
             action_mode=action_mode,
+            action_projection_indices=self._get_action_projection_indices(),
         )
         if X is None or y is None:
             raise ValueError(
@@ -669,7 +765,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info("#all-zero features=%d indices=%s", len(all_zero), all_zero[:30])
         logging.info("#all-one features=%d indices=%s", len(all_one), all_one[:30])
 
-        collision_groups = log_feature_collisions(X, y, examples)
+        collision_groups: list[dict[str, Any]] = []
+        if action_mode == "discrete":
+            collision_groups = log_feature_collisions(X, y, examples)
+        else:
+            logging.info(
+                "Skipping feature-collision logging for continuous regression labels."
+            )
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
 
@@ -722,23 +824,33 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         logging.info("Almost-always-1=%d", len(common))
         assert_features_fire(X, programs_sa)
 
-        y_bool: list[bool] = list(y.astype(bool).flatten())
-        pos = sum(y_bool)
-        neg = len(y_bool) - pos
-        logging.info(
-            "y: n=%d pos=%d (%.2f%%) neg=%d",
-            len(y_bool),
-            pos,
-            100 * pos / len(y_bool),
-            neg,
-        )
-        return X, y, y_bool, examples, programs_sa, program_prior_log_probs_opt
+        if action_mode == "continuous":
+            y_float = np.asarray(y, dtype=float).reshape(-1)
+            logging.info(
+                "y (continuous): n=%d min=%.6f max=%.6f mean=%.6f",
+                y_float.shape[0],
+                float(np.min(y_float)),
+                float(np.max(y_float)),
+                float(np.mean(y_float)),
+            )
+        else:
+            y_bool: list[bool] = list(y.astype(bool).flatten())
+            pos = sum(y_bool)
+            neg = len(y_bool) - pos
+            logging.info(
+                "y: n=%d pos=%d (%.2f%%) neg=%d",
+                len(y_bool),
+                pos,
+                100 * pos / len(y_bool),
+                neg,
+            )
+        return X, y, examples, programs_sa, program_prior_log_probs_opt
 
     def _select_hyperparams(
         self,
         *,
         X: Any,
-        y_bool: list[bool],
+        y_values: np.ndarray,
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         demonstrations_train: Trajectory[_ObsType, _ActType],
@@ -777,7 +889,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             candidate_policy = self._train_policy_from_matrix(
                 X,
-                y_bool,
+                y_values,
                 programs_sa,
                 program_prior_log_probs_opt,
                 demonstrations_train,
@@ -820,7 +932,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations_val: Trajectory[_ObsType, _ActType],
     ) -> tuple[
         Any,
-        list[bool],
+        np.ndarray,
         list[StateActionProgram],
         list[float] | None,
         Trajectory[_ObsType, _ActType],
@@ -853,6 +965,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 ),
                 seed=self.seed_num,
                 action_mode=action_mode,
+                action_projection_indices=self._get_action_projection_indices(),
             )
             if X_val is None or y_val is None:
                 raise ValueError(
@@ -870,10 +983,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         X_final, final_programs_sa, final_program_priors, _ = _filter_constant_features(
             X_final, final_programs_sa, final_program_priors
         )
-        y_final_bool: list[bool] = list(y_final.astype(bool).flatten())
         return (
             X_final,
-            y_final_bool,
+            y_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
@@ -907,6 +1019,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             preserve_ordering=self.preserve_ordering,
             negative_sampling_cfg=negative_sampling_cfg,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
+            action_projection_indices=self._get_action_projection_indices(),
         )
         (
             train_demo_ids,
@@ -938,11 +1051,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
-        # print(programs_sa)
+
         (
             X_train,
             y_train,
-            y_train_bool,
             _examples,
             programs_sa,
             program_prior_log_probs_opt,
@@ -959,7 +1071,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         selected_hyperparams = self._select_hyperparams(
             X=X_train,
-            y_bool=y_train_bool,
+            y_values=y_train,
             programs_sa=programs_sa,
             program_prior_log_probs_opt=program_prior_log_probs_opt,
             demonstrations_train=demonstrations_train,
@@ -968,7 +1080,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         (
             X_final,
-            y_final_bool,
+            y_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
@@ -992,7 +1104,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         return self._train_policy_from_matrix(
             X_final,
-            y_final_bool,
+            y_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
