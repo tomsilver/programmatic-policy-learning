@@ -1,3 +1,5 @@
+"""Tests for action quantization."""
+
 import numpy as np
 import pytest
 
@@ -7,12 +9,18 @@ from programmatic_policy_learning.utils.action_quantization import (
 
 
 def test_quantizer_requires_odd_bucket_count() -> None:
+    """Check odd buckets."""
     print("\n[odd-count-check] trying bucket_counts=4 (should fail)")
     with pytest.raises(ValueError, match="must be odd"):
-        Motion2DActionQuantizer.from_bounds([-1.0, -1.0], [1.0, 1.0], bucket_counts=4)
+        Motion2DActionQuantizer.from_bounds(
+            [-1.0, -1.0],
+            [1.0, 1.0],
+            bucket_counts=4,
+        )
 
 
 def test_quantize_zero_gets_dedicated_bucket() -> None:
+    """Check zero bucket."""
     quantizer = Motion2DActionQuantizer.from_bounds(
         [-1.0, -2.0],
         [1.0, 2.0],
@@ -25,6 +33,7 @@ def test_quantize_zero_gets_dedicated_bucket() -> None:
 
 
 def test_dequantize_zero_bucket_returns_exact_zero() -> None:
+    """Check zero center."""
     quantizer = Motion2DActionQuantizer.from_bounds(
         [-1.0, -1.0],
         [1.0, 1.0],
@@ -37,6 +46,7 @@ def test_dequantize_zero_bucket_returns_exact_zero() -> None:
 
 
 def test_dynamic_bounds_split_changes_centers() -> None:
+    """Check dynamic centers."""
     quantizer = Motion2DActionQuantizer.from_bounds(
         [-2.0, -1.0],
         [1.0, 3.0],
@@ -55,6 +65,7 @@ def test_dynamic_bounds_split_changes_centers() -> None:
 
 
 def test_quantize_clips_out_of_range_values() -> None:
+    """Check clipping."""
     quantizer = Motion2DActionQuantizer.from_bounds(
         [-1.0, -1.0],
         [1.0, 1.0],
@@ -67,6 +78,7 @@ def test_quantize_clips_out_of_range_values() -> None:
 
 
 def test_all_bucket_indices_count() -> None:
+    """Check bucket count."""
     quantizer = Motion2DActionQuantizer.from_bounds(
         [-1.0, -1.0],
         [1.0, 1.0],

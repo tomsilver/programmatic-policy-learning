@@ -22,7 +22,9 @@ def test_weights_length_matches_examples_discrete() -> None:
     total_examples = len(pos) + len(neg)
     assert len(weights) == total_examples
     print(
-        f"\n[discrete-weight-length] total_examples={total_examples}, weight_len={len(weights)}"
+        "\n[discrete-weight-length] "
+        f"total_examples={total_examples}, "
+        f"weight_len={len(weights)}"
     )
 
 
