@@ -20,6 +20,9 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 from programmatic_policy_learning.utils.cache_utils import (
     cache_single_output,
     load_single_cache_output,
@@ -45,6 +48,87 @@ CONTINUOUS_NEGATIVE_K = 10
 CONTINUOUS_NEGATIVE_NOISE_SCALE = 0.2
 GRID_NEGATIVE_K = 30
 GRID_LOCAL_RADIUS = 2
+
+
+def compute_cost_sensitive_bucket_weights(
+    expert_bucket: Sequence[int],
+    candidate_buckets: Sequence[Sequence[int]],
+    *,
+    beta_pos: float = 1.0,
+    beta_neg: float = 1.0,
+    alpha: float = 1.0,
+    lambda_per_dim: Sequence[float] | None = None,
+) -> np.ndarray:
+    """Compute normalized cost-sensitive binary weights over quantized actions.
+
+    Weights follow:
+    - positive (expert bucket): beta_pos
+    - negatives: beta_neg * g(cost) / sum(g(cost_negatives))
+
+    with g(cost)=1+alpha*cost and
+    cost = sum_d lambda_d * |i_d - i_d^*|.
+    """
+    expert = np.asarray(expert_bucket, dtype=int).reshape(-1)
+    if expert.size == 0:
+        raise ValueError("expert_bucket cannot be empty.")
+
+    if beta_pos < 0.0 or beta_neg < 0.0:
+        raise ValueError("beta_pos and beta_neg must be non-negative.")
+    if alpha < 0.0:
+        raise ValueError("alpha must be non-negative.")
+
+    if lambda_per_dim is None:
+        lambdas = np.ones_like(expert, dtype=float)
+    else:
+        lambdas = np.asarray(lambda_per_dim, dtype=float).reshape(-1)
+        if lambdas.size != expert.size:
+            raise ValueError(
+                "lambda_per_dim length must match expert_bucket dimension: "
+                f"got {lambdas.size}, expected {expert.size}."
+            )
+    if np.any(lambdas < 0.0):
+        raise ValueError("All lambda_per_dim values must be non-negative.")
+
+    if len(candidate_buckets) == 0:
+        raise ValueError("candidate_buckets cannot be empty.")
+
+    weights = np.zeros(len(candidate_buckets), dtype=float)
+    neg_scores: list[float] = []
+    neg_indices: list[int] = []
+    positives = 0
+
+    for idx, candidate_bucket in enumerate(candidate_buckets):
+        cand = np.asarray(candidate_bucket, dtype=int).reshape(-1)
+        if cand.size != expert.size:
+            raise ValueError(
+                "All candidate bucket dimensions must match expert_bucket: "
+                f"got {cand.size}, expected {expert.size}."
+            )
+
+        if np.array_equal(cand, expert):
+            weights[idx] = float(beta_pos)
+            positives += 1
+            continue
+
+        dist = np.abs(cand - expert).astype(float)
+        cost = float(np.dot(lambdas, dist))
+        neg_scores.append(1.0 + alpha * cost)
+        neg_indices.append(idx)
+
+    if positives != 1:
+        raise ValueError(
+            "candidate_buckets must contain exactly one expert bucket; "
+            f"found {positives}."
+        )
+
+    if neg_indices:
+        denom = float(np.sum(neg_scores))
+        if denom <= 0.0:
+            raise ValueError("Invalid negative score normalization denominator.")
+        for idx, score in zip(neg_indices, neg_scores):
+            weights[idx] = float(beta_neg) * float(score) / denom
+
+    return weights
 
 
 def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
@@ -404,51 +488,60 @@ def extract_examples_from_demonstration_item(
     positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
     negative_examples: list[tuple[ObsT, ActT]] = []
     sampling_cfg = dict(negative_sampling or {})
-    enabled = bool(sampling_cfg.get("enabled", False))
 
     if action_mode == "continuous":
-        rng_np = np.random.default_rng(0)
-        if enabled:
-            cfg_cont = dict(sampling_cfg.get("continuous", {}))
-            mode = str(cfg_cont.get("mode", "mixture"))
-            action_low = sampling_cfg.get("action_low")
-            action_high = sampling_cfg.get("action_high")
-            if mode == "manual":
-                neg_actions = sample_manual_negative_actions_continuous(
-                    action,
-                    action_low=action_low,
-                    action_high=action_high,
-                )
-            elif mode == "mixture":
-                k_total = int(cfg_cont.get("K", CONTINUOUS_NEGATIVE_K))
-                local_noise = float(
-                    cfg_cont.get("local_noise_scale", CONTINUOUS_NEGATIVE_NOISE_SCALE)
-                )
-                w_local = float(cfg_cont.get("lambda_local", 0.7))
-                w_uniform = float(cfg_cont.get("lambda_uniform", 0.3))
-                w_traj = float(cfg_cont.get("lambda_traj", 0.0))
-                neg_actions = _sample_continuous_mixture_negatives(
-                    action,
-                    k_total=k_total,
-                    local_noise_scale=local_noise,
-                    action_low=action_low,
-                    action_high=action_high,
-                    w_local=w_local,
-                    w_uniform=w_uniform,
-                    w_traj=w_traj,
-                    rng=rng_np,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported continuous negative sampling mode: {mode!r}"
-                )
-        else:
-            neg_actions = sample_negative_actions_continuous(
-                action,
-                K=CONTINUOUS_NEGATIVE_K,
-                noise_scale=CONTINUOUS_NEGATIVE_NOISE_SCALE,
-                rng=rng_np,
+        action_low = sampling_cfg.get("action_low")
+        action_high = sampling_cfg.get("action_high")
+        if action_low is None or action_high is None:
+            raise ValueError(
+                "Continuous action_mode requires action_low/action_high bounds for "
+                "quantized expansion."
             )
+
+        cfg_cont = dict(sampling_cfg.get("continuous", {}))
+        bucket_counts_cfg = cfg_cont.get("bucket_counts", 5)
+
+        base = np.asarray(action, dtype=float)
+        if base.ndim == 0:
+            base = base.reshape(1)
+        if base.shape[0] < 2:
+            raise ValueError(
+                "Continuous quantized expansion requires at least 2 action "
+                "dimensions (dx, dy)."
+            )
+
+        low_arr = np.asarray(action_low, dtype=float)
+        high_arr = np.asarray(action_high, dtype=float)
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch in quantized expansion: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            low_arr[:2], #TODO: currently only quantizing the first 2 dimensions for negative sampling; can be extended if needed
+            high_arr[:2],
+            bucket_counts=bucket_counts_cfg,
+        )
+        expert_bucket = quantizer.quantize(base[:2])
+
+        quantized_expert = base.copy()
+        quantized_expert[:2] = quantizer.dequantize(expert_bucket)
+        if quantized_expert.shape[0] > 2:
+            quantized_expert[2:] = 0.0
+        quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
+        positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
+
+        neg_actions: list[ActT] = []
+        for bucket in quantizer.all_bucket_indices():
+            if bucket == expert_bucket:
+                continue
+            candidate = base.copy()
+            candidate[:2] = quantizer.dequantize(bucket)
+            if candidate.shape[0] > 2:
+                candidate[2:] = 0.0
+            candidate = np.clip(candidate, low_arr, high_arr)
+            neg_actions.append(_coerce_action_like(action, candidate))
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
         return positive_examples, negative_examples
@@ -461,7 +554,9 @@ def extract_examples_from_demonstration_item(
         context="Discrete negative expansion",
     )
 
-    if enabled:
+    # `negative_sampling.enabled` only controls discrete-mode subsampling.
+    discrete_sampling_enabled = bool(sampling_cfg.get("enabled", False))
+    if discrete_sampling_enabled:
         cfg_grid = dict(sampling_cfg.get("discrete", {}))
         k_total = int(cfg_grid.get("K", GRID_NEGATIVE_K))
         local_radius = int(cfg_grid.get("local_radius", GRID_LOCAL_RADIUS))
