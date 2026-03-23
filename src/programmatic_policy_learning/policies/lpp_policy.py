@@ -1,6 +1,6 @@
 """Policy class for logic programmatic policies (LPP)."""
 
-from typing import Any, Generic, Sequence, TypeVar, cast
+from typing import Any, Callable, Generic, Sequence, TypeVar, cast
 
 import numpy as np
 from gymnasium.spaces import Box, Space
@@ -23,6 +23,9 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         action_mode: str = "discrete",
         action_space: Space[Any] | None = None,
         continuous_num_candidates: int = 64,
+        continuous_action_projection_indices: Sequence[int] | None = None,
+        continuous_score_fn: Callable[[_ObsType, _ActType], float] | None = None,
+        continuous_score_is_probability: bool = True,
     ) -> None:
         """Initialize the LPPPolicy.
 
@@ -48,6 +51,14 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self.action_mode = action_mode
         self.action_space = action_space
         self.continuous_num_candidates = max(1, int(continuous_num_candidates))
+        self.continuous_action_projection_indices = (
+            tuple(int(i) for i in continuous_action_projection_indices)
+            if continuous_action_projection_indices is not None
+            else None
+        )
+        #TODO: what are these two
+        self.continuous_score_fn = continuous_score_fn
+        self.continuous_score_is_probability = bool(continuous_score_is_probability)
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
         self.map_program = ""
@@ -200,15 +211,46 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         return self._continuous_action_score(obs, action)
 
     def _continuous_action_score(self, obs: _ObsType, action: _ActType) -> float:
+        #TODO: read
         """Score a continuous action by PLP posterior mass that accepts it."""
+        action_eval = self._project_continuous_action(action)
+        if self.continuous_score_fn is not None:
+            score = float(self.continuous_score_fn(obs, action_eval))
+            if self.continuous_score_is_probability:
+                return max(1e-12, min(1.0, score))
+            return score
         score = 0.0
         for plp, prob in zip(self.plps, self.probs):
             try:
-                if plp(obs, action):
+                if plp(obs, action_eval):
                     score += float(prob)
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
         return max(1e-12, min(1.0, score))
+
+    def _project_continuous_action(self, action: _ActType) -> _ActType:
+        """Project a continuous action to configured dimensions if needed."""
+        if not self.continuous_action_projection_indices:
+            return action
+        arr = np.asarray(action, dtype=float)
+        if arr.ndim == 0:
+            arr = arr.reshape(1)
+        idx = np.asarray(self.continuous_action_projection_indices, dtype=int)
+        if np.any(idx < 0) or np.any(idx >= arr.shape[0]):
+            raise ValueError(
+                "continuous_action_projection_indices out of bounds for "
+                f"action shape {arr.shape}: {idx.tolist()}"
+            )
+        projected = arr[idx]
+        if isinstance(action, np.ndarray):
+            return cast(_ActType, projected.astype(action.dtype, copy=False))
+        if isinstance(action, tuple):
+            return cast(_ActType, tuple(float(x) for x in projected.tolist()))
+        if isinstance(action, list):
+            return cast(_ActType, [float(x) for x in projected.tolist()])
+        if isinstance(action, (int, float, np.integer, np.floating)):
+            return cast(_ActType, float(projected.reshape(-1)[0]))
+        raise TypeError(f"Unsupported continuous action type: {type(action)!r}")
 
     def _select_continuous_action(self, obs: _ObsType) -> Any:
         """Pick a continuous action by scoring sampled candidates."""
@@ -235,11 +277,16 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         if self.map_choices:
             best_idx = int(np.argmax(scores))
             return candidates[best_idx]
-        denom = float(scores.sum())
+        #TODO: check the logic
+        scores_nonneg = scores.copy()
+        min_score = float(np.min(scores_nonneg))
+        if min_score < 0.0:
+            scores_nonneg = scores_nonneg - min_score
+        denom = float(scores_nonneg.sum())
         if denom <= 0.0:
             probs = np.full(len(candidates), 1.0 / len(candidates), dtype=np.float64)
         else:
-            probs = scores / denom
+            probs = scores_nonneg / denom
         idx = int(self.rng.choice(len(candidates), p=probs))
         return candidates[idx]
 
