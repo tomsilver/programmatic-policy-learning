@@ -20,7 +20,7 @@ def test_run_all_programs_on_single_demonstration() -> None:
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
     programs = ["np.sum(s) > 10"]
-    X, y, _examples = run_all_programs_on_single_demonstration(
+    X, y, _examples, _weights = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
         0,  # demo_number
         programs,  # programs
@@ -39,10 +39,11 @@ def test_extract_examples_from_demonstration() -> None:
     state = np.array([[1, 2], [3, 4]])
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
-    pos, neg = extract_examples_from_demonstration(traj)
+    pos, neg, weights = extract_examples_from_demonstration(traj)
     assert len(pos) == 1
     assert all(isinstance(x, tuple) for x in pos)
     assert all(isinstance(x, tuple) for x in neg)
+    assert len(weights) == len(pos) + len(neg)
 
 
 def test_discrete_negative_sampling_fallback_uses_all_other_cells() -> None:
@@ -51,12 +52,13 @@ def test_discrete_negative_sampling_fallback_uses_all_other_cells() -> None:
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
-    pos, neg = extract_examples_from_demonstration(
+    pos, neg, weights = extract_examples_from_demonstration(
         traj,
         action_mode="discrete",
     )
     assert len(pos) == 1
     assert len(neg) == (state.shape[0] * state.shape[1] - 1)
+    assert len(weights) == len(pos) + len(neg)
     assert all(a != action for _, a in neg)
 
 
@@ -76,12 +78,13 @@ def test_discrete_negative_sampling_enabled_respects_k_and_excludes_expert() -> 
             "w_random": 0.2,
         },
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (state, action),
         negative_sampling=neg_cfg,
         action_mode="discrete",
     )
     assert len(neg) == k
+    assert len(weights) == len(_pos) + len(neg)
     neg_actions = [a for _, a in neg]
     assert len(set(neg_actions)) == len(neg_actions)
     assert all(a != action for a in neg_actions)
@@ -95,12 +98,13 @@ def test_continuous_quantized_expansion_uses_full_grid() -> None:
         "action_low": [-1.0, -0.5],
         "action_high": [1.0, 0.5],
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (obs, action),
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
     print("\n[continuous-quantized] pos_count=", len(_pos), "neg_count=", len(neg))
+    assert len(weights) == len(_pos) + len(neg)
     # default bucket_counts=5 for each of dx,dy => 25 total, 24 negatives
     assert len(_pos) == 1
     assert len(neg) == 24
@@ -137,12 +141,13 @@ def test_continuous_quantized_expansion_supports_per_dim_bucket_counts() -> None
             "bucket_counts": [3, 7],
         },
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (obs, action),
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
     assert len(neg) == 20
+    assert len(weights) == len(_pos) + len(neg)
     for _s, a in neg:
         arr = np.asarray(a, dtype=float)
         assert arr.shape == (2,)

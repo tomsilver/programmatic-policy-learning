@@ -59,6 +59,7 @@ program_generation:
     offline: 0 # 0 for using LLM / 1 for using the following path data
     offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
+    # Discrete-only switch. Continuous mode is always quantized expansion.
     enabled: true
     discrete:
       K: 16
@@ -67,12 +68,12 @@ program_generation:
       w_struct: 0.3
       w_random: 0.15
     continuous:
-      mode: "manual"  # "mixture" or "manual"
-      K: 10
-      local_noise_scale: 0.06
-      lambda_local: 0
-      lambda_uniform: 1.0
-      lambda_traj: 0.0
+      # Continuous actions are always quantized for training data expansion.
+      # int => equal odd bucket count for dx and dy (e.g., 5 -> 25 actions total)
+      # list => per-dimension odd bucket counts, e.g. [3, 7]
+      bucket_counts: 5
+
+  
   # NOTE: The fields below are legacy from earlier experiments.
   # They are not used by the current config unless you switch strategy.
   hint_structured: True # used for hint generation

@@ -464,9 +464,11 @@ def extract_examples_from_demonstration_item(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
+    compute_sample_weights: bool = False,
 ) -> tuple[
     list[tuple[ObsT, ActT]],
     list[tuple[ObsT, ActT]],
+    np.ndarray,
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
@@ -475,6 +477,8 @@ def extract_examples_from_demonstration_item(
     ----------
     demonstrations : (ObsT, ActT)
         A state, action pair.
+    compute_sample_weights : bool
+        If True, compute cost-sensitive sample weights for training.
 
     Returns
     -------
@@ -482,12 +486,16 @@ def extract_examples_from_demonstration_item(
         A list with just the input state, action pair (for convenience).
     negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
+    sample_weights : np.ndarray
+        Array of shape (len(positive_examples) + len(negative_examples),)
+        with sample weights aligned to rows. All ones if compute_sample_weights=False.
     """
     state, action = demonstration_item
 
     positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
     negative_examples: list[tuple[ObsT, ActT]] = []
     sampling_cfg = dict(negative_sampling or {})
+    sample_weights = np.ones(1, dtype=float)  # Default: single positive with weight=1
 
     if action_mode == "continuous":
         action_low = sampling_cfg.get("action_low")
@@ -533,7 +541,9 @@ def extract_examples_from_demonstration_item(
         positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
 
         neg_actions: list[ActT] = []
+        all_buckets: list[tuple[int, ...]] = []
         for bucket in quantizer.all_bucket_indices():
+            all_buckets.append(bucket)
             if bucket == expert_bucket:
                 continue
             candidate = base.copy()
@@ -544,7 +554,32 @@ def extract_examples_from_demonstration_item(
             neg_actions.append(_coerce_action_like(action, candidate))
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-        return positive_examples, negative_examples
+        
+        # Keep weight order aligned with row order: [positive] + [negatives].
+        aligned_buckets = [expert_bucket] + [
+            bucket for bucket in all_buckets if bucket != expert_bucket
+        ]
+
+        # Compute sample weights if requested
+        if compute_sample_weights:
+            weight_cfg = dict(cfg_cont.get("weight_config", {}))
+            beta_pos = weight_cfg.get("beta_pos", 1.0)
+            beta_neg = weight_cfg.get("beta_neg", 1.0)
+            alpha = weight_cfg.get("alpha", 1.0)
+            lambda_per_dim = weight_cfg.get("lambda_per_dim", None)
+            sample_weights = compute_cost_sensitive_bucket_weights(
+                expert_bucket,
+                aligned_buckets,
+                beta_pos=beta_pos,
+                beta_neg=beta_neg,
+                alpha=alpha,
+                lambda_per_dim=lambda_per_dim,
+            )
+        else:
+            # Default uniform weights: one for positive, one per negative
+            sample_weights = np.ones(1 + len(neg_actions), dtype=float)
+        
+        return positive_examples, negative_examples, sample_weights
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
@@ -583,7 +618,12 @@ def extract_examples_from_demonstration_item(
                     continue
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
-    return positive_examples, negative_examples
+    # For discrete mode, return uniform weights (1.0 for each example)
+    #TODOO: can also pass "balanced" to dt and ignore manual weight computation here, since all negatives are equally weighted anyway
+    sample_weights = np.ones(
+        1 + len(negative_examples), dtype=float
+    )
+    return positive_examples, negative_examples, sample_weights
 
 
 def extract_examples_from_demonstration(
@@ -591,37 +631,53 @@ def extract_examples_from_demonstration(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
-) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]]:
+    compute_sample_weights: bool = False,
+) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]], np.ndarray]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
 
     Parameters
     ----------
-    demonstrations : [(np.ndarray, (int, int))]
-        State, action pairs
+    demonstrations : [(ObsT, ActT)]
+        State, action pairs from a trajectory.
+    compute_sample_weights : bool
+        If True, compute cost-sensitive sample weights. Only applies to continuous mode.
 
     Returns
     -------
-    positive_examples : [(np.ndarray, (int, int))]
-        A list with just the input state, action pairs (for convenience).
-    negative_examples : [(np.ndarray, (int, int))]
+    positive_examples : [(ObsT, ActT)]
+        A list with the input state, action pairs.
+    negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
+    sample_weights : np.ndarray
+        Shape (total_examples,) where total_examples = len(pos) + len(neg).
+        Weights aligned with rows: positives first, then negatives.
     """
     positive_examples: list[tuple[ObsT, ActT]] = []
     negative_examples: list[tuple[ObsT, ActT]] = []
+    pos_weights: list[float] = []
+    neg_weights: list[float] = []
 
     for demonstration_item in demonstration.steps:
-        demo_positive_examples, demo_negative_examples = (
+        demo_positive_examples, demo_negative_examples, demo_weights = (
             extract_examples_from_demonstration_item(
                 demonstration_item,
                 negative_sampling=negative_sampling,
                 action_mode=action_mode,
+                compute_sample_weights=compute_sample_weights,
             )
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
+        if demo_weights.shape[0] != (len(demo_positive_examples) + len(demo_negative_examples)):
+            raise ValueError(
+                "Per-item sample_weights length must match per-item examples."
+            )
+        pos_weights.extend(demo_weights[: len(demo_positive_examples)].tolist())
+        neg_weights.extend(demo_weights[len(demo_positive_examples) :].tolist())
 
-    return positive_examples, negative_examples
+    combined_weights = np.asarray(pos_weights + neg_weights, dtype=float)
+    return positive_examples, negative_examples, combined_weights
 
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -660,6 +716,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    cache_schema_version = "v2"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -688,7 +745,7 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
-        f"{split_part}"
+        f"{split_part}-{cache_schema_version}"
     )
 
 
@@ -753,14 +810,15 @@ def run_all_programs_on_single_demonstration(
     action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
-    positive_examples, negative_examples = extract_examples_from_demonstration(
+    positive_examples, negative_examples, sample_weights = extract_examples_from_demonstration(
         demo_traj,
         negative_sampling=negative_sampling,
         action_mode=action_mode,
+        compute_sample_weights=False,  # Step 2 prep: weights returned but not yet used
     )
 
     fn_inputs = positive_examples + negative_examples
@@ -807,7 +865,7 @@ def run_all_programs_on_single_demonstration(
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
     examples = fn_inputs if return_examples else None
-    return X.tocsr(), np.array(y, dtype=np.uint8), examples
+    return X.tocsr(), np.array(y, dtype=np.uint8), examples, sample_weights
 
 
 def run_programs_on_examples(
