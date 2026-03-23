@@ -23,6 +23,7 @@ def learn_plps(
     y: list[bool],
     programs: list[StateActionProgram],
     program_prior_log_probs: list[float],
+    sample_weight: np.ndarray | None = None,
     num_dts: int = 5,
     program_generation_step_size: int = 10,
     dt_splitter: str = "random",
@@ -58,6 +59,7 @@ def learn_plps(
             y,
             num_dts,
             X[:, : i + 1],
+            sample_weight=sample_weight,
             dt_splitter=dt_splitter,
             cc_alpha=cc_alpha,
             dt_max_depth=dt_max_depth,
@@ -75,6 +77,7 @@ def learn_single_batch_decision_trees(
     y: list[bool],
     num_dts: int,
     X_i: csr_matrix,
+    sample_weight: np.ndarray | None = None,
     dt_splitter: str = "random",
     cc_alpha: float = 0.0,
     dt_max_depth: int | None = None,
@@ -93,19 +96,29 @@ def learn_single_batch_decision_trees(
 
     clfs = []
 
+    sw_arr: np.ndarray | None = None
+    if sample_weight is not None:
+        sw_arr = np.asarray(sample_weight, dtype=float).reshape(-1)
+        if sw_arr.shape[0] != len(y):
+            raise ValueError(
+                "sample_weight length must match y length: "
+                f"got {sw_arr.shape[0]}, expected {len(y)}"
+            )
+
     for seed in range(num_dts):
         # clf = DecisionTreeClassifier(random_state=seed)
         clf = DecisionTreeClassifier(
             random_state=seed,
             splitter=dt_splitter,
-            class_weight="balanced",
+            # Avoid double-reweighting when explicit sample weights are provided.
+            class_weight=None if sw_arr is not None else "balanced",
             max_depth=dt_max_depth,  # None means unbounded depth.
             min_samples_leaf=1,  # 8,#1,
             # min_samples_split = 10,
             ccp_alpha=cc_alpha,
         )
 
-        clf.fit(X_i, y)
+        clf.fit(X_i, y, sample_weight=sw_arr)
         # logging.info(
         #     "Trained DT seed=%d | nodes=%d depth=%d | train_acc=%.3f",
         #     seed,

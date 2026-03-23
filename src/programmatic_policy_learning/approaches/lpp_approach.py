@@ -395,6 +395,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self,
         X: Any,
         y_bool: list[bool],
+        sample_weight: np.ndarray | None,
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         demonstrations: Trajectory[_ObsType, _ActType],
@@ -425,6 +426,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             y_bool,
             programs_ranked,
             priors_ranked,
+            sample_weight=sample_weight,
             num_dts=int(hp["num_dts"]),
             program_generation_step_size=int(hp["program_generation_step_size"]),
             dt_splitter=str(hp["dt_splitter"]),
@@ -628,6 +630,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Any,
         np.ndarray,
         list[bool],
+        np.ndarray,
         list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
@@ -636,7 +639,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         val_split_tag = (
             "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
-        X, y, examples, _sample_weights = run_all_programs_on_demonstrations(
+        X, y, examples, sample_weights = run_all_programs_on_demonstrations(
             self.base_class_name,
             train_demo_ids,
             programs_sa,
@@ -732,13 +735,24 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             100 * pos / len(y_bool),
             neg,
         )
-        return X, y, y_bool, examples, programs_sa, program_prior_log_probs_opt
+        if sample_weights is None:
+            sample_weights = np.ones(len(y_bool), dtype=float)
+        return (
+            X,
+            y,
+            y_bool,
+            sample_weights,
+            examples,
+            programs_sa,
+            program_prior_log_probs_opt,
+        )
 
     def _select_hyperparams(
         self,
         *,
         X: Any,
         y_bool: list[bool],
+        sample_weight: np.ndarray | None,
         programs_sa: list[StateActionProgram],
         program_prior_log_probs_opt: list[float] | None,
         demonstrations_train: Trajectory[_ObsType, _ActType],
@@ -778,6 +792,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             candidate_policy = self._train_policy_from_matrix(
                 X,
                 y_bool,
+                sample_weight,
                 programs_sa,
                 program_prior_log_probs_opt,
                 demonstrations_train,
@@ -815,12 +830,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         offline_path_name: str | None,
         X_train: Any,
         y_train: np.ndarray,
+        sample_weight_train: np.ndarray | None,
         program_prior_log_probs_opt: list[float] | None,
         demonstrations_train: Trajectory[_ObsType, _ActType],
         demonstrations_val: Trajectory[_ObsType, _ActType],
     ) -> tuple[
         Any,
         list[bool],
+        np.ndarray | None,
         list[StateActionProgram],
         list[float] | None,
         Trajectory[_ObsType, _ActType],
@@ -834,8 +851,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         X_final = X_train
         y_final = y_train
+        sample_weight_final = sample_weight_train
         if val_demo_ids:
-            X_val, y_val, _, _ = run_all_programs_on_demonstrations(
+            X_val, y_val, _, sample_weight_val = run_all_programs_on_demonstrations(
                 self.base_class_name,
                 val_demo_ids,
                 list(programs_sa),
@@ -860,6 +878,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 )
             X_final = vstack([X_final, X_val]).tocsr()
             y_final = np.concatenate([y_final, y_val])
+            if sample_weight_final is None:
+                sample_weight_final = sample_weight_val
+            elif sample_weight_val is not None:
+                sample_weight_final = np.concatenate(
+                    [sample_weight_final, sample_weight_val]
+                )
 
         final_programs_sa = list(programs_sa)
         final_program_priors = (
@@ -874,6 +898,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return (
             X_final,
             y_final_bool,
+            sample_weight_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
@@ -943,6 +968,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             X_train,
             y_train,
             y_train_bool,
+            sample_weight_train,
             _examples,
             programs_sa,
             program_prior_log_probs_opt,
@@ -960,6 +986,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         selected_hyperparams = self._select_hyperparams(
             X=X_train,
             y_bool=y_train_bool,
+            sample_weight=sample_weight_train,
             programs_sa=programs_sa,
             program_prior_log_probs_opt=program_prior_log_probs_opt,
             demonstrations_train=demonstrations_train,
@@ -969,6 +996,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         (
             X_final,
             y_final_bool,
+            sample_weight_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
@@ -982,6 +1010,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             offline_path_name=offline_path_name,
             X_train=X_train,
             y_train=y_train,
+            sample_weight_train=sample_weight_train,
             program_prior_log_probs_opt=program_prior_log_probs_opt,
             demonstrations_train=demonstrations_train,
             demonstrations_val=demonstrations_val,
@@ -993,6 +1022,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return self._train_policy_from_matrix(
             X_final,
             y_final_bool,
+            sample_weight_final,
             final_programs_sa,
             final_program_priors,
             demonstrations_final,
