@@ -9,7 +9,7 @@ import os
 import pickle
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
+from typing import Any, Sequence, TypeVar, cast
 
 import cloudpickle
 import numpy as np
@@ -62,6 +62,28 @@ def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
         "Unsupported continuous action type for sampling negatives: "
         f"{type(template)!r}"
     )
+
+
+def _project_continuous_action(
+    action: ActT,
+    action_projection_indices: Sequence[int] | None,
+) -> ActT:
+    """Project a continuous action to selected dimensions when requested."""
+    if not action_projection_indices:
+        return action
+    arr = np.asarray(action, dtype=float)
+    if arr.ndim == 0:
+        arr = arr.reshape(1)
+    idx = np.asarray([int(i) for i in action_projection_indices], dtype=int)
+    if idx.size == 0:
+        return action
+    if np.any(idx < 0) or np.any(idx >= arr.shape[0]):
+        raise ValueError(
+            "action_projection_indices out of bounds for action shape "
+            f"{arr.shape}: {idx.tolist()}"
+        )
+    projected = arr[idx]
+    return cast(ActT, _coerce_action_like(action, projected))
 
 
 def sample_negative_actions_continuous(  # TODOO: can be simpler
@@ -380,6 +402,7 @@ def extract_examples_from_demonstration_item(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
+    action_projection_indices: Sequence[int] | None = None,
 ) -> tuple[
     list[tuple[ObsT, ActT]],
     list[tuple[ObsT, ActT]],
@@ -400,6 +423,9 @@ def extract_examples_from_demonstration_item(
         A list with negative examples of state, actions.
     """
     state, action = demonstration_item
+
+    if action_mode == "continuous":
+        action = _project_continuous_action(action, action_projection_indices)
 
     positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
     negative_examples: list[tuple[ObsT, ActT]] = []
@@ -496,6 +522,7 @@ def extract_examples_from_demonstration(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
+    action_projection_indices: Sequence[int] | None = None,
 ) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
@@ -521,6 +548,7 @@ def extract_examples_from_demonstration(
                 demonstration_item,
                 negative_sampling=negative_sampling,
                 action_mode=action_mode,
+                action_projection_indices=action_projection_indices,
             )
         )
         positive_examples.extend(demo_positive_examples)
@@ -590,10 +618,15 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     split_part = "splitnone"
     if split_tag:
         split_part = f"split{split_tag}"
+    action_mode = str(kwargs.get("action_mode", "discrete"))
+    projection = kwargs.get("action_projection_indices")
+    projection_tag = "all"
+    if projection is not None:
+        projection_tag = "-".join(str(int(i)) for i in projection) or "all"
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
-        f"{split_part}"
+        f"{split_part}-am{action_mode}-ap{projection_tag}"
     )
 
 
@@ -656,20 +689,46 @@ def run_all_programs_on_single_demonstration(
     demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
     action_mode: str = "discrete",
+    action_projection_indices: Sequence[int] | None = None,
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
 ) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
-    positive_examples, negative_examples = extract_examples_from_demonstration(
-        demo_traj,
-        negative_sampling=negative_sampling,
-        action_mode=action_mode,
-    )
-
-    fn_inputs = positive_examples + negative_examples
-    y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
+    if action_mode == "continuous":
+        fn_inputs: list[tuple[ObsT, ActT]] = []
+        y_float: list[float] = []
+        for demo_item in demo_traj.steps:
+            pos_ex, neg_ex = extract_examples_from_demonstration_item(
+                demo_item,
+                negative_sampling=negative_sampling,
+                action_mode=action_mode,
+                action_projection_indices=action_projection_indices,
+            )
+            if len(pos_ex) == 0:
+                continue
+            expert_action = np.asarray(pos_ex[0][1], dtype=float).reshape(-1)
+            for ex in pos_ex:
+                fn_inputs.append(ex)
+                y_float.append(0.0)
+            for _state, neg_action in neg_ex:
+                fn_inputs.append((_state, neg_action))
+                neg_arr = np.asarray(neg_action, dtype=float).reshape(-1)
+                y_float.append(-float(np.linalg.norm(neg_arr - expert_action)))
+        y_arr = np.asarray(y_float, dtype=np.float32)
+    else:
+        positive_examples, negative_examples = extract_examples_from_demonstration(
+            demo_traj,
+            negative_sampling=negative_sampling,
+            action_mode=action_mode,
+            action_projection_indices=action_projection_indices,
+        )
+        fn_inputs = positive_examples + negative_examples
+        y_arr = np.asarray(
+            [1] * len(positive_examples) + [0] * len(negative_examples),
+            dtype=np.uint8,
+        )
     base_dsl, module_map = _split_dsl(dsl_functions)
 
     try:
@@ -712,7 +771,7 @@ def run_all_programs_on_single_demonstration(
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
     examples = fn_inputs if return_examples else None
-    return X.tocsr(), np.array(y, dtype=np.uint8), examples
+    return X.tocsr(), y_arr, examples
 
 
 def run_programs_on_examples(
@@ -812,6 +871,7 @@ def run_all_programs_on_demonstrations(
     split_tag: str | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
+    action_projection_indices: Sequence[int] | None = None,
 ) -> tuple[Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
@@ -829,6 +889,7 @@ def run_all_programs_on_demonstrations(
             demos_included=demos_included,
             split_tag=split_tag,
             action_mode=action_mode,
+            action_projection_indices=action_projection_indices,
             seed=seed,
         )
 
