@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 
-from programmatic_policy_learning.utils.action_quantization import Motion2DActionQuantizer
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 
 
 def test_quantizer_requires_odd_bucket_count() -> None:

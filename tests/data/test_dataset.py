@@ -9,7 +9,9 @@ from programmatic_policy_learning.data.dataset import (
     run_all_programs_on_single_demonstration,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
-from programmatic_policy_learning.utils.action_quantization import Motion2DActionQuantizer
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 
 
 def test_run_all_programs_on_single_demonstration() -> None:
@@ -155,7 +157,6 @@ def test_continuous_quantized_expansion_supports_per_dim_bucket_counts() -> None
         assert np.all(arr <= 1.0)
 
 
-
 def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
     expert = (1, 1)
     candidates = [(0, 0), (0, 1), (1, 1), (2, 1), (2, 2)]
@@ -230,4 +231,3 @@ def test_cost_sensitive_bucket_weights_supports_dimension_lambdas() -> None:
         float(w[1]),
     )
     assert float(w[0]) > float(w[1])
-

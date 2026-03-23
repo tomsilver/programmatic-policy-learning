@@ -527,7 +527,9 @@ def extract_examples_from_demonstration_item(
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr[:2], #TODO: currently only quantizing the first 2 dimensions for negative sampling; can be extended if needed
+            low_arr[
+                :2
+            ],  # TODO: currently only quantizing the first 2 dimensions for negative sampling; can be extended if needed
             high_arr[:2],
             bucket_counts=bucket_counts_cfg,
         )
@@ -554,7 +556,7 @@ def extract_examples_from_demonstration_item(
             neg_actions.append(_coerce_action_like(action, candidate))
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-        
+
         # Keep weight order aligned with row order: [positive] + [negatives].
         aligned_buckets = [expert_bucket] + [
             bucket for bucket in all_buckets if bucket != expert_bucket
@@ -578,7 +580,7 @@ def extract_examples_from_demonstration_item(
         else:
             # Default uniform weights: one for positive, one per negative
             sample_weights = np.ones(1 + len(neg_actions), dtype=float)
-        
+
         return positive_examples, negative_examples, sample_weights
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
@@ -619,10 +621,8 @@ def extract_examples_from_demonstration_item(
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
     # For discrete mode, return uniform weights (1.0 for each example)
-    #TODOO: can also pass "balanced" to dt and ignore manual weight computation here, since all negatives are equally weighted anyway
-    sample_weights = np.ones(
-        1 + len(negative_examples), dtype=float
-    )
+    # TODOO: can also pass "balanced" to dt and ignore manual weight computation here, since all negatives are equally weighted anyway
+    sample_weights = np.ones(1 + len(negative_examples), dtype=float)
     return positive_examples, negative_examples, sample_weights
 
 
@@ -669,7 +669,9 @@ def extract_examples_from_demonstration(
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
-        if demo_weights.shape[0] != (len(demo_positive_examples) + len(demo_negative_examples)):
+        if demo_weights.shape[0] != (
+            len(demo_positive_examples) + len(demo_negative_examples)
+        ):
             raise ValueError(
                 "Per-item sample_weights length must match per-item examples."
             )
@@ -716,7 +718,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    cache_schema_version = "v2"
+    cache_schema_version = "v4"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -794,7 +796,11 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
     return results
 
 
-@manage_cache(CACHE_DIR, [".npz", ".pkl", ".pkl"], key_fn=_cache_key_run_all_programs)
+@manage_cache(
+    CACHE_DIR,
+    [".npz", ".pkl", ".pkl", ".pkl"],
+    key_fn=_cache_key_run_all_programs,
+)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
@@ -814,11 +820,13 @@ def run_all_programs_on_single_demonstration(
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
-    positive_examples, negative_examples, sample_weights = extract_examples_from_demonstration(
-        demo_traj,
-        negative_sampling=negative_sampling,
-        action_mode=action_mode,
-        compute_sample_weights=False,  # Step 2 prep: weights returned but not yet used
+    positive_examples, negative_examples, sample_weights = (
+        extract_examples_from_demonstration(
+            demo_traj,
+            negative_sampling=negative_sampling,
+            action_mode=action_mode,
+            compute_sample_weights=False,  # Step 2 prep: weights returned but not yet used
+        )
     )
 
     fn_inputs = positive_examples + negative_examples
@@ -965,24 +973,29 @@ def run_all_programs_on_demonstrations(
     split_tag: str | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
-) -> tuple[Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None]:
+) -> tuple[
+    Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None, np.ndarray | None
+]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     examples_all: list[tuple[ObsT, ActT]] = []
+    sample_weights_all: list[np.ndarray] = []
     for demo_number in demo_numbers:
-        demo_X, demo_y, demo_examples = run_all_programs_on_single_demonstration(
-            base_class_name,
-            demo_number,
-            programs,
-            demo_dict[demo_number],
-            dsl_functions,
-            negative_sampling=negative_sampling,
-            return_examples=return_examples,
-            offline_path_name=offline_path_name,
-            demos_included=demos_included,
-            split_tag=split_tag,
-            action_mode=action_mode,
-            seed=seed,
+        demo_X, demo_y, demo_examples, demo_sample_weights = (
+            run_all_programs_on_single_demonstration(
+                base_class_name,
+                demo_number,
+                programs,
+                demo_dict[demo_number],
+                dsl_functions,
+                negative_sampling=negative_sampling,
+                return_examples=return_examples,
+                offline_path_name=offline_path_name,
+                demos_included=demos_included,
+                split_tag=split_tag,
+                action_mode=action_mode,
+                seed=seed,
+            )
         )
 
         if X is None:
@@ -991,6 +1004,12 @@ def run_all_programs_on_demonstrations(
         else:
             X = vstack([X, demo_X])
             y = np.concatenate([y, demo_y])
+        sample_weights_all.append(demo_sample_weights)
         if return_examples and demo_examples:
             examples_all.extend(demo_examples)
-    return X, y, (examples_all if return_examples else None)
+    sample_weights = (
+        np.concatenate(sample_weights_all)
+        if sample_weights_all
+        else np.array([], dtype=float)
+    )
+    return X, y, (examples_all if return_examples else None), sample_weights

@@ -96,7 +96,7 @@ def test_dataset_pipeline_with_real_env() -> None:
         logging.info(f"Demo {i}: state=\n{s}, action={a}")
 
     # Run dataset pipeline
-    X, y, _examples = run_all_programs_on_demonstrations(
+    X, y, _examples, _sample_weights = run_all_programs_on_demonstrations(
         base_class_name=base_class_name,
         demo_numbers=demo_numbers,
         programs=programs,

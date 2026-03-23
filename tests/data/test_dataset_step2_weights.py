@@ -21,7 +21,9 @@ def test_weights_length_matches_examples_discrete() -> None:
     )
     total_examples = len(pos) + len(neg)
     assert len(weights) == total_examples
-    print(f"\n[discrete-weight-length] total_examples={total_examples}, weight_len={len(weights)}")
+    print(
+        f"\n[discrete-weight-length] total_examples={total_examples}, weight_len={len(weights)}"
+    )
 
 
 def test_weights_length_matches_examples_continuous() -> None:
@@ -44,7 +46,6 @@ def test_weights_length_matches_examples_continuous() -> None:
     assert len(weights) == total_examples
     # 5x5 buckets = 25 total, so 1 positive + 24 negatives
     assert total_examples == 25
-    print(f"\n[continuous-weight-length] total_examples={total_examples}, weight_len={len(weights)}")
 
 
 def test_weights_are_row_aligned_positives_first() -> None:
@@ -63,21 +64,21 @@ def test_weights_are_row_aligned_positives_first() -> None:
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
-    
+
     total_examples = len(pos) + len(neg)
     assert len(weights) == total_examples
-    
+
     # In the bucket-aligned return: first weight is for positive, rest are for negatives
     # The first weight should be the positive weight (default=1.0)
     # All weights should be positive floats
     assert weights[0] > 0.0  # positive weight
     assert all(w > 0.0 for w in weights)  # all weights positive
     assert len(weights) == 1 + 8  # 1 positive + 8 negatives
-    print(f"\n[alignment] pos_weight={weights[0]:.4f}, neg_weights={weights[1:].tolist()}")
 
 
 def test_weights_default_uniform_continuous() -> None:
-    """Test that default continuous weights (compute_sample_weights=False) are uniform."""
+    """Test that default continuous weights (compute_sample_weights=False) are
+    uniform."""
     obs = np.array([0.0, 0.0], dtype=np.float32)
     action = np.array([0.0, 0.0], dtype=np.float32)
     neg_cfg = {
@@ -93,7 +94,7 @@ def test_weights_default_uniform_continuous() -> None:
         action_mode="continuous",
         compute_sample_weights=False,  # explicitly request default behavior
     )
-    
+
     # All weights should be 1.0 when not computing cost-sensitive
     assert np.allclose(weights, 1.0)
     print(f"\n[uniform-weights] all_weights_equal_1={np.allclose(weights, 1.0)}")
@@ -119,15 +120,15 @@ def test_weights_discrete_are_uniform() -> None:
         negative_sampling=neg_cfg,
         action_mode="discrete",
     )
-    
+
     # Discrete mode returns uniform weights
     assert np.allclose(weights, 1.0)
     assert len(weights) == 1 + k
-    print(f"\n[discrete-uniform] all_weights_1={np.allclose(weights, 1.0)}, len={len(weights)}")
 
 
 def test_weights_support_cost_sensitive_continuous() -> None:
-    """Test that weights can be computed cost-sensitively in continuous mode."""
+    """Test that weights can be computed cost-sensitively in continuous
+    mode."""
     obs = np.array([0.0, 0.0], dtype=np.float32)
     action = np.array([0.0, 0.0], dtype=np.float32)  # center of grid
     neg_cfg = {
@@ -149,28 +150,29 @@ def test_weights_support_cost_sensitive_continuous() -> None:
         action_mode="continuous",
         compute_sample_weights=True,  # enable cost-sensitive weighting
     )
-    print(_pos)
-    print(_neg)
-    print(f"\n[cost-sensitive] weights={weights.tolist()}")
     # With cost-sensitive weighting, weights should vary based on distance
     # Center bucket (expert) should have weight=1.0 (beta_pos)
     # Negatives should have varying weights based on distance
     pos_weight = weights[0]
     neg_weights = weights[1:]
-    
-    assert np.isclose(pos_weight, 1.0), f"Expected positive weight ~1.0, got {pos_weight}"
+
+    assert np.isclose(
+        pos_weight, 1.0
+    ), f"Expected positive weight ~1.0, got {pos_weight}"
     assert all(w > 0.0 for w in neg_weights), "All negative weights should be positive"
-    assert not np.allclose(neg_weights, neg_weights[0]), "Negative weights should vary with distance"
-    print(f"\n[cost-sensitive] pos_weight={pos_weight:.4f}, neg_min={neg_weights.min():.4f}, neg_max={neg_weights.max():.4f}")
+    assert not np.allclose(
+        neg_weights, neg_weights[0]
+    ), "Negative weights should vary with distance"
 
 
 def test_weights_accumulate_across_trajectory() -> None:
-    """Test that weights correctly accumulate when processing multiple trajectory steps."""
+    """Test that weights correctly accumulate when processing multiple
+    trajectory steps."""
     state1 = np.array([0.0, 0.0], dtype=np.float32)
     action1 = np.array([0.0, 0.0], dtype=np.float32)
     state2 = np.array([1.0, 1.0], dtype=np.float32)
     action2 = np.array([0.5, 0.5], dtype=np.float32)
-    
+
     neg_cfg = {
         "action_low": [-1.0, -1.0],
         "action_high": [1.0, 1.0],
@@ -178,20 +180,18 @@ def test_weights_accumulate_across_trajectory() -> None:
             "bucket_counts": 3,
         },
     }
-    
+
     traj: Trajectory[np.ndarray, np.ndarray] = Trajectory(
         steps=[(state1, action1), (state2, action2)]
     )
-    
+
     pos, neg, weights = extract_examples_from_demonstration(
         traj,
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
-    
+
     # Should have 2 positives (one per step) + negatives from both steps
     assert len(pos) == 2
     assert len(neg) == 16  # 2 steps * 8 negatives per step (9 buckets - 1 positive)
     assert len(weights) == 18  # Total examples
-    
-    print(f"\n[accumulation] total_examples={len(weights)}, pos={len(pos)}, neg={len(neg)}")

@@ -32,9 +32,7 @@ def _normalize_bucket_counts(
     if np.any(counts < 3):
         raise ValueError("Each bucket count must be >= 3 to include a zero bucket.")
     if np.any(counts % 2 == 0):
-        raise ValueError(
-            "Each bucket count must be odd so zero can be its own bucket."
-        )
+        raise ValueError("Each bucket count must be odd so zero can be its own bucket.")
     return counts
 
 

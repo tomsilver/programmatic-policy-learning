@@ -636,7 +636,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         val_split_tag = (
             "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
-        X, y, examples = run_all_programs_on_demonstrations(
+        X, y, examples, _sample_weights = run_all_programs_on_demonstrations(
             self.base_class_name,
             train_demo_ids,
             programs_sa,
@@ -835,7 +835,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         X_final = X_train
         y_final = y_train
         if val_demo_ids:
-            X_val, y_val, _ = run_all_programs_on_demonstrations(
+            X_val, y_val, _, _ = run_all_programs_on_demonstrations(
                 self.base_class_name,
                 val_demo_ids,
                 list(programs_sa),
