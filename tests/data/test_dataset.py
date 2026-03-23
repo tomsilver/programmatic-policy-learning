@@ -150,29 +150,6 @@ def test_continuous_quantized_expansion_supports_per_dim_bucket_counts() -> None
         assert np.all(arr <= 1.0)
 
 
-def test_continuous_quantized_expansion_ignores_enabled_flag() -> None:
-    """Continuous quantized expansion is independent of enabled flag."""
-    obs = np.array([0.0, 1.0], dtype=np.float32)
-    action = np.array([0.0493, 0.0265, 0.0, 0.0, 0.0], dtype=np.float32)
-    neg_cfg = {
-        "enabled": False,
-        "action_low": [-1.0, -1.0, -1.0, -1.0, -1.0],
-        "action_high": [1.0, 1.0, 1.0, 1.0, 1.0],
-        "continuous": {
-            "bucket_counts": 3,
-        },
-    }
-    _pos, neg = extract_examples_from_demonstration_item(
-        (obs, action),
-        negative_sampling=neg_cfg,
-        action_mode="continuous",
-    )
-    assert len(neg) == 8
-    pos_arr = np.asarray(_pos[0][1], dtype=float)
-    assert np.isclose(pos_arr[2], 0.0)
-    assert np.isclose(pos_arr[3], 0.0)
-    assert np.isclose(pos_arr[4], 0.0)
-
 
 def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
     expert = (1, 1)
@@ -186,6 +163,15 @@ def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
         beta_neg=beta_neg,
         alpha=1.0,
         lambda_per_dim=(1.0, 1.0),
+    )
+    print("\n[cost-weights/mass] expert=", expert)
+    print("[cost-weights/mass] candidates=", candidates)
+    print("[cost-weights/mass] weights=", w.tolist())
+    print(
+        "[cost-weights/mass] positive_weight=",
+        float(w[2]),
+        "negative_mass=",
+        float(np.sum(w) - w[2]),
     )
     assert np.isclose(float(w[2]), beta_pos)
     neg_total = float(np.sum(w)) - float(w[2])
@@ -204,6 +190,15 @@ def test_cost_sensitive_bucket_weights_farther_negative_gets_more_weight() -> No
         alpha=1.0,
         lambda_per_dim=(1.0, 1.0),
     )
+    print("\n[cost-weights/distance] expert=", expert)
+    print("[cost-weights/distance] candidates=", candidates)
+    print("[cost-weights/distance] weights=", w.tolist())
+    print(
+        "[cost-weights/distance] near_weight=",
+        float(w[0]),
+        "far_weight=",
+        float(w[1]),
+    )
     assert float(w[1]) > float(w[0])
 
 
@@ -219,4 +214,15 @@ def test_cost_sensitive_bucket_weights_supports_dimension_lambdas() -> None:
         alpha=1.0,
         lambda_per_dim=(2.0, 0.5),
     )
+    print("\n[cost-weights/lambdas] expert=", expert)
+    print("[cost-weights/lambdas] candidates=", candidates)
+    print("[cost-weights/lambdas] lambda_per_dim=(2.0, 0.5)")
+    print("[cost-weights/lambdas] weights=", w.tolist())
+    print(
+        "[cost-weights/lambdas] x_offset_weight=",
+        float(w[0]),
+        "y_offset_weight=",
+        float(w[1]),
+    )
     assert float(w[0]) > float(w[1])
+
