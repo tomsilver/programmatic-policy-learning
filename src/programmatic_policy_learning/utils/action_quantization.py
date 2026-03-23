@@ -60,6 +60,7 @@ class Motion2DActionQuantizer:
         *,
         bucket_counts: int | Sequence[int] = 5,
     ) -> "Motion2DActionQuantizer":
+        """Create a quantizer from per-dimension action bounds."""
         low = _as_1d_float_array(action_low, "action_low")
         high = _as_1d_float_array(action_high, "action_high")
         if low.shape != high.shape:
@@ -79,13 +80,16 @@ class Motion2DActionQuantizer:
 
     @property
     def dims(self) -> int:
+        """Return action dimensionality."""
         return int(self.action_low.size)
 
     @property
     def zero_bucket_index_per_dim(self) -> np.ndarray:
+        """Return zero-bucket indices."""
         return self.bucket_counts // 2
 
     def _clipped_action(self, action: Sequence[float] | np.ndarray) -> np.ndarray:
+        """Clip an action to bounds."""
         arr = _as_1d_float_array(action, "action")
         if arr.size != self.dims:
             raise ValueError(
@@ -94,6 +98,7 @@ class Motion2DActionQuantizer:
         return np.clip(arr, self.action_low, self.action_high)
 
     def quantize(self, action: Sequence[float] | np.ndarray) -> tuple[int, ...]:
+        """Map an action to bucket indices."""
         arr = self._clipped_action(action)
         indices: list[int] = []
 
@@ -124,6 +129,7 @@ class Motion2DActionQuantizer:
         return tuple(indices)
 
     def dequantize(self, bucket_index: Sequence[int]) -> np.ndarray:
+        """Map bucket indices to centers."""
         bucket_arr = np.asarray(bucket_index, dtype=int).reshape(-1)
         if bucket_arr.size != self.dims:
             raise ValueError(
@@ -138,7 +144,8 @@ class Motion2DActionQuantizer:
             n_side = count // 2
             if idx < 0 or idx >= count:
                 raise ValueError(
-                    f"Bucket index out of range for dim {d}: {idx} not in [0, {count - 1}]"
+                    f"Bucket index out of range for dim {d}: "
+                    f"{idx} not in [0, {count - 1}]"
                 )
 
             if idx == n_side:
@@ -161,10 +168,12 @@ class Motion2DActionQuantizer:
         return centers
 
     def all_bucket_indices(self) -> list[tuple[int, ...]]:
+        """List all bucket index tuples."""
         return [
             tuple(idx)
             for idx in product(*(range(int(c)) for c in self.bucket_counts.tolist()))
         ]
 
     def all_bucket_centers(self) -> list[np.ndarray]:
+        """List all bucket centers."""
         return [self.dequantize(idx) for idx in self.all_bucket_indices()]

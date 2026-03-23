@@ -44,7 +44,8 @@ def create_environment_description(env: MazeEnv, description_type: str) -> str:
 
     if description_type == "maze_with_obstacles":
         return base_description + f"""
-        - There is a {env.inner_h}x{env.inner_w} inner maze with walls/obstacles (1s) that block movement.
+        - There is a {env.inner_h}x{env.inner_w} inner maze with
+          walls/obstacles (1s) that block movement.
         - The inner maze is surrounded by a wall border with a single entrance at the north.
         - The outer region (void) has no obstacles.
         - You must find the entrance, navigate through the maze avoiding walls, and reach the goal.
@@ -53,7 +54,8 @@ def create_environment_description(env: MazeEnv, description_type: str) -> str:
     """
     if description_type == "empty_inner":
         return base_description + f"""
-        - There is a {env.inner_h}x{env.inner_w} inner area that is completely open (no obstacles inside).
+        - There is a {env.inner_h}x{env.inner_w} inner area that is
+          completely open (no obstacles inside).
         - The inner area is surrounded by a wall border with a single entrance at the north.
         - The outer region (void) has no obstacles.
         - You must find the entrance, enter the inner area, and navigate to the goal.
@@ -100,8 +102,10 @@ def run_trial(
 
     # Log the generated policy
     logging.info(f"Start: {obs}, Goal: {env.goal_pos}")
-    # pylint: disable=protected-access
-    logging.info("Generated policy:\n%s", approach._policy)
+    generated_policy = getattr(approach, "policy", None)
+    if generated_policy is None:
+        generated_policy = vars(approach).get("_policy")
+    logging.info("Generated policy:\n%s", generated_policy)
 
     # Run the episode
     goal_reached = False

@@ -158,6 +158,7 @@ def test_continuous_quantized_expansion_supports_per_dim_bucket_counts() -> None
 
 
 def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
+    """Check weight mass."""
     expert = (1, 1)
     candidates = [(0, 0), (0, 1), (1, 1), (2, 1), (2, 2)]
     beta_pos = 2.0
@@ -185,6 +186,7 @@ def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
 
 
 def test_cost_sensitive_bucket_weights_farther_negative_gets_more_weight() -> None:
+    """Check distance weights."""
     expert = (1, 1)
     # idx 0: near negative (dist=1), idx 1: far negative (dist=3), idx 2: expert
     candidates = [(1, 0), (3, 0), (1, 1)]
@@ -209,6 +211,7 @@ def test_cost_sensitive_bucket_weights_farther_negative_gets_more_weight() -> No
 
 
 def test_cost_sensitive_bucket_weights_supports_dimension_lambdas() -> None:
+    """Check lambda weights."""
     expert = (1, 1)
     # Both negatives have |delta|=1 in one dimension, but lambda_x is larger.
     candidates = [(2, 1), (1, 2), (1, 1)]

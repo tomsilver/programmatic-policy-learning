@@ -117,7 +117,7 @@ def test_weights_discrete_are_uniform() -> None:
             "w_random": 0.2,
         },
     }
-    _pos, neg, weights = extract_examples_from_demonstration_item(
+    _pos, _neg, weights = extract_examples_from_demonstration_item(
         (state, action),
         negative_sampling=neg_cfg,
         action_mode="discrete",

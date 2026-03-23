@@ -527,9 +527,8 @@ def extract_examples_from_demonstration_item(
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr[
-                :2
-            ],  # TODO: currently only quantizing the first 2 dimensions for negative sampling; can be extended if needed
+            low_arr[:2],  # TODOO: Currently quantizing only the first 2 dimensions
+            # for negative sampling; can be extended if needed.
             high_arr[:2],
             bucket_counts=bucket_counts_cfg,
         )
@@ -621,7 +620,8 @@ def extract_examples_from_demonstration_item(
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
     # For discrete mode, return uniform weights (1.0 for each example)
-    # TODOO: can also pass "balanced" to dt and ignore manual weight computation here, since all negatives are equally weighted anyway
+    # TODOO: can also pass "balanced" to dt and ignore manual weight
+    # computation here, since all negatives are equally weighted anyway
     sample_weights = np.ones(1 + len(negative_examples), dtype=float)
     return positive_examples, negative_examples, sample_weights
 
@@ -825,7 +825,8 @@ def run_all_programs_on_single_demonstration(
             demo_traj,
             negative_sampling=negative_sampling,
             action_mode=action_mode,
-            compute_sample_weights=False,  # Step 2 prep: weights returned but not yet used
+            compute_sample_weights=False,  # Step 2 prep: weights returned
+            # but not yet used
         )
     )
 

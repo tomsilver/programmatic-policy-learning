@@ -73,7 +73,7 @@ def test_quantize_clips_out_of_range_values() -> None:
     )
 
     bucket = quantizer.quantize([99.0, -99.0])
-    print(f"\n[clip-out-of-range] action=[99,-99] -> bucket={bucket}")
+    print("\n[clip-out-of-range] " f"action=[99,-99] -> bucket={bucket}")
     assert bucket == (4, 0)
 
 
@@ -87,7 +87,10 @@ def test_all_bucket_indices_count() -> None:
 
     all_indices = quantizer.all_bucket_indices()
     print(
-        f"\n[all-buckets] count={len(all_indices)} first5={all_indices[:5]} last5={all_indices[-5:]}"
+        "\n[all-buckets] "
+        f"count={len(all_indices)} "
+        f"first5={all_indices[:5]} "
+        f"last5={all_indices[-5:]}"
     )
     assert len(all_indices) == 15
     assert len(set(all_indices)) == 15
