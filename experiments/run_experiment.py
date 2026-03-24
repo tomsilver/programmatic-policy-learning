@@ -200,8 +200,8 @@ def evaluate_single(
             base_class_name=cfg.env.make_kwargs.base_name,
             test_env_nums=range(11, 20),
             max_num_steps=50,
-            record_videos=False,
-            video_format="mp4",
+            record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
+            video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
         )
         logging.info(test_accuracies)
     else:
@@ -336,8 +336,8 @@ def _main(cfg: DictConfig) -> None:
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(0, 11),
                 max_num_steps=50,
-                record_videos=False,
-                video_format="mp4",
+                record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
+                video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
             )
             logging.info(train_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
@@ -347,8 +347,8 @@ def _main(cfg: DictConfig) -> None:
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(11, 20),
                 max_num_steps=50,
-                record_videos=False,
-                video_format="mp4",
+                record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
+                video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
             )
             logging.info(test_accuracies)
             # logging.info(df["total_rewards"].iloc[0])

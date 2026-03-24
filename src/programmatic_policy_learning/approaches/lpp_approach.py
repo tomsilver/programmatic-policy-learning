@@ -65,6 +65,9 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 
 _filter_constant_features = filter_constant_features
 
@@ -401,10 +404,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
         *,
+        negative_sampling_cfg: dict[str, Any] | None = None,
         train_hyperparams: Mapping[str, Any] | None = None,
         tie_break_demonstrations: Trajectory[_ObsType, _ActType] | None = None,
     ) -> LPPPolicy:
         hp = self._resolve_train_hyperparams(train_hyperparams)
+        candidate_actions = self._build_continuous_candidate_actions(
+            negative_sampling_cfg
+        )
         prior_version = str(hp["prior_version"])
         alpha = float(hp["alpha"])
         w_clauses = float(hp["w_clauses"])
@@ -515,6 +522,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
+                        candidate_actions=candidate_actions,
                     )
                     risk = self._compute_policy_risk_on_demos(
                         tie_policy, tie_break_demonstrations
@@ -554,6 +562,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
+                candidate_actions=candidate_actions,
             )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
@@ -566,6 +575,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             normalize_plp_actions=self.normalize_plp_actions,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
             action_space=cast(Any, self._action_space),
+            candidate_actions=candidate_actions,
         )
 
     def _compute_policy_risk_on_demos(
@@ -613,6 +623,48 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
             )
         return offline_path_name, negative_sampling_cfg
+
+    def _build_continuous_candidate_actions(
+        self,
+        negative_sampling_cfg: dict[str, Any] | None,
+    ) -> list[_ActType]:
+        """Build a fixed continuous action catalog from quantized bucket centers."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "continuous":
+            return []
+
+        if not hasattr(self._action_space, "low") or not hasattr(self._action_space, "high"):
+            raise ValueError(
+                "Continuous inference requires an action space with low/high bounds."
+            )
+
+        sampling_cfg = dict(negative_sampling_cfg or {})
+        cont_cfg = dict(sampling_cfg.get("continuous", {}))
+        bucket_counts_cfg = cont_cfg.get("bucket_counts", 5)
+
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(-1)
+        if low_arr.size < 2 or high_arr.size < 2:
+            raise ValueError(
+                "Continuous quantized inference requires at least 2 action dimensions."
+            )
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            low_arr[:2],
+            high_arr[:2],
+            bucket_counts=bucket_counts_cfg,
+        )
+
+        action_dtype = getattr(self._action_space, "dtype", None)
+        candidate_actions: list[_ActType] = []
+        for center in quantizer.all_bucket_centers():
+            candidate = np.zeros_like(low_arr, dtype=float)
+            candidate[:2] = center
+            candidate = np.clip(candidate, low_arr, high_arr)
+            if action_dtype is not None:
+                candidate = candidate.astype(action_dtype, copy=False)
+            candidate_actions.append(cast(_ActType, candidate))
+        return candidate_actions
 
     def _build_and_process_train_matrix(
         self,
@@ -758,6 +810,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         demonstrations_train: Trajectory[_ObsType, _ActType],
         demonstrations_val: Trajectory[_ObsType, _ActType],
         dsl_functions: dict[str, Any],
+        negative_sampling_cfg: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Select hyperparameters via validation risk.
 
@@ -797,6 +850,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 program_prior_log_probs_opt,
                 demonstrations_train,
                 dsl_functions,
+                negative_sampling_cfg=negative_sampling_cfg,
                 train_hyperparams=hp,
                 tie_break_demonstrations=demonstrations_val,
             )
@@ -992,6 +1046,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations_train=demonstrations_train,
             demonstrations_val=demonstrations_val,
             dsl_functions=dsl_functions,
+            negative_sampling_cfg=negative_sampling_cfg,
         )
         (
             X_final,
@@ -1027,6 +1082,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             final_program_priors,
             demonstrations_final,
             dsl_functions,
+            negative_sampling_cfg=negative_sampling_cfg,
             train_hyperparams=selected_hyperparams,
             tie_break_demonstrations=demonstrations_val,
         )
@@ -1040,21 +1096,35 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         video_format: str | None = "mp4",
     ) -> list[bool]:
         """Train the logical programmatic policy using demonstrations."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
         accuracies = []
         for i in test_env_nums:
             env = self.env_factory(i)
-            video_out_path = f"/tmp/lfd_{base_class_name}.{video_format}"
+            video_out_path = None
+            if record_videos and video_format is not None:
+                try:
+                    output_dir = Path(HydraConfig.get().runtime.output_dir)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    output_dir = Path.cwd()
+                video_dir = output_dir / "videos"
+                video_dir.mkdir(parents=True, exist_ok=True)
+                video_out_path = str(
+                    video_dir / f"lfd_{base_class_name}_env{i}.{video_format}"
+                )
+                logging.info("Recording test rollout for env %s to %s", i, video_out_path)
             assert self._policy is not None, "Policy must be trained before testing."
-            reward, _terminated = run_single_episode(
+            reward, terminated = run_single_episode(
                 env,
                 self._policy,
                 max_num_steps=max_num_steps,
                 record_video=record_videos,
                 video_out_path=video_out_path,
             )
-            result = reward > 0
+            if action_mode == "continuous":
+                result = bool(terminated)
+            else:
+                result = reward > 0
             accuracies.append(result)
-            env.close()
         return accuracies
 
     def _get_action(self) -> _ActType:
