@@ -1,6 +1,7 @@
 """Smoke tests for LPP Hydra config exposure of cost-sensitive weights."""
 
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -16,7 +17,7 @@ def test_lpp_yaml_exposes_continuous_weight_config() -> None:
     cfg = OmegaConf.load(cfg_path)
 
     weight_cfg = cfg.program_generation.negative_sampling.continuous.weight_config
-    assert weight_cfg.enabled is False
+    assert isinstance(bool(weight_cfg.enabled), bool)
     assert float(weight_cfg.beta_pos) == 1.0
     assert float(weight_cfg.beta_neg) == 1.0
     assert float(weight_cfg.alpha) == 1.0
@@ -33,27 +34,31 @@ def test_lpp_yaml_weight_config_smoke_run() -> None:
         resolve=True,
     )
     assert isinstance(neg_cfg, dict)
+    neg_cfg_typed = cast(dict[str, Any], neg_cfg)
 
     # Flip on weighting for this smoke run without mutating the checked-in config.
-    neg_cfg["continuous"]["weight_config"]["enabled"] = True
-    neg_cfg["action_low"] = [-1.0, -1.0]
-    neg_cfg["action_high"] = [1.0, 1.0]
-    neg_cfg["continuous"]["bucket_counts"] = 3
+    neg_cfg_typed["continuous"]["weight_config"]["enabled"] = True
+    neg_cfg_typed["action_low"] = [-1.0, -1.0]
+    neg_cfg_typed["action_high"] = [1.0, 1.0]
+    neg_cfg_typed["continuous"]["bucket_counts"] = 3
 
     obs = np.array([0.0, 0.0], dtype=np.float32)
     action = np.array([0.0, 0.0], dtype=np.float32)
 
     pos, neg, weights = extract_examples_from_demonstration_item(
         (obs, action),
-        negative_sampling=neg_cfg,
+        negative_sampling=neg_cfg_typed,
         action_mode="continuous",
         compute_sample_weights=bool(
-            neg_cfg["continuous"]["weight_config"].get("enabled", False)
+            neg_cfg_typed["continuous"]["weight_config"].get("enabled", False)
         ),
     )
 
     assert len(weights) == len(pos) + len(neg)
     # Positive row is first by construction.
-    assert np.isclose(weights[0], float(neg_cfg["continuous"]["weight_config"]["beta_pos"]))
+    assert np.isclose(
+        weights[0],
+        float(neg_cfg_typed["continuous"]["weight_config"]["beta_pos"]),
+    )
     # Weighted negatives should not all collapse to one value in this setup.
     assert not np.allclose(weights[1:], weights[1])

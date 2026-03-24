@@ -70,6 +70,9 @@ def create_kinder_env(
     kwargs = dict(env_config["make_kwargs"])
     # Remove metadata keys that are not kinder constructor arguments
     kwargs.pop("base_name", None)
+    # Some configs store null as the string "null"; normalize to Python None.
+    if kwargs.get("render_mode") == "null":
+        kwargs["render_mode"] = None
 
     # Use instance_num to create different env instances if needed
     if instance_num is not None:

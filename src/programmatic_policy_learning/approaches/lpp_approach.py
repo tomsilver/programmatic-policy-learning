@@ -1036,7 +1036,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         base_class_name: str,
         test_env_nums: Sequence[int] = range(11, 20),
         max_num_steps: int = 50,
-        record_videos: bool = True,
+        record_videos: bool = False,
         video_format: str | None = "mp4",
     ) -> list[bool]:
         """Train the logical programmatic policy using demonstrations."""
