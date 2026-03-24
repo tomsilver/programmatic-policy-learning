@@ -72,6 +72,7 @@ def _collect_full_episode_generic(
     *,
     max_steps: int = 200,
     skip_rate: int = 1,
+    reset_seed: int | None = None,
 ) -> list[tuple[Any, Any, Any]]:
     """Roll out an instantiated expert and collect sampled transitions.
 
@@ -79,7 +80,14 @@ def _collect_full_episode_generic(
     ``skip_rate``-th transition is retained. The terminal transition is always
     kept so the prompt can still see how the episode ended.
     """
-    obs, info = env.reset()
+    try:
+        reset_out = env.reset(seed=reset_seed)
+    except TypeError:
+        reset_out = env.reset()
+    if isinstance(reset_out, tuple) and len(reset_out) == 2:
+        obs, info = reset_out
+    else:
+        obs, info = reset_out, {}
     expert.reset(obs, info)
     trajectory: list[tuple[Any, Any, Any]] = []
     skip_rate = max(1, int(skip_rate))
@@ -215,11 +223,13 @@ def get_program_set(
                 raise ValueError("No expert instance provided for demo serialization.")
             for init_idx in demo_ids:
                 env_demo = env_factory(init_idx)
+                reset_seed = int(seed) * 1000 + int(init_idx)
                 traj = _collect_full_episode_generic(
                     env_demo,
                     expert,
                     max_steps=200,
                     skip_rate=demo_skip_rate,
+                    reset_seed=reset_seed,
                 )
                 env_demo.close()
                 trajectories.append(traj)
