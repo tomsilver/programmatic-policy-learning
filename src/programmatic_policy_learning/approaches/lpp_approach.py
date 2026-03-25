@@ -667,8 +667,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr[:2],
-            high_arr[:2],
+            low_arr,
+            high_arr,
             bucket_counts=bucket_counts_cfg,
         )
 
@@ -676,7 +676,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         candidate_actions: list[_ActType] = []
         for center in quantizer.all_bucket_centers():
             candidate = np.zeros_like(low_arr, dtype=float)
-            candidate[:2] = center
+            candidate = center
             candidate = np.clip(candidate, low_arr, high_arr)
             if action_dtype is not None:
                 candidate = candidate.astype(action_dtype, copy=False)
@@ -697,9 +697,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        if base.shape[0] < 2:
+        if base.shape[0] < 5:
             raise ValueError(
-                "Continuous action alignment requires at least 2 action dimensions."
+                "Continuous action alignment requires at least 5 action dimensions."
             )
 
         low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
@@ -711,14 +711,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr[:2],
-            high_arr[:2],
+            low_arr,
+            high_arr,
             bucket_counts=bucket_counts_cfg,
         )
         centered = base.copy()
-        centered[:2] = quantizer.dequantize(quantizer.quantize(base[:2]))
-        if centered.shape[0] > 2:
-            centered[2:] = 0.0
+        centered = quantizer.dequantize(quantizer.quantize(base))
+        # if centered.shape[0] > 5:
+        #     centered[5:] = 0.0
         centered = np.clip(centered, low_arr, high_arr)
 
         if isinstance(action, np.ndarray):

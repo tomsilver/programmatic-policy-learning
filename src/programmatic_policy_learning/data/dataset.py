@@ -512,10 +512,10 @@ def extract_examples_from_demonstration_item(
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        if base.shape[0] < 2:
+        if base.shape[0] < 5:
             raise ValueError(
-                "Continuous quantized expansion requires at least 2 action "
-                "dimensions (dx, dy)."
+                "Continuous quantized expansion requires at least 5 action "
+                "dimensions (dx, dy, dtetha, darm, v)."
             )
 
         low_arr = np.asarray(action_low, dtype=float)
@@ -527,20 +527,22 @@ def extract_examples_from_demonstration_item(
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr[:2],  # TODOO: Currently quantizing only the first 2 dimensions
+            low_arr,  # TODOO: Currently quantizing only the first 2 dimensions
             # for negative sampling; can be extended if needed.
-            high_arr[:2],
+            high_arr,
             bucket_counts=bucket_counts_cfg,
         )
-        expert_bucket = quantizer.quantize(base[:2])
+        expert_bucket = quantizer.quantize(base)
+
 
         quantized_expert = base.copy()
-        quantized_expert[:2] = quantizer.dequantize(expert_bucket)
-        if quantized_expert.shape[0] > 2:
-            quantized_expert[2:] = 0.0
+        quantized_expert = quantizer.dequantize(expert_bucket)
+
+        # if quantized_expert.shape[0] > 5:
+        #     quantized_expert[5:] = 0.0
         quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
         positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
-
+        print(_coerce_action_like(action, quantized_expert))
         neg_actions: list[ActT] = []
         all_buckets: list[tuple[int, ...]] = []
         for bucket in quantizer.all_bucket_indices():
@@ -548,9 +550,9 @@ def extract_examples_from_demonstration_item(
             if bucket == expert_bucket:
                 continue
             candidate = base.copy()
-            candidate[:2] = quantizer.dequantize(bucket)
-            if candidate.shape[0] > 2:
-                candidate[2:] = 0.0
+            candidate = quantizer.dequantize(bucket)
+            # if candidate.shape[0] > 5:
+            #     candidate[5:] = 0.0
             candidate = np.clip(candidate, low_arr, high_arr)
             neg_actions.append(_coerce_action_like(action, candidate))
         for neg_action in neg_actions:
@@ -576,6 +578,8 @@ def extract_examples_from_demonstration_item(
                 alpha=alpha,
                 lambda_per_dim=lambda_per_dim,
             )
+            print(sample_weights)
+            input()
         else:
             # Default uniform weights: one for positive, one per negative
             sample_weights = np.ones(1 + len(neg_actions), dtype=float)
@@ -828,7 +832,7 @@ def run_all_programs_on_single_demonstration(
         if isinstance(cont_cfg, dict):
             weight_cfg = cont_cfg.get("weight_config")
             if isinstance(weight_cfg, dict):
-                compute_sample_weights = bool(weight_cfg.get("enabled", False))
+                compute_sample_weights = bool(weight_cfg.get("enabled", True))
 
     positive_examples, negative_examples, sample_weights = (
         extract_examples_from_demonstration(

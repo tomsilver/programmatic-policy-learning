@@ -70,10 +70,10 @@ class Motion2DActionQuantizer:
             )
         if np.any(low >= high):
             raise ValueError("Each action_low must be strictly less than action_high.")
-        if np.any(low >= 0.0) or np.any(high <= 0.0):
-            raise ValueError(
-                "Each dimension must straddle zero to reserve a dedicated zero bucket."
-            )
+        # if np.any(low >= 0.0) or np.any(high <= 0.0):
+        #     raise ValueError(
+        #         "Each dimension must straddle zero to reserve a dedicated zero bucket."
+        #     )
 
         counts = _normalize_bucket_counts(bucket_counts, dims=low.size)
         return cls(action_low=low, action_high=high, bucket_counts=counts)

@@ -133,5 +133,4 @@ def create_kinder_env(
 
     type_names = _extract_type_names(env)
     action_types = _extract_action_types(env)
-    input(action_types)
     return KinderEnvWithTypes(env, type_names, action_types)

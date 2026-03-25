@@ -34,15 +34,7 @@ def collect_demo(
 
     obs_list: list[ObsT] = []
     act_list: list[ActT] = []
-    # rx, ry, r = obs[0], obs[1], obs[3]
-    # tx, ty, tw, th = obs[9], obs[10], obs[17], obs[18]
 
-    # print("robot center:", (rx, ry))
-    # print("target raw:", (tx, ty, tw, th))
-    # print("if top-left, target center:", (tx + tw/2, ty + th/2))
-    # print("success x-range:", (tx + r, tx + tw - r))
-    # print("success y-range:", (ty + r, ty + th - r))
-    # input()
     t = 0
     expert.reset(obs, info)
     while True:
