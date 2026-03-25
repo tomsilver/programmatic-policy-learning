@@ -507,7 +507,7 @@ def extract_examples_from_demonstration_item(
             )
 
         cfg_cont = dict(sampling_cfg.get("continuous", {}))
-        bucket_counts_cfg = cfg_cont.get("bucket_counts", 5)
+        bucket_counts_cfg = cfg_cont.get("bucket_counts")
 
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:

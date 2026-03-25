@@ -215,9 +215,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
     def _select_continuous_action(self, obs: _ObsType) -> Any:
         """Pick a continuous action by scoring a fixed candidate catalog."""
         if not self.candidate_actions:
-            raise ValueError(
-                "candidate_actions is required for continuous LPPPolicy."
-            )
+            raise ValueError("candidate_actions is required for continuous LPPPolicy.")
 
         candidates = list(self.candidate_actions)
         if not candidates:

@@ -27,6 +27,9 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 
 @dataclass
 class SmokeRunOutput:
+    """Structured output from a single smoke run for easy comparison across
+    runs and debugging if needed."""
+
     X: Any
     y: np.ndarray
     sample_weights: np.ndarray

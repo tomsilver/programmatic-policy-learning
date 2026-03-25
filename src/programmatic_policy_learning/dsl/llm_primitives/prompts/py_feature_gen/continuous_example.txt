@@ -20,8 +20,15 @@ ${DEMONSTRATION_DATA}
 
 
 Task:
-Propose a diverse set of boolean features f(s, a) that help distinguish good expert actions from alternatives.
-Include features that can generalize across episodes. At least generate 50 features.
+Propose a diverse set of boolean features `f(s, a)` for distinguishing expert actions from alternative candidate actions.
+
+The features should:
+- generalize across episodes,
+- capture reusable structure in the relationship between state and action,
+- be useful for separating good and bad candidate actions,
+- avoid depending on exact coordinates or episode-specific values.
+
+Return at least 50 features.
 
 Output:
 Return only valid JSON:
@@ -38,5 +45,12 @@ Rules:
 - No markdown.
 - No commentary.
 - No imports.
-- Each feature returns True/False.
-- Treat s and a as raw arrays only; access them only with numeric indices from the field guide.
+- Each feature must return True or False.
+- Treat `s` and `a` as raw arrays only.
+- Access them only with numeric indices from the field guide.
+- Each feature must be a standalone function.
+- Prefer relational and reusable features over brittle or highly specific ones.
+- Use as few arbitrary numeric constants as possible.
+- Avoid near-duplicate features.
+- Avoid trivial features that are almost always true or almost always false.
+- Avoid features that only restate a single action component threshold without relating it to the state.

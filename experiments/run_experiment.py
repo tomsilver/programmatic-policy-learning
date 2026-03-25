@@ -200,7 +200,9 @@ def evaluate_single(
             base_class_name=cfg.env.make_kwargs.base_name,
             test_env_nums=range(11, 20),
             max_num_steps=50,
-            record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
+            record_videos=bool(
+                OmegaConf.select(cfg, "eval.record_videos", default=False)
+            ),
             video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
         )
         logging.info(test_accuracies)
@@ -335,9 +337,13 @@ def _main(cfg: DictConfig) -> None:
             train_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(0, 11),
-                max_num_steps=50,
-                record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
-                video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
+                max_num_steps=1000,
+                record_videos=bool(
+                    OmegaConf.select(cfg, "eval.record_videos", default=False)
+                ),
+                video_format=str(
+                    OmegaConf.select(cfg, "eval.video_format", default="mp4")
+                ),
             )
             logging.info(train_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
@@ -346,9 +352,13 @@ def _main(cfg: DictConfig) -> None:
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(11, 20),
-                max_num_steps=50,
-                record_videos=bool(OmegaConf.select(cfg, "eval.record_videos", default=False)),
-                video_format=str(OmegaConf.select(cfg, "eval.video_format", default="mp4")),
+                max_num_steps=1000,
+                record_videos=bool(
+                    OmegaConf.select(cfg, "eval.record_videos", default=False)
+                ),
+                video_format=str(
+                    OmegaConf.select(cfg, "eval.video_format", default="mp4")
+                ),
             )
             logging.info(test_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
@@ -376,10 +386,12 @@ def _run_single_episode_evaluation(
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
         env.render()
+        
         assert not truncated
         approach.update(obs, reward, done, info)
         total_rewards += reward
         if done:
+            print(f"Episode finished after {total_steps + 1} steps with max step {max_eval_steps:.4f}")
             break
         total_steps += 1
     return {"total_rewards": total_rewards, "total_steps": total_steps}

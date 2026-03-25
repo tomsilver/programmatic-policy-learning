@@ -15,7 +15,7 @@ expert_policy: ${hydra:runtime.choices.expert}
 name_of_removed_func: "shifted" 
 eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   mode: 0
-  record_videos: false
+  record_videos: true
   video_format: mp4
   seeds: ${range:0,20}
   dsl_variants:

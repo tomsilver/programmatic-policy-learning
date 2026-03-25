@@ -180,6 +180,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.hyperparam_grid = (
             dict(hyperparam_grid) if isinstance(hyperparam_grid, Mapping) else None
         )
+        self._negative_sampling_cfg: dict[str, Any] | None = None
 
     def _default_train_hyperparams(self) -> dict[str, Any]:
         return {
@@ -481,14 +482,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         logging.info("LEN AFTER FILTERING FALSE=%d", len(plps))
 
-        valid_plps = log_plp_violation_counts(plps, demonstrations, dsl_functions)
+        aligned_demonstrations = self._align_demonstrations_for_continuous_scoring(
+            demonstrations
+        )
+        valid_plps = log_plp_violation_counts(
+            plps, aligned_demonstrations, dsl_functions
+        )
         logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
         plps = valid_plps
 
         likelihoods = compute_likelihood_plps(
             plps,
-            demonstrations,
+            aligned_demonstrations,
             dsl_functions,
+            candidate_actions=candidate_actions,
         )
         logging.info("LIKELIHOODS: %s", likelihoods)
         logging.info("PRIORS: %s", plp_priors)
@@ -588,8 +595,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """Compute empirical validation risk: mean NLL of expert actions."""
         if len(demonstrations.steps) == 0:
             return float("inf")
+        aligned_demonstrations = self._align_demonstrations_for_continuous_scoring(
+            demonstrations
+        )
         losses: list[float] = []
-        for obs, action in demonstrations.steps:
+        for obs, action in aligned_demonstrations.steps:
             prob = float(policy.get_action_prob(obs, action))
             losses.append(-float(np.log(max(prob, eps))))
         return float(np.mean(losses))
@@ -628,22 +638,29 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self,
         negative_sampling_cfg: dict[str, Any] | None,
     ) -> list[_ActType]:
-        """Build a fixed continuous action catalog from quantized bucket centers."""
+        """Build a fixed continuous action catalog from quantized bucket
+        centers."""
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if action_mode != "continuous":
             return []
 
-        if not hasattr(self._action_space, "low") or not hasattr(self._action_space, "high"):
+        if not hasattr(self._action_space, "low") or not hasattr(
+            self._action_space, "high"
+        ):
             raise ValueError(
                 "Continuous inference requires an action space with low/high bounds."
             )
 
         sampling_cfg = dict(negative_sampling_cfg or {})
         cont_cfg = dict(sampling_cfg.get("continuous", {}))
-        bucket_counts_cfg = cont_cfg.get("bucket_counts", 5)
+        bucket_counts_cfg = cont_cfg.get("bucket_counts")
 
-        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
-        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(-1)
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
+            -1
+        )
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
+            -1
+        )
         if low_arr.size < 2 or high_arr.size < 2:
             raise ValueError(
                 "Continuous quantized inference requires at least 2 action dimensions."
@@ -665,6 +682,67 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 candidate = candidate.astype(action_dtype, copy=False)
             candidate_actions.append(cast(_ActType, candidate))
         return candidate_actions
+
+    def _center_continuous_action_for_scoring(self, action: _ActType) -> _ActType:
+        """Map a continuous action to the quantized bucket-center representation."""
+        if not hasattr(self._action_space, "low") or not hasattr(self._action_space, "high"):
+            raise ValueError(
+                "Continuous action alignment requires an action space with low/high bounds."
+            )
+
+        sampling_cfg = dict(self._negative_sampling_cfg or {})
+        cont_cfg = dict(sampling_cfg.get("continuous", {}))
+        bucket_counts_cfg = cont_cfg.get("bucket_counts")
+
+        base = np.asarray(action, dtype=float)
+        if base.ndim == 0:
+            base = base.reshape(1)
+        if base.shape[0] < 2:
+            raise ValueError(
+                "Continuous action alignment requires at least 2 action dimensions."
+            )
+
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(-1)
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch during scoring alignment: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            low_arr[:2],
+            high_arr[:2],
+            bucket_counts=bucket_counts_cfg,
+        )
+        centered = base.copy()
+        centered[:2] = quantizer.dequantize(quantizer.quantize(base[:2]))
+        if centered.shape[0] > 2:
+            centered[2:] = 0.0
+        centered = np.clip(centered, low_arr, high_arr)
+
+        if isinstance(action, np.ndarray):
+            return cast(_ActType, centered.astype(action.dtype, copy=False))
+        if isinstance(action, tuple):
+            return cast(_ActType, tuple(float(x) for x in centered.tolist()))
+        if isinstance(action, list):
+            return cast(_ActType, [float(x) for x in centered.tolist()])
+        return cast(_ActType, centered)
+
+    def _align_demonstrations_for_continuous_scoring(
+        self,
+        demonstrations: Trajectory[_ObsType, _ActType],
+    ) -> Trajectory[_ObsType, _ActType]:
+        """Use bucket-center demo actions so scoring matches training/inference."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "continuous":
+            return demonstrations
+
+        aligned_steps = [
+            (obs, self._center_continuous_action_for_scoring(action))
+            for obs, action in demonstrations.steps
+        ]
+        return Trajectory(steps=aligned_steps)
 
     def _build_and_process_train_matrix(
         self,
@@ -710,6 +788,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             seed=self.seed_num,
             action_mode=action_mode,
         )
+        
         if X is None or y is None:
             raise ValueError(
                 "Train matrix is invalid. Ensure program execution results are valid."
@@ -723,6 +802,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         all_one = np.where(col_nnz == X.shape[0])[0]
         logging.info("#all-zero features=%d indices=%s", len(all_zero), all_zero[:30])
         logging.info("#all-one features=%d indices=%s", len(all_one), all_one[:30])
+        
 
         collision_groups = log_feature_collisions(X, y, examples)
         if self.collision_feedback_enabled and examples is not None:
@@ -967,6 +1047,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         """Train the logical programmatic policy using demonstrations."""
         outer_feedback = None
         offline_path_name, negative_sampling_cfg = self._get_data_loading_config()
+        self._negative_sampling_cfg = negative_sampling_cfg
 
         split_result: tuple[
             tuple[int, ...],
@@ -1111,7 +1192,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 video_out_path = str(
                     video_dir / f"lfd_{base_class_name}_env{i}.{video_format}"
                 )
-                logging.info("Recording test rollout for env %s to %s", i, video_out_path)
+                logging.info(
+                    "Recording test rollout for env %s to %s", i, video_out_path
+                )
             assert self._policy is not None, "Policy must be trained before testing."
             reward, terminated = run_single_episode(
                 env,
