@@ -527,8 +527,7 @@ def extract_examples_from_demonstration_item(
             )
 
         quantizer = Motion2DActionQuantizer.from_bounds(
-            low_arr,  # TODOO: Currently quantizing only the first 2 dimensions
-            # for negative sampling; can be extended if needed.
+            low_arr,
             high_arr,
             bucket_counts=bucket_counts_cfg,
         )
@@ -578,8 +577,6 @@ def extract_examples_from_demonstration_item(
                 alpha=alpha,
                 lambda_per_dim=lambda_per_dim,
             )
-            print(sample_weights)
-            input()
         else:
             # Default uniform weights: one for positive, one per negative
             sample_weights = np.ones(1 + len(neg_actions), dtype=float)
@@ -673,6 +670,11 @@ def extract_examples_from_demonstration(
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
+        # print(demo_positive_examples)
+        # input("POS")
+        # print(demo_negative_examples)
+        # input("NEG")
+        # print("DONE/next")
         if demo_weights.shape[0] != (
             len(demo_positive_examples) + len(demo_negative_examples)
         ):

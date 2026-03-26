@@ -3,7 +3,7 @@ You are generating boolean feature functions for a continuous KinDER environment
 Environment:
 - Task is KinDER Motion2D-p0:
   - A robot moves in a continuous 2D plane.
-  - Action is a continuous 2D control vector.
+  - Action is a continuous 5D control vector.
   - The goal is to reach a target region.
   - `p0` means no narrow passages/obstacles; this is the simplest open-layout case.
 - Observation s is continuous state (numeric values).
@@ -53,4 +53,3 @@ Rules:
 - Use as few arbitrary numeric constants as possible.
 - Avoid near-duplicate features.
 - Avoid trivial features that are almost always true or almost always false.
-- Avoid features that only restate a single action component threshold without relating it to the state.

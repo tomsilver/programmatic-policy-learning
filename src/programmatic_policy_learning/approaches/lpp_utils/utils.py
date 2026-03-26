@@ -317,10 +317,118 @@ def log_feature_collisions(
                 cur_idx,
                 labels[cur_idx],
             )
-        return group_collision_indices(collisions, labels)
+            if _examples is not None:
+                try:
+                    prev_example = _examples[prev_idx]
+                    cur_example = _examples[cur_idx]
+                    logging.info("  row %d example: %s", prev_idx, prev_example)
+                    logging.info("  row %d example: %s", cur_idx, cur_example)
+                except (IndexError, TypeError):
+                    logging.info(
+                        "  Example payload unavailable for rows %d and %d.",
+                        prev_idx,
+                        cur_idx,
+                    )
+        grouped = group_collision_indices(collisions, labels)
+        if grouped:
+            top_group = max(grouped, key=lambda g: int(g["max_occur"]))
+            logging.info(
+                "Top collision group: pos=%d neg=%d max_occur=%d",
+                len(top_group["pos"]),
+                len(top_group["neg"]),
+                int(top_group["max_occur"]),
+            )
+        return grouped
 
     logging.info("No feature collisions found.")
     return []
+
+
+def log_exact_example_label_contradictions(
+    examples: list[tuple[ObsT, ActT]] | None,
+    y: np.ndarray | None,
+) -> list[dict[str, Any]]:
+    """Log exact duplicate (state, action) examples with conflicting labels."""
+    if examples is None or y is None:
+        logging.info("Exact example contradiction check skipped: examples or y is None.")
+        return []
+    if len(examples) == 0:
+        logging.info("Exact example contradiction check skipped: no examples.")
+        return []
+
+    labels = y.astype(int).flatten().tolist()
+    if len(labels) != len(examples):
+        logging.info(
+            "Exact example contradiction check skipped: labels/examples length mismatch (%d vs %d).",
+            len(labels),
+            len(examples),
+        )
+        return []
+
+    def _to_hashable_bytes(value: Any) -> bytes:
+        if isinstance(value, np.ndarray):
+            arr = np.ascontiguousarray(value)
+            return b"np|" + str(arr.dtype).encode("utf-8") + b"|" + str(arr.shape).encode(
+                "utf-8"
+            ) + b"|" + arr.tobytes()
+        if isinstance(value, tuple):
+            return b"tuple|" + b"|".join(_to_hashable_bytes(v) for v in value)
+        if isinstance(value, list):
+            return b"list|" + b"|".join(_to_hashable_bytes(v) for v in value)
+        return repr(value).encode("utf-8")
+
+    grouped: dict[bytes, dict[str, Any]] = {}
+    for idx, ((state, action), label) in enumerate(zip(examples, labels)):
+        key = _to_hashable_bytes(state) + b"||" + _to_hashable_bytes(action)
+        entry = grouped.setdefault(
+            key,
+            {
+                "example": (state, action),
+                "pos": [],
+                "neg": [],
+            },
+        )
+        if label == 1:
+            entry["pos"].append(idx)
+        else:
+            entry["neg"].append(idx)
+
+    contradictions = [
+        {
+            "example": entry["example"],
+            "pos": entry["pos"],
+            "neg": entry["neg"],
+            "max_occur": max(len(entry["pos"]), len(entry["neg"])),
+        }
+        for entry in grouped.values()
+        if entry["pos"] and entry["neg"]
+    ]
+
+    if not contradictions:
+        logging.info("No exact (state, action) label contradictions found.")
+        return []
+
+    logging.info(
+        "Exact (state, action) label contradictions found: %d groups",
+        len(contradictions),
+    )
+    for contradiction in contradictions[:10]:
+        logging.info(
+            "Exact contradiction: pos=%d neg=%d max_occur=%d",
+            len(contradiction["pos"]),
+            len(contradiction["neg"]),
+            int(contradiction["max_occur"]),
+        )
+        logging.info("  example: %s", contradiction["example"])
+
+    top_group = max(contradictions, key=lambda g: int(g["max_occur"]))
+    logging.info(
+        "Top exact contradiction group: pos=%d neg=%d max_occur=%d",
+        len(top_group["pos"]),
+        len(top_group["neg"]),
+        int(top_group["max_occur"]),
+    )
+    return contradictions
 
 
 def group_collision_indices(

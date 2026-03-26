@@ -48,6 +48,7 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     assert_features_fire,
     build_collision_repair_prompt,
     gini_gain_per_feature,
+    log_exact_example_label_contradictions,
     log_feature_collisions,
     log_plp_violation_counts,
     run_single_episode,
@@ -795,6 +796,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
 
         logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
+        log_exact_example_label_contradictions(examples, y)
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
             _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
         )
