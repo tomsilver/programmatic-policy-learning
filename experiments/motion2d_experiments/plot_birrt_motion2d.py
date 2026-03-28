@@ -142,11 +142,14 @@ def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -
             fontsize=10,
             fontweight="bold",
         )
+    n_seeds = len(all_results)
     ax.set_ylim(0, 118)
     ax.set_xlabel("Number of Passages")
     ax.set_ylabel("Success Rate (\\%)")
     ax.set_title("BiRRT Planning Success Rate on Motion2D Environment")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
+            ha="right", va="top", fontsize=9, color="gray")
     fig.tight_layout()
     out = PLOTS_DIR / "success_rate.png"
     fig.savefig(out, dpi=300, bbox_inches="tight")
@@ -189,10 +192,13 @@ def plot_avg_steps(all_results: dict[int, list[dict]], passages: list[int]) -> N
         )
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
+    n_seeds = len(all_results)
     ax.set_xlabel("Number of Passages")
     ax.set_ylabel("Steps to Goal (solved trials only)")
     ax.set_title("BiRRT Steps to Goal on Motion2D Environment")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
+            ha="right", va="top", fontsize=9, color="gray")
     fig.tight_layout()
     out = PLOTS_DIR / "avg_steps.png"
     fig.savefig(out, dpi=300, bbox_inches="tight")
@@ -259,11 +265,14 @@ def plot_planning_cost(all_results: dict[int, list[dict]], passages: list[int]) 
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
+    n_seeds = len(all_results)
     ax.set_xlabel("Number of Passages")
     ax.set_ylabel("Count (mean $\\pm$ std across seeds)")
     ax.set_title("BiRRT Planning Cost on Motion2D Environment")
     ax.legend(framealpha=0.9)
     ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
+            ha="right", va="top", fontsize=9, color="gray")
     ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     fig.tight_layout()
     out = PLOTS_DIR / "planning_cost.png"

@@ -26,7 +26,7 @@ from programmatic_policy_learning.approaches.motion2d_birrt_approach import (
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
 SEEDS = list(range(5))
-PASSAGES = [1, 2, 3, 4, 5, 7]
+PASSAGES = [0, 1, 3, 5, 7]
 MAX_STEPS = 1000
 NUM_ATTEMPTS = 20
 NUM_ITERS = 500
