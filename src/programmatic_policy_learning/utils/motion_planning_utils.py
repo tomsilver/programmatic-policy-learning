@@ -7,7 +7,7 @@ just the path.  The kindergarden package is kept untouched so that ongoing
 experiments are not affected.
 """
 
-from typing import Iterable
+from typing import Any, Iterable
 
 import numpy as np
 from kinder.envs.kinematic2d.structs import MultiBody2D, SE2Pose
@@ -17,7 +17,12 @@ from kinder.envs.kinematic2d.utils import (
     snap_suctioned_objects,
 )
 from kinder.envs.utils import get_se2_pose, state_2d_has_collision
-from prpl_utils.motion_planning import BiRRT, MotionPlanningMetrics
+from prpl_utils.motion_planning import BiRRT
+
+try:
+    from prpl_utils.motion_planning import MotionPlanningMetrics
+except ImportError:
+    MotionPlanningMetrics = None  # type: ignore[assignment,misc]
 from prpl_utils.utils import get_signed_angle_distance, wrap_angle
 from relational_structs import Array, Object, ObjectCentricState
 
@@ -32,7 +37,7 @@ def run_motion_planning_for_crv_robot(
     num_attempts: int = 10,
     num_iters: int = 100,
     smooth_amt: int = 50,
-) -> tuple[list[SE2Pose] | None, MotionPlanningMetrics]:
+) -> tuple[list[SE2Pose] | None, Any]:
     """Run BiRRT motion planning for a CRV robot and return the pose plan and
     metrics.
 
@@ -147,7 +152,20 @@ def run_motion_planning_for_crv_robot(
     )
 
     initial_pose = get_se2_pose(state, robot)
-    pose_plan, metrics = birrt.query(initial_pose, target_pose)
+    result = birrt.query(initial_pose, target_pose)
+
+    # prpl-utils >= 0.0.5 (local) returns (path, MotionPlanningMetrics).
+    # prpl-utils == 0.1.0 (PyPI/git) returns path | None directly.
+    if isinstance(result, tuple):
+        pose_plan, metrics = result
+    else:
+        pose_plan = result
+        try:
+            from prpl_utils.motion_planning import MotionPlanningMetrics
+            metrics = MotionPlanningMetrics()
+        except ImportError:
+            metrics = None
+
     return pose_plan, metrics
 
 
