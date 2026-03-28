@@ -37,8 +37,8 @@ mpl.rcParams.update(
     }
 )
 
-RESULTS_DIR = Path("experiments/motion2d_experiments/results")
-PLOTS_DIR = Path("experiments/motion2d_experiments/plots")
+RESULTS_DIR = Path("experiments/motion2d_experiments/results/birrt")
+PLOTS_DIR = Path("experiments/motion2d_experiments/plots/birrt")
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 SEEDS = list(range(10))
@@ -140,7 +140,7 @@ def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -
         ax.text(
             rect.get_x() + rect.get_width() / 2,
             val + 1.5,
-            f"{val:.0f}\\%",
+            f"{val:.0f}%",
             ha="center",
             va="bottom",
             fontsize=10,
@@ -149,7 +149,7 @@ def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -
     n_seeds = len(all_results)
     ax.set_ylim(0, 118)
     ax.set_xlabel("Number of Passages")
-    ax.set_ylabel("Success Rate (\\%)")
+    ax.set_ylabel("Success Rate (%)")
     ax.set_title("BiRRT Planning Success Rate on Motion2D Environment")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
     ax.text(
