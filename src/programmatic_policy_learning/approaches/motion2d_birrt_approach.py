@@ -1,8 +1,9 @@
 """An approach that uses BiRRT motion planning for the Motion2D environment."""
 
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import numpy as np
+from kinder.envs.kinematic2d.utils import CRVRobotActionSpace
 from numpy.typing import NDArray
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
@@ -83,9 +84,11 @@ class Motion2DBiRRTApproach(BaseApproach[Obs, Act]):
 
     def _generate_plan(self, obs: Obs) -> tuple[list[Act], Any]:
         """Run BiRRT and return (action_plan, metrics)."""
+        # pylint: disable=import-outside-toplevel
         from kinder.envs.kinematic2d.object_types import CRVRobotType
         from kinder.envs.kinematic2d.structs import SE2Pose
 
+        action_space = cast(CRVRobotActionSpace, self._action_space)
         state = self._get_object_centric_state(obs)
 
         robots = state.get_objects(CRVRobotType)
@@ -102,7 +105,7 @@ class Motion2DBiRRTApproach(BaseApproach[Obs, Act]):
             state,
             robot,
             target_pose,
-            self._action_space,
+            action_space,
             seed=self._seed,
             num_attempts=self._num_attempts,
             num_iters=self._num_iters,
@@ -113,6 +116,6 @@ class Motion2DBiRRTApproach(BaseApproach[Obs, Act]):
             return [], metrics
 
         return (
-            list(crv_pose_plan_to_action_plan(pose_plan, self._action_space)),
+            list(crv_pose_plan_to_action_plan(pose_plan, action_space)),
             metrics,
         )

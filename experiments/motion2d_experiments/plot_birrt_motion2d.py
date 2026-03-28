@@ -75,9 +75,10 @@ def _parse_seed_file(seed: int) -> list[dict]:
 
 
 def load_all_results() -> tuple[dict[int, list[dict]], list[int]]:
+    """Load all per-seed result files and return results with inferred
+    passages."""
     available_seeds = sorted(
-        int(p.stem.split("_")[1])
-        for p in RESULTS_DIR.glob("seed_*.txt")
+        int(p.stem.split("_")[1]) for p in RESULTS_DIR.glob("seed_*.txt")
     )
     all_results = {seed: _parse_seed_file(seed) for seed in available_seeds}
     # Infer passage counts from what's actually in the data.
@@ -112,7 +113,9 @@ def _per_passage(
     return means, stds
 
 
-def _success_rate(all_results: dict[int, list[dict]], passages: list[int]) -> list[float]:
+def _success_rate(
+    all_results: dict[int, list[dict]], passages: list[int]
+) -> list[float]:
     flat = [r for rs in all_results.values() for r in rs]
     rates = []
     for p in passages:
@@ -127,14 +130,15 @@ def _success_rate(all_results: dict[int, list[dict]], passages: list[int]) -> li
 
 
 def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -> None:
+    """Plot success rate bar chart across passage counts."""
     rates = _success_rate(all_results, passages)
     labels = [str(p) for p in passages]
     colors = [_COLORS[i % len(_COLORS)] for i in range(len(passages))]
     fig, ax = plt.subplots(figsize=(max(5, len(passages) * 1.2), 4))
     bars = ax.bar(labels, rates, color=colors, edgecolor="white", width=0.5)
-    for bar, val in zip(bars, rates):
+    for rect, val in zip(bars, rates):
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
+            rect.get_x() + rect.get_width() / 2,
             val + 1.5,
             f"{val:.0f}\\%",
             ha="center",
@@ -148,8 +152,16 @@ def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -
     ax.set_ylabel("Success Rate (\\%)")
     ax.set_title("BiRRT Planning Success Rate on Motion2D Environment")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
-    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
-            ha="right", va="top", fontsize=9, color="gray")
+    ax.text(
+        0.98,
+        0.97,
+        f"$n={n_seeds}$ seeds",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        color="gray",
+    )
     fig.tight_layout()
     out = PLOTS_DIR / "success_rate.png"
     fig.savefig(out, dpi=300, bbox_inches="tight")
@@ -163,6 +175,8 @@ def plot_success_rate(all_results: dict[int, list[dict]], passages: list[int]) -
 
 
 def plot_avg_steps(all_results: dict[int, list[dict]], passages: list[int]) -> None:
+    """Plot average steps bar chart (solved trials only) across passage
+    counts."""
     means, stds = _per_passage(all_results, passages, "total_steps", only_solved=True)
     labels = [str(p) for p in passages]
     colors = [_COLORS[i % len(_COLORS)] for i in range(len(passages))]
@@ -180,9 +194,9 @@ def plot_avg_steps(all_results: dict[int, list[dict]], passages: list[int]) -> N
     )
     top = max(m + s for m, s in zip(means, stds)) if means else 1
     ax.set_ylim(0, top * 1.25)
-    for bar, val, std in zip(bars, means, stds):
+    for rect, val, std in zip(bars, means, stds):
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
+            rect.get_x() + rect.get_width() / 2,
             val + std + top * 0.03,
             f"{val:.0f}",
             ha="center",
@@ -197,8 +211,16 @@ def plot_avg_steps(all_results: dict[int, list[dict]], passages: list[int]) -> N
     ax.set_ylabel("Steps to Goal (solved trials only)")
     ax.set_title("BiRRT Steps to Goal on Motion2D Environment")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
-    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
-            ha="right", va="top", fontsize=9, color="gray")
+    ax.text(
+        0.98,
+        0.97,
+        f"$n={n_seeds}$ seeds",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        color="gray",
+    )
     fig.tight_layout()
     out = PLOTS_DIR / "avg_steps.png"
     fig.savefig(out, dpi=300, bbox_inches="tight")
@@ -212,6 +234,8 @@ def plot_avg_steps(all_results: dict[int, list[dict]], passages: list[int]) -> N
 
 
 def plot_planning_cost(all_results: dict[int, list[dict]], passages: list[int]) -> None:
+    """Plot BiRRT planning cost (collision checks and nodes) across passage
+    counts."""
     coll_means, coll_stds = _per_passage(all_results, passages, "num_collision_checks")
     node_means, node_stds = _per_passage(all_results, passages, "num_nodes_extended")
     labels = [str(p) for p in passages]
@@ -242,8 +266,9 @@ def plot_planning_cost(all_results: dict[int, list[dict]], passages: list[int]) 
         error_kw=err_kw,
     )
 
-    all_tops = [m + s for m, s in zip(coll_means, coll_stds)] + \
-               [m + s for m, s in zip(node_means, node_stds)]
+    all_tops = [m + s for m, s in zip(coll_means, coll_stds)] + [
+        m + s for m, s in zip(node_means, node_stds)
+    ]
     top = max(all_tops) if all_tops else 1
     ax.set_ylim(0, top * 1.25)
     label_offset = top * 0.02
@@ -252,9 +277,9 @@ def plot_planning_cost(all_results: dict[int, list[dict]], passages: list[int]) 
         (coll_means, coll_stds, bars1),
         (node_means, node_stds, bars2),
     ]:
-        for bar, val, std in zip(bars, ms, ss):
+        for rect, val, std in zip(bars, ms, ss):
             ax.text(
-                bar.get_x() + bar.get_width() / 2,
+                rect.get_x() + rect.get_width() / 2,
                 val + std + label_offset,
                 f"{val:,.0f}",
                 ha="center",
@@ -271,8 +296,16 @@ def plot_planning_cost(all_results: dict[int, list[dict]], passages: list[int]) 
     ax.set_title("BiRRT Planning Cost on Motion2D Environment")
     ax.legend(framealpha=0.9)
     ax.grid(axis="y", alpha=0.25, linestyle="--")
-    ax.text(0.98, 0.97, f"$n={n_seeds}$ seeds", transform=ax.transAxes,
-            ha="right", va="top", fontsize=9, color="gray")
+    ax.text(
+        0.98,
+        0.97,
+        f"$n={n_seeds}$ seeds",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        color="gray",
+    )
     ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     fig.tight_layout()
     out = PLOTS_DIR / "planning_cost.png"
@@ -293,13 +326,13 @@ def plot_seed_heatmap(all_results: dict[int, list[dict]], passages: list[int]) -
     matrix = np.zeros((len(seeds), len(passages)), dtype=int)
     for si, seed in enumerate(seeds):
         for pi, p in enumerate(passages):
-            row = next(
-                (r for r in all_results[seed] if r["passages"] == p), None
-            )
+            row = next((r for r in all_results[seed] if r["passages"] == p), None)
             if row and row["goal_reached"]:
                 matrix[si, pi] = 1
 
-    fig, ax = plt.subplots(figsize=(max(4, len(passages) * 0.9), max(3, len(seeds) * 0.6)))
+    fig, ax = plt.subplots(
+        figsize=(max(4, len(passages) * 0.9), max(3, len(seeds) * 0.6))
+    )
     ax.imshow(matrix, cmap="RdYlGn", vmin=0, vmax=1, aspect="auto")
 
     ax.set_xticks(range(len(passages)))
@@ -313,9 +346,14 @@ def plot_seed_heatmap(all_results: dict[int, list[dict]], passages: list[int]) -
         for pi in range(len(passages)):
             label = "Y" if matrix[si, pi] else "N"
             ax.text(
-                pi, si, label,
-                ha="center", va="center", fontsize=11,
-                fontweight="bold", color="black",
+                pi,
+                si,
+                label,
+                ha="center",
+                va="center",
+                fontsize=11,
+                fontweight="bold",
+                color="black",
             )
 
     fig.tight_layout()
@@ -331,6 +369,7 @@ def plot_seed_heatmap(all_results: dict[int, list[dict]], passages: list[int]) -
 
 
 def main() -> None:
+    """Load BiRRT results and generate all summary plots."""
     if not RESULTS_DIR.exists():
         raise FileNotFoundError(
             f"Results directory not found: {RESULTS_DIR}\n"

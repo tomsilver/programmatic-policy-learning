@@ -1,5 +1,7 @@
 """Tests for motion2d_birrt_approach.py."""
 
+# pylint: disable=redefined-outer-name,protected-access
+
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -46,10 +48,11 @@ def _get_oc_state(inner_env: Any, obs: Any) -> Any:
 
 @pytest.fixture()
 def p1_env() -> Iterator[tuple[gym.Env, np.ndarray, dict]]:
+    """Create a 1-passage Motion2D environment, reset it, and yield."""
     env = _make_env(_MOTION2D_P1)
     obs, info = env.reset(seed=42)
     yield env, obs, info
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +175,7 @@ def test_reset_clears_previous_plan() -> None:
     assert (
         approach.metrics is not old_metrics
     ), "Metrics should be refreshed after reset"
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +212,7 @@ def test_birrt_reaches_goal_p1() -> None:
             break
 
     assert goal_reached, "BiRRT did not reach the target within 1000 steps (p1)"
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
 
 def test_birrt_reaches_goal_p2() -> None:
@@ -241,7 +244,7 @@ def test_birrt_reaches_goal_p2() -> None:
             break
 
     assert goal_reached, "BiRRT did not reach the target within 1500 steps (p2)"
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +255,7 @@ runvisual = pytest.mark.skipif("not config.getoption('--runvisual')")
 
 
 def _save_video(frames: list[np.ndarray], path: Path, fps: int = 20) -> None:
+    # pylint: disable=import-outside-toplevel
     from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
 
     clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
@@ -300,7 +304,7 @@ def test_birrt_render_and_metrics(passages: int, seed: int) -> None:
     goal_reached = False
 
     for step in range(1000):
-        frame = env.render()
+        frame: np.ndarray | list[np.ndarray] | None = env.render()
         if frame is not None:
             frames.append(np.asarray(frame))
 
@@ -317,7 +321,7 @@ def test_birrt_render_and_metrics(passages: int, seed: int) -> None:
             goal_reached = True
             break
 
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
     print()
     print("=" * 50)

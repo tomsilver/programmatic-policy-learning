@@ -14,6 +14,7 @@ Usage::
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 
 import kinder
 import numpy as np
@@ -52,12 +53,15 @@ def _register_envs() -> None:
             )
 
 
-def _get_oc_state(inner_env, obs):
+def _get_oc_state(inner_env: Any, obs: Any) -> Any:
+    """Return ObjectCentricState for obs by setting state on the inner env."""
     inner_env.set_state(obs)
     return inner_env._object_centric_env.get_state()  # pylint: disable=protected-access
 
 
 def _save_video(frames: list[np.ndarray], path: Path, fps: int = 20) -> None:
+    """Save frames as an MP4 video file."""
+    # pylint: disable=import-outside-toplevel
     from moviepy import ImageSequenceClip  # type: ignore[import-untyped]
 
     clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
@@ -96,7 +100,7 @@ def run_trial(passages: int, seed: int, save_video: bool = False) -> dict:
 
     for step in range(MAX_STEPS):
         if save_video:
-            frame = env.render()
+            frame: np.ndarray | list[np.ndarray] | None = env.render()
             if frame is not None:
                 frames.append(np.asarray(frame))
         try:
@@ -116,7 +120,7 @@ def run_trial(passages: int, seed: int, save_video: bool = False) -> dict:
                     frames.append(np.asarray(frame))
             break
 
-    env.close()
+    env.close()  # type: ignore[no-untyped-call]
 
     if save_video and frames:
         VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
@@ -148,6 +152,7 @@ def run_trial(passages: int, seed: int, save_video: bool = False) -> dict:
 
 
 def write_seed_results(seed: int, results: list[dict]) -> None:
+    """Write per-seed results to a text file."""
     path = RESULTS_DIR / f"seed_{seed}.txt"
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"Motion2D BiRRT — Seed {seed}\n")
@@ -178,6 +183,7 @@ def write_seed_results(seed: int, results: list[dict]) -> None:
 
 
 def write_aggregate_results(all_results: dict[int, list[dict]]) -> None:
+    """Write aggregate results across all seeds to a text file."""
     flat = [r for rs in all_results.values() for r in rs]
     path = RESULTS_DIR / "aggregate_results.txt"
     with open(path, "w", encoding="utf-8") as f:
@@ -236,6 +242,7 @@ def write_aggregate_results(all_results: dict[int, list[dict]]) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
+    """Run BiRRT experiments across all seeds and passages."""
     global MAX_STEPS  # pylint: disable=global-statement
     MAX_STEPS = args.max_steps
 
@@ -286,11 +293,15 @@ def main(args: argparse.Namespace) -> None:
         )
     total_solved = sum(1 for r in flat if r["goal_reached"])
     logging.info(
-        "Overall: %d/%d (%.1f%%)", total_solved, len(flat), total_solved / len(flat) * 100
+        "Overall: %d/%d (%.1f%%)",
+        total_solved,
+        len(flat),
+        total_solved / len(flat) * 100,
     )
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     p = argparse.ArgumentParser()
     p.add_argument("--max-steps", type=int, default=MAX_STEPS)
     p.add_argument(
