@@ -103,9 +103,10 @@ def _parse_seed_results(
 ) -> dict[int, dict[str, dict[str, int]]]:
     """Parse per-seed result files.
 
-    Returns {seed: {maze_name: {"expansions": int, "evals": int}}}.
-    We only have expansions in the result files (evals not tracked
-    separately), so evals is set equal to expansions as an approximation.
+    Returns {seed: {maze_name: {"expansions": int, "evals": int}}}. We
+    only have expansions in the result files (evals not tracked
+    separately), so evals is set equal to expansions as an
+    approximation.
     """
     seed_data: dict[int, dict[str, dict[str, int]]] = {}
     for seed in SEEDS:
