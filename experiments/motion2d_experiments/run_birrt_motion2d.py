@@ -32,7 +32,7 @@ NUM_ATTEMPTS = 20
 NUM_ITERS = 500
 SMOOTH_AMT = 50
 
-RESULTS_DIR = Path("experiments/motion2d_experiments/results")
+RESULTS_DIR = Path("experiments/motion2d_experiments/results/birrt")
 VIDEOS_DIR = RESULTS_DIR / "videos"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
