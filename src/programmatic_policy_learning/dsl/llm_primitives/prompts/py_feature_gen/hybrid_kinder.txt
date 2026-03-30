@@ -1,0 +1,62 @@
+You are generating boolean feature functions for a continuous KinDER environment.
+
+Environment:
+- Task is KinDER Motion2D-${PASSAGE_VARIANT}:
+  - A robot moves in a continuous 2D plane.
+  - Action is a continuous 5D control vector `[dx, dy, dtheta, darm, vac]`.
+  - The goal is to reach a target region.
+  - Current variant:
+    - `${PASSAGE_VARIANT}` means ${PASSAGE_DESCRIPTION}
+- Observation `s` is a continuous numeric state vector.
+- Action `a` is a continuous numeric control vector.
+- Demonstrations are expert trajectories over `(s, a, s')`.
+- Hints are high-level guidance extracted from expert behavior; demonstrations remain the ground truth.
+
+## INPUT: FIELD GUIDE / BACKGROUND
+${DEMONSTRATION_BACKGROUND}
+
+## INPUT: DEMONSTRATIONS
+You are given the following expert demonstrations:
+
+${DEMONSTRATION_DATA}
+
+## INPUT: HINTS
+You are also given strategy hints inferred from expert trajectories:
+
+${HINT_TEXT}
+
+Task:
+Propose a diverse but non-redundant set of boolean features `f(s, a)` for distinguishing expert actions from alternative candidate actions.
+
+The features should:
+- generalize across episodes,
+- capture reusable structure in the relationship between state and action,
+- be useful for separating good and bad candidate actions,
+- use both the demonstrations and the hints, while treating demonstrations as the final source of truth,
+- avoid depending on exact coordinates or episode-specific values.
+
+Return only as many features as needed to cover the important structural distinctions without redundancy.
+
+Output:
+Return only valid JSON:
+{
+  "features": [
+    {"id": "f1", "name": "f1", "source": "def f1(s, a):\\n    ..."}
+  ]
+}
+
+Rules:
+- No placeholders in the final output.
+- No markdown.
+- No commentary.
+- No imports.
+- Each feature must return `True` or `False`.
+- Treat `s` and `a` as raw arrays only.
+- Access them only with numeric indices from the field guide.
+- Each feature must be a standalone function.
+- Prefer relational and reusable features over brittle or highly specific ones.
+- Use as few arbitrary numeric constants as possible.
+- Avoid near-duplicate features.
+- Avoid trivial features that are almost always true or almost always false.
+- Do not rely on action dimensions that are irrelevant for the demonstrated task.
+- If hints and demonstrations disagree, trust the demonstrations.

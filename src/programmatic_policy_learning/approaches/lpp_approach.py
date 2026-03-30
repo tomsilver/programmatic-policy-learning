@@ -47,9 +47,12 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_structural_complexity
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     assert_features_fire,
     build_collision_repair_prompt,
+    deduplicate_negative_examples,
+    drop_negative_exact_contradictions,
     gini_gain_per_feature,
     log_exact_example_label_contradictions,
     log_feature_collisions,
+    is_kinder_env,
     log_plp_violation_counts,
     run_single_episode,
 )
@@ -69,6 +72,13 @@ from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
 from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
+from programmatic_policy_learning.utils.action_canonicalization import (
+    active_action_bounds,
+    canonicalize_continuous_action,
+    embed_active_action,
+    get_active_action_dims,
+    get_inactive_action_fill_value,
+)
 
 _filter_constant_features = filter_constant_features
 
@@ -79,6 +89,47 @@ EnvFactory = Callable[[int | None], Any]
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that learns a logical programmatic policy from data."""
+
+    def _log_initial_action_space_ranges(self) -> None:
+        """Print/log continuous action ranges for debugging."""
+        action_space = self._action_space
+        if not (hasattr(action_space, "low") and hasattr(action_space, "high")):
+            return
+
+        low = np.asarray(action_space.low, dtype=float).reshape(-1)
+        high = np.asarray(action_space.high, dtype=float).reshape(-1)
+        if low.size == 0 or high.size == 0:
+            return
+
+        msg = f"Action space bounds: low={low.tolist()} high={high.tolist()}"
+        logging.info(msg)
+        print(msg)
+
+        if "motion2d" not in str(self.base_class_name).lower():
+            return
+
+        sampling_cfg = None
+        if isinstance(self.program_generation, dict):
+            sampling_cfg = self.program_generation.get("negative_sampling")
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=low.size,
+            default_active_dims=(0, 1),
+        )
+        active_low, active_high = active_action_bounds(
+            low,
+            high,
+            active_dims=active_dims,
+        )
+        active_names = ["dx", "dy"]
+        for idx, dim in enumerate(active_dims[:2]):
+            name = active_names[idx] if idx < len(active_names) else f"a[{int(dim)}]"
+            dim_msg = (
+                f"{name} valid range: [{float(active_low[idx]):.6f}, "
+                f"{float(active_high[idx]):.6f}] (dim {int(dim)})"
+            )
+            logging.info(dim_msg)
+            print(dim_msg)
 
     def __init__(
         self,
@@ -182,6 +233,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dict(hyperparam_grid) if isinstance(hyperparam_grid, Mapping) else None
         )
         self._negative_sampling_cfg: dict[str, Any] | None = None
+        self._log_initial_action_space_ranges()
 
     def _default_train_hyperparams(self) -> dict[str, Any]:
         return {
@@ -273,7 +325,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self._collision_py_generator is None
             or self._collision_llm_model != llm_model
         ):
-            cache_path = Path("py_feature_cache.db")
+            model_slug = "".join(
+                ch if ch.isalnum() else "_" for ch in llm_model
+            ).strip("_")
+            cache_path = Path(f"py_feature_cache_{model_slug}.db")
             cache = SQLite3PretrainedLargeModelCache(cache_path)
             llm_client = OpenAIModel(llm_model, cache)
             self._collision_py_generator = PyFeatureGenerator(llm_client)
@@ -306,9 +361,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             seed=self.seed_num,
         )
         print(template_payload)
-        expanded_payload = py_generator.expand_template_payload(
-            template_payload, env_name=self.base_class_name, start_index=start_index
-        )
+        is_kinder = is_kinder_env(self.base_class_name)
+        if not is_kinder:
+            expanded_payload = py_generator.expand_template_payload(
+                template_payload, env_name=self.base_class_name, start_index=start_index
+            )
+        else:
+            expanded_payload = py_generator.renumber_payload_features(
+                template_payload, start_index=start_index
+            )
         py_generator.write_json(
             f"py_feature_payload_collision_{collision_idx}.json", expanded_payload
         )
@@ -327,15 +388,25 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self,
         collision_groups: list[dict[str, Any]],
         examples: list[tuple[_ObsType, _ActType]] | None,
+        *,
+        existing_feature_summary: str | None = None,
+        failed_attempt_summaries: str | None = None,
     ) -> str | None:
+
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
-        if action_mode != "discrete":
+        is_kinder = (
+            "motion2d" in str(self.base_class_name).lower()
+            or "kinder" in str(self.base_class_name).lower()
+        )
+
+        if action_mode != "discrete" and not is_kinder:
             logging.info(
-                "Collision repair prompt generation is grid-specific; "
-                "skipping for action_mode=%s.",
+                "Collision repair prompt generation unsupported for action_mode=%s env=%s.",
                 action_mode,
+                self.base_class_name,
             )
             return None
+
         if not collision_groups or examples is None:
             return None
         ranked_groups = sorted(
@@ -367,20 +438,21 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             # examples=cast(list[tuple[np.ndarray, tuple[int, int]]], examples),
             examples=examples,
             env_name=self.base_class_name,
-            existing_feature_summary=None,
+            existing_feature_summary=existing_feature_summary,
             max_per_label=5,
             collision_feedback_enc=self.collision_feedback_enc,
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
             seed=self.seed_num,
             collision_template_feedback=self.collision_template_feedback,
+            failed_attempt_summaries=failed_attempt_summaries,
         )
         try:
             output_dir = Path(HydraConfig.get().runtime.output_dir)
         except Exception:  # pylint: disable=broad-exception-caught
             output_dir = Path.cwd()
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = "collision_prompr_"
+        prefix = "collision_prompt_"
         existing = sorted(output_dir.glob(f"{prefix}*.txt"))
         next_idx = len(existing) + 1
         out_path = output_dir / f"{prefix}{next_idx}.txt"
@@ -633,6 +705,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "action_high",
                 np.asarray(getattr(self._action_space, "high"), dtype=float).tolist(),
             )
+            cont_cfg = negative_sampling_cfg.setdefault("continuous", {})
+            if isinstance(cont_cfg, dict):
+                if str(self.base_class_name) == "Motion2D":
+                    cont_cfg.setdefault("active_action_dims", [0, 1])
+                cont_cfg.setdefault("inactive_action_fill_value", 0.0)
         return offline_path_name, negative_sampling_cfg
 
     def _build_continuous_candidate_actions(
@@ -655,6 +732,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         sampling_cfg = dict(negative_sampling_cfg or {})
         cont_cfg = dict(sampling_cfg.get("continuous", {}))
         bucket_counts_cfg = cont_cfg.get("bucket_counts")
+        bucket_edges_cfg = cont_cfg.get("bucket_edges")
 
         low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
             -1
@@ -667,17 +745,34 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "Continuous quantized inference requires at least 2 action dimensions."
             )
 
-        quantizer = Motion2DActionQuantizer.from_bounds(
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=low_arr.size,
+            default_active_dims=[0, 1],
+        )
+        inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
+        active_low_arr, active_high_arr = active_action_bounds(
             low_arr,
             high_arr,
+            active_dims=active_dims,
+        )
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            active_low_arr,
+            active_high_arr,
             bucket_counts=bucket_counts_cfg,
+            bucket_edges=bucket_edges_cfg,
         )
 
         action_dtype = getattr(self._action_space, "dtype", None)
         candidate_actions: list[_ActType] = []
         for center in quantizer.all_bucket_centers():
-            candidate = np.zeros_like(low_arr, dtype=float)
-            candidate = center
+            candidate = embed_active_action(
+                center,
+                template=np.zeros_like(low_arr, dtype=float),
+                active_dims=active_dims,
+                fill_value=inactive_fill_value,
+            )
             candidate = np.clip(candidate, low_arr, high_arr)
             if action_dtype is not None:
                 candidate = candidate.astype(action_dtype, copy=False)
@@ -694,6 +789,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         sampling_cfg = dict(self._negative_sampling_cfg or {})
         cont_cfg = dict(sampling_cfg.get("continuous", {}))
         bucket_counts_cfg = cont_cfg.get("bucket_counts")
+        bucket_edges_cfg = cont_cfg.get("bucket_edges")
 
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
@@ -711,15 +807,35 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
             )
 
-        quantizer = Motion2DActionQuantizer.from_bounds(
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=base.shape[0],
+            default_active_dims=[0, 1],
+        )
+        inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
+        canonical_base = canonicalize_continuous_action(
+            base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
+        active_low_arr, active_high_arr = active_action_bounds(
             low_arr,
             high_arr,
-            bucket_counts=bucket_counts_cfg,
+            active_dims=active_dims,
         )
-        centered = base.copy()
-        centered = quantizer.dequantize(quantizer.quantize(base))
-        # if centered.shape[0] > 5:
-        #     centered[5:] = 0.0
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            active_low_arr,
+            active_high_arr,
+            bucket_counts=bucket_counts_cfg,
+            bucket_edges=bucket_edges_cfg,
+        )
+        centered = embed_active_action(
+            quantizer.dequantize(quantizer.quantize(canonical_base[active_dims])),
+            template=canonical_base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
         centered = np.clip(centered, low_arr, high_arr)
 
         if isinstance(action, np.ndarray):
@@ -757,6 +873,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         negative_sampling_cfg: dict[str, Any] | None,
         offline_path_name: str | None,
         start_index: int,
+        feature_display_names: list[str] | None = None,
     ) -> tuple[
         Any,
         np.ndarray,
@@ -797,6 +914,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         log_exact_example_label_contradictions(examples, y)
+        X, y, examples, sample_weights = drop_negative_exact_contradictions(
+            X, y, examples, sample_weights
+        )
+        X, y, examples, sample_weights = deduplicate_negative_examples(
+            X, y, examples, sample_weights
+        )
+        logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
             _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
         )
@@ -807,14 +931,82 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         
 
         collision_groups = log_feature_collisions(X, y, examples)
+
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
+            collision_attempt_memory: list[str] = []
+
+            def _summarize_existing_features() -> str:
+                if feature_display_names:
+                    display_names = feature_display_names[:40]
+                    lines = [f"- {name}" for name in display_names]
+                    remaining = len(feature_display_names) - len(display_names)
+                    if remaining > 0:
+                        lines.append(f"- ... plus {remaining} more existing features")
+                    return "\n".join(lines)
+                feature_names = [str(p) for p in programs_sa[:40]]
+                if not feature_names:
+                    return "- None"
+                lines = [f"- {name}" for name in feature_names]
+                remaining = len(programs_sa) - len(feature_names)
+                if remaining > 0:
+                    lines.append(f"- ... plus {remaining} more existing features")
+                return "\n".join(lines)
+
+            def _record_attempt_summary(
+                round_idx: int,
+                collision_payload: dict[str, Any],
+                before_count: int,
+                after_count: int,
+            ) -> None:
+                features = collision_payload.get("features", [])
+                descriptions: list[str] = []
+                if isinstance(features, list):
+                    for feature in features[:3]:
+                        if not isinstance(feature, dict):
+                            continue
+                        desc = str(feature.get("description", "")).strip()
+                        if desc:
+                            descriptions.append(desc.rstrip("."))
+                lines = [f"Previous repair attempt {round_idx}:"]
+                if descriptions:
+                    lines.append(
+                        "- Added features targeting: " + "; ".join(descriptions)
+                    )
+                else:
+                    added_count = len(features) if isinstance(features, list) else 0
+                    lines.append(f"- Added {added_count} new features.")
+                if after_count < before_count:
+                    lines.append(
+                        f"- Collision count improved from {before_count} to {after_count}, but collisions remain."
+                    )
+                else:
+                    lines.append(
+                        f"- Collision count stayed at {after_count}; avoid near-duplicate rephrasings of those feature families."
+                    )
+                collision_attempt_memory.append("\n".join(lines))
 
             def _generate_collision_features(
                 prompt: str, start_idx: int, collision_idx: int
             ) -> tuple[list[str], dict[str, Any], Path]:
                 return self._generate_collision_features(
                     prompt, start_index=start_idx, collision_idx=collision_idx
+                )
+
+            def _make_collision_prompt(
+                collision_groups: list[dict[str, Any]],
+                examples: list[tuple[_ObsType, _ActType]],
+            ) -> str | None:
+                failed_attempts = (
+                    "\n\n".join(collision_attempt_memory)
+                    if collision_attempt_memory
+                    else "- None yet."
+                )
+                return self._handle_collision_feedback(
+                    collision_groups,
+                    examples,
+                    existing_feature_summary=_summarize_existing_features(),
+                    failed_attempt_summaries=failed_attempts,
                 )
 
             (
@@ -836,7 +1028,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 programs_sa=programs_sa,
                 dsl_functions=dsl_functions,
                 generate_features=_generate_collision_features,
-                make_prompt=self._handle_collision_feedback,
+                make_prompt=_make_collision_prompt,
+                record_attempt_summary=_record_attempt_summary,
                 prior_version=self.prior_version,
                 prior_beta=self.prior_beta,
             )
@@ -1084,6 +1277,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             program_prior_log_probs_opt,
             dsl_functions,
             start_index,
+            feature_display_names,
         ) = prepare_programs_and_dsl(
             num_programs=self.num_programs,
             base_class_name=self.base_class_name,
@@ -1101,6 +1295,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             extract_feature_names_fn=_extract_feature_names,
         )
         # print(programs_sa)
+
         (
             X_train,
             y_train,
@@ -1119,7 +1314,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             negative_sampling_cfg=negative_sampling_cfg,
             offline_path_name=offline_path_name,
             start_index=start_index,
+            feature_display_names=feature_display_names,
         )
+        print("Final programs:")
+        for i, prog in enumerate(programs_sa):
+            print(f"  Program {i}: {prog}")
         selected_hyperparams = self._select_hyperparams(
             X=X_train,
             y_bool=y_train_bool,
@@ -1204,6 +1403,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 max_num_steps=max_num_steps,
                 record_video=record_videos,
                 video_out_path=video_out_path,
+                reset_seed=i,
             )
             if action_mode == "continuous":
                 result = bool(terminated)

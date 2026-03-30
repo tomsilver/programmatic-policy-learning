@@ -86,6 +86,7 @@ def run_collision_feedback_loop(
         [str, int, int], tuple[list[str], dict[str, Any], Path]
     ],
     make_prompt: Callable[[list[dict[str, Any]], list[tuple[ObsT, ActT]]], str | None],
+    record_attempt_summary: Callable[[int, dict[str, Any], int, int], None] | None = None,
     prior_version: str = "uniform",
     prior_beta: float = 1.0,
 ) -> tuple[
@@ -138,10 +139,18 @@ def run_collision_feedback_loop(
             X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
         )
         collision_groups = log_feature_collisions(X, y, examples)
+        num_collisions_after = len(collision_groups) if collision_groups else 0
+        if record_attempt_summary is not None:
+            record_attempt_summary(
+                round_idx + 1,
+                collision_payload,
+                num_collisions,
+                num_collisions_after,
+            )
         logging.info(
             "Collision groups after feedback round %d: %d",
             round_idx + 1,
-            len(collision_groups) if collision_groups else 0,
+            num_collisions_after,
         )
     return (
         X,

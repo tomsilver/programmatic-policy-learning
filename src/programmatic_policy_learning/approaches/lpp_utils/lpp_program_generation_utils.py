@@ -56,6 +56,11 @@ HINTS_ROOT = (
 )
 
 
+def _cache_path_with_model(stem: str, llm_model: str) -> Path:
+    model_slug = "".join(ch if ch.isalnum() else "_" for ch in llm_model).strip("_")
+    return Path(f"{stem}_{model_slug}.db")
+
+
 def _resolve_demos_included(
     demo_numbers: Sequence[int] | None,
     program_generation: dict[str, Any],
@@ -143,7 +148,7 @@ def get_program_set(
     seed: int = 0,
     prior_version: str = "v1",
     prior_beta: float = 1.0,
-) -> tuple[list[Any], list[float], dict[str, Any]]:
+) -> tuple[list[Any], list[float], dict[str, Any], list[str] | None]:
     """Enumerate programs from the grammar and return programs + prior log-
     probs."""
     if program_generation is None:
@@ -167,7 +172,7 @@ def get_program_set(
     llm_model = program_generation.get("llm_model", "gpt-4.1")
 
     if strategy == "feature_generator":
-        cache_path = Path("feature_cache.db")
+        cache_path = _cache_path_with_model("feature_cache", llm_model)
         cache = SQLite3PretrainedLargeModelCache(cache_path)
         llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["feature_generator_prompt"]
@@ -191,10 +196,19 @@ def get_program_set(
         features = convert_dir_lists_to_tuples(features)
         program_prior_log_probs = compute_feature_log_probs(payload, object_types)
         dsl_fns = get_dsl_functions_dict()
-        return features, program_prior_log_probs, dsl_fns
+        feature_display_names: list[str] = []
+        payload_features = _payload.get("features", [])
+        if isinstance(payload_features, list):
+            for feature in payload_features:
+                if not isinstance(feature, dict):
+                    continue
+                display_name = str(feature.get("name", "")).strip()
+                if display_name:
+                    feature_display_names.append(display_name)
+        return features, program_prior_log_probs, dsl_fns, feature_display_names
 
     if strategy == "py_feature_gen":
-        cache_path = Path("py_feature_cache.db")
+        cache_path = _cache_path_with_model("py_feature_cache", llm_model)
         cache = SQLite3PretrainedLargeModelCache(cache_path)
         llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
@@ -223,7 +237,8 @@ def get_program_set(
                 raise ValueError("No expert instance provided for demo serialization.")
             for init_idx in demo_ids:
                 env_demo = env_factory(init_idx)
-                reset_seed = int(seed) * 1000 + int(init_idx)
+                # reset_seed = int(seed) * 1000 + int(init_idx)
+                reset_seed = init_idx
                 traj = _collect_full_episode_generic(
                     env_demo,
                     expert,
@@ -268,7 +283,16 @@ def get_program_set(
             program_prior_log_probs = out_dict["logprobs"]
         else:
             raise ValueError(f"Unsupported prior_version: {prior_version}")
-        return features, program_prior_log_probs, dsl_fns
+        feature_display_names: list[str] = []
+        payload_features = _payload.get("features", [])
+        if isinstance(payload_features, list):
+            for feature in payload_features:
+                if not isinstance(feature, dict):
+                    continue
+                display_name = str(feature.get("name", "")).strip()
+                if display_name:
+                    feature_display_names.append(display_name)
+        return features, program_prior_log_probs, dsl_fns, feature_display_names
 
     if strategy not in strategies:
         raise ValueError(f"Unknown strategy: {strategy}")
@@ -277,7 +301,7 @@ def get_program_set(
     programs, program_prior_log_probs = _generate_programs(
         program_generator, num_programs
     )
-    return programs, program_prior_log_probs, dsl_fns
+    return programs, program_prior_log_probs, dsl_fns, None
 
 
 def _generate_with_fixed_grid_v1(
@@ -328,7 +352,7 @@ def _generate_with_dsl_generator(
     outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
-    cache_path = Path("llm_cache.db")
+    cache_path = _cache_path_with_model("llm_cache", llm_model)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm_model = program_generation.get("llm_model", "gpt-4.1")
     llm_client = OpenAIModel(llm_model, cache)

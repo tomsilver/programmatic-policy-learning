@@ -23,6 +23,13 @@ from programmatic_policy_learning.dsl.state_action_program import (
 from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
+from programmatic_policy_learning.utils.action_canonicalization import (
+    active_action_bounds,
+    canonicalize_continuous_action,
+    embed_active_action,
+    get_active_action_dims,
+    get_inactive_action_fill_value,
+)
 from programmatic_policy_learning.utils.cache_utils import (
     cache_single_output,
     load_single_cache_output,
@@ -508,6 +515,7 @@ def extract_examples_from_demonstration_item(
 
         cfg_cont = dict(sampling_cfg.get("continuous", {}))
         bucket_counts_cfg = cfg_cont.get("bucket_counts")
+        bucket_edges_cfg = cfg_cont.get("bucket_edges")
 
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
@@ -526,32 +534,51 @@ def extract_examples_from_demonstration_item(
                 f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
             )
 
-        quantizer = Motion2DActionQuantizer.from_bounds(
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=base.shape[0],
+            default_active_dims=[0, 1],
+        )
+        inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
+        canonical_base = canonicalize_continuous_action(
+            base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
+        active_low_arr, active_high_arr = active_action_bounds(
             low_arr,
             high_arr,
-            bucket_counts=bucket_counts_cfg,
+            active_dims=active_dims,
         )
-        expert_bucket = quantizer.quantize(base)
 
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            active_low_arr,
+            active_high_arr,
+            bucket_counts=bucket_counts_cfg,
+            bucket_edges=bucket_edges_cfg,
+        )
+        expert_bucket = quantizer.quantize(canonical_base[active_dims])
 
-        quantized_expert = base.copy()
-        quantized_expert = quantizer.dequantize(expert_bucket)
-
-        # if quantized_expert.shape[0] > 5:
-        #     quantized_expert[5:] = 0.0
+        quantized_expert = embed_active_action(
+            quantizer.dequantize(expert_bucket),
+            template=canonical_base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
         quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
         positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
-        print(_coerce_action_like(action, quantized_expert))
         neg_actions: list[ActT] = []
         all_buckets: list[tuple[int, ...]] = []
         for bucket in quantizer.all_bucket_indices():
             all_buckets.append(bucket)
             if bucket == expert_bucket:
                 continue
-            candidate = base.copy()
-            candidate = quantizer.dequantize(bucket)
-            # if candidate.shape[0] > 5:
-            #     candidate[5:] = 0.0
+            candidate = embed_active_action(
+                quantizer.dequantize(bucket),
+                template=canonical_base,
+                active_dims=active_dims,
+                fill_value=inactive_fill_value,
+            )
             candidate = np.clip(candidate, low_arr, high_arr)
             neg_actions.append(_coerce_action_like(action, candidate))
         for neg_action in neg_actions:
@@ -670,7 +697,7 @@ def extract_examples_from_demonstration(
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
-        # print(demo_positive_examples)
+        # print(positive_examples)
         # input("POS")
         # print(demo_negative_examples)
         # input("NEG")
@@ -685,6 +712,8 @@ def extract_examples_from_demonstration(
         neg_weights.extend(demo_weights[len(demo_positive_examples) :].tolist())
 
     combined_weights = np.asarray(pos_weights + neg_weights, dtype=float)
+    # print(positive_examples)
+    # input("POS")
     return positive_examples, negative_examples, combined_weights
 
 

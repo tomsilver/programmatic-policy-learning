@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import product
 from typing import Sequence
@@ -36,21 +37,73 @@ def _normalize_bucket_counts(
     return counts
 
 
+def _normalize_bucket_edges(
+    bucket_edges: Sequence[float] | Sequence[Sequence[float]] | np.ndarray,
+    *,
+    dims: int,
+    action_low: np.ndarray,
+    action_high: np.ndarray,
+) -> tuple[np.ndarray, ...]:
+    """Normalize explicit bucket edges per dimension."""
+    arr = np.asarray(bucket_edges, dtype=float)
+    if arr.ndim == 1:
+        edges_per_dim = tuple(arr.copy() for _ in range(dims))
+    elif arr.ndim == 2:
+        if arr.shape[0] != dims:
+            raise ValueError(
+                "bucket_edges row count must match number of action dimensions: "
+                f"got {arr.shape[0]}, expected {dims}."
+            )
+        edges_per_dim = tuple(arr[d].copy() for d in range(dims))
+    else:
+        raise ValueError("bucket_edges must be a 1-D or 2-D array-like value.")
+
+    normalized: list[np.ndarray] = []
+    for d, edges in enumerate(edges_per_dim):
+        if edges.size < 2:
+            raise ValueError("Each bucket_edges entry must contain at least 2 values.")
+        if not np.all(np.diff(edges) > 0):
+            raise ValueError("bucket_edges must be strictly increasing per dimension.")
+        if not np.isclose(edges[0], action_low[d]):
+            raise ValueError(
+                f"bucket_edges for dim {d} must start at action_low={action_low[d]:.6f}, "
+                f"got {edges[0]:.6f}."
+            )
+        if not np.isclose(edges[-1], action_high[d]):
+            raise ValueError(
+                f"bucket_edges for dim {d} must end at action_high={action_high[d]:.6f}, "
+                f"got {edges[-1]:.6f}."
+            )
+        normalized.append(edges.astype(float, copy=False))
+    return tuple(normalized)
+
+
 @dataclass(frozen=True)
 class Motion2DActionQuantizer:
-    """Quantize/dequantize continuous actions with a dedicated zero bucket.
-
-    Each action dimension is split into an odd number of buckets:
-    - negative side: equal-count bins over [low, 0)
-    - zero: exactly 0
-    - positive side: equal-count bins over (0, high]
-
-    The bounds can be asymmetric and are read dynamically from the action space.
-    """
+    """Quantize/dequantize continuous actions into per-dimension bins."""
 
     action_low: np.ndarray
     action_high: np.ndarray
     bucket_counts: np.ndarray
+    bucket_edges: tuple[np.ndarray, ...] | None = None
+
+    def _log_creation(self) -> None:
+        """Print/log quantizer configuration for debugging."""
+        if self.bucket_edges is not None:
+            edges_repr = [edges.tolist() for edges in self.bucket_edges]
+            msg = (
+                "Created Motion2DActionQuantizer with explicit bucket_edges="
+                f"{edges_repr} action_low={self.action_low.tolist()} "
+                f"action_high={self.action_high.tolist()}"
+            )
+        else:
+            msg = (
+                "Created Motion2DActionQuantizer with bucket_counts="
+                f"{self.bucket_counts.tolist()} action_low={self.action_low.tolist()} "
+                f"action_high={self.action_high.tolist()}"
+            )
+        logging.info(msg)
+        print(msg)
 
     @classmethod
     def from_bounds(
@@ -59,6 +112,7 @@ class Motion2DActionQuantizer:
         action_high: Sequence[float] | np.ndarray,
         *,
         bucket_counts: int | Sequence[int] = 5,
+        bucket_edges: Sequence[float] | Sequence[Sequence[float]] | np.ndarray | None = None,
     ) -> "Motion2DActionQuantizer":
         """Create a quantizer from per-dimension action bounds."""
         low = _as_1d_float_array(action_low, "action_low")
@@ -75,8 +129,27 @@ class Motion2DActionQuantizer:
         #         "Each dimension must straddle zero to reserve a dedicated zero bucket."
         #     )
 
+        if bucket_edges is not None:
+            edges = _normalize_bucket_edges(
+                bucket_edges,
+                dims=low.size,
+                action_low=low,
+                action_high=high,
+            )
+            counts = np.asarray([len(e) - 1 for e in edges], dtype=int)
+            quantizer = cls(
+                action_low=low,
+                action_high=high,
+                bucket_counts=counts,
+                bucket_edges=edges,
+            )
+            # quantizer._log_creation()
+            return quantizer
+
         counts = _normalize_bucket_counts(bucket_counts, dims=low.size)
-        return cls(action_low=low, action_high=high, bucket_counts=counts)
+        quantizer = cls(action_low=low, action_high=high, bucket_counts=counts)
+        # quantizer._log_creation()
+        return quantizer
 
     @property
     def dims(self) -> int:
@@ -86,6 +159,13 @@ class Motion2DActionQuantizer:
     @property
     def zero_bucket_index_per_dim(self) -> np.ndarray:
         """Return zero-bucket indices."""
+        if self.bucket_edges is not None:
+            zero_bins: list[int] = []
+            for edges in self.bucket_edges:
+                zero_idx = int(np.searchsorted(edges, 0.0, side="right") - 1)
+                zero_idx = max(0, min(zero_idx, len(edges) - 2))
+                zero_bins.append(zero_idx)
+            return np.asarray(zero_bins, dtype=int)
         return self.bucket_counts // 2
 
     def _clipped_action(self, action: Sequence[float] | np.ndarray) -> np.ndarray:
@@ -104,6 +184,12 @@ class Motion2DActionQuantizer:
 
         for d in range(self.dims):
             value = float(arr[d])
+            if self.bucket_edges is not None:
+                edges = self.bucket_edges[d]
+                bucket = int(np.searchsorted(edges, value, side="right") - 1)
+                bucket = max(0, min(bucket, len(edges) - 2))
+                indices.append(bucket)
+                continue
             low = float(self.action_low[d])
             high = float(self.action_high[d])
             count = int(self.bucket_counts[d])
@@ -141,6 +227,17 @@ class Motion2DActionQuantizer:
         for d in range(self.dims):
             idx = int(bucket_arr[d])
             count = int(self.bucket_counts[d])
+            if self.bucket_edges is not None:
+                if idx < 0 or idx >= count:
+                    raise ValueError(
+                        f"Bucket index out of range for dim {d}: "
+                        f"{idx} not in [0, {count - 1}]"
+                    )
+                edges = self.bucket_edges[d]
+                lo = float(edges[idx])
+                hi = float(edges[idx + 1])
+                centers[d] = 0.5 * (lo + hi)
+                continue
             n_side = count // 2
             if idx < 0 or idx >= count:
                 raise ValueError(

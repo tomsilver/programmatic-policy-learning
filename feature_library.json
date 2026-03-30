@@ -1,0 +1,304 @@
+{
+    "features": [
+        {
+            "id": "f1",
+            "name": "robot_left_of_target_center",
+            "source": "def f1(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    return robot_x < target_cx\n"
+        },
+        {
+            "id": "f2",
+            "name": "robot_right_of_target_center",
+            "source": "def f2(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    return robot_x > target_cx\n"
+        },
+        {
+            "id": "f3",
+            "name": "robot_below_of_target_center",
+            "source": "def f3(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    return robot_y < target_cy\n"
+        },
+        {
+            "id": "f4",
+            "name": "robot_above_of_target_center",
+            "source": "def f4(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    return robot_y > target_cy\n"
+        },
+        {
+            "id": "f5",
+            "name": "manhattan_distance_to_target_very_close",
+            "source": "def f5(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return dist < 0.25\n"
+        },
+        {
+            "id": "f6",
+            "name": "manhattan_distance_to_target_close",
+            "source": "def f6(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return dist < 0.5\n"
+        },
+        {
+            "id": "f7",
+            "name": "manhattan_distance_to_target_medium",
+            "source": "def f7(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return dist < 1.0\n"
+        },
+        {
+            "id": "f8",
+            "name": "manhattan_distance_to_target_far",
+            "source": "def f8(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return dist < 2.0\n"
+        },
+        {
+            "id": "f9",
+            "name": "euclidean_distance_to_target_very_close",
+            "source": "def f9(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = ((robot_x - target_cx)**2 + (robot_y - target_cy)**2)**0.5\n    return dist < 0.25\n"
+        },
+        {
+            "id": "f10",
+            "name": "euclidean_distance_to_target_close",
+            "source": "def f10(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = ((robot_x - target_cx)**2 + (robot_y - target_cy)**2)**0.5\n    return dist < 0.5\n"
+        },
+        {
+            "id": "f11",
+            "name": "euclidean_distance_to_target_medium",
+            "source": "def f11(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = ((robot_x - target_cx)**2 + (robot_y - target_cy)**2)**0.5\n    return dist < 1.0\n"
+        },
+        {
+            "id": "f12",
+            "name": "euclidean_distance_to_target_far",
+            "source": "def f12(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    dist = ((robot_x - target_cx)**2 + (robot_y - target_cy)**2)**0.5\n    return dist < 2.0\n"
+        },
+        {
+            "id": "f13",
+            "name": "robot_inside_target_region",
+            "source": "def f13(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    return (robot_x >= target_x) and (robot_x <= target_x + target_width) and (robot_y >= target_y) and (robot_y <= target_y + target_height)\n"
+        },
+        {
+            "id": "f14",
+            "name": "robot_next_step_inside_target_region",
+            "source": "def f14(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    next_x = robot_x + dx\n    next_y = robot_y + dy\n    return (next_x >= target_x) and (next_x <= target_x + target_width) and (next_y >= target_y) and (next_y <= target_y + target_height)\n"
+        },
+        {
+            "id": "f15",
+            "name": "robot_moving_toward_target_center",
+            "source": "def f15(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dot = dx * to_target_x + dy * to_target_y\n    return dot > 0\n"
+        },
+        {
+            "id": "f16",
+            "name": "robot_moving_away_from_target_center",
+            "source": "def f16(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dot = dx * to_target_x + dy * to_target_y\n    return dot < 0\n"
+        },
+        {
+            "id": "f17",
+            "name": "robot_y_aligned_with_passage0_gap",
+            "source": "def f17(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    return (robot_y >= gap_lower) and (robot_y <= gap_upper)\n"
+        },
+        {
+            "id": "f18",
+            "name": "robot_next_y_aligned_with_passage0_gap",
+            "source": "def f18(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    next_y = robot_y + dy\n    return (next_y >= gap_lower) and (next_y <= gap_upper)\n"
+        },
+        {
+            "id": "f19",
+            "name": "robot_left_of_passage0_wall",
+            "source": "def f19(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    return robot_x + robot_base_radius < obstacle0_x\n"
+        },
+        {
+            "id": "f20",
+            "name": "robot_inside_passage0_zone",
+            "source": "def f20(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_left = obstacle0_x\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    return (robot_x >= wall_left) and (robot_x < wall_right)\n"
+        },
+        {
+            "id": "f21",
+            "name": "robot_past_passage0_wall",
+            "source": "def f21(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    return robot_x >= wall_right\n"
+        },
+        {
+            "id": "f22",
+            "name": "robot_next_past_passage0_wall",
+            "source": "def f22(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    next_x = robot_x + dx\n    return next_x >= wall_right\n"
+        },
+        {
+            "id": "f23",
+            "name": "robot_action_more_horizontal_than_vertical",
+            "source": "def f23(s, a):\n    dx = a[0]\n    dy = a[1]\n    return abs(dx) > abs(dy)\n"
+        },
+        {
+            "id": "f24",
+            "name": "robot_action_more_vertical_than_horizontal",
+            "source": "def f24(s, a):\n    dx = a[0]\n    dy = a[1]\n    return abs(dy) > abs(dx)\n"
+        },
+        {
+            "id": "f25",
+            "name": "robot_action_significant_rotation",
+            "source": "def f25(s, a):\n    dtheta = a[2]\n    return abs(dtheta) > 0.1\n"
+        },
+        {
+            "id": "f26",
+            "name": "robot_action_no_rotation",
+            "source": "def f26(s, a):\n    dtheta = a[2]\n    return abs(dtheta) < 0.01\n"
+        },
+        {
+            "id": "f27",
+            "name": "robot_action_dx_positive",
+            "source": "def f27(s, a):\n    dx = a[0]\n    return dx > 0\n"
+        },
+        {
+            "id": "f28",
+            "name": "robot_action_dy_positive",
+            "source": "def f28(s, a):\n    dy = a[1]\n    return dy > 0\n"
+        },
+        {
+            "id": "f29",
+            "name": "robot_action_dx_negative",
+            "source": "def f29(s, a):\n    dx = a[0]\n    return dx < 0\n"
+        },
+        {
+            "id": "f30",
+            "name": "robot_action_dy_negative",
+            "source": "def f30(s, a):\n    dy = a[1]\n    return dy < 0\n"
+        },
+        {
+            "id": "f31",
+            "name": "robot_left_of_passage0_wall_and_dx_positive",
+            "source": "def f31(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    dx = a[0]\n    return (robot_x + robot_base_radius < obstacle0_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f32",
+            "name": "robot_inside_passage0_zone_and_horizontal_action",
+            "source": "def f32(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_left = obstacle0_x\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    dx = a[0]\n    dy = a[1]\n    return (robot_x >= wall_left) and (robot_x < wall_right) and (abs(dx) > abs(dy))\n"
+        },
+        {
+            "id": "f33",
+            "name": "robot_y_aligned_with_passage0_gap_and_horizontal_action",
+            "source": "def f33(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    dx = a[0]\n    dy = a[1]\n    return (robot_y >= gap_lower) and (robot_y <= gap_upper) and (abs(dx) > abs(dy))\n"
+        },
+        {
+            "id": "f34",
+            "name": "robot_next_x_collides_with_passage0_wall",
+            "source": "def f34(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_left = obstacle0_x\n    wall_right = obstacle0_x + obstacle0_width\n    next_left = robot_x + dx - robot_base_radius\n    next_right = robot_x + dx + robot_base_radius\n    return (next_right > wall_left) and (next_left < wall_right)\n"
+        },
+        {
+            "id": "f35",
+            "name": "robot_next_x_collides_with_obstacle1",
+            "source": "def f35(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    robot_base_radius = s[3]\n    obstacle1_x = s[29]\n    obstacle1_width = s[37]\n    wall_left = obstacle1_x\n    wall_right = obstacle1_x + obstacle1_width\n    next_left = robot_x + dx - robot_base_radius\n    next_right = robot_x + dx + robot_base_radius\n    return (next_right > wall_left) and (next_left < wall_right)\n"
+        },
+        {
+            "id": "f36",
+            "name": "robot_next_x_collides_with_obstacle0",
+            "source": "def f36(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_left = obstacle0_x\n    wall_right = obstacle0_x + obstacle0_width\n    next_left = robot_x + dx - robot_base_radius\n    next_right = robot_x + dx + robot_base_radius\n    return (next_right > wall_left) and (next_left < wall_right)\n"
+        },
+        {
+            "id": "f37",
+            "name": "robot_next_y_collides_with_obstacle0",
+            "source": "def f37(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    wall_bottom = obstacle0_y\n    wall_top = obstacle0_y + obstacle0_height\n    next_bottom = robot_y + dy - robot_base_radius\n    next_top = robot_y + dy + robot_base_radius\n    return (next_top > wall_bottom) and (next_bottom < wall_top)\n"
+        },
+        {
+            "id": "f38",
+            "name": "robot_next_y_collides_with_obstacle1",
+            "source": "def f38(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    wall_bottom = obstacle1_y\n    wall_top = obstacle1_y + obstacle1_height\n    next_bottom = robot_y + dy - robot_base_radius\n    next_top = robot_y + dy + robot_base_radius\n    return (next_top > wall_bottom) and (next_bottom < wall_top)\n"
+        },
+        {
+            "id": "f39",
+            "name": "robot_moving_toward_passage0_gap_center",
+            "source": "def f39(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - robot_y\n    return (abs(to_gap) > 0.01) and (dy * to_gap > 0)\n"
+        },
+        {
+            "id": "f40",
+            "name": "robot_moving_away_from_passage0_gap_center",
+            "source": "def f40(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - robot_y\n    return (abs(to_gap) > 0.01) and (dy * to_gap < 0)\n"
+        },
+        {
+            "id": "f41",
+            "name": "robot_y_near_passage0_gap_center",
+            "source": "def f41(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    return abs(robot_y - gap_center) < 0.1\n"
+        },
+        {
+            "id": "f42",
+            "name": "robot_y_far_from_passage0_gap_center",
+            "source": "def f42(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    return abs(robot_y - gap_center) > 0.2\n"
+        },
+        {
+            "id": "f43",
+            "name": "robot_action_small_translation",
+            "source": "def f43(s, a):\n    dx = a[0]\n    dy = a[1]\n    return (abs(dx) < 0.01) and (abs(dy) < 0.01)\n"
+        },
+        {
+            "id": "f44",
+            "name": "robot_action_large_translation",
+            "source": "def f44(s, a):\n    dx = a[0]\n    dy = a[1]\n    return (abs(dx) > 0.04) or (abs(dy) > 0.04)\n"
+        },
+        {
+            "id": "f45",
+            "name": "robot_action_diagonal",
+            "source": "def f45(s, a):\n    dx = a[0]\n    dy = a[1]\n    return (abs(dx) > 0.01) and (abs(dy) > 0.01)\n"
+        },
+        {
+            "id": "f46",
+            "name": "robot_action_purely_horizontal",
+            "source": "def f46(s, a):\n    dx = a[0]\n    dy = a[1]\n    return (abs(dx) > 0.01) and (abs(dy) < 0.01)\n"
+        },
+        {
+            "id": "f47",
+            "name": "robot_action_purely_vertical",
+            "source": "def f47(s, a):\n    dx = a[0]\n    dy = a[1]\n    return (abs(dy) > 0.01) and (abs(dx) < 0.01)\n"
+        },
+        {
+            "id": "f48",
+            "name": "robot_action_arm_moving",
+            "source": "def f48(s, a):\n    darm = a[3]\n    return abs(darm) > 0.01\n"
+        },
+        {
+            "id": "f49",
+            "name": "robot_action_vacuum_active",
+            "source": "def f49(s, a):\n    vac = a[4]\n    return abs(vac) > 0.01\n"
+        },
+        {
+            "id": "f50",
+            "name": "robot_left_of_obstacle0_and_dx_positive",
+            "source": "def f50(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    dx = a[0]\n    return (robot_x + robot_base_radius < obstacle0_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f51",
+            "name": "robot_left_of_obstacle1_and_dx_positive",
+            "source": "def f51(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle1_x = s[29]\n    dx = a[0]\n    return (robot_x + robot_base_radius < obstacle1_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f52",
+            "name": "robot_right_of_obstacle0_and_dx_positive",
+            "source": "def f52(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_right = obstacle0_x + obstacle0_width\n    dx = a[0]\n    return (robot_x - robot_base_radius > wall_right) and (dx > 0)\n"
+        },
+        {
+            "id": "f53",
+            "name": "robot_right_of_obstacle1_and_dx_positive",
+            "source": "def f53(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle1_x = s[29]\n    obstacle1_width = s[37]\n    wall_right = obstacle1_x + obstacle1_width\n    dx = a[0]\n    return (robot_x - robot_base_radius > wall_right) and (dx > 0)\n"
+        },
+        {
+            "id": "f54",
+            "name": "robot_left_of_target_and_dx_positive",
+            "source": "def f54(s, a):\n    robot_x = s[0]\n    target_x = s[9]\n    dx = a[0]\n    return (robot_x < target_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f55",
+            "name": "robot_below_target_and_dy_positive",
+            "source": "def f55(s, a):\n    robot_y = s[1]\n    target_y = s[10]\n    dy = a[1]\n    return (robot_y < target_y) and (dy > 0)\n"
+        },
+        {
+            "id": "f56",
+            "name": "robot_right_of_target_and_dx_positive",
+            "source": "def f56(s, a):\n    robot_x = s[0]\n    target_x = s[9]\n    target_width = s[17]\n    dx = a[0]\n    return (robot_x > target_x + target_width) and (dx > 0)\n"
+        },
+        {
+            "id": "f57",
+            "name": "robot_above_target_and_dy_positive",
+            "source": "def f57(s, a):\n    robot_y = s[1]\n    target_y = s[10]\n    target_height = s[18]\n    dy = a[1]\n    return (robot_y > target_y + target_height) and (dy > 0)\n"
+        },
+        {
+            "id": "f58",
+            "name": "robot_right_of_target_and_dx_negative",
+            "source": "def f58(s, a):\n    robot_x = s[0]\n    target_x = s[9]\n    target_width = s[17]\n    dx = a[0]\n    return (robot_x > target_x + target_width) and (dx < 0)\n"
+        },
+        {
+            "id": "f59",
+            "name": "robot_above_target_and_dy_negative",
+            "source": "def f59(s, a):\n    robot_y = s[1]\n    target_y = s[10]\n    target_height = s[18]\n    dy = a[1]\n    return (robot_y > target_y + target_height) and (dy < 0)\n"
+        },
+        {
+            "id": "f60",
+            "name": "robot_moving_toward_passage0_gap_and_not_colliding",
+            "source": "def f60(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y + obstacle1_height - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - robot_y\n    robot_x = s[0]\n    dx = a[0]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_left = obstacle0_x\n    wall_right = obstacle0_x + obstacle0_width\n    next_left = robot_x + dx - robot_base_radius\n    next_right = robot_x + dx + robot_base_radius\n    collides = (next_right > wall_left) and (next_left < wall_right)\n    return (abs(to_gap) > 0.01) and (dy * to_gap > 0) and (not collides)\n"
+        }
+    ]
+}

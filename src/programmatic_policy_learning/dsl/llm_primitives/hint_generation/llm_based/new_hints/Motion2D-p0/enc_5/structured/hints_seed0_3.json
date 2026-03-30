@@ -1,0 +1,27 @@
+{
+  "action_choice_hints": [
+    "Action moves the robot's base position closer to the target's center in Euclidean distance.",
+    "Action direction is aligned with the vector from the robot to the target.",
+    "Action maintains a smooth, consistent approach trajectory toward the target without abrupt changes in direction.",
+    "Action avoids overshooting or bypassing the target, ensuring progress is monotonic toward the goal.",
+    "Action maintains safe clearance from the target until contact is intended (no premature intersection).",
+    "Action includes rotational adjustments that align the robot's orientation with the approach direction to the target.",
+    "Action does not activate manipulation or vacuum controls unless at the target (these remain inactive during approach)."
+  ],
+  "feature_family_hints": [
+    "Relative-position features: Needed to compute the vector and distance from the robot to the target for goal-directed movement.",
+    "Directional-alignment features: Needed to assess whether the action's direction matches the direction toward the target.",
+    "Progress-to-goal features: Needed to measure reduction in distance to the target and ensure monotonic progress.",
+    "Collision/intersection features: Needed to detect when the robot is about to or has contacted the target.",
+    "Orientation-alignment features: Needed to align the robot's heading with the approach vector to the target.",
+    "Action smoothness/consistency features: Needed to ensure actions do not introduce abrupt or erratic changes in trajectory."
+  ],
+  "causal_transition_hints": [
+    "Actions that move the robot closer to the target tend to cause a reduction in the robot-target distance.",
+    "Actions aligned with the robot-to-target vector tend to produce monotonic progress toward the target.",
+    "Actions that maintain safe clearance avoid premature intersection with the target until the final approach.",
+    "Actions that include appropriate rotational adjustments tend to align the robot's orientation with the approach direction, facilitating efficient contact.",
+    "Actions that do not activate manipulation or vacuum controls avoid unintended state changes in the robot's end-effector or gripper during approach.",
+    "If the action deviates from the approach vector, progress toward the target slows or becomes non-monotonic."
+  ]
+}

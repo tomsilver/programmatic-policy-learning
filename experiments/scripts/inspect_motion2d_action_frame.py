@@ -28,6 +28,10 @@ import gymnasium as gym
 import kinder
 import numpy as np
 
+from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts import (
+    create_motion2d_bilevel_expert,
+)
+
 
 ACTION_FIELD_NAMES = ("dx", "dy", "dtheta", "darm", "vac")
 
@@ -212,6 +216,75 @@ def _print_probe(probe: StepProbe) -> None:
     )
 
 
+def _run_bilevel_rollout(
+    env: gym.Env,
+    *,
+    seed: int,
+    passages: int,
+    max_steps: int,
+    zero_theta: bool,
+) -> None:
+    obs, info = env.reset(seed=seed)
+    if not isinstance(env.action_space, gym.spaces.Box):
+        raise TypeError(f"Expected Box action space, got {type(env.action_space)!r}")
+
+    expert = create_motion2d_bilevel_expert(
+        env.observation_space,
+        env.action_space,
+        seed=seed,
+        num_passages=passages,
+    )
+    expert.reset(obs, info)
+
+    print("\nBilevel expert rollout")
+    print(
+        "This prints the raw expert action and the realized world-frame state delta at each step."
+    )
+    if zero_theta:
+        print("Mode: forcing dtheta=0.0 before each env step.")
+    print(f"start: {_format_pose(_pose_from_obs(np.asarray(obs, dtype=float)))}")
+
+    for step in range(max_steps):
+        raw_action = np.asarray(expert.step(), dtype=float)
+        action = _clip_action(raw_action, env.action_space)
+        if zero_theta:
+            action[2] = 0.0
+        before = _pose_from_obs(np.asarray(obs, dtype=float))
+        next_obs, reward, terminated, truncated, next_info = env.step(action)
+        after = _pose_from_obs(np.asarray(next_obs, dtype=float))
+        delta = np.array(
+            [
+                after.x - before.x,
+                after.y - before.y,
+                after.theta - before.theta,
+            ],
+            dtype=float,
+        )
+
+        print(f"\n== bilevel_step_{step} ==")
+        print(f"raw_action: {_format_vec(raw_action)}")
+        print(f"action:     {_format_vec(action)}")
+        print(f"before:     {_format_pose(before)}")
+        print(f"after:      {_format_pose(after)}")
+        print(
+            "delta:      "
+            f"dx_world={delta[0]:+.4f}, dy_world={delta[1]:+.4f}, "
+            f"dtheta_obs={delta[2]:+.4f}, reward={float(reward):+.4f}"
+        )
+
+        done = bool(terminated or truncated)
+        expert.update(next_obs, float(reward), done, next_info)
+        obs = next_obs
+        if done:
+            print(
+                f"\nBilevel rollout ended at step {step} "
+                f"(terminated={bool(terminated)}, truncated={bool(truncated)})."
+            )
+            return
+
+    print(f"\nBilevel rollout reached max_steps={max_steps} without termination.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Inspect whether Motion2D dx/dy are absolute or heading-relative."
@@ -229,6 +302,22 @@ def main() -> None:
         type=float,
         default=None,
         help="Rotation magnitude for dtheta probe. Defaults to 25%% of bound.",
+    )
+    parser.add_argument(
+        "--show-bilevel",
+        action="store_true",
+        help="Also run and print a short bilevel-planning expert rollout.",
+    )
+    parser.add_argument(
+        "--bilevel-steps",
+        type=int,
+        default=10,
+        help="Maximum number of printed bilevel rollout steps.",
+    )
+    parser.add_argument(
+        "--bilevel-zero-theta",
+        action="store_true",
+        help="When showing bilevel rollout, force dtheta to 0 before each env step.",
     )
     args = parser.parse_args()
 
@@ -328,6 +417,14 @@ def main() -> None:
             "move the base toward the target. Changing theta only matters if the environment or a "
             "policy chooses heading-dependent behavior."
         )
+        if args.show_bilevel:
+            _run_bilevel_rollout(
+                env,
+                seed=args.seed,
+                passages=args.passages,
+                max_steps=max(1, int(args.bilevel_steps)),
+                zero_theta=bool(args.bilevel_zero_theta),
+            )
     finally:
         env.close()
 

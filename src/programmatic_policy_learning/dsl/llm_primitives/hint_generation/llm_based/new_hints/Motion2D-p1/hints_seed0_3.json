@@ -1,0 +1,31 @@
+{
+  "action_choice_hints": [
+    "action moves the robot in a direction that reduces the distance to the target",
+    "action maintains or increases clearance from obstacles while progressing toward the target",
+    "action avoids causing or maintaining intersection with obstacles",
+    "action avoids causing intersection with obstacles except when necessary to progress toward the target",
+    "action maintains a trajectory that threads between obstacles when possible",
+    "action direction is aligned with the vector from the robot to the target",
+    "action avoids sharp turns or abrupt changes in direction unless required to avoid obstacles",
+    "action maintains a safe margin from obstacles when possible",
+    "action selects a path that transitions from above to below or left to right of obstacles as needed to reach the target",
+    "action avoids reversing progress toward the target"
+  ],
+  "feature_family_hints": [
+    "relative-position features: needed to assess the robot's position relative to obstacles and the target",
+    "directional-alignment features: needed to evaluate if the action is aligned with the direction to the target",
+    "clearance/collision features: needed to detect and avoid intersections with obstacles",
+    "target-progress features: needed to measure reduction in distance to the target",
+    "transition-feasibility features: needed to ensure actions do not cause invalid or unsafe transitions (e.g., entering obstacles)",
+    "path-smoothness features: needed to prefer smooth, consistent motion toward the target"
+  ],
+  "causal_transition_hints": [
+    "actions that move the robot toward the target tend to reduce the distance to the target",
+    "actions that maintain or increase clearance from obstacles tend to avoid collisions",
+    "actions that cause intersection with obstacles tend to be followed by corrective actions to exit the obstacle",
+    "actions aligned with the target direction tend to result in steady progress toward the goal",
+    "actions that avoid abrupt direction changes tend to produce smoother, safer trajectories",
+    "actions that move the robot away from the target or into obstacles are generally avoided unless necessary for navigation",
+    "actions that transition the robot from one side of an obstacle to another are used to navigate around obstacles toward the target"
+  ]
+}

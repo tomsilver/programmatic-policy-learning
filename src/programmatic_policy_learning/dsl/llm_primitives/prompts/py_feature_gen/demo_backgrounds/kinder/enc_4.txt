@@ -1,0 +1,72 @@
+You will be given several continuous KinDER trajectories.
+
+Observations are continuous-valued state vectors and actions are continuous control vectors.
+The demonstrations are serialized in a compact relational format to make the geometry and action effects easier to read.
+
+Observation / action field guide:
+${OBSERVATION_FIELD_GUIDE}
+
+Important interpretation notes:
+
+- For the circular robot, `robot_x` and `robot_y` give the CENTER of the robot base.
+- For rectangular objects such as the target and obstacles, `(x, y)` gives the BOTTOM-LEFT corner of the rectangle.
+- Width and height fields describe rectangle extent from that bottom-left corner: width extends rightward and height extends upward.
+- `robot_base_radius` is the radius of the robot base. This matters when reasoning about collision, clearance, and whether the robot can fit through narrow openings.
+- Action dimensions represent the commanded control for one step:
+  - `dx`, `dy`: translation
+  - `dtheta`: rotation
+  - `darm`: arm joint change
+  - `vac`: vacuum/gripper control
+
+Each trajectory is shown as a sequence of `*** Step t ***` blocks.
+
+Each step may contain:
+
+- `Observation (s_t):`
+  A partial listing of important raw observation entries and their values at that step.
+
+- `Action:`
+  The action taken at that step.
+
+- `CHANGES SUMMARY:`
+  A concise description of which observation entries changed from `s_t` to `s_{t+1}`.
+
+- `Relational Facts:`
+  Human-readable geometric summaries derived from the raw observation, such as:
+  - relative position (`left of`, `right of`, `above`, `below`)
+  - distance or offset relations
+  - whether the robot is inside a region
+  - whether the robot is aligned with a corridor, opening, or gap
+  - whether the robot is before, inside, or beyond a barrier-like structure
+
+Important:
+- These relational facts are derived summaries intended to help interpret the state.
+- They are not additional input variables.
+- Any feature code must use only the raw arrays `s` and `a`, indexed according to the field guide.
+
+Geometric interpretation:
+- For rectangular objects in this environment, including the target and obstacles, `(x, y)` denotes the BOTTOM-LEFT corner, not the center.
+- Rectangle centers must be computed as `(x + width / 2, y + height / 2)`.
+- For the circular robot, `(robot_x, robot_y)` denotes the CENTER of the robot base.
+- A passage or gap is not a directly stored variable; it is a geometric relation inferred from obstacle positions and sizes.
+- Statements such as “robot is left of passage wall” or “robot y is aligned with passage gap” are derived from obstacle geometry plus robot radius.
+- These derived facts are meant to expose reusable spatial structure, not episode-specific labels.
+
+Success condition:
+- Episode termination occurs when the robot CENTER lies inside the target rectangle.
+- Do not assume the entire circular robot must fit inside the target region for success.
+
+What the demonstrations are meant to show:
+- how the robot moves relative to objects and free space,
+- how actions change position and orientation,
+- how the robot’s behavior depends on geometric relationships rather than absolute coordinates.
+
+When proposing features, prefer predicates that capture reusable state-action structure:
+- relative geometry between robot, target, and obstacles,
+- whether an action is appropriate given the current spatial configuration,
+- progress, alignment, clearance, and constraint-respecting behavior,
+- conditional features that depend on the current geometric regime.
+
+Do not treat the textual summaries as privileged symbols.
+Use them only to understand the meaning of the raw observation fields.
+Any returned feature must be expressible directly from `s` and `a`.

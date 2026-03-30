@@ -1,7 +1,7 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-program_generation_step_size: 100
+demo_numbers: [0, 1, 2] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
+program_generation_step_size: 1
 num_programs: 100 #for fixed
 num_dts: 5
 max_num_particles: 25
@@ -25,9 +25,9 @@ normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: false
+collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
-collision_template_feedback: true #false: means the feedback is just features/no templates
+collision_template_feedback: false #false: means the feedback is just features/no templates
 collision_feedback_num_buckets: 2
 collision_feedback_max_new_features: 5000
 collision_feedback_max_rounds: 5
@@ -49,15 +49,15 @@ program_generation:
   llm_model: "gpt-4.1"
   demos_included: [0,1] #,6,8, 9
   skip_rate: 1
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # continuous_example - new_hybrid.txt" new_hybrid
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator.txt"  #generator hybrid_kinder continuous_example - new_hybrid.txt" new_hybrid
   py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
   num_batches: 1 #keep this 1 for now
   removed_primitive: "" 
   num_features: 50
-  encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
+  encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
   loading:
-    offline: 0 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
+    offline: 1 # 0 for using LLM / 1 for using the following path data
+    offline_json_path: "feature_library.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
     # Discrete-only switch. Continuous mode is always quantized expansion.
     enabled: true
@@ -69,9 +69,14 @@ program_generation:
       w_random: 0.15
     continuous:
       # Continuous actions are always quantized for training data expansion.
-      # int => equal odd bucket count for dx and dy (e.g., 5 -> 25 actions total)
-      # list => per-dimension odd bucket counts, e.g. [3, 7]
-      bucket_counts: 3
+      # Only these action dims define action identity for training/inference.
+      # For Motion2D navigation, use dx/dy and smooth dtheta/darm/vac to 0.
+      active_action_dims: [0, 1]
+      inactive_action_fill_value: 0.0
+      # Explicit bins for dx/dy:
+      # [-0.05, -0.02), [-0.02, -0.006), [-0.006, 0), [0, 0.006),
+      # [0.006, 0.02), [0.02, 0.05]
+      bucket_edges: [-0.05, -0.006, 0.0, 0.006, 0.05]
       # Cost-sensitive weighting over quantized action buckets.
       # Disabled by default to preserve baseline behavior.
       weight_config:

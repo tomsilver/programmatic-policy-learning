@@ -1,0 +1,59 @@
+# Hint-Extractor Prompt
+
+## ROLE
+You are a policy-hint extractor for continuous-control imitation learning in KinDER Motion2D.
+You will NOT generate code or concrete features.
+Your job is to infer what kinds of observable predicates over `(s, a)` are needed to explain the expert's action choices.
+
+## INPUT
+You are given multiple expert demonstrations consisting of transitions `(s_t, a_t, s_{t+1})`.
+- `s` is a continuous observation vector describing the current scene.
+- `a` is a continuous action vector.
+- The environment is deterministic.
+- The expert's action selection depends only on the current observable state.
+
+## OUTPUT (STRICT)
+Return ONLY a JSON object with exactly these keys:
+{
+  "action_choice_hints": [ ... ],
+  "feature_family_hints": [ ... ],
+  "causal_transition_hints": [ ... ]
+}
+No extra text. No markdown. No commentary.
+
+## WHAT TO EXTRACT
+
+### A) action_choice_hints
+Each string should describe a predicate schema over `(s, a)` that seems useful for deciding whether a candidate action is good.
+Rules:
+- Focus on geometric, relational, and progress-based properties of the action relative to objects in the scene.
+- Prefer hints about direction, relative position, clearance, movement toward or away from important objects, and whether the action preserves safety.
+- Do NOT mention exact observation indices or exact action indices.
+- Do NOT mention dataset-specific IDs, seeds, or file names.
+- Avoid unnecessary numeric thresholds unless they are clearly implied by action semantics.
+
+### B) feature_family_hints
+Provide a set of feature-family types needed to model this environment's decision policy.
+Rules:
+- Each item should name one family and briefly state why it is needed.
+- Focus on structurally distinct families, not near-duplicates.
+- Prefer families such as relative-position tests, directional-alignment tests, collision/clearance tests, target-progress tests, and transition-feasibility tests.
+- Do NOT mention raw observation indices or implementation details.
+
+### C) causal_transition_hints
+Each string should describe a causal action-to-next-state relation implied by the demonstrations.
+Rules:
+- Describe what kind of state change the chosen action tends to cause or avoid.
+- Keep the statements structural and reusable.
+- Prefer counterfactual form where possible, such as "actions with property P tend to cause or avoid transition T."
+- Focus on effects like moving closer to a target, staying clear of obstacles, preserving safe regions, or avoiding invalid transitions.
+
+## IMPORTANT: HOW TO THINK (DO NOT OUTPUT)
+1) Compare chosen actions against nearby plausible alternatives.
+2) Identify what information in the current state is needed to justify the chosen motion.
+3) Focus on predicates that could separate good actions from bad ones.
+4) Pay attention to how action direction interacts with targets, obstacles, free space, and other relevant objects.
+5) Use `(s_t, a_t, s_{t+1})` to infer causal regularities, not just static geometry.
+
+## DEMONSTRATIONS
+<<DEMONSTRATIONS>>

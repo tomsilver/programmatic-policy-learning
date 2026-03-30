@@ -1,4 +1,4 @@
-num_passages: 0
+num_passages: 1
 
 make_kwargs:
   base_name: "Motion2D-p${..num_passages}"

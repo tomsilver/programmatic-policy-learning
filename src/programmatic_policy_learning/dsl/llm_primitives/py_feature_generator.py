@@ -73,6 +73,32 @@ class PyFeatureGenerator:
         match = re.search(r"-p(\d+)", env_name)
         return int(match.group(1)) if match else 0
 
+    def _motion2d_passage_prompt_values(self, env_name: str | None) -> tuple[str, str]:
+        """Return prompt-friendly Motion2D passage variant strings."""
+        if env_name is None:
+            return ("p0", "no narrow passages or wall obstacles")
+
+        base_env_name = env_name.split("-p", maxsplit=1)[0]
+        canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
+        if canonical_name != "Motion2D":
+            return ("unknown", "an environment-specific passage layout")
+
+        num_passages = self._motion2d_num_passages(env_name)
+        variant = f"p{num_passages}"
+        if num_passages == 0:
+            description = "no narrow passages or wall obstacles"
+        elif num_passages == 1:
+            description = (
+                "there is one narrow passage formed by two wall obstacles "
+                "between the robot and the target"
+            )
+        else:
+            description = (
+                f"there are {num_passages} narrow passages formed by wall "
+                "obstacles between the robot and the target"
+            )
+        return (variant, description)
+
     def _build_continuous_observation_field_guide(self, env_name: str | None) -> str:
         if env_name is None:
             return "- Observation fields are environment-specific continuous values."
@@ -150,6 +176,13 @@ class PyFeatureGenerator:
                     field_guide,
                 )
             rendered = rendered.replace("${DEMONSTRATION_BACKGROUND}", background_text)
+
+        if "${PASSAGE_VARIANT}" in rendered or "${PASSAGE_DESCRIPTION}" in rendered:
+            passage_variant, passage_description = self._motion2d_passage_prompt_values(
+                env_name
+            )
+            rendered = rendered.replace("${PASSAGE_VARIANT}", passage_variant)
+            rendered = rendered.replace("${PASSAGE_DESCRIPTION}", passage_description)
 
         needs_token_map = any(
             token in rendered
@@ -232,6 +265,8 @@ class PyFeatureGenerator:
             "${RAW_TOKEN_VALIDATION}",
             "${TOKEN_CONSTANTS_VALIDATION}",
             "${NUM_FEATURES}",
+            "${PASSAGE_VARIANT}",
+            "${PASSAGE_DESCRIPTION}",
         ]
         if any(token in rendered for token in unresolved):
             raise ValueError("Prompt template still has unresolved variables.")
@@ -309,6 +344,38 @@ class PyFeatureGenerator:
             raise ValueError("Could not find a function definition line.")
         start, end = m.span(1)
         return source[:start] + new_fn_name + source[end:]
+
+    def renumber_payload_features(
+        self,
+        payload: dict[str, Any],
+        *,
+        start_index: int = 1,
+    ) -> dict[str, Any]:
+        """Renumber feature ids/names and function defs to start at start_index."""
+        if start_index < 1:
+            raise ValueError("start_index must be >= 1.")
+
+        renumbered: list[dict[str, Any]] = []
+        next_id = start_index
+
+        for feat in payload.get("features", []):
+            if not isinstance(feat, dict):
+                raise ValueError("Each feature must be a dict.")
+            source = feat.get("source")
+            if not isinstance(source, str):
+                raise ValueError("Feature 'source' must be a string.")
+
+            fid = f"f{next_id}"
+            updated = dict(feat)
+            updated["id"] = fid
+            updated["name"] = fid
+            updated["source"] = self._rename_def(
+                self._normalize_placeholders(source), fid
+            )
+            renumbered.append(updated)
+            next_id += 1
+
+        return {"features": renumbered}
 
     def expand_template_payload(
         self,
@@ -545,6 +612,8 @@ class PyFeatureGenerator:
                     )
                 prompt = f"{prompt}\n\nSEED: {_seed}\n"
                 logging.info(prompt)
+                input()
+
 
                 template_payload = self.query_llm(
                     prompt,
@@ -566,6 +635,7 @@ class PyFeatureGenerator:
                 )
                 feature_programs = self.parse_feature_programs(expanded_payload)
                 # all_descriptions.extend(self._extract_descriptions(template_payload))
+
                 all_programs.extend(feature_programs)
                 batch_payloads.append(expanded_payload)
 
