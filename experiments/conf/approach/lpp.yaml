@@ -1,6 +1,6 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
+demo_numbers: [0,1,2,3,4,5] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
 program_generation_step_size: 1
 num_programs: 100 #for fixed
 num_dts: 5
@@ -44,6 +44,14 @@ val_frac: 0.0
 val_size: null
 split_seed: 0
 split_strategy: "random"
+recovery_augmentation:
+  enabled: true
+  rounds: 3
+  max_steps: 50
+  stuck_window: 6
+  min_progress_delta: 0.01
+  stuck_position_delta: 0.01
+  max_queries_per_env: 12
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"

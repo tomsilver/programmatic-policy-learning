@@ -138,13 +138,13 @@ def collect_demo(
     expert.reset(obs, info)
     while True:
         action = expert.step()
-        # print("ACTION:", action)
+        print("ACTION:", action)
         if quantizer is not None:
             try:
                 print("ACTION BUCKET:", quantizer.quantize(action))
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
-        # print("OBSERVATION:", obs)
+        print("OBSERVATION:", obs)
 
         obs_list.append(obs)
         act_list.append(action)

@@ -634,7 +634,7 @@ def extract_examples_from_demonstration_item(
 
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-        print(len(negative_examples), "negatives generated from quantized expansion.")
+        # print(len(negative_examples), "negatives generated from quantized expansion.")
         # input()
         # Keep weight order aligned with row order: [positive] + [negatives].
         aligned_buckets = [expert_bucket] + neg_buckets

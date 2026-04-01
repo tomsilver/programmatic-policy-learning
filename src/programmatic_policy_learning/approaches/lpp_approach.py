@@ -3,6 +3,7 @@
 import json
 import logging
 import random
+from collections import deque
 from collections.abc import Mapping
 from itertools import product
 from pathlib import Path
@@ -177,6 +178,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         preserve_ordering: bool = False,
         dt_max_depth: int | None = 5,
         hyperparam_grid: Mapping[str, Sequence[Any] | Any] | None = None,
+        recovery_augmentation: Mapping[str, Any] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -231,6 +233,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.dt_max_depth = dt_max_depth
         self.hyperparam_grid = (
             dict(hyperparam_grid) if isinstance(hyperparam_grid, Mapping) else None
+        )
+        self.recovery_augmentation = (
+            dict(recovery_augmentation)
+            if isinstance(recovery_augmentation, Mapping)
+            else {"enabled": False}
         )
         self._negative_sampling_cfg: dict[str, Any] | None = None
         self._log_initial_action_space_ranges()
@@ -863,6 +870,174 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         ]
         return Trajectory(steps=aligned_steps)
 
+    def _recovery_obs_hash(self, obs: Any) -> Any:
+        if isinstance(obs, np.ndarray):
+            return ("np", str(obs.dtype), tuple(obs.shape), obs.tobytes())
+        return ("repr", repr(obs))
+
+    def _motion2d_target_distance(self, obs: Any) -> float | None:
+        if "motion2d" not in str(self.base_class_name).lower():
+            return None
+        arr = np.asarray(obs, dtype=float).reshape(-1)
+        if arr.size < 19:
+            return None
+        robot_x = float(arr[0])
+        robot_y = float(arr[1])
+        target_cx = float(arr[9] + arr[17] / 2.0)
+        target_cy = float(arr[10] + arr[18] / 2.0)
+        return float(np.hypot(target_cx - robot_x, target_cy - robot_y))
+
+    def _motion2d_robot_position(self, obs: Any) -> tuple[float, float] | None:
+        if "motion2d" not in str(self.base_class_name).lower():
+            return None
+        arr = np.asarray(obs, dtype=float).reshape(-1)
+        if arr.size < 2:
+            return None
+        return float(arr[0]), float(arr[1])
+
+    def _actions_match_for_recovery(self, a: _ActType, b: _ActType) -> bool:
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "continuous":
+            return cast(bool, a == b)
+        aa = np.asarray(self._center_continuous_action_for_scoring(a), dtype=float)
+        bb = np.asarray(self._center_continuous_action_for_scoring(b), dtype=float)
+        return bool(np.allclose(aa, bb, atol=1e-8))
+
+    def _query_expert_action_for_recovery(
+        self,
+        obs: _ObsType,
+        info: dict[str, Any],
+        env: Any,
+    ) -> _ActType | None:
+        try:
+            if hasattr(self.expert, "set_env"):
+                self.expert.set_env(env)
+            self.expert.reset(obs, info)
+            return cast(_ActType, self.expert.step())
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logging.warning("Recovery expert query failed: %s", exc)
+            return None
+
+    def _augment_recovery_states(
+        self,
+        *,
+        policy: LPPPolicy,
+        train_demo_ids: tuple[int, ...],
+        demonstrations_train: Trajectory[_ObsType, _ActType],
+        demo_dict_train: dict[int, Trajectory[_ObsType, _ActType]],
+    ) -> tuple[
+        tuple[int, ...],
+        Trajectory[_ObsType, _ActType],
+        dict[int, Trajectory[_ObsType, _ActType]],
+        bool,
+    ]:
+        """Roll out current policy on train envs and add recovery states."""
+        cfg = dict(self.recovery_augmentation or {})
+        if not bool(cfg.get("enabled", False)):
+            return train_demo_ids, demonstrations_train, demo_dict_train, False
+
+        max_steps = int(cfg.get("max_steps", 50))
+        stuck_window = max(2, int(cfg.get("stuck_window", cfg.get("no_progress_window", 6))))
+        min_progress_delta = float(cfg.get("min_progress_delta", 0.01))
+        stuck_position_delta = float(cfg.get("stuck_position_delta", 0.01))
+        max_queries_per_env = max(1, int(cfg.get("max_queries_per_env", 8)))
+        queried_steps: list[tuple[_ObsType, _ActType]] = []
+        seen_hashes: set[Any] = set()
+        all_train_demo_ids = tuple(int(i) for i in train_demo_ids)
+        rollout_env_ids = tuple(i for i in all_train_demo_ids if i >= 0)
+
+        for env_num in rollout_env_ids:
+            env = self.env_factory(int(env_num))
+            try:
+                try:
+                    reset_out = env.reset(seed=int(env_num))
+                except TypeError:
+                    reset_out = env.reset()
+                if isinstance(reset_out, tuple) and len(reset_out) == 2:
+                    obs, info = reset_out
+                else:
+                    obs, info = reset_out, {}
+
+                recent_history: deque[tuple[_ObsType, dict[str, Any], _ActType | None]] = deque(
+                    maxlen=stuck_window
+                )
+                distance_history: deque[float] = deque(maxlen=stuck_window)
+                position_history: deque[tuple[float, float]] = deque(maxlen=stuck_window)
+                queries_used = 0
+
+                for step_idx in range(max_steps):
+                    expert_action = self._query_expert_action_for_recovery(
+                        obs, info, env
+                    )
+                    policy_action = cast(_ActType, policy(obs))
+                    recent_history.append((obs, dict(info), policy_action))
+
+                    distance = self._motion2d_target_distance(obs)
+                    position = self._motion2d_robot_position(obs)
+                    if distance is not None:
+                        distance_history.append(distance)
+                    if position is not None:
+                        position_history.append(position)
+                    if (
+                        expert_action is not None
+                        and queries_used < max_queries_per_env
+                        and len(distance_history) == stuck_window
+                        and len(position_history) == stuck_window
+                        and len(recent_history) == stuck_window
+                    ):
+                        action_window = [a for _, _, a in recent_history]
+                        first_action = action_window[0]
+                        repeated_action = first_action is not None and all(
+                            a is not None
+                            and self._actions_match_for_recovery(first_action, a)
+                            for a in action_window[1:]
+                        )
+                        first_pos = position_history[0]
+                        last_pos = position_history[-1]
+                        movement = float(
+                            np.hypot(last_pos[0] - first_pos[0], last_pos[1] - first_pos[1])
+                        )
+                        progress = float(distance_history[0] - distance_history[-1])
+                        if repeated_action and movement <= stuck_position_delta:
+                            if progress < min_progress_delta:
+                                obs_hash = self._recovery_obs_hash(obs)
+                                if obs_hash not in seen_hashes:
+                                    queried_steps.append((obs, expert_action))
+                                    seen_hashes.add(obs_hash)
+                                    queries_used += 1
+
+                    step_out = env.step(policy_action)
+                    if len(step_out) == 4:
+                        obs, reward, done, info = step_out
+                        terminated, truncated = done, False
+                    else:
+                        obs, reward, terminated, truncated, info = step_out
+                    del reward
+                    if terminated or truncated:
+                        break
+            finally:
+                if hasattr(env, "close"):
+                    env.close()
+
+        if not queried_steps:
+            logging.info("Recovery augmentation found no new recovery states.")
+            return train_demo_ids, demonstrations_train, demo_dict_train, False
+
+        next_demo_id = min(all_train_demo_ids, default=0) - 1
+        aug_traj = Trajectory[_ObsType, _ActType](steps=queried_steps)
+        augmented_demo_dict = dict(demo_dict_train)
+        augmented_demo_dict[next_demo_id] = aug_traj
+        augmented_demo_ids = tuple(list(all_train_demo_ids) + [next_demo_id])
+        augmented_demonstrations = Trajectory[_ObsType, _ActType](
+            steps=list(demonstrations_train.steps) + queried_steps
+        )
+        logging.info(
+            "Recovery augmentation added %d recovery states as demo %d.",
+            len(queried_steps),
+            next_demo_id,
+        )
+        return augmented_demo_ids, augmented_demonstrations, augmented_demo_dict, True
+
     def _build_and_process_train_matrix(
         self,
         *,
@@ -1318,6 +1493,60 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             start_index=start_index,
             feature_display_names=feature_display_names,
         )
+        recovery_cfg = dict(self.recovery_augmentation or {})
+        if bool(recovery_cfg.get("enabled", False)):
+            recovery_rounds = max(1, int(recovery_cfg.get("rounds", 1)))
+            for round_idx in range(recovery_rounds):
+                logging.info(
+                    "Recovery augmentation round %d/%d: training bootstrap policy.",
+                    round_idx + 1,
+                    recovery_rounds,
+                )
+                bootstrap_policy = self._train_policy_from_matrix(
+                    X_train,
+                    y_train_bool,
+                    sample_weight_train,
+                    programs_sa,
+                    program_prior_log_probs_opt,
+                    demonstrations_train,
+                    dsl_functions,
+                    negative_sampling_cfg=negative_sampling_cfg,
+                    train_hyperparams=self._default_train_hyperparams(),
+                    tie_break_demonstrations=None,
+                )
+                (
+                    train_demo_ids,
+                    demonstrations_train,
+                    demo_dict_train,
+                    changed,
+                ) = self._augment_recovery_states(
+                    policy=bootstrap_policy,
+                    train_demo_ids=train_demo_ids,
+                    demonstrations_train=demonstrations_train,
+                    demo_dict_train=demo_dict_train,
+                )
+                if not changed:
+                    break
+                (
+                    X_train,
+                    y_train,
+                    y_train_bool,
+                    sample_weight_train,
+                    _examples,
+                    programs_sa,
+                    program_prior_log_probs_opt,
+                ) = self._build_and_process_train_matrix(
+                    train_demo_ids=train_demo_ids,
+                    val_demo_ids=val_demo_ids,
+                    demo_dict_train=demo_dict_train,
+                    programs_sa=programs_sa,
+                    program_prior_log_probs_opt=program_prior_log_probs_opt,
+                    dsl_functions=dsl_functions,
+                    negative_sampling_cfg=negative_sampling_cfg,
+                    offline_path_name=offline_path_name,
+                    start_index=start_index,
+                    feature_display_names=feature_display_names,
+                )
         print("Final programs:")
         for i, prog in enumerate(programs_sa):
             print(f"  Program {i}: {prog}")
