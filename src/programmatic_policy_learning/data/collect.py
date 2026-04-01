@@ -106,7 +106,9 @@ def collect_demo(
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
     env = env_factory(env_num)  # type: ignore
-
+    if hasattr(expert, "set_env"):
+        expert.set_env(env)
+        
     try:
         reset_out = env.reset(seed=env_num)
     except TypeError:
@@ -136,13 +138,13 @@ def collect_demo(
     expert.reset(obs, info)
     while True:
         action = expert.step()
-        print("ACTION:", action)
+        # print("ACTION:", action)
         if quantizer is not None:
             try:
                 print("ACTION BUCKET:", quantizer.quantize(action))
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
-        print("OBSERVATION:", obs)
+        # print("OBSERVATION:", obs)
 
         obs_list.append(obs)
         act_list.append(action)
@@ -189,12 +191,11 @@ def get_demonstrations(
         )
         demonstrations.append(traj)
         demo_dict[i] = traj
-    _log_motion2d_bucket_purity(
-        env_factory,
-        demo_numbers,
-        demonstrations,
-        bucket_edges=[-0.05, -0.006, 0.0, 0.006, 0.05],
-    )
-    input()
+    # _log_motion2d_bucket_purity(
+    #     env_factory,
+    #     demo_numbers,
+    #     demonstrations,
+    #     bucket_edges=[-0.05, -0.006, 0.0, 0.006, 0.05],
+    # )
     all_steps = [step for traj in demonstrations for step in traj.steps]
     return Trajectory(steps=all_steps), demo_dict

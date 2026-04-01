@@ -1,0 +1,284 @@
+{
+    "features": [
+        {
+            "id": "f1",
+            "name": "robot_left_of_target_center",
+            "source": "def f1(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    return s[0] < target_cx\n"
+        },
+        {
+            "id": "f2",
+            "name": "robot_right_of_target_center",
+            "source": "def f2(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    return s[0] > target_cx\n"
+        },
+        {
+            "id": "f3",
+            "name": "robot_below_target_center",
+            "source": "def f3(s, a):\n    target_cy = s[10] + s[18] / 2.0\n    return s[1] < target_cy\n"
+        },
+        {
+            "id": "f4",
+            "name": "robot_above_target_center",
+            "source": "def f4(s, a):\n    target_cy = s[10] + s[18] / 2.0\n    return s[1] > target_cy\n"
+        },
+        {
+            "id": "f5",
+            "name": "robot_close_to_target_center_l2_0.3",
+            "source": "def f5(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = s[0] - target_cx\n    dy = s[1] - target_cy\n    dist = (dx * dx + dy * dy) ** 0.5\n    return dist < 0.3\n"
+        },
+        {
+            "id": "f6",
+            "name": "robot_far_from_target_center_l2_1.0",
+            "source": "def f6(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = s[0] - target_cx\n    dy = s[1] - target_cy\n    dist = (dx * dx + dy * dy) ** 0.5\n    return dist > 1.0\n"
+        },
+        {
+            "id": "f7",
+            "name": "robot_manhattan_dist_to_target_lt_0.5",
+            "source": "def f7(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = abs(s[0] - target_cx)\n    dy = abs(s[1] - target_cy)\n    return dx + dy < 0.5\n"
+        },
+        {
+            "id": "f8",
+            "name": "robot_manhattan_dist_to_target_gt_2.0",
+            "source": "def f8(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = abs(s[0] - target_cx)\n    dy = abs(s[1] - target_cy)\n    return dx + dy > 2.0\n"
+        },
+        {
+            "id": "f9",
+            "name": "robot_inside_target_region",
+            "source": "def f9(s, a):\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    return (s[0] >= target_x) and (s[0] <= target_x + target_w) and (s[1] >= target_y) and (s[1] <= target_y + target_h)\n"
+        },
+        {
+            "id": "f10",
+            "name": "robot_outside_target_region",
+            "source": "def f10(s, a):\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    return not ((s[0] >= target_x) and (s[0] <= target_x + target_w) and (s[1] >= target_y) and (s[1] <= target_y + target_h))\n"
+        },
+        {
+            "id": "f11",
+            "name": "robot_left_of_obstacle0_wall",
+            "source": "def f11(s, a):\n    wall_x = s[19]\n    r = s[3]\n    return s[0] + r < wall_x\n"
+        },
+        {
+            "id": "f12",
+            "name": "robot_right_of_obstacle0_wall",
+            "source": "def f12(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    return s[0] - r > wall_x + wall_w\n"
+        },
+        {
+            "id": "f13",
+            "name": "robot_in_obstacle0_zone",
+            "source": "def f13(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    return (s[0] + r >= wall_x) and (s[0] - r <= wall_x + wall_w)\n"
+        },
+        {
+            "id": "f14",
+            "name": "robot_y_aligned_with_obstacle0_gap",
+            "source": "def f14(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    return (s[1] >= gap_lower) and (s[1] <= gap_upper)\n"
+        },
+        {
+            "id": "f15",
+            "name": "robot_left_of_obstacle1_wall",
+            "source": "def f15(s, a):\n    wall_x = s[29]\n    r = s[3]\n    return s[0] + r < wall_x\n"
+        },
+        {
+            "id": "f16",
+            "name": "robot_right_of_obstacle1_wall",
+            "source": "def f16(s, a):\n    wall_x = s[29]\n    wall_w = s[37]\n    r = s[3]\n    return s[0] - r > wall_x + wall_w\n"
+        },
+        {
+            "id": "f17",
+            "name": "robot_in_obstacle1_zone",
+            "source": "def f17(s, a):\n    wall_x = s[29]\n    wall_w = s[37]\n    r = s[3]\n    return (s[0] + r >= wall_x) and (s[0] - r <= wall_x + wall_w)\n"
+        },
+        {
+            "id": "f18",
+            "name": "robot_y_aligned_with_obstacle1_gap",
+            "source": "def f18(s, a):\n    gap_lower = s[30] + s[38] + s[3]\n    gap_upper = s[40] - s[48] - s[3]\n    return (s[1] >= gap_lower) and (s[1] <= gap_upper)\n"
+        },
+        {
+            "id": "f19",
+            "name": "robot_clear_of_obstacle0_by_0.1",
+            "source": "def f19(s, a):\n    ox = s[19]\n    oy = s[20]\n    ow = s[27]\n    oh = s[28]\n    rx = s[0]\n    ry = s[1]\n    r = s[3]\n    closest_x = min(max(rx, ox), ox + ow)\n    closest_y = min(max(ry, oy), oy + oh)\n    dist = ((rx - closest_x) ** 2 + (ry - closest_y) ** 2) ** 0.5\n    return dist > r + 0.1\n"
+        },
+        {
+            "id": "f20",
+            "name": "robot_clear_of_obstacle1_by_0.1",
+            "source": "def f20(s, a):\n    ox = s[29]\n    oy = s[30]\n    ow = s[37]\n    oh = s[38]\n    rx = s[0]\n    ry = s[1]\n    r = s[3]\n    closest_x = min(max(rx, ox), ox + ow)\n    closest_y = min(max(ry, oy), oy + oh)\n    dist = ((rx - closest_x) ** 2 + (ry - closest_y) ** 2) ** 0.5\n    return dist > r + 0.1\n"
+        },
+        {
+            "id": "f21",
+            "name": "action_moves_toward_target_center",
+            "source": "def f21(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    to_target_x = target_cx - s[0]\n    to_target_y = target_cy - s[1]\n    dot = to_target_x * a[0] + to_target_y * a[1]\n    return dot > 0\n"
+        },
+        {
+            "id": "f22",
+            "name": "action_moves_away_from_target_center",
+            "source": "def f22(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    to_target_x = target_cx - s[0]\n    to_target_y = target_cy - s[1]\n    dot = to_target_x * a[0] + to_target_y * a[1]\n    return dot < 0\n"
+        },
+        {
+            "id": "f23",
+            "name": "action_dx_positive",
+            "source": "def f23(s, a):\n    return a[0] > 0\n"
+        },
+        {
+            "id": "f24",
+            "name": "action_dx_negative",
+            "source": "def f24(s, a):\n    return a[0] < 0\n"
+        },
+        {
+            "id": "f25",
+            "name": "action_dy_positive",
+            "source": "def f25(s, a):\n    return a[1] > 0\n"
+        },
+        {
+            "id": "f26",
+            "name": "action_dy_negative",
+            "source": "def f26(s, a):\n    return a[1] < 0\n"
+        },
+        {
+            "id": "f27",
+            "name": "action_translation_magnitude_gt_0.04",
+            "source": "def f27(s, a):\n    mag = (a[0] * a[0] + a[1] * a[1]) ** 0.5\n    return mag > 0.04\n"
+        },
+        {
+            "id": "f28",
+            "name": "action_translation_magnitude_lt_0.02",
+            "source": "def f28(s, a):\n    mag = (a[0] * a[0] + a[1] * a[1]) ** 0.5\n    return mag < 0.02\n"
+        },
+        {
+            "id": "f29",
+            "name": "action_is_mostly_x",
+            "source": "def f29(s, a):\n    return abs(a[0]) > abs(a[1])\n"
+        },
+        {
+            "id": "f30",
+            "name": "action_is_mostly_y",
+            "source": "def f30(s, a):\n    return abs(a[1]) > abs(a[0])\n"
+        },
+        {
+            "id": "f31",
+            "name": "robot_before_passage0_wall",
+            "source": "def f31(s, a):\n    wall_x = s[19]\n    r = s[3]\n    return s[0] + r < wall_x\n"
+        },
+        {
+            "id": "f32",
+            "name": "robot_inside_passage0_zone",
+            "source": "def f32(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    return (s[0] + r >= wall_x) and (s[0] - r <= wall_x + wall_w)\n"
+        },
+        {
+            "id": "f33",
+            "name": "robot_past_passage0_wall",
+            "source": "def f33(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    return s[0] - r > wall_x + wall_w\n"
+        },
+        {
+            "id": "f34",
+            "name": "robot_y_aligned_with_passage0_gap",
+            "source": "def f34(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    return (s[1] >= gap_lower) and (s[1] <= gap_upper)\n"
+        },
+        {
+            "id": "f35",
+            "name": "robot_y_below_passage0_gap",
+            "source": "def f35(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    return s[1] < gap_lower\n"
+        },
+        {
+            "id": "f36",
+            "name": "robot_y_above_passage0_gap",
+            "source": "def f36(s, a):\n    gap_upper = s[30] - s[38] - s[3]\n    return s[1] > gap_upper\n"
+        },
+        {
+            "id": "f37",
+            "name": "action_moves_toward_passage0_gap_center_y",
+            "source": "def f37(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - s[1]\n    return to_gap * a[1] > 0\n"
+        },
+        {
+            "id": "f38",
+            "name": "action_moves_toward_passage0_wall_x",
+            "source": "def f38(s, a):\n    wall_x = s[19]\n    to_wall = wall_x - s[0]\n    return to_wall * a[0] > 0\n"
+        },
+        {
+            "id": "f39",
+            "name": "action_moves_away_from_passage0_wall_x",
+            "source": "def f39(s, a):\n    wall_x = s[19]\n    to_wall = wall_x - s[0]\n    return to_wall * a[0] < 0\n"
+        },
+        {
+            "id": "f40",
+            "name": "robot_close_to_passage0_wall_0.05",
+            "source": "def f40(s, a):\n    wall_x = s[19]\n    r = s[3]\n    dist = abs((s[0] + r) - wall_x)\n    return dist < 0.05\n"
+        },
+        {
+            "id": "f41",
+            "name": "robot_y_near_passage0_gap_center_0.1",
+            "source": "def f41(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    gap_center = (gap_lower + gap_upper) / 2.0\n    return abs(s[1] - gap_center) < 0.1\n"
+        },
+        {
+            "id": "f42",
+            "name": "robot_y_far_from_passage0_gap_center_0.3",
+            "source": "def f42(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    gap_center = (gap_lower + gap_upper) / 2.0\n    return abs(s[1] - gap_center) > 0.3\n"
+        },
+        {
+            "id": "f43",
+            "name": "action_rotation_gt_0.1",
+            "source": "def f43(s, a):\n    return abs(a[2]) > 0.1\n"
+        },
+        {
+            "id": "f44",
+            "name": "action_rotation_lt_0.05",
+            "source": "def f44(s, a):\n    return abs(a[2]) < 0.05\n"
+        },
+        {
+            "id": "f45",
+            "name": "action_arm_movement_gt_0.05",
+            "source": "def f45(s, a):\n    return abs(a[3]) > 0.05\n"
+        },
+        {
+            "id": "f46",
+            "name": "action_vacuum_active",
+            "source": "def f46(s, a):\n    return abs(a[4]) > 0.01\n"
+        },
+        {
+            "id": "f47",
+            "name": "robot_before_passage0_wall_and_action_toward_wall",
+            "source": "def f47(s, a):\n    wall_x = s[19]\n    r = s[3]\n    before = s[0] + r < wall_x\n    to_wall = wall_x - s[0]\n    return before and (to_wall * a[0] > 0)\n"
+        },
+        {
+            "id": "f48",
+            "name": "robot_y_not_aligned_and_action_toward_gap_center",
+            "source": "def f48(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    aligned = (s[1] >= gap_lower) and (s[1] <= gap_upper)\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - s[1]\n    return (not aligned) and (to_gap * a[1] > 0)\n"
+        },
+        {
+            "id": "f49",
+            "name": "robot_past_passage0_wall_and_action_toward_target",
+            "source": "def f49(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    past = s[0] - r > wall_x + wall_w\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    to_target_x = target_cx - s[0]\n    to_target_y = target_cy - s[1]\n    dot = to_target_x * a[0] + to_target_y * a[1]\n    return past and (dot > 0)\n"
+        },
+        {
+            "id": "f50",
+            "name": "robot_inside_passage0_zone_and_action_mostly_y",
+            "source": "def f50(s, a):\n    wall_x = s[19]\n    wall_w = s[27]\n    r = s[3]\n    inside = (s[0] + r >= wall_x) and (s[0] - r <= wall_x + wall_w)\n    return inside and (abs(a[1]) > abs(a[0]))\n"
+        },
+        {
+            "id": "f51",
+            "name": "robot_close_to_target_and_action_small",
+            "source": "def f51(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = s[0] - target_cx\n    dy = s[1] - target_cy\n    dist = (dx * dx + dy * dy) ** 0.5\n    mag = (a[0] * a[0] + a[1] * a[1]) ** 0.5\n    return (dist < 0.3) and (mag < 0.02)\n"
+        },
+        {
+            "id": "f52",
+            "name": "robot_far_from_target_and_action_large",
+            "source": "def f52(s, a):\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    dx = s[0] - target_cx\n    dy = s[1] - target_cy\n    dist = (dx * dx + dy * dy) ** 0.5\n    mag = (a[0] * a[0] + a[1] * a[1]) ** 0.5\n    return (dist > 1.0) and (mag > 0.04)\n"
+        },
+        {
+            "id": "f53",
+            "name": "robot_y_far_from_gap_center_and_action_toward_gap",
+            "source": "def f53(s, a):\n    gap_lower = s[20] + s[28] + s[3]\n    gap_upper = s[30] - s[38] - s[3]\n    gap_center = (gap_lower + gap_upper) / 2.0\n    offset = s[1] - gap_center\n    to_gap = gap_center - s[1]\n    return (abs(offset) > 0.3) and (to_gap * a[1] > 0)\n"
+        },
+        {
+            "id": "f54",
+            "name": "robot_before_passage0_wall_and_action_mostly_x",
+            "source": "def f54(s, a):\n    wall_x = s[19]\n    r = s[3]\n    before = s[0] + r < wall_x\n    return before and (abs(a[0]) > abs(a[1]))\n"
+        },
+        {
+            "id": "f55",
+            "name": "robot_inside_target_and_action_small",
+            "source": "def f55(s, a):\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    inside = (s[0] >= target_x) and (s[0] <= target_x + target_w) and (s[1] >= target_y) and (s[1] <= target_y + target_h)\n    mag = (a[0] * a[0] + a[1] * a[1]) ** 0.5\n    return inside and (mag < 0.02)\n"
+        },
+        {
+            "id": "f56",
+            "name": "robot_outside_target_and_action_toward_target",
+            "source": "def f56(s, a):\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    inside = (s[0] >= target_x) and (s[0] <= target_x + target_w) and (s[1] >= target_y) and (s[1] <= target_y + target_h)\n    target_cx = s[9] + s[17] / 2.0\n    target_cy = s[10] + s[18] / 2.0\n    to_target_x = target_cx - s[0]\n    to_target_y = target_cy - s[1]\n    dot = to_target_x * a[0] + to_target_y * a[1]\n    return (not inside) and (dot > 0)\n"
+        }
+    ]
+}

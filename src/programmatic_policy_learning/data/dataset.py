@@ -138,6 +138,20 @@ def compute_cost_sensitive_bucket_weights(
     return weights
 
 
+def _bucket_l1_distance(
+    bucket_a: Sequence[int], bucket_b: Sequence[int]
+) -> int:
+    """Return L1 distance between two quantized bucket indices."""
+    arr_a = np.asarray(bucket_a, dtype=int).reshape(-1)
+    arr_b = np.asarray(bucket_b, dtype=int).reshape(-1)
+    if arr_a.shape != arr_b.shape:
+        raise ValueError(
+            "Bucket shapes must match for distance computation: "
+            f"{arr_a.shape} vs {arr_b.shape}."
+        )
+    return int(np.abs(arr_a - arr_b).sum())
+
+
 def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
     """Convert sampled array back to the demonstrated action's container
     type."""
@@ -558,7 +572,9 @@ def extract_examples_from_demonstration_item(
             bucket_edges=bucket_edges_cfg,
         )
         expert_bucket = quantizer.quantize(canonical_base[active_dims])
-
+        # print(f"Expert bucket: {expert_bucket}")
+        # print("action", action)
+        # input("***")
         quantized_expert = embed_active_action(
             quantizer.dequantize(expert_bucket),
             template=canonical_base,
@@ -567,12 +583,44 @@ def extract_examples_from_demonstration_item(
         )
         quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
         positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
+
+        relax_cfg = dict(cfg_cont.get("relaxed_labeling", {}))
+        relax_enabled = bool(relax_cfg.get("enabled", False))
+        near_bucket_radius = int(relax_cfg.get("neighbor_radius", 0))
+        near_bucket_behavior = str(
+            relax_cfg.get("nearby_bucket_behavior", "ignore")
+        ).lower()
+        near_bucket_negative_scale = float(
+            relax_cfg.get("weak_negative_scale", 0.25)
+        )
+        if near_bucket_radius < 0:
+            raise ValueError("neighbor_radius must be non-negative.")
+        if near_bucket_behavior not in {"ignore", "weak_negative", "strong_negative"}:
+            raise ValueError(
+                "nearby_bucket_behavior must be one of "
+                "{'ignore', 'weak_negative', 'strong_negative'}."
+            )
+        if near_bucket_negative_scale < 0.0:
+            raise ValueError("weak_negative_scale must be non-negative.")
+
         neg_actions: list[ActT] = []
-        all_buckets: list[tuple[int, ...]] = []
+        neg_buckets: list[tuple[int, ...]] = []
+        neg_weight_scales: list[float] = []
         for bucket in quantizer.all_bucket_indices():
-            all_buckets.append(bucket)
             if bucket == expert_bucket:
                 continue
+
+            distance = _bucket_l1_distance(bucket, expert_bucket)
+            if relax_enabled and distance <= near_bucket_radius:
+                if near_bucket_behavior == "ignore":
+                    continue
+                if near_bucket_behavior == "weak_negative":
+                    bucket_weight_scale = near_bucket_negative_scale
+                else:
+                    bucket_weight_scale = 1.0
+            else:
+                bucket_weight_scale = 1.0
+
             candidate = embed_active_action(
                 quantizer.dequantize(bucket),
                 template=canonical_base,
@@ -581,13 +629,15 @@ def extract_examples_from_demonstration_item(
             )
             candidate = np.clip(candidate, low_arr, high_arr)
             neg_actions.append(_coerce_action_like(action, candidate))
+            neg_buckets.append(bucket)
+            neg_weight_scales.append(bucket_weight_scale)
+
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-
+        print(len(negative_examples), "negatives generated from quantized expansion.")
+        # input()
         # Keep weight order aligned with row order: [positive] + [negatives].
-        aligned_buckets = [expert_bucket] + [
-            bucket for bucket in all_buckets if bucket != expert_bucket
-        ]
+        aligned_buckets = [expert_bucket] + neg_buckets
 
         # Compute sample weights if requested
         if compute_sample_weights:
@@ -604,9 +654,14 @@ def extract_examples_from_demonstration_item(
                 alpha=alpha,
                 lambda_per_dim=lambda_per_dim,
             )
+            if neg_weight_scales:
+                neg_scale_arr = np.asarray(neg_weight_scales, dtype=float)
+                sample_weights[1:] *= neg_scale_arr
         else:
             # Default uniform weights: one for positive, one per negative
             sample_weights = np.ones(1 + len(neg_actions), dtype=float)
+            if neg_weight_scales:
+                sample_weights[1:] = np.asarray(neg_weight_scales, dtype=float)
 
         return positive_examples, negative_examples, sample_weights
     if action_mode != "discrete":
@@ -873,6 +928,10 @@ def run_all_programs_on_single_demonstration(
             compute_sample_weights=compute_sample_weights,
         )
     )
+    # print(positive_examples[:20])
+    # print("*****")
+    # print(negative_examples[:20])
+    # input()
 
     fn_inputs = positive_examples + negative_examples
 

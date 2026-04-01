@@ -493,10 +493,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         w_max_clause = float(hp["w_max_clause"])
         w_depth = float(hp["w_depth"])
         w_ops = float(hp["w_ops"])
-        gain = gini_gain_per_feature(X, y_bool)
-        ranked_cols = np.argsort(-gain)
-        X_ranked = X[:, ranked_cols]
-        programs_ranked = [programs_sa[i] for i in ranked_cols]
+        # gain = gini_gain_per_feature(X, y_bool)
+        # ranked_cols = np.argsort(-gain)
+        # X_ranked = X[:, ranked_cols]
+        # programs_ranked = [programs_sa[i] for i in ranked_cols]
+        X_ranked = X
+        programs_ranked = programs_sa
+        ranked_cols = list(range(len(programs_sa)))
         if program_prior_log_probs_opt is None:
             priors_ranked = [0.0 for _ in ranked_cols]
         else:
@@ -563,7 +566,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
         plps = valid_plps
-
         likelihoods = compute_likelihood_plps(
             plps,
             aligned_demonstrations,
@@ -1294,7 +1296,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
-        # print(programs_sa)
+
 
         (
             X_train,
