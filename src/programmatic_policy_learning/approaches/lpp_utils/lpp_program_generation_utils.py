@@ -213,6 +213,9 @@ def get_program_set(
         llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
         batch_prompt_path = program_generation.get("py_feature_gen_batch_prompt")
+        generation_mode = str(
+            program_generation.get("py_feature_gen_mode", "feature_payload")
+        )
         enc_method = str(program_generation["encoding_method"])
         # enc_id = enc_method.replace("enc_", "")
         num_features = program_generation["num_features"]
@@ -257,6 +260,14 @@ def get_program_set(
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logging.info("Failed to build demonstration text: %s", exc)
 
+        py_reprompt_checks: list[Any] | None
+        if generation_mode == "generator_script":
+            py_reprompt_checks = None
+        else:
+            py_reprompt_checks = [
+                JSONStructureRepromptCheck(required_fields=["features"])
+            ]
+
         features, _payload = py_generator.generate(
             prompt_path=prompt_path,
             batch_prompt_path=batch_prompt_path,
@@ -267,9 +278,10 @@ def get_program_set(
             demonstration_data=demo_text,
             encoding_method=enc_method,
             _seed=seed,
-            reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
+            reprompt_checks=py_reprompt_checks,
             loading=program_generation.get("loading"),
             action_mode=str((env_specs or {}).get("action_mode", "discrete")),
+            generation_mode=generation_mode,
         )
         dsl_fns = get_dsl_functions_dict()
         dsl_fns.update(
