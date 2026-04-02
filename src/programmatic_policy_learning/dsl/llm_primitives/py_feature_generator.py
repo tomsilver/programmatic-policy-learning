@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import re
+import types
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -490,6 +491,22 @@ class PyFeatureGenerator:
         seed: int = 0,
     ) -> dict[str, Any]:
         """Query the LLM and return parsed JSON payload."""
+        response_text = self.query_llm_text(
+            prompt,
+            max_attempts=max_attempts,
+            reprompt_checks=reprompt_checks,
+            seed=seed,
+        )
+        return json.loads(response_text)
+
+    def query_llm_text(
+        self,
+        prompt: str,
+        max_attempts: int = 3,
+        reprompt_checks: list[RepromptCheck] | None = None,
+        seed: int = 0,
+    ) -> str:
+        """Query the LLM and return raw response text."""
         if self.llm_client is None:
             raise ValueError("LLM client is not initialized.")
         query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
@@ -503,7 +520,7 @@ class PyFeatureGenerator:
         logging.debug(response)
 
         response_text = response.text if hasattr(response, "text") else str(response)
-        return json.loads(response_text)
+        return response_text
 
     def write_json(self, filename: str, data: dict[str, Any]) -> None:
         """Write JSON data to a file in the output directory."""
@@ -527,6 +544,63 @@ class PyFeatureGenerator:
             self._assert_no_quoted_placeholders(source)
             programs.append(source.replace("\\n", "\n"))  # LATER REMOVE
         return programs
+
+    def _extract_python_script(self, response_text: str) -> str:
+        """Extract raw Python source from an LLM response."""
+        stripped = response_text.strip()
+        fence_match = re.search(r"```(?:python)?\s*(.*?)```", stripped, re.DOTALL)
+        if fence_match:
+            stripped = fence_match.group(1).strip()
+        if not stripped:
+            raise ValueError("LLM returned an empty Python generator script.")
+        return stripped
+
+    def _coerce_feature_payload(self, payload: Any) -> dict[str, Any]:
+        """Validate and normalize a generated feature-library payload."""
+        if isinstance(payload, list):
+            payload = {"features": payload}
+        if not isinstance(payload, dict):
+            raise ValueError("Feature generator script must return a dict payload.")
+        features = payload.get("features")
+        if not isinstance(features, list):
+            raise ValueError("Feature generator payload must contain a 'features' list.")
+        normalized_features: list[dict[str, Any]] = []
+        for idx, feature in enumerate(features, start=1):
+            if not isinstance(feature, dict):
+                raise ValueError(f"Feature {idx} is not a dict.")
+            source = feature.get("source")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError(f"Feature {idx} must contain a non-empty 'source'.")
+            fid = feature.get("id", f"f{idx}")
+            name = feature.get("name", fid)
+            normalized_features.append(
+                {
+                    **feature,
+                    "id": str(fid),
+                    "name": str(name),
+                    "source": source,
+                }
+            )
+        return {"features": normalized_features}
+
+    def _execute_generator_script(self, script_text: str) -> dict[str, Any]:
+        """Execute an LLM-produced script and return its feature payload."""
+        module_globals: dict[str, Any] = {
+            "__builtins__": __builtins__,
+            "__name__": "__py_feature_generator_script__",
+            "json": json,
+            "math": math,
+            "re": re,
+            "types": types,
+        }
+        exec(script_text, module_globals)  # pylint: disable=exec-used
+        build_feature_library = module_globals.get("build_feature_library")
+        if not callable(build_feature_library):
+            raise ValueError(
+                "Generator script must define a callable build_feature_library()."
+            )
+        payload = build_feature_library()
+        return self._coerce_feature_payload(payload)
 
     def _postprocess_payload_by_mode(
         self,
@@ -560,6 +634,7 @@ class PyFeatureGenerator:
         reprompt_checks: list[RepromptCheck] | None = None,
         loading: dict[str, Any] | None = None,
         action_mode: str = "discrete",
+        generation_mode: str = "feature_payload",
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
         load_offline = bool(loading and loading.get("offline", 0))
@@ -576,6 +651,10 @@ class PyFeatureGenerator:
             batch_payloads: list[dict[str, Any]] = []
 
             for batch_idx in range(num_batches):
+                if generation_mode == "generator_script" and batch_idx > 0:
+                    raise ValueError(
+                        "generator_script mode does not support multi-batch generation."
+                    )
                 if batch_idx == 0:
                     current_prompt_path = prompt_path
                 else:
@@ -614,24 +693,45 @@ class PyFeatureGenerator:
                 logging.info(prompt)
                 input()
 
-
-                template_payload = self.query_llm(
-                    prompt,
-                    max_attempts=max_attempts,
-                    reprompt_checks=reprompt_checks,
-                    seed=_seed,
-                )
                 prompt_label = Path(current_prompt_path).stem.replace("/", "-")
                 env_label = (env_name or "unknown").replace("/", "-")
+                if generation_mode == "generator_script":
+                    script_text = self.query_llm_text(
+                        prompt,
+                        max_attempts=max_attempts,
+                        reprompt_checks=reprompt_checks,
+                        seed=_seed,
+                    )
+                    script_text = self._extract_python_script(script_text)
+                    if self.llm_client is not None:
+                        script_path = (
+                            self.output_path
+                            / f"feature_generator_script_{prompt_label}_{env_label}.py"
+                        )
+                        script_path.write_text(script_text, encoding="utf-8")
+                    template_payload = self._execute_generator_script(script_text)
+                    expanded_payload = self._postprocess_payload_by_mode(
+                        template_payload,
+                        action_mode=action_mode,
+                        env_name=env_name,
+                        start_index=1,
+                    )
+                else:
+                    template_payload = self.query_llm(
+                        prompt,
+                        max_attempts=max_attempts,
+                        reprompt_checks=reprompt_checks,
+                        seed=_seed,
+                    )
+                    expanded_payload = self._postprocess_payload_by_mode(
+                        template_payload,
+                        action_mode=action_mode,
+                        env_name=env_name,
+                        start_index=1,
+                    )
                 self.write_json(
                     f"template_payload_{prompt_label}_{env_label}.json",
                     template_payload,
-                )
-                expanded_payload = self._postprocess_payload_by_mode(
-                    template_payload,
-                    action_mode=action_mode,
-                    env_name=env_name,
-                    start_index=1,
                 )
                 feature_programs = self.parse_feature_programs(expanded_payload)
                 # all_descriptions.extend(self._extract_descriptions(template_payload))
