@@ -32,8 +32,10 @@ def _log_motion2d_bucket_purity(
 
     env = env_factory(int(demo_numbers[0]))  # type: ignore[arg-type]
     action_space = getattr(env, "action_space", None)
-    if action_space is None or not hasattr(action_space, "low") or not hasattr(
-        action_space, "high"
+    if (
+        action_space is None
+        or not hasattr(action_space, "low")
+        or not hasattr(action_space, "high")
     ):
         return
 
@@ -47,7 +49,6 @@ def _log_motion2d_bucket_purity(
             high[:2],
             bucket_counts=bucket_counts,
             bucket_edges=bucket_edges,
-
         )
     except Exception:  # pylint: disable=broad-exception-caught
         return
@@ -96,7 +97,6 @@ def _log_motion2d_bucket_purity(
         print(msg)
 
 
-
 def collect_demo(
     env_factory: EnvFactory,
     expert: BaseApproach,
@@ -108,7 +108,7 @@ def collect_demo(
     env = env_factory(env_num)  # type: ignore
     if hasattr(expert, "set_env"):
         expert.set_env(env)
-        
+
     try:
         reset_out = env.reset(seed=env_num)
     except TypeError:
@@ -122,8 +122,10 @@ def collect_demo(
     act_list: list[ActT] = []
     quantizer: Motion2DActionQuantizer | None = None
     action_space = getattr(env, "action_space", None)
-    if action_space is not None and hasattr(action_space, "low") and hasattr(
-        action_space, "high"
+    if (
+        action_space is not None
+        and hasattr(action_space, "low")
+        and hasattr(action_space, "high")
     ):
         try:
             quantizer = Motion2DActionQuantizer.from_bounds(

@@ -32,7 +32,6 @@ from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts im
     create_motion2d_bilevel_expert,
 )
 
-
 ACTION_FIELD_NAMES = ("dx", "dy", "dtheta", "darm", "vac")
 
 
@@ -47,7 +46,8 @@ class PoseSnapshot:
 
     @property
     def inferred_head(self) -> tuple[float, float]:
-        """Approximate a head/tip point from center + radius * heading vector."""
+        """Approximate a head/tip point from center + radius * heading
+        vector."""
         return (
             self.x + self.radius * math.cos(self.theta),
             self.y + self.radius * math.sin(self.theta),
@@ -327,7 +327,9 @@ def main() -> None:
 
     try:
         if not isinstance(env.action_space, gym.spaces.Box):
-            raise TypeError(f"Expected Box action space, got {type(env.action_space)!r}")
+            raise TypeError(
+                f"Expected Box action space, got {type(env.action_space)!r}"
+            )
 
         action_space = env.action_space
         move_step = (
@@ -405,13 +407,15 @@ def main() -> None:
             _print_probe(probe)
 
         print("\nInterpretation")
-        print(_infer_frame(
-            rotate_probe,
-            dx_probe,
-            dx_after_turn_probe,
-            dy_probe,
-            dy_after_turn_probe,
-        ))
+        print(
+            _infer_frame(
+                rotate_probe,
+                dx_probe,
+                dx_after_turn_probe,
+                dy_probe,
+                dy_after_turn_probe,
+            )
+        )
         print(
             "Theta note: for pure navigation, you usually should not need dtheta if dx/dy already "
             "move the base toward the target. Changing theta only matters if the environment or a "

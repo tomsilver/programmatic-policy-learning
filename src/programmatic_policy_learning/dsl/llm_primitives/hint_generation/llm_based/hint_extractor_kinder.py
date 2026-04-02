@@ -116,7 +116,6 @@ def build_hint_prompt(trajectories_text: str) -> str:
     return template.replace("<<DEMONSTRATIONS>>", trajectories_text)
 
 
-
 def extract_hints(
     llm_client: PretrainedLargeModel,
     trajectories_text: str,

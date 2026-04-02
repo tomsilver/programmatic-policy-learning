@@ -212,14 +212,12 @@ def get_program_set(
         cache = SQLite3PretrainedLargeModelCache(cache_path)
         llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
-        batch_prompt_path = program_generation.get("py_feature_gen_batch_prompt")
         generation_mode = str(
             program_generation.get("py_feature_gen_mode", "feature_payload")
         )
         enc_method = str(program_generation["encoding_method"])
         # enc_id = enc_method.replace("enc_", "")
         num_features = program_generation["num_features"]
-        num_batches = program_generation.get("num_batches")
         py_generator = PyFeatureGenerator(llm_client)
         try:
             hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
@@ -270,10 +268,8 @@ def get_program_set(
 
         features, _payload = py_generator.generate(
             prompt_path=prompt_path,
-            batch_prompt_path=batch_prompt_path,
             hint_text=hint_text,
             num_features=num_features,
-            num_batches=num_batches,
             env_name=base_class_name,
             demonstration_data=demo_text,
             encoding_method=enc_method,

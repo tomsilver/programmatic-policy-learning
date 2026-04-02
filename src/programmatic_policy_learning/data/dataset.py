@@ -20,15 +20,15 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
-from programmatic_policy_learning.utils.action_quantization import (
-    Motion2DActionQuantizer,
-)
 from programmatic_policy_learning.utils.action_canonicalization import (
     active_action_bounds,
     canonicalize_continuous_action,
     embed_active_action,
     get_active_action_dims,
     get_inactive_action_fill_value,
+)
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
 )
 from programmatic_policy_learning.utils.cache_utils import (
     cache_single_output,
@@ -138,9 +138,7 @@ def compute_cost_sensitive_bucket_weights(
     return weights
 
 
-def _bucket_l1_distance(
-    bucket_a: Sequence[int], bucket_b: Sequence[int]
-) -> int:
+def _bucket_l1_distance(bucket_a: Sequence[int], bucket_b: Sequence[int]) -> int:
     """Return L1 distance between two quantized bucket indices."""
     arr_a = np.asarray(bucket_a, dtype=int).reshape(-1)
     arr_b = np.asarray(bucket_b, dtype=int).reshape(-1)
@@ -590,9 +588,7 @@ def extract_examples_from_demonstration_item(
         near_bucket_behavior = str(
             relax_cfg.get("nearby_bucket_behavior", "ignore")
         ).lower()
-        near_bucket_negative_scale = float(
-            relax_cfg.get("weak_negative_scale", 0.25)
-        )
+        near_bucket_negative_scale = float(relax_cfg.get("weak_negative_scale", 0.25))
         if near_bucket_radius < 0:
             raise ValueError("neighbor_radius must be non-negative.")
         if near_bucket_behavior not in {"ignore", "weak_negative", "strong_negative"}:

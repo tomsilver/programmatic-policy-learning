@@ -86,7 +86,9 @@ def run_collision_feedback_loop(
         [str, int, int], tuple[list[str], dict[str, Any], Path]
     ],
     make_prompt: Callable[[list[dict[str, Any]], list[tuple[ObsT, ActT]]], str | None],
-    record_attempt_summary: Callable[[int, dict[str, Any], int, int], None] | None = None,
+    record_attempt_summary: (
+        Callable[[int, dict[str, Any], int, int], None] | None
+    ) = None,
     prior_version: str = "uniform",
     prior_beta: float = 1.0,
 ) -> tuple[

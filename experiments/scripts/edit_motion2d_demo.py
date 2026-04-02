@@ -162,6 +162,7 @@ EDITABLE_ACTIONS: list[list[float]] = [
     # [0.0484335, 0.00602929, -0.08235537, 0.0, 0.0],
 ]
 
+
 def _close_env(env: Any) -> None:
     close_fn = cast(Callable[[], None] | None, getattr(env, "close", None))
     if close_fn is not None:
@@ -286,9 +287,7 @@ def main(args: argparse.Namespace) -> None:
     if not out_path:
         video_dir = Path("videos")
         video_dir.mkdir(exist_ok=True)
-        out_path = str(
-            video_dir / f"manual_motion2d_p{args.passages}_s{args.seed}.mp4"
-        )
+        out_path = str(video_dir / f"manual_motion2d_p{args.passages}_s{args.seed}.mp4")
     if frames:
         save_gif(frames, out_path)
     else:

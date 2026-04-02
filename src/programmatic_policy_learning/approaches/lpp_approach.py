@@ -51,9 +51,9 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     deduplicate_negative_examples,
     drop_negative_exact_contradictions,
     gini_gain_per_feature,
+    is_kinder_env,
     log_exact_example_label_contradictions,
     log_feature_collisions,
-    is_kinder_env,
     log_plp_violation_counts,
     run_single_episode,
 )
@@ -70,15 +70,15 @@ from programmatic_policy_learning.learning.decision_tree_learner import learn_pl
 from programmatic_policy_learning.learning.particles_utils import select_particles
 from programmatic_policy_learning.learning.plp_likelihood import compute_likelihood_plps
 from programmatic_policy_learning.policies.lpp_policy import LPPPolicy
-from programmatic_policy_learning.utils.action_quantization import (
-    Motion2DActionQuantizer,
-)
 from programmatic_policy_learning.utils.action_canonicalization import (
     active_action_bounds,
     canonicalize_continuous_action,
     embed_active_action,
     get_active_action_dims,
     get_inactive_action_fill_value,
+)
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
 )
 
 _filter_constant_features = filter_constant_features
@@ -332,9 +332,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self._collision_py_generator is None
             or self._collision_llm_model != llm_model
         ):
-            model_slug = "".join(
-                ch if ch.isalnum() else "_" for ch in llm_model
-            ).strip("_")
+            model_slug = "".join(ch if ch.isalnum() else "_" for ch in llm_model).strip(
+                "_"
+            )
             cache_path = Path(f"py_feature_cache_{model_slug}.db")
             cache = SQLite3PretrainedLargeModelCache(cache_path)
             llm_client = OpenAIModel(llm_model, cache)
@@ -789,8 +789,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return candidate_actions
 
     def _center_continuous_action_for_scoring(self, action: _ActType) -> _ActType:
-        """Map a continuous action to the quantized bucket-center representation."""
-        if not hasattr(self._action_space, "low") or not hasattr(self._action_space, "high"):
+        """Map a continuous action to the quantized bucket-center
+        representation."""
+        if not hasattr(self._action_space, "low") or not hasattr(
+            self._action_space, "high"
+        ):
             raise ValueError(
                 "Continuous action alignment requires an action space with low/high bounds."
             )
@@ -808,8 +811,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "Continuous action alignment requires at least 5 action dimensions."
             )
 
-        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
-        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(-1)
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
+            -1
+        )
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
+            -1
+        )
         if low_arr.shape != base.shape or high_arr.shape != base.shape:
             raise ValueError(
                 "continuous action bounds shape mismatch during scoring alignment: "
@@ -859,7 +866,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self,
         demonstrations: Trajectory[_ObsType, _ActType],
     ) -> Trajectory[_ObsType, _ActType]:
-        """Use bucket-center demo actions so scoring matches training/inference."""
+        """Use bucket-center demo actions so scoring matches
+        training/inference."""
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if action_mode != "continuous":
             return demonstrations
@@ -937,7 +945,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return train_demo_ids, demonstrations_train, demo_dict_train, False
 
         max_steps = int(cfg.get("max_steps", 50))
-        stuck_window = max(2, int(cfg.get("stuck_window", cfg.get("no_progress_window", 6))))
+        stuck_window = max(
+            2, int(cfg.get("stuck_window", cfg.get("no_progress_window", 6)))
+        )
         min_progress_delta = float(cfg.get("min_progress_delta", 0.01))
         stuck_position_delta = float(cfg.get("stuck_position_delta", 0.01))
         max_queries_per_env = max(1, int(cfg.get("max_queries_per_env", 8)))
@@ -958,11 +968,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 else:
                     obs, info = reset_out, {}
 
-                recent_history: deque[tuple[_ObsType, dict[str, Any], _ActType | None]] = deque(
+                recent_history: deque[
+                    tuple[_ObsType, dict[str, Any], _ActType | None]
+                ] = deque(maxlen=stuck_window)
+                distance_history: deque[float] = deque(maxlen=stuck_window)
+                position_history: deque[tuple[float, float]] = deque(
                     maxlen=stuck_window
                 )
-                distance_history: deque[float] = deque(maxlen=stuck_window)
-                position_history: deque[tuple[float, float]] = deque(maxlen=stuck_window)
                 queries_used = 0
 
                 for step_idx in range(max_steps):
@@ -995,7 +1007,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         first_pos = position_history[0]
                         last_pos = position_history[-1]
                         movement = float(
-                            np.hypot(last_pos[0] - first_pos[0], last_pos[1] - first_pos[1])
+                            np.hypot(
+                                last_pos[0] - first_pos[0], last_pos[1] - first_pos[1]
+                            )
                         )
                         progress = float(distance_history[0] - distance_history[-1])
                         if repeated_action and movement <= stuck_position_delta:
@@ -1083,7 +1097,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             seed=self.seed_num,
             action_mode=action_mode,
         )
-        
+
         if X is None or y is None:
             raise ValueError(
                 "Train matrix is invalid. Ensure program execution results are valid."
@@ -1105,7 +1119,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         all_one = np.where(col_nnz == X.shape[0])[0]
         logging.info("#all-zero features=%d indices=%s", len(all_zero), all_zero[:30])
         logging.info("#all-one features=%d indices=%s", len(all_one), all_one[:30])
-        
 
         collision_groups = log_feature_collisions(X, y, examples)
 
@@ -1471,7 +1484,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
-
 
         (
             X_train,

@@ -59,8 +59,6 @@ program_generation:
   skip_rate: 10
   py_feature_gen_mode: "generator_script"  # "feature_payload" | "generator_script"
   py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
-  py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
-  num_batches: 1 #keep this 1 for now
   removed_primitive: "" 
   num_features: 50
   encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options

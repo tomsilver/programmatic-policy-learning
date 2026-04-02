@@ -1078,6 +1078,7 @@
 #     })
 #     fid += 1
 
+
 #     return {"features": features}
 def build_feature_library():
     # Helper to build feature dicts
@@ -1305,10 +1306,46 @@ def build_feature_library():
 
     # 7. Is robot close to target boundary (within 1.5x radius)
     for side, idx_r, idx_t, idx_w, idx_h, idx_rad, expr, rel in [
-        ("left", 0, 9, 17, 18, 3, "abs(robot_x - target_x) <= 1.5 * robot_base_radius", "close_left"),
-        ("right", 0, 9, 17, 18, 3, "abs(robot_x - (target_x + target_width)) <= 1.5 * robot_base_radius", "close_right"),
-        ("bottom", 1, 10, 17, 18, 3, "abs(robot_y - target_y) <= 1.5 * robot_base_radius", "close_bottom"),
-        ("top", 1, 10, 17, 18, 3, "abs(robot_y - (target_y + target_height)) <= 1.5 * robot_base_radius", "close_top"),
+        (
+            "left",
+            0,
+            9,
+            17,
+            18,
+            3,
+            "abs(robot_x - target_x) <= 1.5 * robot_base_radius",
+            "close_left",
+        ),
+        (
+            "right",
+            0,
+            9,
+            17,
+            18,
+            3,
+            "abs(robot_x - (target_x + target_width)) <= 1.5 * robot_base_radius",
+            "close_right",
+        ),
+        (
+            "bottom",
+            1,
+            10,
+            17,
+            18,
+            3,
+            "abs(robot_y - target_y) <= 1.5 * robot_base_radius",
+            "close_bottom",
+        ),
+        (
+            "top",
+            1,
+            10,
+            17,
+            18,
+            3,
+            "abs(robot_y - (target_y + target_height)) <= 1.5 * robot_base_radius",
+            "close_top",
+        ),
     ]:
         src = (
             "def f{fid}(s, a):\n"
@@ -1341,10 +1378,9 @@ def build_feature_library():
             cmp = "abs(a[{idx_a}]) > {thresh}"
         else:
             cmp = "abs(a[{idx_a}]) < {thresh}"
-        src = (
-            "def f{fid}(s, a):\n"
-            "    return {cmp}\n"
-        ).format(fid=fid, cmp=cmp.format(idx_a=idx_a, thresh=thresh))
+        src = ("def f{fid}(s, a):\n" "    return {cmp}\n").format(
+            fid=fid, cmp=cmp.format(idx_a=idx_a, thresh=thresh)
+        )
         features.append(
             make_feature(
                 f"f{fid}",
@@ -1432,10 +1468,9 @@ def build_feature_library():
             cmp = "abs(a[2]) > {thresh}"
         else:
             cmp = "abs(a[2]) < {thresh}"
-        src = (
-            "def f{fid}(s, a):\n"
-            "    return {cmp}\n"
-        ).format(fid=fid, cmp=cmp.format(thresh=thresh))
+        src = ("def f{fid}(s, a):\n" "    return {cmp}\n").format(
+            fid=fid, cmp=cmp.format(thresh=thresh)
+        )
         features.append(
             make_feature(
                 f"f{fid}",
@@ -1454,10 +1489,9 @@ def build_feature_library():
             cmp = "abs(a[3]) > {thresh}"
         else:
             cmp = "abs(a[3]) < {thresh}"
-        src = (
-            "def f{fid}(s, a):\n"
-            "    return {cmp}\n"
-        ).format(fid=fid, cmp=cmp.format(thresh=thresh))
+        src = ("def f{fid}(s, a):\n" "    return {cmp}\n").format(
+            fid=fid, cmp=cmp.format(thresh=thresh)
+        )
         features.append(
             make_feature(
                 f"f{fid}",
@@ -1476,10 +1510,9 @@ def build_feature_library():
             cmp = "a[4] > {thresh}"
         else:
             cmp = "a[4] < {thresh}"
-        src = (
-            "def f{fid}(s, a):\n"
-            "    return {cmp}\n"
-        ).format(fid=fid, cmp=cmp.format(thresh=thresh))
+        src = ("def f{fid}(s, a):\n" "    return {cmp}\n").format(
+            fid=fid, cmp=cmp.format(thresh=thresh)
+        )
         features.append(
             make_feature(
                 f"f{fid}",
@@ -1636,8 +1669,7 @@ def build_feature_library():
 
     # 22. Is action both in x and y (dx, dy both large)
     src = (
-        "def f{fid}(s, a):\n"
-        "    return (abs(a[0]) > 0.01) and (abs(a[1]) > 0.01)\n"
+        "def f{fid}(s, a):\n" "    return (abs(a[0]) > 0.01) and (abs(a[1]) > 0.01)\n"
     ).format(fid=fid)
     features.append(
         make_feature(
@@ -2231,9 +2263,12 @@ def build_feature_library():
     fid += 1
 
     return {"features": features}
+
+
 import json
+
 if __name__ == "__main__":
     feature_set = build_feature_library()
-    #write to json file
+    # write to json file
     with open("p0.json", "w") as f:
         json.dump(feature_set, f, indent=4)

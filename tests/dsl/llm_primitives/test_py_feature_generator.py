@@ -15,16 +15,14 @@ def test_extract_python_script_removes_markdown_fences() -> None:
     script = generator._extract_python_script(
         "```python\n"
         "def build_feature_library():\n"
-        "    return {\"features\": []}\n"
+        '    return {"features": []}\n'
         "```"
     )
     assert script.startswith("def build_feature_library():")
     assert "```" not in script
 
 
-def test_generate_supports_generator_script_mode(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_generate_supports_generator_script_mode(tmp_path: Path, monkeypatch) -> None:
     """generator_script mode should execute build_feature_library()."""
     prompt_path = tmp_path / "generator_prompt.txt"
     prompt_path.write_text("Generate a feature script.", encoding="utf-8")
@@ -46,15 +44,15 @@ def build_feature_library():
     }
 """
 
-    monkeypatch.setattr(generator, "query_llm_text", lambda *args, **kwargs: script_text)
+    monkeypatch.setattr(
+        generator, "query_llm_text", lambda *args, **kwargs: script_text
+    )
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
 
     features, payload = generator.generate(
         prompt_path=prompt_path,
-        batch_prompt_path=None,
         hint_text="",
         num_features=1,
-        num_batches=1,
         env_name="Motion2D-p0",
         demonstration_data="demo",
         encoding_method="enc_4",
@@ -64,5 +62,5 @@ def build_feature_library():
 
     assert features == ["def f1(s, a):\n    return a[0] > 0\n"]
     assert payload["features"][0]["id"] == "f1"
-    assert payload["features"][0]["name"] == "f1"
+    assert payload["features"][0]["name"] == "robot_moving_right"
     assert "source" in payload["features"][0]

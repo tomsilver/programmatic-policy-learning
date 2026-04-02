@@ -112,7 +112,9 @@ class Motion2DActionQuantizer:
         action_high: Sequence[float] | np.ndarray,
         *,
         bucket_counts: int | Sequence[int] = 5,
-        bucket_edges: Sequence[float] | Sequence[Sequence[float]] | np.ndarray | None = None,
+        bucket_edges: (
+            Sequence[float] | Sequence[Sequence[float]] | np.ndarray | None
+        ) = None,
     ) -> "Motion2DActionQuantizer":
         """Create a quantizer from per-dimension action bounds."""
         low = _as_1d_float_array(action_low, "action_low")

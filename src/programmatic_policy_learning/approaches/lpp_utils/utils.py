@@ -322,7 +322,11 @@ def _group_exact_example_labels(
 
     grouped: dict[bytes, dict[str, Any]] = {}
     for idx, ((state, action), label) in enumerate(zip(examples, labels)):
-        key = _example_value_to_hashable_bytes(state) + b"||" + _example_value_to_hashable_bytes(action)
+        key = (
+            _example_value_to_hashable_bytes(state)
+            + b"||"
+            + _example_value_to_hashable_bytes(action)
+        )
         entry = grouped.setdefault(
             key,
             {
@@ -354,7 +358,9 @@ def log_exact_example_label_contradictions(
 ) -> list[dict[str, Any]]:
     """Log exact duplicate (state, action) examples with conflicting labels."""
     if examples is None or y is None:
-        logging.info("Exact example contradiction check skipped: examples or y is None.")
+        logging.info(
+            "Exact example contradiction check skipped: examples or y is None."
+        )
         return []
     if len(examples) == 0:
         logging.info("Exact example contradiction check skipped: no examples.")
@@ -405,8 +411,8 @@ def drop_negative_exact_contradictions(
 ) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray | None]:
     """Remove negative rows for exact (state, action) contradictions.
 
-    If an exact example appears as both positive and negative, keep all positive
-    copies and drop the negative copies.
+    If an exact example appears as both positive and negative, keep all
+    positive copies and drop the negative copies.
     """
     contradictions = _group_exact_example_labels(examples, y)
     if not contradictions:
@@ -414,11 +420,7 @@ def drop_negative_exact_contradictions(
         return X, y, examples, sample_weights
 
     drop_indices = sorted(
-        {
-            int(idx)
-            for group in contradictions
-            for idx in group["neg"]
-        }
+        {int(idx) for group in contradictions for idx in group["neg"]}
     )
     if not drop_indices:
         logging.info("No contradictory negative rows removed.")
@@ -453,7 +455,8 @@ def deduplicate_negative_examples(
     examples: list[tuple[ObsT, ActT]] | None,
     sample_weights: np.ndarray | None,
 ) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray | None]:
-    """Remove exact duplicate negative (state, action) rows, keeping first copy."""
+    """Remove exact duplicate negative (state, action) rows, keeping first
+    copy."""
     if examples is None or len(examples) == 0:
         logging.info("Negative dedup skipped: no examples available.")
         return X, y, examples, sample_weights
@@ -1132,12 +1135,28 @@ def _format_one_example_kinder_enc2(
     s = np.asarray(s, dtype=float).reshape(-1)
     a = np.asarray(a, dtype=float).reshape(-1)
 
-    robot_x = float(s[0]); robot_y = float(s[1]); robot_theta = float(s[2]); r = float(s[3])
-    target_x = float(s[9]); target_y = float(s[10]); target_w = float(s[17]); target_h = float(s[18])
-    obs0_x = float(s[19]); obs0_y = float(s[20]); obs0_w = float(s[27]); obs0_h = float(s[28])
-    obs1_x = float(s[29]); obs1_y = float(s[30]); obs1_w = float(s[37]); obs1_h = float(s[38])
+    robot_x = float(s[0])
+    robot_y = float(s[1])
+    robot_theta = float(s[2])
+    r = float(s[3])
+    target_x = float(s[9])
+    target_y = float(s[10])
+    target_w = float(s[17])
+    target_h = float(s[18])
+    obs0_x = float(s[19])
+    obs0_y = float(s[20])
+    obs0_w = float(s[27])
+    obs0_h = float(s[28])
+    obs1_x = float(s[29])
+    obs1_y = float(s[30])
+    obs1_w = float(s[37])
+    obs1_h = float(s[38])
 
-    dx = float(a[0]); dy = float(a[1]); dtheta = float(a[2]); darm = float(a[3]); vac = float(a[4])
+    dx = float(a[0])
+    dy = float(a[1])
+    dtheta = float(a[2])
+    darm = float(a[3])
+    vac = float(a[4])
 
     target_cx = target_x + target_w / 2.0
     target_cy = target_y + target_h / 2.0
@@ -1197,12 +1216,21 @@ def _format_one_example_kinder_enc2_delta(
     s = np.asarray(s, dtype=float).reshape(-1)
     a = np.asarray(a, dtype=float).reshape(-1)
 
-    robot_x = float(s[0]); robot_y = float(s[1]); r = float(s[3])
-    target_x = float(s[9]); target_y = float(s[10]); target_w = float(s[17]); target_h = float(s[18])
-    obs0_x = float(s[19]); obs0_y = float(s[20]); obs0_w = float(s[27]); obs0_h = float(s[28])
+    robot_x = float(s[0])
+    robot_y = float(s[1])
+    r = float(s[3])
+    target_x = float(s[9])
+    target_y = float(s[10])
+    target_w = float(s[17])
+    target_h = float(s[18])
+    obs0_x = float(s[19])
+    obs0_y = float(s[20])
+    obs0_w = float(s[27])
+    obs0_h = float(s[28])
     obs1_y = float(s[30])
 
-    dx = float(a[0]); dy = float(a[1])
+    dx = float(a[0])
+    dy = float(a[1])
 
     target_cx = target_x + target_w / 2.0
     target_cy = target_y + target_h / 2.0
@@ -1274,6 +1302,7 @@ def _format_one_example_enc2_delta(
         parts.append(f"{tok}: {tok_rows}")
         parts.append(f"{tok}_bbox: {tok_bbox}")
     return "; ".join(parts)
+
 
 def is_kinder_env(env_name: str | None) -> bool:
     if env_name is None:
@@ -1397,9 +1426,7 @@ def build_collision_repair_prompt(
                 _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
         elif use_enc2 and is_kinder:
-            pos_blocks.append(
-                _format_one_example_kinder_enc2(s, a, label=1, idx=idx)
-            )
+            pos_blocks.append(_format_one_example_kinder_enc2(s, a, label=1, idx=idx))
         elif use_enc2:
             pos_blocks.append(
                 _format_one_example_enc2(s, a, label=1, idx=idx, symbol_map=symbol_map)
@@ -1455,9 +1482,7 @@ def build_collision_repair_prompt(
                 )
             elif use_enc2 and is_kinder:
                 pos_blocks_2.append(
-                    _format_one_example_kinder_enc2(
-                        s, a, label=1, idx=idx
-                    )
+                    _format_one_example_kinder_enc2(s, a, label=1, idx=idx)
                 )
             elif use_enc2:
                 pos_blocks_2.append(
@@ -1479,15 +1504,11 @@ def build_collision_repair_prompt(
             elif use_enc2 and is_kinder:
                 if i == 0:
                     neg_blocks_2.append(
-                        _format_one_example_kinder_enc2(
-                            s, a, label=0, idx=idx
-                        )
+                        _format_one_example_kinder_enc2(s, a, label=0, idx=idx)
                     )
                 else:
                     neg_blocks_2.append(
-                        _format_one_example_kinder_enc2_delta(
-                            s, a, label=0, idx=idx
-                        )
+                        _format_one_example_kinder_enc2_delta(s, a, label=0, idx=idx)
                     )
             elif use_enc2:
                 if i == 0:

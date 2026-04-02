@@ -74,9 +74,9 @@ def _extract_type_names(env: Any) -> tuple[str, ...]:
 def _extract_action_types(env: Any) -> tuple[str, ...]:
     """Extract per-dimension action types from a KinDER environment.
 
-    Prefer environment-provided metadata when available. Otherwise fall back to
-    a generic inference from the action space, with a Motion2D-specific hint
-    for the final vacuum dimension.
+    Prefer environment-provided metadata when available. Otherwise fall
+    back to a generic inference from the action space, with a
+    Motion2D-specific hint for the final vacuum dimension.
     """
     for attr_name in ("action_types", "action_type_names"):
         raw = getattr(env, attr_name, None)

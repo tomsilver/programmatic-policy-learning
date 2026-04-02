@@ -386,12 +386,14 @@ def _run_single_episode_evaluation(
         obs, rew, done, truncated, info = env.step(action)
         reward = float(rew)
         env.render()
-        
+
         assert not truncated
         approach.update(obs, reward, done, info)
         total_rewards += reward
         if done:
-            print(f"Episode finished after {total_steps + 1} steps with max step {max_eval_steps:.4f}")
+            print(
+                f"Episode finished after {total_steps + 1} steps with max step {max_eval_steps:.4f}"
+            )
             break
         total_steps += 1
     return {"total_rewards": total_rewards, "total_steps": total_steps}
