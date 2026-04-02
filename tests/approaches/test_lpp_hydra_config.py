@@ -41,6 +41,8 @@ def test_lpp_yaml_weight_config_smoke_run() -> None:
     neg_cfg_typed["action_low"] = [-1.0, -1.0]
     neg_cfg_typed["action_high"] = [1.0, 1.0]
     neg_cfg_typed["continuous"]["bucket_counts"] = 3
+    neg_cfg_typed["continuous"].pop("bucket_edges", None)
+    neg_cfg_typed["continuous"]["relaxed_labeling"]["enabled"] = False
 
     obs = np.array([0.0, 0.0], dtype=np.float32)
     action = np.array([0.0, 0.0], dtype=np.float32)

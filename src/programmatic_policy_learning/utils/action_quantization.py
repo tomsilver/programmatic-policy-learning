@@ -18,8 +18,10 @@ def _as_1d_float_array(values: Sequence[float] | np.ndarray, name: str) -> np.nd
 
 
 def _normalize_bucket_counts(
-    bucket_counts: int | Sequence[int], *, dims: int
+    bucket_counts: int | Sequence[int] | None, *, dims: int
 ) -> np.ndarray:
+    if bucket_counts is None:
+        bucket_counts = 5
     if isinstance(bucket_counts, int):
         counts = np.full((dims,), int(bucket_counts), dtype=int)
     else:
@@ -111,7 +113,7 @@ class Motion2DActionQuantizer:
         action_low: Sequence[float] | np.ndarray,
         action_high: Sequence[float] | np.ndarray,
         *,
-        bucket_counts: int | Sequence[int] = 5,
+        bucket_counts: int | Sequence[int] | None = 5,
         bucket_edges: (
             Sequence[float] | Sequence[Sequence[float]] | np.ndarray | None
         ) = None,

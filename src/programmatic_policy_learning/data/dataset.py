@@ -532,11 +532,12 @@ def extract_examples_from_demonstration_item(
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        if base.shape[0] < 5:
-            raise ValueError(
-                "Continuous quantized expansion requires at least 5 action "
-                "dimensions (dx, dy, dtetha, darm, v)."
-            )
+        logging.info(f"base.shape: {base.shape}")
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=base.shape[0],
+            default_active_dims=[0, 1],
+        )
 
         low_arr = np.asarray(action_low, dtype=float)
         high_arr = np.asarray(action_high, dtype=float)
@@ -546,11 +547,6 @@ def extract_examples_from_demonstration_item(
                 f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
             )
 
-        active_dims = get_active_action_dims(
-            sampling_cfg,
-            total_dims=base.shape[0],
-            default_active_dims=[0, 1],
-        )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
             base,
