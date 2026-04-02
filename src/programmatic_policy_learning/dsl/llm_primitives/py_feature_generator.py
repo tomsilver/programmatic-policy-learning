@@ -716,6 +716,10 @@ class PyFeatureGenerator:
                         env_name=env_name,
                         start_index=1,
                     )
+                    print(script_text)
+                    print(template_payload)
+                    print(expanded_payload)
+                    input("Press Enter to continue...")
                 else:
                     template_payload = self.query_llm(
                         prompt,
