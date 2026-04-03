@@ -12,7 +12,10 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
 from programmatic_policy_learning.approaches.agentic_integrated_approach import (
+    ASTAR_INIT_DOC,
+    ASTAR_PLANNER_DOC,
     AgenticIntegratedApproach,
+    score_policy_maze,
 )
 from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
 
@@ -73,11 +76,13 @@ def run_evaluation(
     """Evaluate the approach on a single maze instance."""
     obs, info = env.reset(seed=seed)
 
-    approach.update_env_callables(
-        get_actions=env.get_actions,
-        get_next_state=env.get_next_state,
-        get_cost=env.get_cost,
-        check_goal=env.check_goal,
+    approach.update_planner_context(
+        {
+            "get_actions": env.get_actions,
+            "get_next_state": env.get_next_state,
+            "get_cost": env.get_cost,
+            "check_goal": env.check_goal,
+        }
     )
 
     # Clear metrics before evaluation (must be before reset, since some
@@ -209,6 +214,31 @@ def main() -> None:
             train_maze.shape[1],
         )
 
+        # Build maze-specific planner context and scoring function
+        maze_planner_context = {
+            "get_actions": train_env.get_actions,
+            "get_next_state": train_env.get_next_state,
+            "get_cost": train_env.get_cost,
+            "check_goal": train_env.check_goal,
+        }
+
+        def _maze_score_fn(  # type: ignore[no-untyped-def]
+            policy,
+            obs,
+            info,
+            max_ts,
+            _gns=train_env.get_next_state,
+            _cg=train_env.check_goal,
+        ):
+            return score_policy_maze(
+                policy,
+                obs,
+                info,
+                max_ts,
+                get_next_state=_gns,
+                check_goal=_cg,
+            )
+
         # Create a fresh approach for this seed
         approach = AgenticIntegratedApproach(
             ENVIRONMENT_DESCRIPTION,
@@ -216,10 +246,10 @@ def main() -> None:
             train_env.action_space,
             seed=seed,
             llm=llm,
-            get_actions=train_env.get_actions,
-            get_next_state=train_env.get_next_state,
-            get_cost=train_env.get_cost,
-            check_goal=train_env.check_goal,
+            planner_context=maze_planner_context,
+            planner_doc=ASTAR_PLANNER_DOC,
+            init_doc=ASTAR_INIT_DOC,
+            score_fn=_maze_score_fn,
         )
         approach.reset(obs, info)
         train_env.close()
