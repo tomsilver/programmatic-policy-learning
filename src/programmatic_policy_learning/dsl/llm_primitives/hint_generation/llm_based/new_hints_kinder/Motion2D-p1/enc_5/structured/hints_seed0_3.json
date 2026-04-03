@@ -1,0 +1,26 @@
+{
+  "action_choice_hints": [
+    "Action should reduce the distance between the robot and the target, making progress toward intersection/contact.",
+    "Action should avoid causing or maintaining intersection with obstacles; actions that would result in collision are avoided or quickly exited.",
+    "Action should maintain or achieve a feasible path around obstacles, including switching from left-of to right-of or above/below as needed to bypass obstacles.",
+    "Once the robot is in contact with the target, actions should preserve that contact or remain within the target region.",
+    "Actions should avoid unnecessary proximity to obstacles, preferring to increase or maintain safe distances when possible.",
+    "Action selection should consider whether the robot is above, below, left, or right of obstacles and targets, and choose transitions that move toward the target while respecting these relations."
+  ],
+  "feature_family_hints": [
+    "Progress-to-goal features: Needed to measure and encourage reduction in distance to the target.",
+    "Obstacle avoidance/contact features: Required to detect and penalize intersection or near-intersection with obstacles.",
+    "Entry/exit region tests: Needed to detect when the robot enters or exits the target or obstacle regions.",
+    "Persistence tests: To ensure that once the robot is in contact with the target, actions preserve this relation.",
+    "Spatial relation features (left/right/above/below): To model the robot's position relative to obstacles and targets and guide path planning.",
+    "Feasibility/safety tests: To ensure actions do not result in infeasible or unsafe states, such as collisions."
+  ],
+  "causal_transition_hints": [
+    "Actions that move the robot toward the target tend to cause eventual intersection/contact with the target.",
+    "Actions that move the robot toward obstacles tend to cause intersection, which is then quickly corrected by subsequent actions moving away.",
+    "Once intersection with the target is achieved, subsequent actions tend to preserve this contact or keep the robot within the target region.",
+    "Actions that would cause or maintain intersection with obstacles are avoided or reversed, indicating a causal avoidance of persistent collision.",
+    "Actions that change the robot's spatial relation (e.g., from left-of to right-of an obstacle) are used to navigate around obstacles and maintain progress toward the target.",
+    "Actions that maintain or increase distance from obstacles tend to preserve a safe, feasible path toward the target."
+  ]
+}

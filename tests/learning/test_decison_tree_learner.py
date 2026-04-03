@@ -22,6 +22,26 @@ def test_learn_single_batch_decision_trees() -> None:
     clfs = learn_single_batch_decision_trees(y, 2, X)
     assert len(clfs) == 2
     assert all(isinstance(clf, DecisionTreeClassifier) for clf in clfs)
+    assert all(clf.class_weight == "balanced" for clf in clfs)
+
+
+def test_learn_single_batch_decision_trees_with_sample_weight() -> None:
+    """Test training decision trees with explicit sample weights."""
+    X = csr_matrix(np.array([[0, 1], [1, 0], [1, 1], [0, 0]]))
+    y = [True, False, True, False]
+    sample_weight = np.array([1.0, 0.2, 2.0, 0.3], dtype=float)
+
+    clfs = learn_single_batch_decision_trees(
+        y,
+        2,
+        X,
+        sample_weight=sample_weight,
+    )
+
+    assert len(clfs) == 2
+    assert all(isinstance(clf, DecisionTreeClassifier) for clf in clfs)
+    # Explicit sample weights should disable class_weight balancing.
+    assert all(clf.class_weight is None for clf in clfs)
 
 
 def test_get_path_to_leaf() -> None:
@@ -83,3 +103,26 @@ def test_learn_plps() -> None:
     assert isinstance(plp_priors, list)
     assert all(isinstance(plp, StateActionProgram) for plp in plps)
     assert all(isinstance(prior, float) for prior in plp_priors)
+
+
+def test_learn_plps_with_sample_weight() -> None:
+    """Test learning PLPs with explicit sample weights."""
+    X = csr_matrix(np.array([[0, 1], [1, 0], [1, 1], [0, 0]]))
+    y = [True, False, True, False]
+    programs = [StateActionProgram("a"), StateActionProgram("b")]
+    program_prior_log_probs = [0.5, 0.2]
+    sample_weight = np.array([1.0, 0.2, 2.0, 0.3], dtype=float)
+
+    plps, plp_priors = learn_plps(
+        X,
+        y,
+        programs,
+        program_prior_log_probs,
+        sample_weight=sample_weight,
+        num_dts=1,
+        program_generation_step_size=1,
+        dsl_functions={},
+    )
+
+    assert isinstance(plps, list)
+    assert isinstance(plp_priors, list)

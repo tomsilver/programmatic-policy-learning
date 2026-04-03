@@ -51,8 +51,7 @@ class DummyEnv:
 
 
 def test_collect_demo_returns_trajectory_DummyEnv() -> None:
-    """Test that collect_demo returns a Trajectory with Demo steps,
-    DummyEnv."""
+    """Check dummy demo collection."""
 
     env = DummyEnv()
     env_factory = (
@@ -74,7 +73,7 @@ def test_collect_demo_returns_trajectory_DummyEnv() -> None:
 
 
 def test_collect_demo_with_real_env() -> None:
-    """Test collect_demo with a real environment using EnvRegistry."""
+    """Check real env collection."""
     env_num = 2
     cfg: DictConfig = OmegaConf.create(
         {
@@ -104,7 +103,7 @@ def test_collect_demo_with_real_env() -> None:
 
 
 def test_collect_demo_with_real_env_and_expert() -> None:
-    """Test collect_demo with a real environment and expert policy."""
+    """Check expert demo collection."""
     cfg: DictConfig = OmegaConf.create(
         {
             "provider": "ggg",
@@ -137,7 +136,7 @@ def test_collect_demo_with_real_env_and_expert() -> None:
 
 
 def test_get_demonstrations() -> None:
-    """Test get_demonstrations collects multiple trajectories."""
+    """Check multiple demos."""
     env = DummyEnv()
     env_factory = lambda instance_num=None: env
 

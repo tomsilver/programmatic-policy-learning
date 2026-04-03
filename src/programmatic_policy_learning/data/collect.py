@@ -7,8 +7,11 @@ import numpy as np
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 
-EnvFactory = Callable[[], Any]
+EnvFactory = Callable[..., Any]
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 
@@ -22,36 +25,9 @@ def collect_demo(
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
     env = env_factory(env_num)  # type: ignore
+    if hasattr(expert, "set_env"):
+        expert.set_env(env)
 
-    # print(type(expert))
-    # print(max_demo_length)
-    # obs, info = env.reset(seed=0)
-    # expert.reset(obs, info)
-    # for t in range(1000):
-    #     action = expert.step()
-    #     print("t", t, "action", action)
-    #     obs, reward, terminated, truncated, info = env.step(action)
-    #     print("reward", reward, "terminated", terminated, "truncated", truncated)
-    #     expert.update(obs, reward, terminated or truncated, info)
-    #     if terminated or truncated:
-    #         print("final reward:", reward)
-    #         print("final terminated:", terminated)
-    #         print("final truncated:", truncated)
-    #         print("final info:", info)
-    #         print("final obs:", obs)
-    #         print("robot xy:", obs[0], obs[1])
-    #         print("target xy:", obs[9], obs[10])
-
-    #         rx, ry, r = obs[0], obs[1], obs[3]
-    #         tx, ty, tw, th = obs[9], obs[10], obs[17], obs[18]
-
-    #         print("robot center:", (rx, ry))
-    #         print("target rect:", (tx, ty, tw, th))
-    #         print("target center:", (tx + tw / 2, ty + th / 2))
-    #         print("feasible success center x-range:", (tx + r, tx + tw - r))
-    #         print("feasible success center y-range:", (ty + r, ty + th - r))
-
-    # Support both gymnasium reset(seed=...) and older reset() signatures.
     try:
         reset_out = env.reset(seed=env_num)
     except TypeError:
@@ -63,11 +39,34 @@ def collect_demo(
 
     obs_list: list[ObsT] = []
     act_list: list[ActT] = []
+    quantizer: Motion2DActionQuantizer | None = None
+    action_space = getattr(env, "action_space", None)
+    if (
+        action_space is not None
+        and hasattr(action_space, "low")
+        and hasattr(action_space, "high")
+    ):
+        try:
+            quantizer = Motion2DActionQuantizer.from_bounds(
+                action_space.low,
+                action_space.high,
+                bucket_edges=[-0.05, -0.02, -0.006, 0.0, 0.006, 0.02, 0.05],
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            quantizer = None
 
     t = 0
     expert.reset(obs, info)
     while True:
         action = expert.step()
+        print("ACTION:", action)
+        if quantizer is not None:
+            try:
+                print("ACTION BUCKET:", quantizer.quantize(action))
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+        print("OBSERVATION:", obs)
+
         obs_list.append(obs)
         act_list.append(action)
 
@@ -103,7 +102,7 @@ def get_demonstrations(
     """Collect multiple demonstration trajectories using an expert policy."""
     demonstrations: list[Trajectory] = []
     demo_dict: dict[int, Trajectory] = {}
-    print(demo_numbers)
+    logging.info("Collecting demonstrations for environments: %s", demo_numbers)
     for i in demo_numbers:
         traj: Trajectory = collect_demo(
             env_factory,
@@ -113,5 +112,6 @@ def get_demonstrations(
         )
         demonstrations.append(traj)
         demo_dict[i] = traj
+
     all_steps = [step for traj in demonstrations for step in traj.steps]
     return Trajectory(steps=all_steps), demo_dict

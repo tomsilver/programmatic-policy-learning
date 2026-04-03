@@ -20,55 +20,6 @@ _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
 
 
-def _continuous_probe_actions(action: Any) -> list[Any]:
-    """Return a fixed probe set for estimating continuous permissiveness."""
-    base = np.asarray(action, dtype=float)
-    if base.ndim == 0:
-        base = base.reshape(1)
-    if base.shape[0] < 2:
-        return [action]
-
-    dx = float(base[0])
-    dy = float(base[1])
-    suffix = base[2:].copy()
-    zero_suffix = np.zeros_like(suffix)
-    half_dx = 0.5 * dx
-    half_dy = 0.5 * dy
-    large_dx = 1.5 * dx
-    large_dy = 1.5 * dy
-
-    candidates = [
-        base.copy(),
-        np.concatenate([np.array([-dx, dy]), zero_suffix]),
-        np.concatenate([np.array([dx, -dy]), zero_suffix]),
-        np.concatenate([np.array([-dx, -dy]), zero_suffix]),
-        np.concatenate([np.array([dx, -half_dy]), zero_suffix]),
-        np.concatenate([np.array([-half_dx, dy]), zero_suffix]),
-        np.concatenate([np.array([half_dx, 0.0]), zero_suffix]),
-        np.concatenate([np.array([0.0, half_dy]), zero_suffix]),
-        np.concatenate([np.array([half_dx, half_dy]), zero_suffix]),
-        np.concatenate([np.array([large_dx, large_dy]), zero_suffix]),
-        np.concatenate([np.array([dx, half_dy]), zero_suffix]),
-    ]
-
-    deduped: list[np.ndarray] = []
-    seen: set[tuple[float, ...]] = set()
-    for candidate in candidates:
-        key = tuple(float(x) for x in np.asarray(candidate).reshape(-1).tolist())
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(np.asarray(candidate, dtype=base.dtype))
-
-    if isinstance(action, np.ndarray):
-        return [candidate.astype(action.dtype, copy=False) for candidate in deduped]
-    if isinstance(action, tuple):
-        return [tuple(float(x) for x in candidate.tolist()) for candidate in deduped]
-    if isinstance(action, list):
-        return [[float(x) for x in candidate.tolist()] for candidate in deduped]
-    return list(deduped)
-
-
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Return (base, module_map) — base is pickleable; module_map is
     name→import_path.
@@ -88,10 +39,14 @@ def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
 
 # Global worker state
 _WORKER_PLPS = None
+_WORKER_CANDIDATE_ACTIONS = None
 
 
 def likelihood_worker_init(
-    dsl_blob: bytes, module_map: dict[str, str], plp_batch: list[str]
+    dsl_blob: bytes,
+    module_map: dict[str, str],
+    plp_batch: list[str],
+    candidate_actions: list[Any] | None = None,
 ) -> None:
     """Set up the worker once.
 
@@ -102,8 +57,9 @@ def likelihood_worker_init(
         base[name] = import_module(modpath)
     set_dsl_functions(base)
 
-    global _WORKER_PLPS  # pylint: disable=global-statement
+    global _WORKER_CANDIDATE_ACTIONS, _WORKER_PLPS  # pylint: disable=global-statement
     _WORKER_PLPS = [eval("lambda s, a: " + p, base) for p in plp_batch]
+    _WORKER_CANDIDATE_ACTIONS = candidate_actions
 
 
 def _compute_likelihood_worker(
@@ -111,7 +67,7 @@ def _compute_likelihood_worker(
 ) -> list[float]:
     """Compute log-likelihoods for all precompiled PLPs on the given
     demonstrations."""
-    global _WORKER_PLPS  # pylint: disable=global-variable-not-assigned
+    global _WORKER_CANDIDATE_ACTIONS, _WORKER_PLPS  # pylint: disable=global-variable-not-assigned
     assert _WORKER_PLPS is not None, "Worker not initialized with PLPs."
 
     results: list[float] = []
@@ -130,10 +86,13 @@ def _compute_likelihood_worker(
                 )
             except TypeError:
                 # Continuous/non-grid fallback:
-                # estimate permissiveness from a fixed probe set around the
-                # expert action, since continuous actions cannot be enumerated.
+                # enumerate the fixed candidate catalog used at inference time.
+                probe_actions = (
+                    list(_WORKER_CANDIDATE_ACTIONS)
+                    if _WORKER_CANDIDATE_ACTIONS is not None
+                    else [action]
+                )
                 expert_allowed = plp(obs, action)
-                probe_actions = _continuous_probe_actions(action)
                 size = 0
                 for probe_action in probe_actions:
                     if plp(obs, probe_action):
@@ -198,6 +157,7 @@ def compute_likelihood_plps(
     plps: list[StateActionProgram],
     demonstrations: Trajectory[_ObsType, _ActType],
     dsl_functions: dict[str, Any],
+    candidate_actions: list[Any] | None = None,
     plp_interval: int = 100,
     num_workers: int | None = None,
 ) -> list[float]:
@@ -235,7 +195,7 @@ def compute_likelihood_plps(
         with ctx.Pool(
             processes=worker_count,
             initializer=likelihood_worker_init,
-            initargs=(dsl_blob, module_map, plp_batch),
+            initargs=(dsl_blob, module_map, plp_batch, candidate_actions),
         ) as pool:
 
             # Each worker runs likelihood for its PLP batch on the same demonstrations

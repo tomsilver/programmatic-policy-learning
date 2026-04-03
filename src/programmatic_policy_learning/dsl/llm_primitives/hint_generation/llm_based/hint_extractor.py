@@ -236,13 +236,11 @@ def extract_hints(
     """Query the LLM and return parsed hint JSON."""
     if structured:
         # prompt = build_hint_structured(trajectories_text, env_name, encoding_method)
-        # # print(prompt)
         prompt = build_new_hint_structured(trajectories_text, env_name, encoding_method)
 
     else:
         prompt = build_hint_prompt_v1(trajectories_text, env_name, encoding_method)
     prompt = f"{prompt}\n\nSEED: {seed}\n"
-    # print(prompt)
     query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
     reprompt_checks: list[RepromptCheck] = []
     response = query_with_reprompts(
@@ -324,12 +322,8 @@ def main() -> None:
         "StopTheFall",
         # "CheckmateTactic"
     ]
-    # encoding_methods = ["5"]  # "1",
-    # num_initial_states = [0, 2, 6]  # 4 9 deleted
-    # structured_modes = [True]
     encoding_methods = ["5"]  # "1", "6"
-    # num_initial_states = [0, 2, 4, 6, 9]  # 4 9 deleted
-    num_initial_states = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # 4 9 deleted
+    num_initial_states = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     structured_modes = [True]
     for env_name in env_names:
         for encoding_method in encoding_methods:
@@ -339,7 +333,7 @@ def main() -> None:
                 trajectories: list[list[tuple[Any, Any, Any]]] = []
                 object_types: Sequence[str] | None = None
                 for init_idx in num_initial_states:
-                    print(
+                    logging.info(
                         f"Collecting trajectory for {env_name}, init_idx={init_idx}..."
                     )
                     env = env_factory(init_idx, env_name)
@@ -387,10 +381,8 @@ def main() -> None:
                     encoding_method,
                     structured,
                 )
-                # print(combined_text)
                 # dsl_prompt = build_dsl_generation_prompt_final(hints, object_types)
                 # output = extract_dsl(llm_client, dsl_prompt)
-
                 path = save_hints(
                     hints,
                     env_name=env_name,

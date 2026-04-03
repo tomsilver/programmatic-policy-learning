@@ -3,12 +3,15 @@
 import numpy as np
 
 from programmatic_policy_learning.data.dataset import (
+    compute_cost_sensitive_bucket_weights,
     extract_examples_from_demonstration,
     extract_examples_from_demonstration_item,
     run_all_programs_on_single_demonstration,
-    sample_manual_negative_actions_continuous,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 
 
 def test_run_all_programs_on_single_demonstration() -> None:
@@ -19,7 +22,7 @@ def test_run_all_programs_on_single_demonstration() -> None:
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
     programs = ["np.sum(s) > 10"]
-    X, y, _examples = run_all_programs_on_single_demonstration(
+    X, y, _examples, _weights = run_all_programs_on_single_demonstration(
         "DummyEnv",  # base_class_name
         0,  # demo_number
         programs,  # programs
@@ -38,10 +41,11 @@ def test_extract_examples_from_demonstration() -> None:
     state = np.array([[1, 2], [3, 4]])
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
-    pos, neg = extract_examples_from_demonstration(traj)
+    pos, neg, weights = extract_examples_from_demonstration(traj)
     assert len(pos) == 1
     assert all(isinstance(x, tuple) for x in pos)
     assert all(isinstance(x, tuple) for x in neg)
+    assert len(weights) == len(pos) + len(neg)
 
 
 def test_discrete_negative_sampling_fallback_uses_all_other_cells() -> None:
@@ -50,12 +54,13 @@ def test_discrete_negative_sampling_fallback_uses_all_other_cells() -> None:
     action = (0, 1)
     traj: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(steps=[(state, action)])
 
-    pos, neg = extract_examples_from_demonstration(
+    pos, neg, weights = extract_examples_from_demonstration(
         traj,
         action_mode="discrete",
     )
     assert len(pos) == 1
     assert len(neg) == (state.shape[0] * state.shape[1] - 1)
+    assert len(weights) == len(pos) + len(neg)
     assert all(a != action for _, a in neg)
 
 
@@ -75,63 +80,76 @@ def test_discrete_negative_sampling_enabled_respects_k_and_excludes_expert() -> 
             "w_random": 0.2,
         },
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (state, action),
         negative_sampling=neg_cfg,
         action_mode="discrete",
     )
     assert len(neg) == k
+    assert len(weights) == len(_pos) + len(neg)
     neg_actions = [a for _, a in neg]
     assert len(set(neg_actions)) == len(neg_actions)
     assert all(a != action for a in neg_actions)
 
 
-def test_continuous_negative_sampling_fallback_uses_uniform_with_bounds() -> None:
-    """Continuous fallback samples bounded negatives when bounds are
-    provided."""
+def test_continuous_quantized_expansion_uses_full_grid() -> None:
+    """Continuous expansion always uses quantized full-grid negatives."""
     obs = np.array([0.0, 1.0], dtype=np.float32)
     action = np.array([0.1, -0.2], dtype=np.float32)
     neg_cfg = {
-        "enabled": False,
         "action_low": [-1.0, -0.5],
         "action_high": [1.0, 0.5],
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (obs, action),
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
-    assert len(neg) == 10
+    print("\n[continuous-quantized] pos_count=", len(_pos), "neg_count=", len(neg))
+    assert len(weights) == len(_pos) + len(neg)
+    # default bucket_counts=5 for each of dx,dy => 25 total, 24 negatives
+    assert len(_pos) == 1
+    assert len(neg) == 24
+    pos_action = np.asarray(_pos[0][1], dtype=float)
+    q = Motion2DActionQuantizer.from_bounds([-1.0, -0.5], [1.0, 0.5], bucket_counts=5)
+    expected_bucket = q.quantize(action)
+    expected_center = q.dequantize(expected_bucket)
+    print(
+        "[continuous-quantized] expert_action=",
+        action.tolist(),
+        "bucket=",
+        expected_bucket,
+        "center=",
+        expected_center.tolist(),
+    )
+    preview = [np.asarray(a, dtype=float).tolist() for _, a in neg[:5]]
+    print("[continuous-quantized] first_5_negatives=", preview)
+    assert np.allclose(pos_action, expected_center)
     for _s, a in neg:
         arr = np.asarray(a, dtype=float)
         assert arr.shape == (2,)
-        assert np.all(arr >= np.array([-1.0, -0.5]))
-        assert np.all(arr <= np.array([1.0, 0.5]))
+        assert np.all(arr >= np.array([-1.0, -1.0]))
+        assert np.all(arr <= np.array([1.0, 1.0]))
 
 
-def test_continuous_negative_sampling_enabled_respects_k_and_bounds() -> None:
-    """Continuous mixture sampling should respect K and action bounds."""
+def test_continuous_quantized_expansion_supports_per_dim_bucket_counts() -> None:
+    """Continuous quantized expansion supports per-dimension bucket counts."""
     obs = np.array([0.0, 1.0], dtype=np.float32)
     action = np.array([0.1, -0.2], dtype=np.float32)
-    k = 7
     neg_cfg = {
-        "enabled": True,
         "action_low": [-1.0, -1.0],
         "action_high": [1.0, 1.0],
         "continuous": {
-            "K": k,
-            "local_noise_scale": 0.2,
-            "lambda_local": 0.6,
-            "lambda_uniform": 0.4,
-            "lambda_traj": 0.0,
+            "bucket_counts": [3, 7],
         },
     }
-    _pos, neg = extract_examples_from_demonstration_item(
+    _pos, neg, weights = extract_examples_from_demonstration_item(
         (obs, action),
         negative_sampling=neg_cfg,
         action_mode="continuous",
     )
-    assert len(neg) == k
+    assert len(neg) == 20
+    assert len(weights) == len(_pos) + len(neg)
     for _s, a in neg:
         arr = np.asarray(a, dtype=float)
         assert arr.shape == (2,)
@@ -139,48 +157,80 @@ def test_continuous_negative_sampling_enabled_respects_k_and_bounds() -> None:
         assert np.all(arr <= 1.0)
 
 
-def test_manual_continuous_negative_sampling_returns_expected_variants() -> None:
-    """Manual continuous negatives should match the fixed 10 variants."""
-    action = np.array([0.0493, 0.0265, 0.0, 0.0, 0.0], dtype=np.float32)
-
-    neg_actions = sample_manual_negative_actions_continuous(action)
-
-    assert len(neg_actions) == 10
-    got = [tuple(np.asarray(a, dtype=float).round(4).tolist()) for a in neg_actions]
-    assert (-0.0493, 0.0265, 0.0, 0.0, 0.0) in got
-    assert (0.0493, -0.0265, 0.0, 0.0, 0.0) in got
-    assert (-0.0493, -0.0265, 0.0, 0.0, 0.0) in got
-    assert (0.0493, -0.0132, 0.0, 0.0, 0.0) in got
-    assert (-0.0247, 0.0265, 0.0, 0.0, 0.0) in got
-    assert (0.0247, 0.0, 0.0, 0.0, 0.0) in got
-    assert (0.0, 0.0132, 0.0, 0.0, 0.0) in got
-    assert (0.0247, 0.0132, 0.0, 0.0, 0.0) in got
-    assert any(
-        np.allclose(
-            np.asarray(a, dtype=float),
-            np.array([0.07395, 0.03975, 0.0, 0.0, 0.0]),
-            atol=1e-4,
-        )
-        for a in neg_actions
+def test_cost_sensitive_bucket_weights_positive_and_negative_mass() -> None:
+    """Check weight mass."""
+    expert = (1, 1)
+    candidates = [(0, 0), (0, 1), (1, 1), (2, 1), (2, 2)]
+    beta_pos = 2.0
+    beta_neg = 3.0
+    w = compute_cost_sensitive_bucket_weights(
+        expert,
+        candidates,
+        beta_pos=beta_pos,
+        beta_neg=beta_neg,
+        alpha=1.0,
+        lambda_per_dim=(1.0, 1.0),
     )
-    assert (0.0493, 0.0132, 0.0, 0.0, 0.0) in got
-
-
-def test_continuous_negative_sampling_manual_mode() -> None:
-    """Continuous negative sampling should support manual mode via config."""
-    obs = np.array([0.0, 1.0], dtype=np.float32)
-    action = np.array([0.0493, 0.0265, 0.0, 0.0, 0.0], dtype=np.float32)
-    neg_cfg = {
-        "enabled": True,
-        "action_low": [-1.0, -1.0, -1.0, -1.0, -1.0],
-        "action_high": [1.0, 1.0, 1.0, 1.0, 1.0],
-        "continuous": {
-            "mode": "manual",
-        },
-    }
-    _pos, neg = extract_examples_from_demonstration_item(
-        (obs, action),
-        negative_sampling=neg_cfg,
-        action_mode="continuous",
+    print("\n[cost-weights/mass] expert=", expert)
+    print("[cost-weights/mass] candidates=", candidates)
+    print("[cost-weights/mass] weights=", w.tolist())
+    print(
+        "[cost-weights/mass] positive_weight=",
+        float(w[2]),
+        "negative_mass=",
+        float(np.sum(w) - w[2]),
     )
-    assert len(neg) == 10
+    assert np.isclose(float(w[2]), beta_pos)
+    neg_total = float(np.sum(w)) - float(w[2])
+    assert np.isclose(neg_total, beta_neg)
+
+
+def test_cost_sensitive_bucket_weights_farther_negative_gets_more_weight() -> None:
+    """Check distance weights."""
+    expert = (1, 1)
+    # idx 0: near negative (dist=1), idx 1: far negative (dist=3), idx 2: expert
+    candidates = [(1, 0), (3, 0), (1, 1)]
+    w = compute_cost_sensitive_bucket_weights(
+        expert,
+        candidates,
+        beta_pos=1.0,
+        beta_neg=1.0,
+        alpha=1.0,
+        lambda_per_dim=(1.0, 1.0),
+    )
+    print("\n[cost-weights/distance] expert=", expert)
+    print("[cost-weights/distance] candidates=", candidates)
+    print("[cost-weights/distance] weights=", w.tolist())
+    print(
+        "[cost-weights/distance] near_weight=",
+        float(w[0]),
+        "far_weight=",
+        float(w[1]),
+    )
+    assert float(w[1]) > float(w[0])
+
+
+def test_cost_sensitive_bucket_weights_supports_dimension_lambdas() -> None:
+    """Check lambda weights."""
+    expert = (1, 1)
+    # Both negatives have |delta|=1 in one dimension, but lambda_x is larger.
+    candidates = [(2, 1), (1, 2), (1, 1)]
+    w = compute_cost_sensitive_bucket_weights(
+        expert,
+        candidates,
+        beta_pos=1.0,
+        beta_neg=1.0,
+        alpha=1.0,
+        lambda_per_dim=(2.0, 0.5),
+    )
+    print("\n[cost-weights/lambdas] expert=", expert)
+    print("[cost-weights/lambdas] candidates=", candidates)
+    print("[cost-weights/lambdas] lambda_per_dim=(2.0, 0.5)")
+    print("[cost-weights/lambdas] weights=", w.tolist())
+    print(
+        "[cost-weights/lambdas] x_offset_weight=",
+        float(w[0]),
+        "y_offset_weight=",
+        float(w[1]),
+    )
+    assert float(w[0]) > float(w[1])

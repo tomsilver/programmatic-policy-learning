@@ -20,13 +20,16 @@ def prepare_programs_and_dsl(
     seed_num: int,
     prior_version: str,
     prior_beta: float,
-    get_program_set_fn: Callable[..., tuple[list[Any], list[float], dict[str, Any]]],
+    get_program_set_fn: Callable[
+        ..., tuple[list[Any], list[float], dict[str, Any], list[str] | None]
+    ],
     extract_feature_names_fn: Callable[[list[str]], list[str]],
 ) -> tuple[
     list[StateActionProgram],
     list[float] | None,
     dict[str, Any],
     int,
+    list[str] | None,
 ]:
     """Generate candidate programs, convert to StateActionProgram, and return
     DSL."""
@@ -34,6 +37,7 @@ def prepare_programs_and_dsl(
         programs,
         program_prior_log_probs_init,
         dsl_functions,
+        feature_display_names,
     ) = get_program_set_fn(
         num_programs,
         base_class_name,
@@ -60,4 +64,10 @@ def prepare_programs_and_dsl(
         programs = [f"{name}(s, a)" for name in feature_names]
 
     programs_sa = [StateActionProgram(p) for p in programs]
-    return programs_sa, program_prior_log_probs_opt, dsl_functions, start_index
+    return (
+        programs_sa,
+        program_prior_log_probs_opt,
+        dsl_functions,
+        start_index,
+        feature_display_names,
+    )

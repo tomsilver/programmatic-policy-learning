@@ -3,7 +3,7 @@
 from typing import Any, Generic, Sequence, TypeVar, cast
 
 import numpy as np
-from gymnasium.spaces import Box, Space
+from gymnasium.spaces import Space
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -23,6 +23,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         action_mode: str = "discrete",
         action_space: Space[Any] | None = None,
         continuous_num_candidates: int = 64,
+        candidate_actions: Sequence[Any] | None = None,
     ) -> None:
         """Initialize the LPPPolicy.
 
@@ -48,6 +49,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self.action_mode = action_mode
         self.action_space = action_space
         self.continuous_num_candidates = max(1, int(continuous_num_candidates))
+        self.candidate_actions = list(candidate_actions) if candidate_actions else []
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
         self.map_program = ""
@@ -211,20 +213,11 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         return max(1e-12, min(1.0, score))
 
     def _select_continuous_action(self, obs: _ObsType) -> Any:
-        """Pick a continuous action by scoring sampled candidates."""
-        if self.action_space is None:
-            raise ValueError("action_space is required for continuous LPPPolicy.")
+        """Pick a continuous action by scoring a fixed candidate catalog."""
+        if not self.candidate_actions:
+            raise ValueError("candidate_actions is required for continuous LPPPolicy.")
 
-        candidates: list[Any] = []
-        if isinstance(self.action_space, Box):
-            # Include center action plus random samples from the box.
-            center = ((self.action_space.low + self.action_space.high) / 2.0).astype(
-                self.action_space.dtype
-            )
-            candidates.append(center)
-        for _ in range(self.continuous_num_candidates):
-            candidates.append(self.action_space.sample())
-
+        candidates = list(self.candidate_actions)
         if not candidates:
             raise RuntimeError("No action candidates generated for continuous policy.")
 

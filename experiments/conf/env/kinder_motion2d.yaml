@@ -1,9 +1,9 @@
-num_passages: 0
+num_passages: 1
 
 make_kwargs:
   base_name: "Motion2D-p${..num_passages}"
   id: "kinder/Motion2D-p${..num_passages}-v0"
-  render_mode: "null"
+  render_mode: rgb_array
 
 provider: kinder
 
@@ -13,7 +13,7 @@ expert:
 #programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach
 #motion2d_bilevel_expert_approach.Motion2DBilevelExpertApproach
   _target_: programmatic_policy_learning.approaches.motion2d_bilevel_expert_approach.Motion2DBilevelExpertApproach
-  # num_passages: ${..num_passages}
+  num_passages: ${..num_passages}
   # max_abstract_plans: 10
   # samples_per_step: 3
   # max_skill_horizon: 100

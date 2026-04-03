@@ -1,6 +1,6 @@
 """KinDER environment provider."""
 
-from typing import Any
+from typing import Any, cast
 
 import kinder  # type: ignore[import-not-found]
 from gymnasium import spaces
@@ -14,13 +14,23 @@ class KinderEnvWithTypes:
     needed by the LPP pipeline.
     """
 
-    def __init__(self, env: Any, type_names: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        env: Any,
+        type_names: tuple[str, ...],
+        action_types: tuple[str, ...],
+    ) -> None:
         self._env = env
         self._type_names = type_names
+        self._action_types = action_types
 
     def get_object_types(self) -> tuple[str, ...]:
         """Return object type names for this environment."""
         return self._type_names
+
+    def get_action_types(self) -> tuple[str, ...]:
+        """Return action type names for this environment."""
+        return self._action_types
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -61,6 +71,50 @@ def _extract_type_names(env: Any) -> tuple[str, ...]:
     return tuple(t.name for t in type_features)
 
 
+def _extract_action_types(env: Any) -> tuple[str, ...]:
+    """Extract per-dimension action types from a KinDER environment.
+
+    Prefer environment-provided metadata when available. Otherwise fall
+    back to a generic inference from the action space, with a
+    Motion2D-specific hint for the final vacuum dimension.
+    """
+    for attr_name in ("action_types", "action_type_names"):
+        raw = getattr(env, attr_name, None)
+        if raw is not None:
+            try:
+                values = tuple(str(x) for x in raw)
+            except TypeError:
+                values = (str(raw),)
+            if values:
+                return values
+
+    action_space = env.action_space
+    if isinstance(action_space, spaces.Discrete):
+        return ("discrete",)
+
+    if isinstance(action_space, spaces.MultiBinary):
+        raw_n: object = action_space.n
+        size = (
+            int(raw_n) if isinstance(raw_n, int) else len(cast(tuple[int, ...], raw_n))
+        )
+        return tuple("boolean" for _ in range(size))
+
+    if isinstance(action_space, spaces.MultiDiscrete):
+        return tuple("discrete" for _ in action_space.nvec.tolist())
+
+    if isinstance(action_space, spaces.Box):
+        shape = tuple(int(dim) for dim in action_space.shape)
+        size = shape[0] if len(shape) == 1 else 0
+        inferred = ["continuous"] * size
+        spec = getattr(env, "spec", None)
+        env_id = str(getattr(spec, "id", "") or "")
+        if "Motion2D" in env_id and size >= 5:
+            inferred[4] = "boolean-like toggle"
+        return tuple(inferred)
+
+    return tuple()
+
+
 def create_kinder_env(
     env_config: DictConfig, instance_num: int | None = None
 ) -> KinderEnvWithTypes:
@@ -70,6 +124,9 @@ def create_kinder_env(
     kwargs = dict(env_config["make_kwargs"])
     # Remove metadata keys that are not kinder constructor arguments
     kwargs.pop("base_name", None)
+    # Some configs store null as the string "null"; normalize to Python None.
+    if kwargs.get("render_mode") == "null":
+        kwargs["render_mode"] = None
 
     # Use instance_num to create different env instances if needed
     if instance_num is not None:
@@ -79,4 +136,5 @@ def create_kinder_env(
         env = kinder.make(**kwargs)
 
     type_names = _extract_type_names(env)
-    return KinderEnvWithTypes(env, type_names)
+    action_types = _extract_action_types(env)
+    return KinderEnvWithTypes(env, type_names, action_types)

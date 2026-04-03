@@ -1,6 +1,6 @@
 # Expert policy for Motion2D using bilevel planning.
 _target_: programmatic_policy_learning.approaches.motion2d_bilevel_expert_approach.Motion2DBilevelExpertApproach
-num_passages: 0
+num_passages: ${env.num_passages}
 max_abstract_plans: 10
 samples_per_step: 3
 max_skill_horizon: 100

@@ -67,7 +67,6 @@ def split_and_collect_demonstrations(
             demo_numbers=val_demo_ids,  # type: ignore[arg-type]
         )
         demo_dict_all.update(demo_dict_val)
-
     # assert_state_disjointness(demo_dict_all, train_demo_ids, val_demo_ids)
 
     train_states, train_expanded = count_states_and_expanded_examples(
@@ -175,7 +174,7 @@ def count_states_and_expanded_examples(
         traj = demo_dict[int(demo_id)]
         num_states += len(traj.steps)
         # TODOO: we can later remove this for efficiency.
-        pos, neg = extract_examples_from_demonstration(
+        pos, neg, _ = extract_examples_from_demonstration(
             traj,
             negative_sampling=negative_sampling,
             action_mode=action_mode,

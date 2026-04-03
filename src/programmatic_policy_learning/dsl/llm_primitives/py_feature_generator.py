@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import re
+import types
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -72,6 +73,32 @@ class PyFeatureGenerator:
     def _motion2d_num_passages(self, env_name: str) -> int:
         match = re.search(r"-p(\d+)", env_name)
         return int(match.group(1)) if match else 0
+
+    def _motion2d_passage_prompt_values(self, env_name: str | None) -> tuple[str, str]:
+        """Return prompt-friendly Motion2D passage variant strings."""
+        if env_name is None:
+            return ("p0", "no narrow passages or wall obstacles")
+
+        base_env_name = env_name.split("-p", maxsplit=1)[0]
+        canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
+        if canonical_name != "Motion2D":
+            return ("unknown", "an environment-specific passage layout")
+
+        num_passages = self._motion2d_num_passages(env_name)
+        variant = f"p{num_passages}"
+        if num_passages == 0:
+            description = "no narrow passages or wall obstacles"
+        elif num_passages == 1:
+            description = (
+                "there is one narrow passage formed by two wall obstacles "
+                "between the robot and the target"
+            )
+        else:
+            description = (
+                f"there are {num_passages} narrow passages formed by wall "
+                "obstacles between the robot and the target"
+            )
+        return (variant, description)
 
     def _build_continuous_observation_field_guide(self, env_name: str | None) -> str:
         if env_name is None:
@@ -150,6 +177,13 @@ class PyFeatureGenerator:
                     field_guide,
                 )
             rendered = rendered.replace("${DEMONSTRATION_BACKGROUND}", background_text)
+
+        if "${PASSAGE_VARIANT}" in rendered or "${PASSAGE_DESCRIPTION}" in rendered:
+            passage_variant, passage_description = self._motion2d_passage_prompt_values(
+                env_name
+            )
+            rendered = rendered.replace("${PASSAGE_VARIANT}", passage_variant)
+            rendered = rendered.replace("${PASSAGE_DESCRIPTION}", passage_description)
 
         needs_token_map = any(
             token in rendered
@@ -232,27 +266,12 @@ class PyFeatureGenerator:
             "${RAW_TOKEN_VALIDATION}",
             "${TOKEN_CONSTANTS_VALIDATION}",
             "${NUM_FEATURES}",
+            "${PASSAGE_VARIANT}",
+            "${PASSAGE_DESCRIPTION}",
         ]
         if any(token in rendered for token in unresolved):
             raise ValueError("Prompt template still has unresolved variables.")
         return rendered
-
-    def _extract_descriptions(self, payload: dict[str, Any]) -> list[str]:
-        """Extract feature descriptions from a payload."""
-        features = payload.get("features")
-        if not isinstance(features, list):
-            return []
-        descriptions: list[str] = []
-        for feature in features:
-            if not isinstance(feature, dict):
-                continue
-            desc = feature.get("description", "")
-            if not isinstance(desc, str):
-                continue
-            cleaned = " ".join(desc.strip().split())
-            if cleaned:
-                descriptions.append(cleaned)
-        return descriptions
 
     _PLACEHOLDER_RE = re.compile(r"\$\{(TOKEN(?:_[A-Z0-9]+)?|TOKEN\d+|DRs|K)\}")
     _DEF_RE = re.compile(r"^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
@@ -309,6 +328,39 @@ class PyFeatureGenerator:
             raise ValueError("Could not find a function definition line.")
         start, end = m.span(1)
         return source[:start] + new_fn_name + source[end:]
+
+    def renumber_payload_features(
+        self,
+        payload: dict[str, Any],
+        *,
+        start_index: int = 1,
+    ) -> dict[str, Any]:
+        """Renumber feature ids/names and function defs to start at
+        start_index."""
+        if start_index < 1:
+            raise ValueError("start_index must be >= 1.")
+
+        renumbered: list[dict[str, Any]] = []
+        next_id = start_index
+
+        for feat in payload.get("features", []):
+            if not isinstance(feat, dict):
+                raise ValueError("Each feature must be a dict.")
+            source = feat.get("source")
+            if not isinstance(source, str):
+                raise ValueError("Feature 'source' must be a string.")
+
+            fid = f"f{next_id}"
+            updated = dict(feat)
+            updated["id"] = fid
+            updated["name"] = fid
+            updated["source"] = self._rename_def(
+                self._normalize_placeholders(source), fid
+            )
+            renumbered.append(updated)
+            next_id += 1
+
+        return {"features": renumbered}
 
     def expand_template_payload(
         self,
@@ -381,40 +433,6 @@ class PyFeatureGenerator:
 
         return {"features": expanded}
 
-    def fill_batch_prompt(
-        self,
-        template: str,
-        hint_text: str,
-        existing_descriptions: Sequence[str],
-        batch_size: int,
-        start_index: int,
-    ) -> str:
-        """Fill batch prompt with base placeholders plus existing feature
-        info."""
-        rendered = template
-        # rendered = rendered.replace("${OBJECT_TYPES}", json.dumps(list(object_types)))
-        rendered = rendered.replace("${HINT_TEXT}", hint_text)
-        rendered = rendered.replace("${BATCH_SIZE}", str(batch_size))
-        rendered = rendered.replace("${START_INDEX}", str(start_index))
-
-        if "${EXISTING_FEATURE_DOCSTRINGS}" in rendered:
-            if existing_descriptions:
-                desc_block = "\n".join(f"- {d}" for d in existing_descriptions)
-            else:
-                desc_block = "None"
-            rendered = rendered.replace("${EXISTING_FEATURE_DOCSTRINGS}", desc_block)
-
-        unresolved = [
-            "${OBJECT_TYPES}",
-            "${HINT_TEXT}",
-            "${EXISTING_FEATURE_DOCSTRINGS}",
-            "${BATCH_SIZE}",
-            "${START_INDEX}",
-        ]
-        if any(token in rendered for token in unresolved):
-            raise ValueError("Batch prompt template still has unresolved variables.")
-        return rendered
-
     def query_llm(
         self,
         prompt: str,
@@ -423,6 +441,22 @@ class PyFeatureGenerator:
         seed: int = 0,
     ) -> dict[str, Any]:
         """Query the LLM and return parsed JSON payload."""
+        response_text = self.query_llm_text(
+            prompt,
+            max_attempts=max_attempts,
+            reprompt_checks=reprompt_checks,
+            seed=seed,
+        )
+        return json.loads(response_text)
+
+    def query_llm_text(
+        self,
+        prompt: str,
+        max_attempts: int = 3,
+        reprompt_checks: list[RepromptCheck] | None = None,
+        seed: int = 0,
+    ) -> str:
+        """Query the LLM and return raw response text."""
         if self.llm_client is None:
             raise ValueError("LLM client is not initialized.")
         query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
@@ -436,7 +470,7 @@ class PyFeatureGenerator:
         logging.debug(response)
 
         response_text = response.text if hasattr(response, "text") else str(response)
-        return json.loads(response_text)
+        return response_text
 
     def write_json(self, filename: str, data: dict[str, Any]) -> None:
         """Write JSON data to a file in the output directory."""
@@ -461,6 +495,65 @@ class PyFeatureGenerator:
             programs.append(source.replace("\\n", "\n"))  # LATER REMOVE
         return programs
 
+    def _extract_python_script(self, response_text: str) -> str:
+        """Extract raw Python source from an LLM response."""
+        stripped = response_text.strip()
+        fence_match = re.search(r"```(?:python)?\s*(.*?)```", stripped, re.DOTALL)
+        if fence_match:
+            stripped = fence_match.group(1).strip()
+        if not stripped:
+            raise ValueError("LLM returned an empty Python generator script.")
+        return stripped
+
+    def _coerce_feature_payload(self, payload: Any) -> dict[str, Any]:
+        """Validate and normalize a generated feature-library payload."""
+        if isinstance(payload, list):
+            payload = {"features": payload}
+        if not isinstance(payload, dict):
+            raise ValueError("Feature generator script must return a dict payload.")
+        features = payload.get("features")
+        if not isinstance(features, list):
+            raise ValueError(
+                "Feature generator payload must contain a 'features' list."
+            )
+        normalized_features: list[dict[str, Any]] = []
+        for idx, feature in enumerate(features, start=1):
+            if not isinstance(feature, dict):
+                raise ValueError(f"Feature {idx} is not a dict.")
+            source = feature.get("source")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError(f"Feature {idx} must contain a non-empty 'source'.")
+            fid = feature.get("id", f"f{idx}")
+            name = feature.get("name", fid)
+            normalized_features.append(
+                {
+                    **feature,
+                    "id": str(fid),
+                    "name": str(name),
+                    "source": source,
+                }
+            )
+        return {"features": normalized_features}
+
+    def _execute_generator_script(self, script_text: str) -> dict[str, Any]:
+        """Execute an LLM-produced script and return its feature payload."""
+        module_globals: dict[str, Any] = {
+            "__builtins__": __builtins__,
+            "__name__": "__py_feature_generator_script__",
+            "json": json,
+            "math": math,
+            "re": re,
+            "types": types,
+        }
+        exec(script_text, module_globals)  # pylint: disable=exec-used
+        build_feature_library = module_globals.get("build_feature_library")
+        if not callable(build_feature_library):
+            raise ValueError(
+                "Generator script must define a callable build_feature_library()."
+            )
+        payload = build_feature_library()
+        return self._coerce_feature_payload(payload)
+
     def _postprocess_payload_by_mode(
         self,
         payload: dict[str, Any],
@@ -481,10 +574,8 @@ class PyFeatureGenerator:
     def generate(  # pylint: disable=unused-argument
         self,
         prompt_path: str | Path,
-        batch_prompt_path: str | Path | None,
         hint_text: str,
         num_features: int,
-        num_batches: int | None,
         env_name: str | None = None,
         demonstration_data: str | None = None,
         encoding_method: str | None = None,
@@ -493,70 +584,57 @@ class PyFeatureGenerator:
         reprompt_checks: list[RepromptCheck] | None = None,
         loading: dict[str, Any] | None = None,
         action_mode: str = "discrete",
+        generation_mode: str = "feature_payload",
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
         load_offline = bool(loading and loading.get("offline", 0))
         offline_json_path = loading.get("offline_json_path") if loading else None
 
         if not load_offline:
-            if num_batches is None or num_batches <= 0:
-                num_batches = 1
-            num_batches = min(num_batches, num_features)
-            batch_size = math.ceil(num_features / num_batches)
+            prompt_template = self.read_prompt(prompt_path)
+            prompt = self.fill_prompt(
+                prompt_template,
+                hint_text=hint_text,
+                num_features=num_features,
+                encoding_method=encoding_method,
+                env_name=env_name,
+                demonstration_data=demonstration_data,
+                action_mode=action_mode,
+            )
+            prompt = f"{prompt}\n\nSEED: {_seed}\n"
+            logging.info(prompt)
 
-            all_programs: list[str] = []
-            all_descriptions: list[str] = []
-            batch_payloads: list[dict[str, Any]] = []
-
-            for batch_idx in range(num_batches):
-                if batch_idx == 0:
-                    current_prompt_path = prompt_path
-                else:
-                    if batch_prompt_path is None:
-                        raise ValueError(
-                            "batch_prompt_path is required when batch_size < "
-                            "num_features."
-                        )
-                    current_prompt_path = batch_prompt_path
-
-                remaining = num_features - batch_idx * batch_size
-                current_batch_size = min(batch_size, remaining)
-
-                prompt_template = self.read_prompt(current_prompt_path)
-                if batch_idx == 0:
-                    prompt = self.fill_prompt(
-                        prompt_template,
-                        hint_text=hint_text,
-                        num_features=current_batch_size,
-                        encoding_method=encoding_method,
-                        env_name=env_name,
-                        demonstration_data=demonstration_data,
-                        action_mode=action_mode,
-                    )
-                    # print(prompt)
-
-                else:
-                    prompt = self.fill_batch_prompt(
-                        prompt_template,
-                        hint_text=hint_text,
-                        existing_descriptions=all_descriptions,
-                        batch_size=current_batch_size,
-                        start_index=len(all_programs) + 1,
-                    )
-                prompt = f"{prompt}\n\nSEED: {_seed}\n"
-                logging.info(prompt)
-
-                template_payload = self.query_llm(
+            prompt_label = Path(prompt_path).stem.replace("/", "-")
+            env_label = (env_name or "unknown").replace("/", "-")
+            if generation_mode == "generator_script":
+                script_text = self.query_llm_text(
                     prompt,
                     max_attempts=max_attempts,
                     reprompt_checks=reprompt_checks,
                     seed=_seed,
                 )
-                prompt_label = Path(current_prompt_path).stem.replace("/", "-")
-                env_label = (env_name or "unknown").replace("/", "-")
-                self.write_json(
-                    f"template_payload_{prompt_label}_{env_label}.json",
+                script_text = self._extract_python_script(script_text)
+                if self.llm_client is not None:
+                    script_path = (
+                        self.output_path
+                        / f"feature_generator_script_{prompt_label}_{env_label}.py"
+                    )
+                    script_path.write_text(script_text, encoding="utf-8")
+                template_payload = self._execute_generator_script(script_text)
+                expanded_payload = self._postprocess_payload_by_mode(
                     template_payload,
+                    action_mode=action_mode,
+                    env_name=env_name,
+                    start_index=1,
+                )
+                logging.info(script_text)
+                logging.info(expanded_payload)
+            else:
+                template_payload = self.query_llm(
+                    prompt,
+                    max_attempts=max_attempts,
+                    reprompt_checks=reprompt_checks,
+                    seed=_seed,
                 )
                 expanded_payload = self._postprocess_payload_by_mode(
                     template_payload,
@@ -564,31 +642,14 @@ class PyFeatureGenerator:
                     env_name=env_name,
                     start_index=1,
                 )
-                feature_programs = self.parse_feature_programs(expanded_payload)
-                # all_descriptions.extend(self._extract_descriptions(template_payload))
-                all_programs.extend(feature_programs)
-                batch_payloads.append(expanded_payload)
-
-                # if self.llm_client is not None:
-                #     self.write_json(
-                #         f"py_feature_payload_batch_{batch_idx + 1}.json",
-                #         expanded_payload,
-                #     )
-
-            combined_payload: dict[str, Any] = {
-                "features": [
-                    {"id": f"f{i + 1}", "name": f"f{i + 1}", "source": src}
-                    for i, src in enumerate(all_programs)
-                ],
-                # "descriptions": all_descriptions,
-                "batches": batch_payloads,
-                # "batch_size": batch_size,
-                # "num_batches": num_batches,
-                "total_features": len(all_programs),
-            }
+            self.write_json(
+                f"template_payload_{prompt_label}_{env_label}.json",
+                template_payload,
+            )
+            feature_programs = self.parse_feature_programs(expanded_payload)
             if self.llm_client is not None:
-                self.write_json("py_feature_payload.json", combined_payload)
-            return all_programs, combined_payload
+                self.write_json("py_feature_payload.json", expanded_payload)
+            return feature_programs, expanded_payload
 
         # offline mode
         if offline_json_path is None:

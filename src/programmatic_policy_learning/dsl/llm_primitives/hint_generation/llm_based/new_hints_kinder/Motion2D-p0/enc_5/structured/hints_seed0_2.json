@@ -1,0 +1,23 @@
+{
+  "action_choice_hints": [
+    "Action should reduce the Euclidean distance between the robot and the target.",
+    "Action should move the robot toward the target's center, considering both x and y axes.",
+    "Action should maintain or achieve a non-intersecting relation until close proximity, then allow intersection with the target.",
+    "Action should avoid unnecessary changes in arm or vacuum controls when not required for progress toward the target.",
+    "Action should maintain a feasible and collision-free path toward the target."
+  ],
+  "feature_family_hints": [
+    "Relation-change tests: Needed to detect whether the robot is moving closer to or farther from the target.",
+    "Progress tests: Needed to measure reduction in distance to the target over time.",
+    "Boundary/contact tests: Needed to detect when the robot begins to intersect with the target.",
+    "Persistence tests: Needed to ensure that once the robot is in contact with the target, it maintains that contact if required.",
+    "Feasibility/safety tests: Needed to ensure actions do not cause infeasible or unsafe transitions (e.g., unnecessary arm or vacuum activation)."
+  ],
+  "causal_transition_hints": [
+    "Actions that move the robot toward the target tend to cause a reduction in the distance between the robot and the target.",
+    "Actions that maintain a direct path toward the target preserve progress and avoid unnecessary detours.",
+    "Actions that bring the robot into intersection with the target cause a transition from non-contact to contact state.",
+    "Actions that do not activate arm or vacuum controls preserve the robot's current manipulation state.",
+    "Once intersection with the target is achieved, actions that maintain proximity tend to preserve the contact relation."
+  ]
+}

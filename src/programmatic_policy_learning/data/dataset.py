@@ -20,6 +20,16 @@ from programmatic_policy_learning.dsl.state_action_program import (
     StateActionProgram,
     set_dsl_functions,
 )
+from programmatic_policy_learning.utils.action_canonicalization import (
+    active_action_bounds,
+    canonicalize_continuous_action,
+    embed_active_action,
+    get_active_action_dims,
+    get_inactive_action_fill_value,
+)
+from programmatic_policy_learning.utils.action_quantization import (
+    Motion2DActionQuantizer,
+)
 from programmatic_policy_learning.utils.cache_utils import (
     cache_single_output,
     load_single_cache_output,
@@ -45,6 +55,99 @@ CONTINUOUS_NEGATIVE_K = 10
 CONTINUOUS_NEGATIVE_NOISE_SCALE = 0.2
 GRID_NEGATIVE_K = 30
 GRID_LOCAL_RADIUS = 2
+
+
+def compute_cost_sensitive_bucket_weights(
+    expert_bucket: Sequence[int],
+    candidate_buckets: Sequence[Sequence[int]],
+    *,
+    beta_pos: float = 1.0,
+    beta_neg: float = 1.0,
+    alpha: float = 1.0,
+    lambda_per_dim: Sequence[float] | None = None,
+) -> np.ndarray:
+    """Compute normalized cost-sensitive binary weights over quantized actions.
+
+    Weights follow:
+    - positive (expert bucket): beta_pos
+    - negatives: beta_neg * g(cost) / sum(g(cost_negatives))
+
+    with g(cost)=1+alpha*cost and
+    cost = sum_d lambda_d * |i_d - i_d^*|.
+    """
+    expert = np.asarray(expert_bucket, dtype=int).reshape(-1)
+    if expert.size == 0:
+        raise ValueError("expert_bucket cannot be empty.")
+
+    if beta_pos < 0.0 or beta_neg < 0.0:
+        raise ValueError("beta_pos and beta_neg must be non-negative.")
+    if alpha < 0.0:
+        raise ValueError("alpha must be non-negative.")
+
+    if lambda_per_dim is None:
+        lambdas = np.ones_like(expert, dtype=float)
+    else:
+        lambdas = np.asarray(lambda_per_dim, dtype=float).reshape(-1)
+        if lambdas.size != expert.size:
+            raise ValueError(
+                "lambda_per_dim length must match expert_bucket dimension: "
+                f"got {lambdas.size}, expected {expert.size}."
+            )
+    if np.any(lambdas < 0.0):
+        raise ValueError("All lambda_per_dim values must be non-negative.")
+
+    if len(candidate_buckets) == 0:
+        raise ValueError("candidate_buckets cannot be empty.")
+
+    weights = np.zeros(len(candidate_buckets), dtype=float)
+    neg_scores: list[float] = []
+    neg_indices: list[int] = []
+    positives = 0
+
+    for idx, candidate_bucket in enumerate(candidate_buckets):
+        cand = np.asarray(candidate_bucket, dtype=int).reshape(-1)
+        if cand.size != expert.size:
+            raise ValueError(
+                "All candidate bucket dimensions must match expert_bucket: "
+                f"got {cand.size}, expected {expert.size}."
+            )
+
+        if np.array_equal(cand, expert):
+            weights[idx] = float(beta_pos)
+            positives += 1
+            continue
+
+        dist = np.abs(cand - expert).astype(float)
+        cost = float(np.dot(lambdas, dist))
+        neg_scores.append(1.0 + alpha * cost)
+        neg_indices.append(idx)
+
+    if positives != 1:
+        raise ValueError(
+            "candidate_buckets must contain exactly one expert bucket; "
+            f"found {positives}."
+        )
+
+    if neg_indices:
+        denom = float(np.sum(neg_scores))
+        if denom <= 0.0:
+            raise ValueError("Invalid negative score normalization denominator.")
+        for idx, score in zip(neg_indices, neg_scores):
+            weights[idx] = float(beta_neg) * float(score) / denom
+
+    return weights
+
+
+def _bucket_l1_distance(bucket_a: Sequence[int], bucket_b: Sequence[int]) -> int:
+    """Return L1 distance between two quantized bucket indices."""
+    arr_a = np.asarray(bucket_a, dtype=int).reshape(-1)
+    arr_b = np.asarray(bucket_b, dtype=int).reshape(-1)
+    if arr_a.shape != arr_b.shape:
+        raise ValueError(
+            "Bucket shapes must match for distance computation: "
+            f"{arr_a.shape} vs {arr_b.shape}."
+        )
+    return int(np.abs(arr_a - arr_b).sum())
 
 
 def _coerce_action_like(template: Any, action_arr: np.ndarray) -> Any:
@@ -380,9 +483,11 @@ def extract_examples_from_demonstration_item(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
+    compute_sample_weights: bool = False,
 ) -> tuple[
     list[tuple[ObsT, ActT]],
     list[tuple[ObsT, ActT]],
+    np.ndarray,
 ]:
     """Convert a demonstrated (state, action) into positive and negative
     classification data.
@@ -391,6 +496,8 @@ def extract_examples_from_demonstration_item(
     ----------
     demonstrations : (ObsT, ActT)
         A state, action pair.
+    compute_sample_weights : bool
+        If True, compute cost-sensitive sample weights for training.
 
     Returns
     -------
@@ -398,60 +505,153 @@ def extract_examples_from_demonstration_item(
         A list with just the input state, action pair (for convenience).
     negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
+    sample_weights : np.ndarray
+        Array of shape (len(positive_examples) + len(negative_examples),)
+        with sample weights aligned to rows. All ones if compute_sample_weights=False.
     """
     state, action = demonstration_item
 
     positive_examples: list[tuple[ObsT, ActT]] = [(state, action)]
     negative_examples: list[tuple[ObsT, ActT]] = []
     sampling_cfg = dict(negative_sampling or {})
-    enabled = bool(sampling_cfg.get("enabled", False))
+    sample_weights = np.ones(1, dtype=float)  # Default: single positive with weight=1
 
     if action_mode == "continuous":
-        rng_np = np.random.default_rng(0)
-        if enabled:
-            cfg_cont = dict(sampling_cfg.get("continuous", {}))
-            mode = str(cfg_cont.get("mode", "mixture"))
-            action_low = sampling_cfg.get("action_low")
-            action_high = sampling_cfg.get("action_high")
-            if mode == "manual":
-                neg_actions = sample_manual_negative_actions_continuous(
-                    action,
-                    action_low=action_low,
-                    action_high=action_high,
-                )
-            elif mode == "mixture":
-                k_total = int(cfg_cont.get("K", CONTINUOUS_NEGATIVE_K))
-                local_noise = float(
-                    cfg_cont.get("local_noise_scale", CONTINUOUS_NEGATIVE_NOISE_SCALE)
-                )
-                w_local = float(cfg_cont.get("lambda_local", 0.7))
-                w_uniform = float(cfg_cont.get("lambda_uniform", 0.3))
-                w_traj = float(cfg_cont.get("lambda_traj", 0.0))
-                neg_actions = _sample_continuous_mixture_negatives(
-                    action,
-                    k_total=k_total,
-                    local_noise_scale=local_noise,
-                    action_low=action_low,
-                    action_high=action_high,
-                    w_local=w_local,
-                    w_uniform=w_uniform,
-                    w_traj=w_traj,
-                    rng=rng_np,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported continuous negative sampling mode: {mode!r}"
-                )
-        else:
-            neg_actions = sample_negative_actions_continuous(
-                action,
-                K=CONTINUOUS_NEGATIVE_K,
-                noise_scale=CONTINUOUS_NEGATIVE_NOISE_SCALE,
-                rng=rng_np,
+        action_low = sampling_cfg.get("action_low")
+        action_high = sampling_cfg.get("action_high")
+        if action_low is None or action_high is None:
+            raise ValueError(
+                "Continuous action_mode requires action_low/action_high bounds for "
+                "quantized expansion."
             )
+
+        cfg_cont = dict(sampling_cfg.get("continuous", {}))
+        bucket_counts_cfg = cfg_cont.get("bucket_counts")
+        bucket_edges_cfg = cfg_cont.get("bucket_edges")
+
+        base = np.asarray(action, dtype=float)
+        if base.ndim == 0:
+            base = base.reshape(1)
+        logging.info(f"base.shape: {base.shape}")
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=base.shape[0],
+            default_active_dims=[0, 1],
+        )
+
+        low_arr = np.asarray(action_low, dtype=float)
+        high_arr = np.asarray(action_high, dtype=float)
+        if low_arr.shape != base.shape or high_arr.shape != base.shape:
+            raise ValueError(
+                "continuous action bounds shape mismatch in quantized expansion: "
+                f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
+            )
+
+        inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
+        canonical_base = canonicalize_continuous_action(
+            base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
+        active_low_arr, active_high_arr = active_action_bounds(
+            low_arr,
+            high_arr,
+            active_dims=active_dims,
+        )
+
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            active_low_arr,
+            active_high_arr,
+            bucket_counts=bucket_counts_cfg,
+            bucket_edges=bucket_edges_cfg,
+        )
+        expert_bucket = quantizer.quantize(canonical_base[active_dims])
+        quantized_expert = embed_active_action(
+            quantizer.dequantize(expert_bucket),
+            template=canonical_base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
+        quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
+        positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
+
+        relax_cfg = dict(cfg_cont.get("relaxed_labeling", {}))
+        relax_enabled = bool(relax_cfg.get("enabled", False))
+        near_bucket_radius = int(relax_cfg.get("neighbor_radius", 0))
+        near_bucket_behavior = str(
+            relax_cfg.get("nearby_bucket_behavior", "ignore")
+        ).lower()
+        near_bucket_negative_scale = float(relax_cfg.get("weak_negative_scale", 0.25))
+        if near_bucket_radius < 0:
+            raise ValueError("neighbor_radius must be non-negative.")
+        if near_bucket_behavior not in {"ignore", "weak_negative", "strong_negative"}:
+            raise ValueError(
+                "nearby_bucket_behavior must be one of "
+                "{'ignore', 'weak_negative', 'strong_negative'}."
+            )
+        if near_bucket_negative_scale < 0.0:
+            raise ValueError("weak_negative_scale must be non-negative.")
+
+        neg_actions: list[ActT] = []
+        neg_buckets: list[tuple[int, ...]] = []
+        neg_weight_scales: list[float] = []
+        for bucket in quantizer.all_bucket_indices():
+            if bucket == expert_bucket:
+                continue
+
+            distance = _bucket_l1_distance(bucket, expert_bucket)
+            if relax_enabled and distance <= near_bucket_radius:
+                if near_bucket_behavior == "ignore":
+                    continue
+                if near_bucket_behavior == "weak_negative":
+                    bucket_weight_scale = near_bucket_negative_scale
+                else:
+                    bucket_weight_scale = 1.0
+            else:
+                bucket_weight_scale = 1.0
+
+            candidate = embed_active_action(
+                quantizer.dequantize(bucket),
+                template=canonical_base,
+                active_dims=active_dims,
+                fill_value=inactive_fill_value,
+            )
+            candidate = np.clip(candidate, low_arr, high_arr)
+            neg_actions.append(_coerce_action_like(action, candidate))
+            neg_buckets.append(bucket)
+            neg_weight_scales.append(bucket_weight_scale)
+
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-        return positive_examples, negative_examples
+
+        # Keep weight order aligned with row order: [positive] + [negatives].
+        aligned_buckets = [expert_bucket] + neg_buckets
+
+        # Compute sample weights if requested
+        if compute_sample_weights:
+            weight_cfg = dict(cfg_cont.get("weight_config", {}))
+            beta_pos = weight_cfg.get("beta_pos", 1.0)
+            beta_neg = weight_cfg.get("beta_neg", 1.0)
+            alpha = weight_cfg.get("alpha", 1.0)
+            lambda_per_dim = weight_cfg.get("lambda_per_dim", None)
+            sample_weights = compute_cost_sensitive_bucket_weights(
+                expert_bucket,
+                aligned_buckets,
+                beta_pos=beta_pos,
+                beta_neg=beta_neg,
+                alpha=alpha,
+                lambda_per_dim=lambda_per_dim,
+            )
+            if neg_weight_scales:
+                neg_scale_arr = np.asarray(neg_weight_scales, dtype=float)
+                sample_weights[1:] *= neg_scale_arr
+        else:
+            # Default uniform weights: one for positive, one per negative
+            sample_weights = np.ones(1 + len(neg_actions), dtype=float)
+            if neg_weight_scales:
+                sample_weights[1:] = np.asarray(neg_weight_scales, dtype=float)
+
+        return positive_examples, negative_examples, sample_weights
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
@@ -461,7 +661,9 @@ def extract_examples_from_demonstration_item(
         context="Discrete negative expansion",
     )
 
-    if enabled:
+    # `negative_sampling.enabled` only controls discrete-mode subsampling.
+    discrete_sampling_enabled = bool(sampling_cfg.get("enabled", False))
+    if discrete_sampling_enabled:
         cfg_grid = dict(sampling_cfg.get("discrete", {}))
         k_total = int(cfg_grid.get("K", GRID_NEGATIVE_K))
         local_radius = int(cfg_grid.get("local_radius", GRID_LOCAL_RADIUS))
@@ -488,7 +690,11 @@ def extract_examples_from_demonstration_item(
                     continue
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
-    return positive_examples, negative_examples
+    # For discrete mode, return uniform weights (1.0 for each example)
+    # TODOO: can also pass "balanced" to dt and ignore manual weight
+    # computation here, since all negatives are equally weighted anyway
+    sample_weights = np.ones(1 + len(negative_examples), dtype=float)
+    return positive_examples, negative_examples, sample_weights
 
 
 def extract_examples_from_demonstration(
@@ -496,37 +702,55 @@ def extract_examples_from_demonstration(
     *,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
-) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]]]:
+    compute_sample_weights: bool = False,
+) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]], np.ndarray]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
 
     Parameters
     ----------
-    demonstrations : [(np.ndarray, (int, int))]
-        State, action pairs
+    demonstrations : [(ObsT, ActT)]
+        State, action pairs from a trajectory.
+    compute_sample_weights : bool
+        If True, compute cost-sensitive sample weights. Only applies to continuous mode.
 
     Returns
     -------
-    positive_examples : [(np.ndarray, (int, int))]
-        A list with just the input state, action pairs (for convenience).
-    negative_examples : [(np.ndarray, (int, int))]
+    positive_examples : [(ObsT, ActT)]
+        A list with the input state, action pairs.
+    negative_examples : [(ObsT, ActT)]
         A list with negative examples of state, actions.
+    sample_weights : np.ndarray
+        Shape (total_examples,) where total_examples = len(pos) + len(neg).
+        Weights aligned with rows: positives first, then negatives.
     """
     positive_examples: list[tuple[ObsT, ActT]] = []
     negative_examples: list[tuple[ObsT, ActT]] = []
+    pos_weights: list[float] = []
+    neg_weights: list[float] = []
 
     for demonstration_item in demonstration.steps:
-        demo_positive_examples, demo_negative_examples = (
+        demo_positive_examples, demo_negative_examples, demo_weights = (
             extract_examples_from_demonstration_item(
                 demonstration_item,
                 negative_sampling=negative_sampling,
                 action_mode=action_mode,
+                compute_sample_weights=compute_sample_weights,
             )
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
+        if demo_weights.shape[0] != (
+            len(demo_positive_examples) + len(demo_negative_examples)
+        ):
+            raise ValueError(
+                "Per-item sample_weights length must match per-item examples."
+            )
+        pos_weights.extend(demo_weights[: len(demo_positive_examples)].tolist())
+        neg_weights.extend(demo_weights[len(demo_positive_examples) :].tolist())
 
-    return positive_examples, negative_examples
+    combined_weights = np.asarray(pos_weights + neg_weights, dtype=float)
+    return positive_examples, negative_examples, combined_weights
 
 
 def _split_dsl(dsl: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -565,6 +789,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    cache_schema_version = "v4"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -593,7 +818,7 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
-        f"{split_part}"
+        f"{split_part}-{cache_schema_version}"
     )
 
 
@@ -642,7 +867,11 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
     return results
 
 
-@manage_cache(CACHE_DIR, [".npz", ".pkl", ".pkl"], key_fn=_cache_key_run_all_programs)
+@manage_cache(
+    CACHE_DIR,
+    [".npz", ".pkl", ".pkl", ".pkl"],
+    key_fn=_cache_key_run_all_programs,
+)
 def run_all_programs_on_single_demonstration(
     base_class_name: str,
     demo_number: int,
@@ -658,17 +887,31 @@ def run_all_programs_on_single_demonstration(
     action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
-) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None]:
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray]:
     """Run all programs on a single demonstration and return feature matrix and
     labels."""
     logging.info(f"Running all programs on {base_class_name}, {demo_number}")
-    positive_examples, negative_examples = extract_examples_from_demonstration(
-        demo_traj,
-        negative_sampling=negative_sampling,
-        action_mode=action_mode,
+
+    # Sample weighting is config-driven and only applies in continuous mode.
+    compute_sample_weights = False
+    if action_mode == "continuous" and isinstance(negative_sampling, dict):
+        cont_cfg = negative_sampling.get("continuous")
+        if isinstance(cont_cfg, dict):
+            weight_cfg = cont_cfg.get("weight_config")
+            if isinstance(weight_cfg, dict):
+                compute_sample_weights = bool(weight_cfg.get("enabled", True))
+
+    positive_examples, negative_examples, sample_weights = (
+        extract_examples_from_demonstration(
+            demo_traj,
+            negative_sampling=negative_sampling,
+            action_mode=action_mode,
+            compute_sample_weights=compute_sample_weights,
+        )
     )
 
     fn_inputs = positive_examples + negative_examples
+
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)
     base_dsl, module_map = _split_dsl(dsl_functions)
 
@@ -712,7 +955,7 @@ def run_all_programs_on_single_demonstration(
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
     examples = fn_inputs if return_examples else None
-    return X.tocsr(), np.array(y, dtype=np.uint8), examples
+    return X.tocsr(), np.array(y, dtype=np.uint8), examples, sample_weights
 
 
 def run_programs_on_examples(
@@ -812,24 +1055,29 @@ def run_all_programs_on_demonstrations(
     split_tag: str | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
-) -> tuple[Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None]:
+) -> tuple[
+    Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None, np.ndarray | None
+]:
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     examples_all: list[tuple[ObsT, ActT]] = []
+    sample_weights_all: list[np.ndarray] = []
     for demo_number in demo_numbers:
-        demo_X, demo_y, demo_examples = run_all_programs_on_single_demonstration(
-            base_class_name,
-            demo_number,
-            programs,
-            demo_dict[demo_number],
-            dsl_functions,
-            negative_sampling=negative_sampling,
-            return_examples=return_examples,
-            offline_path_name=offline_path_name,
-            demos_included=demos_included,
-            split_tag=split_tag,
-            action_mode=action_mode,
-            seed=seed,
+        demo_X, demo_y, demo_examples, demo_sample_weights = (
+            run_all_programs_on_single_demonstration(
+                base_class_name,
+                demo_number,
+                programs,
+                demo_dict[demo_number],
+                dsl_functions,
+                negative_sampling=negative_sampling,
+                return_examples=return_examples,
+                offline_path_name=offline_path_name,
+                demos_included=demos_included,
+                split_tag=split_tag,
+                action_mode=action_mode,
+                seed=seed,
+            )
         )
 
         if X is None:
@@ -838,6 +1086,12 @@ def run_all_programs_on_demonstrations(
         else:
             X = vstack([X, demo_X])
             y = np.concatenate([y, demo_y])
+        sample_weights_all.append(demo_sample_weights)
         if return_examples and demo_examples:
             examples_all.extend(demo_examples)
-    return X, y, (examples_all if return_examples else None)
+    sample_weights = (
+        np.concatenate(sample_weights_all)
+        if sample_weights_all
+        else np.array([], dtype=float)
+    )
+    return X, y, (examples_all if return_examples else None), sample_weights

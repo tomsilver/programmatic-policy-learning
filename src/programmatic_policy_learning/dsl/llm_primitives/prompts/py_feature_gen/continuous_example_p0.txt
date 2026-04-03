@@ -1,0 +1,55 @@
+You are generating boolean feature functions for a continuous KinDER environment.
+
+Environment:
+- Task is KinDER Motion2D-p0:
+  - A robot moves in a continuous 2D plane.
+  - Action is a continuous 5D control vector.
+  - The goal is to reach a target region.
+  - `p0` means no narrow passages/obstacles; this is the simplest open-layout case.
+- Observation s is continuous state (numeric values).
+- Action a is continuous control (numeric vector).
+- Demonstrations are expert trajectories over (s, a, s').
+
+
+## INPUT: DEMONSTRATIONS
+${DEMONSTRATION_BACKGROUND}
+
+You are given the following expert demonstrations:
+
+${DEMONSTRATION_DATA}
+
+
+Task:
+Propose a diverse set of boolean features `f(s, a)` for distinguishing expert actions from alternative candidate actions.
+
+The features should:
+- generalize across episodes,
+- capture reusable structure in the relationship between state and action,
+- be useful for separating good and bad candidate actions,
+- avoid depending on exact coordinates or episode-specific values.
+
+Return at least 50 features.
+
+Output:
+Return only valid JSON:
+{
+  "features": [
+    {"id": "f1", "name": "f1", "source": "def f1(s, a):\\n    ..."}
+  ]
+}
+
+
+
+Rules:
+- No placeholders.
+- No markdown.
+- No commentary.
+- No imports.
+- Each feature must return True or False.
+- Treat `s` and `a` as raw arrays only.
+- Access them only with numeric indices from the field guide.
+- Each feature must be a standalone function.
+- Prefer relational and reusable features over brittle or highly specific ones.
+- Use as few arbitrary numeric constants as possible.
+- Avoid near-duplicate features.
+- Avoid trivial features that are almost always true or almost always false.

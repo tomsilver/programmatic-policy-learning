@@ -1,7 +1,7 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-program_generation_step_size: 100
+demo_numbers: [0,1,2,3,4,5] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
+program_generation_step_size: 1
 num_programs: 100 #for fixed
 num_dts: 5
 max_num_particles: 25
@@ -25,16 +25,16 @@ normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: false
+collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
-collision_template_feedback: true #false: means the feedback is just features/no templates
+collision_template_feedback: false #false: means the feedback is just features/no templates
 collision_feedback_num_buckets: 2
 collision_feedback_max_new_features: 5000
 collision_feedback_max_rounds: 5
 collision_feedback_target_collisions: 0
 prior_version: "uniform" # v1 | v2 | uniform
 prior_beta: 2
-alpha: 0.1
+alpha: 0
 w_clauses: 0.1
 w_literals: 0.05
 w_max_clause: 0.1
@@ -44,21 +44,29 @@ val_frac: 0.0
 val_size: null
 split_seed: 0
 split_strategy: "random"
+recovery_augmentation:
+  enabled: true
+  rounds: 3
+  max_steps: 50
+  stuck_window: 6
+  min_progress_delta: 0.01
+  stuck_position_delta: 0.01
+  max_queries_per_env: 12
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
-  demos_included: [0,1,2,3,4,5,6,7,8,9,10] #,6,8, 9
-  skip_rate: 1
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/continuous_example.txt"  # continuous_example - new_hybrid.txt" new_hybrid
-  py_feature_gen_batch_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/batch_prompt_v0.txt"
-  num_batches: 1 #keep this 1 for now
+  demos_included: [0,1] #,6,8, 9
+  skip_rate: 10
+  py_feature_gen_mode: "generator_script"  # "feature_payload" | "generator_script"
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
   removed_primitive: "" 
   num_features: 50
-  encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
+  encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
   loading:
     offline: 0 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "features_rfts_enc5_hybrid_4.1_collision_multi_4.1_trial2.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
+    offline_json_path: "feature_library.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
+    # Discrete-only switch. Continuous mode is always quantized expansion.
     enabled: true
     discrete:
       K: 16
@@ -67,12 +75,31 @@ program_generation:
       w_struct: 0.3
       w_random: 0.15
     continuous:
-      mode: "manual"  # "mixture" or "manual"
-      K: 10
-      local_noise_scale: 0.06
-      lambda_local: 0
-      lambda_uniform: 1.0
-      lambda_traj: 0.0
+      # Continuous actions are always quantized for training data expansion.
+      # Only these action dims define action identity for training/inference.
+      # For Motion2D navigation, use dx/dy and smooth dtheta/darm/vac to 0.
+      active_action_dims: [0, 1]
+      inactive_action_fill_value: 0.0
+      # Explicit bins per active dimension. Each row must start at that
+      # dimension's action_low and end at its action_high.
+      bucket_edges:
+        - [-0.05, -0.006, 0.0, 0.006, 0.05]
+        - [-0.05, -0.006, 0.0, 0.006, 0.05]
+      relaxed_labeling:
+          enabled: true
+          neighbor_radius: 2
+          nearby_bucket_behavior: "ignore"
+          weak_negative_scale: 0.25
+      # Cost-sensitive weighting over quantized action buckets.
+      # Disabled by default to preserve baseline behavior.
+      weight_config:
+        enabled: true
+        beta_pos: 1.0
+        beta_neg: 1.0
+        alpha: 1.0
+        lambda_per_dim: [1.0, 1.0]
+
+  
   # NOTE: The fields below are legacy from earlier experiments.
   # They are not used by the current config unless you switch strategy.
   hint_structured: True # used for hint generation

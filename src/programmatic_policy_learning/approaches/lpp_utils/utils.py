@@ -18,9 +18,8 @@ from typing import Any, Callable, Generator, TypeVar
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    grid_encoder,
+    continuous_hint_config,
     grid_hint_config,
 )
 from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
@@ -55,6 +54,7 @@ def run_single_episode(
     record_video: bool = False,
     video_out_path: str | None = None,
     max_num_steps: int = 100,
+    reset_seed: int | None = None,
 ) -> tuple[float, np.bool_]:
     """Run a single episode in the environment using the given policy.
 
@@ -99,7 +99,13 @@ def run_single_episode(
                 record_frames = []
 
     stateful_policy = _is_stateful_policy(policy)
-    reset_out = env.reset()
+    if reset_seed is None:
+        reset_out = env.reset()
+    else:
+        try:
+            reset_out = env.reset(seed=reset_seed)
+        except TypeError:
+            reset_out = env.reset()
     if isinstance(reset_out, tuple) and len(reset_out) == 2:
         obs, info = reset_out
     else:
@@ -215,69 +221,6 @@ def convert_dir_lists_to_tuples(programs: list[str]) -> list[str]:
     return [_DIR_LIST_RE.sub(repl, p) for p in programs]
 
 
-def sample_transition_example(
-    env_factory: Callable[[int], Any],
-    env_name: str,
-    encoding_method: str,
-    max_steps: int = 50,
-) -> tuple[str, str, str]:
-    """Sample a single (s_t, a_t, s_t1) example and format with encoding."""
-    expert = get_grid_expert(env_name)
-    env = env_factory(0)
-    traj = hint_extractor.collect_full_episode(
-        env, expert, max_steps=max_steps, sample_count=None
-    )
-    env.close()
-    if not traj:
-        raise ValueError("No trajectory data collected.")
-    obs_t, action, obs_t1 = traj[0]
-
-    symbol_map = grid_hint_config.get_symbol_map(env_name)
-    encoder = grid_encoder.GridStateEncoder(
-        grid_encoder.GridStateEncoderConfig(
-            symbol_map=symbol_map,
-            empty_token="empty",
-            coordinate_style="rc",
-        )
-    )
-    salient_tokens = grid_hint_config.SALIENT_TOKENS[env_name]
-
-    def list_literal(obs: Any) -> str:
-        rows: list[str] = []
-        for r in range(obs.shape[0]):
-            entries: list[str] = []
-            for c in range(obs.shape[1]):
-                token = obs[r, c]
-                char = symbol_map.get(token, "?")
-                entries.append(f"'{char}'")
-            rows.append(f"[{', '.join(entries)}]")
-        return "[\n" + "\n".join(f"  {row}" for row in rows) + "\n]"
-
-    def listing(obs: Any) -> str:
-        tokens = list(dict.fromkeys([*salient_tokens, encoder.cfg.empty_token]))
-        objs = encoder.extract_objects(obs, tokens)
-        entries: list[tuple[tuple[int, int], str]] = []
-        for token, coords in objs.items():
-            if not coords:
-                continue
-            for coord in coords:
-                entries.append((coord, token))
-        entries.sort(key=lambda item: item[0])
-        return "\n".join(f"{coord} - '{label}'" for coord, label in entries)
-
-    if encoding_method == "1":
-        state_t = list_literal(obs_t)
-        state_t1 = list_literal(obs_t1)
-        state_t1 += f"\nToken meanings: {grid_hint_config.SYMBOL_MAPS[env_name]}"
-    else:
-        state_t = listing(obs_t)
-        state_t1 = listing(obs_t1)
-
-    action_token = obs_t[action]
-    action_text = f"{action}: '{action_token}'"
-    return state_t, action_text, state_t1
-
-
 def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
@@ -317,10 +260,247 @@ def log_feature_collisions(
                 cur_idx,
                 labels[cur_idx],
             )
-        return group_collision_indices(collisions, labels)
+            if _examples is not None:
+                try:
+                    prev_example = _examples[prev_idx]
+                    cur_example = _examples[cur_idx]
+                    logging.info("  row %d example: %s", prev_idx, prev_example)
+                    logging.info("  row %d example: %s", cur_idx, cur_example)
+                except (IndexError, TypeError):
+                    logging.info(
+                        "  Example payload unavailable for rows %d and %d.",
+                        prev_idx,
+                        cur_idx,
+                    )
+        grouped = group_collision_indices(collisions, labels)
+        if grouped:
+            top_group = max(grouped, key=lambda g: int(g["max_occur"]))
+            logging.info(
+                "Top collision group: pos=%d neg=%d max_occur=%d",
+                len(top_group["pos"]),
+                len(top_group["neg"]),
+                int(top_group["max_occur"]),
+            )
+        return grouped
 
     logging.info("No feature collisions found.")
     return []
+
+
+def _example_value_to_hashable_bytes(value: Any) -> bytes:
+    """Convert nested example values into a stable byte key."""
+    if isinstance(value, np.ndarray):
+        arr = np.ascontiguousarray(value)
+        return (
+            b"np|"
+            + str(arr.dtype).encode("utf-8")
+            + b"|"
+            + str(arr.shape).encode("utf-8")
+            + b"|"
+            + arr.tobytes()
+        )
+    if isinstance(value, tuple):
+        return b"tuple|" + b"|".join(_example_value_to_hashable_bytes(v) for v in value)
+    if isinstance(value, list):
+        return b"list|" + b"|".join(_example_value_to_hashable_bytes(v) for v in value)
+    return repr(value).encode("utf-8")
+
+
+def _group_exact_example_labels(
+    examples: list[tuple[ObsT, ActT]] | None,
+    y: np.ndarray | None,
+) -> list[dict[str, Any]]:
+    """Group exact duplicate (state, action) examples by labels seen."""
+    if examples is None or y is None or len(examples) == 0:
+        return []
+
+    labels = y.astype(int).flatten().tolist()
+    if len(labels) != len(examples):
+        return []
+
+    grouped: dict[bytes, dict[str, Any]] = {}
+    for idx, ((state, action), label) in enumerate(zip(examples, labels)):
+        key = (
+            _example_value_to_hashable_bytes(state)
+            + b"||"
+            + _example_value_to_hashable_bytes(action)
+        )
+        entry = grouped.setdefault(
+            key,
+            {
+                "example": (state, action),
+                "pos": [],
+                "neg": [],
+            },
+        )
+        if label == 1:
+            entry["pos"].append(idx)
+        else:
+            entry["neg"].append(idx)
+
+    return [
+        {
+            "example": entry["example"],
+            "pos": entry["pos"],
+            "neg": entry["neg"],
+            "max_occur": max(len(entry["pos"]), len(entry["neg"])),
+        }
+        for entry in grouped.values()
+        if entry["pos"] and entry["neg"]
+    ]
+
+
+def log_exact_example_label_contradictions(
+    examples: list[tuple[ObsT, ActT]] | None,
+    y: np.ndarray | None,
+) -> list[dict[str, Any]]:
+    """Log exact duplicate (state, action) examples with conflicting labels."""
+    if examples is None or y is None:
+        logging.info(
+            "Exact example contradiction check skipped: examples or y is None."
+        )
+        return []
+    if len(examples) == 0:
+        logging.info("Exact example contradiction check skipped: no examples.")
+        return []
+
+    labels = y.astype(int).flatten().tolist()
+    if len(labels) != len(examples):
+        logging.info(
+            "Exact example contradiction check skipped: labels/examples length mismatch (%d vs %d).",
+            len(labels),
+            len(examples),
+        )
+        return []
+    contradictions = _group_exact_example_labels(examples, y)
+
+    if not contradictions:
+        logging.info("No exact (state, action) label contradictions found.")
+        return []
+
+    logging.info(
+        "Exact (state, action) label contradictions found: %d groups",
+        len(contradictions),
+    )
+    for contradiction in contradictions[:10]:
+        logging.info(
+            "Exact contradiction: pos=%d neg=%d max_occur=%d",
+            len(contradiction["pos"]),
+            len(contradiction["neg"]),
+            int(contradiction["max_occur"]),
+        )
+        logging.info("  example: %s", contradiction["example"])
+
+    top_group = max(contradictions, key=lambda g: int(g["max_occur"]))
+    logging.info(
+        "Top exact contradiction group: pos=%d neg=%d max_occur=%d",
+        len(top_group["pos"]),
+        len(top_group["neg"]),
+        int(top_group["max_occur"]),
+    )
+    return contradictions
+
+
+def drop_negative_exact_contradictions(
+    X: Any,
+    y: np.ndarray,
+    examples: list[tuple[ObsT, ActT]] | None,
+    sample_weights: np.ndarray | None,
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray | None]:
+    """Remove negative rows for exact (state, action) contradictions.
+
+    If an exact example appears as both positive and negative, keep all
+    positive copies and drop the negative copies.
+    """
+    contradictions = _group_exact_example_labels(examples, y)
+    if not contradictions:
+        logging.info("No contradictory negative rows removed.")
+        return X, y, examples, sample_weights
+
+    drop_indices = sorted(
+        {int(idx) for group in contradictions for idx in group["neg"]}
+    )
+    if not drop_indices:
+        logging.info("No contradictory negative rows removed.")
+        return X, y, examples, sample_weights
+
+    keep_mask = np.ones(len(y), dtype=bool)
+    keep_mask[np.asarray(drop_indices, dtype=int)] = False
+
+    X_kept = X[keep_mask]
+    y_kept = y[keep_mask]
+    examples_kept = (
+        [example for idx, example in enumerate(examples) if keep_mask[idx]]
+        if examples is not None
+        else None
+    )
+    sample_weights_kept = (
+        sample_weights[keep_mask] if sample_weights is not None else None
+    )
+
+    logging.info(
+        "Removed %d contradictory negative rows across %d exact contradiction groups. Remaining rows: %d",
+        len(drop_indices),
+        len(contradictions),
+        int(y_kept.shape[0]),
+    )
+    return X_kept, y_kept, examples_kept, sample_weights_kept
+
+
+def deduplicate_negative_examples(
+    X: Any,
+    y: np.ndarray,
+    examples: list[tuple[ObsT, ActT]] | None,
+    sample_weights: np.ndarray | None,
+) -> tuple[Any, np.ndarray, list[tuple[ObsT, ActT]] | None, np.ndarray | None]:
+    """Remove exact duplicate negative (state, action) rows, keeping first
+    copy."""
+    if examples is None or len(examples) == 0:
+        logging.info("Negative dedup skipped: no examples available.")
+        return X, y, examples, sample_weights
+
+    labels = y.astype(int).flatten().tolist()
+    if len(labels) != len(examples):
+        logging.info(
+            "Negative dedup skipped: labels/examples length mismatch (%d vs %d).",
+            len(labels),
+            len(examples),
+        )
+        return X, y, examples, sample_weights
+
+    seen_negative_keys: set[bytes] = set()
+    drop_indices: list[int] = []
+    for idx, ((state, action), label) in enumerate(zip(examples, labels)):
+        if label != 0:
+            continue
+        key = (
+            _example_value_to_hashable_bytes(state)
+            + b"||"
+            + _example_value_to_hashable_bytes(action)
+        )
+        if key in seen_negative_keys:
+            drop_indices.append(idx)
+            continue
+        seen_negative_keys.add(key)
+
+    if not drop_indices:
+        logging.info("No duplicate negative examples removed.")
+        return X, y, examples, sample_weights
+
+    keep_mask = np.ones(len(y), dtype=bool)
+    keep_mask[np.asarray(drop_indices, dtype=int)] = False
+    X_kept = X[keep_mask]
+    y_kept = y[keep_mask]
+    examples_kept = [example for idx, example in enumerate(examples) if keep_mask[idx]]
+    sample_weights_kept = (
+        sample_weights[keep_mask] if sample_weights is not None else None
+    )
+    logging.info(
+        "Removed %d duplicate negative rows. Remaining rows: %d",
+        len(drop_indices),
+        int(y_kept.shape[0]),
+    )
+    return X_kept, y_kept, examples_kept, sample_weights_kept
 
 
 def group_collision_indices(
@@ -943,6 +1123,134 @@ def _format_one_example_enc2(
     return "\n".join(lines)
 
 
+def _format_one_example_kinder_enc2(
+    s: Any,
+    a: Any,
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    s = np.asarray(s, dtype=float).reshape(-1)
+    a = np.asarray(a, dtype=float).reshape(-1)
+
+    robot_x = float(s[0])
+    robot_y = float(s[1])
+    robot_theta = float(s[2])
+    r = float(s[3])
+    target_x = float(s[9])
+    target_y = float(s[10])
+    target_w = float(s[17])
+    target_h = float(s[18])
+    obs0_x = float(s[19])
+    obs0_y = float(s[20])
+    obs0_w = float(s[27])
+    obs0_h = float(s[28])
+    obs1_x = float(s[29])
+    obs1_y = float(s[30])
+    obs1_w = float(s[37])
+    obs1_h = float(s[38])
+
+    dx = float(a[0])
+    dy = float(a[1])
+    dtheta = float(a[2])
+    darm = float(a[3])
+    vac = float(a[4])
+
+    target_cx = target_x + target_w / 2.0
+    target_cy = target_y + target_h / 2.0
+
+    obs0_right = obs0_x + obs0_w
+    obs0_top = obs0_y + obs0_h
+    obs1_right = obs1_x + obs1_w
+    obs1_top = obs1_y + obs1_h
+
+    gap_lower = obs0_top + r
+    gap_upper = obs1_y - r
+    gap_center = (gap_lower + gap_upper) / 2.0
+    wall_left = obs0_x
+    wall_right = obs0_x + obs0_w
+
+    left_of_wall = robot_x + r < wall_left
+    inside_wall_x_band = wall_left <= robot_x < wall_right + r
+    passed_wall = robot_x >= wall_right + r
+
+    y_aligned = gap_lower <= robot_y <= gap_upper
+    y_below_gap = robot_y < gap_lower
+    y_above_gap = robot_y > gap_upper
+
+    x_err = target_cx - robot_x
+    y_err = target_cy - robot_y
+    gap_y_err = gap_center - robot_y
+
+    next_x = robot_x + dx
+    next_y = robot_y + dy
+
+    dist_target_l1 = abs(x_err) + abs(y_err)
+    next_dist_target_l1 = abs(target_cx - next_x) + abs(target_cy - next_y)
+
+    lines = [
+        f"- idx={idx} label={label}",
+        f"ROBOT: x={robot_x:.3f}, y={robot_y:.3f}, theta={robot_theta:.3f}, r={r:.3f}",
+        f"ACTION: dx={dx:.3f}, dy={dy:.3f}, dtheta={dtheta:.3f}, darm={darm:.3f}, vac={vac:.3f}",
+        f"TARGET: x={target_x:.3f}, y={target_y:.3f}, w={target_w:.3f}, h={target_h:.3f}, cx={target_cx:.3f}, cy={target_cy:.3f}",
+        f"OBSTACLE0: x={obs0_x:.3f}, y={obs0_y:.3f}, w={obs0_w:.3f}, h={obs0_h:.3f}, right={obs0_right:.3f}, top={obs0_top:.3f}",
+        f"OBSTACLE1: x={obs1_x:.3f}, y={obs1_y:.3f}, w={obs1_w:.3f}, h={obs1_h:.3f}, right={obs1_right:.3f}, top={obs1_top:.3f}",
+        f"PASSAGE: wall_left={wall_left:.3f}, wall_right={wall_right:.3f}, gap_lower={gap_lower:.3f}, gap_upper={gap_upper:.3f}, gap_center={gap_center:.3f}",
+        f"REGIME: left_of_wall={left_of_wall}, inside_wall_x_band={inside_wall_x_band}, passed_wall={passed_wall}, y_aligned={y_aligned}, y_below_gap={y_below_gap}, y_above_gap={y_above_gap}",
+        f"ERRORS: x_err_to_target={x_err:.3f}, y_err_to_target={y_err:.3f}, y_err_to_gap_center={gap_y_err:.3f}",
+        f"NEXT_STATE_ESTIMATE: next_x={next_x:.3f}, next_y={next_y:.3f}, target_l1_now={dist_target_l1:.3f}, target_l1_next={next_dist_target_l1:.3f}",
+        f"ACTION_SHAPE: mostly_x={abs(dx) > abs(dy)}, mostly_y={abs(dy) > abs(dx)}, dx_pos={dx > 0}, dx_neg={dx < 0}, dy_pos={dy > 0}, dy_neg={dy < 0}",
+    ]
+    return "\n".join(lines)
+
+
+def _format_one_example_kinder_enc2_delta(
+    s: Any,
+    a: Any,
+    *,
+    label: int,
+    idx: int,
+) -> str:
+    s = np.asarray(s, dtype=float).reshape(-1)
+    a = np.asarray(a, dtype=float).reshape(-1)
+
+    robot_x = float(s[0])
+    robot_y = float(s[1])
+    r = float(s[3])
+    target_x = float(s[9])
+    target_y = float(s[10])
+    target_w = float(s[17])
+    target_h = float(s[18])
+    obs0_x = float(s[19])
+    obs0_y = float(s[20])
+    obs0_w = float(s[27])
+    obs0_h = float(s[28])
+    obs1_y = float(s[30])
+
+    dx = float(a[0])
+    dy = float(a[1])
+
+    target_cx = target_x + target_w / 2.0
+    target_cy = target_y + target_h / 2.0
+    gap_lower = obs0_y + obs0_h + r
+    gap_upper = obs1_y - r
+    gap_center = (gap_lower + gap_upper) / 2.0
+    wall_right = obs0_x + obs0_w
+
+    left_of_wall = robot_x + r < obs0_x
+    passed_wall = robot_x >= wall_right + r
+    y_aligned = gap_lower <= robot_y <= gap_upper
+
+    parts = [
+        f"NEG idx={idx} label={label}",
+        f"ROBOT(x={robot_x:.3f}, y={robot_y:.3f})",
+        f"ACTION(dx={dx:.3f}, dy={dy:.3f})",
+        f"REGIME(left_of_wall={left_of_wall}, passed_wall={passed_wall}, y_aligned={y_aligned})",
+        f"ERR(target_x={target_cx - robot_x:.3f}, target_y={target_cy - robot_y:.3f}, gap_y={gap_center - robot_y:.3f})",
+    ]
+    return "; ".join(parts)
+
+
 def _format_one_example_enc2_delta(
     s: Any,
     a: Any,
@@ -994,19 +1302,68 @@ def _format_one_example_enc2_delta(
     return "; ".join(parts)
 
 
+def is_kinder_env(env_name: str | None) -> bool:
+    """Return whether the environment name refers to a KinDER/Motion2D task."""
+    if env_name is None:
+        return False
+    env = env_name.lower()
+    return "motion2d" in env or "kinder" in env
+
+
+def _build_continuous_observation_field_guide(env_name: str | None) -> str:
+    """Return a prompt-friendly observation/action field guide."""
+    if env_name is None:
+        return "- Observation fields are environment-specific continuous values."
+
+    base_env_name = env_name.split("-p", maxsplit=1)[0]
+    canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
+
+    if canonical_name != "Motion2D":
+        return (
+            "- Observation fields are object-centric continuous attributes.\n"
+            "- Use the serialized object names and attributes shown in the "
+            "demonstrations as the source of truth."
+        )
+
+    match = re.search(r"-p(\d+)", env_name)
+    num_passages = int(match.group(1)) if match else 0
+    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
+    action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
+
+    obs_lines = [
+        f"- obs[{idx}] = {field_name}" for idx, field_name in enumerate(obs_fields)
+    ]
+    action_lines = [
+        f"- a[{idx}] = {field_name}" for idx, field_name in enumerate(action_fields)
+    ]
+
+    return "\n".join(
+        [
+            f"- Environment variant: {canonical_name}-p{num_passages}",
+            "- When raw arrays are used, index them with the following schema:",
+            *obs_lines,
+            "- Action dimensions:",
+            *action_lines,
+            "- These raw fields are also summarized into stable "
+            "object-centric names like robot, target, obstacle0, obstacle1, etc.",
+        ]
+    )
+
+
 def build_collision_repair_prompt(
     pos_indices: list[int],
     neg_indices: list[int],
     examples: list[tuple[ObsT, ActT]],
     *,
     env_name: str | None = None,
-    existing_feature_summary: str | None = None,  # pylint: disable=unused-argument
+    existing_feature_summary: str | None = None,
     max_per_label: int = 5,
     collision_feedback_enc: str = "enc_1",
     pos_indices_2: list[int] | None = None,
     neg_indices_2: list[int] | None = None,
     seed: int | None = None,
     collision_template_feedback: bool = True,
+    failed_attempt_summaries: str | None = None,
 ) -> str:
     """Build an LLM prompt that proposes features to resolve label
     collisions."""
@@ -1022,25 +1379,34 @@ def build_collision_repair_prompt(
 
     symbol_map: dict[str, str] = {}
     legend_block = ""
-    if use_ascii and env_name:
+    is_kinder = is_kinder_env(env_name)
+
+    if use_ascii and env_name and not is_kinder:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
         legend_block = _format_ascii_legend(symbol_map) + "\n\n"
-    elif env_name:
+    elif env_name and not is_kinder:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
     # FORMAT2 note: uses richer evidence + deterministic example selection.
     if use_enc2:
-        pos_indices, neg_indices = _select_diverse_examples(
-            pos_indices, neg_indices, examples, symbol_map, max_pos=1, max_neg=3
-        )
-        if pos_indices_2 and neg_indices_2:
-            pos_indices_2, neg_indices_2 = _select_diverse_examples(
-                pos_indices_2,
-                neg_indices_2,
-                examples,
-                symbol_map,
-                max_pos=1,
-                max_neg=3,
+        if not is_kinder:
+            pos_indices, neg_indices = _select_diverse_examples(
+                pos_indices, neg_indices, examples, symbol_map, max_pos=1, max_neg=3
             )
+            if pos_indices_2 and neg_indices_2:
+                pos_indices_2, neg_indices_2 = _select_diverse_examples(
+                    pos_indices_2,
+                    neg_indices_2,
+                    examples,
+                    symbol_map,
+                    max_pos=1,
+                    max_neg=3,
+                )
+        else:
+            pos_indices = pos_indices[:1]
+            neg_indices = neg_indices[:3]
+            if pos_indices_2 and neg_indices_2:
+                pos_indices_2 = pos_indices_2[:1]
+                neg_indices_2 = neg_indices_2[:3]
     else:
         rng = np.random.default_rng(seed)
         if len(pos_indices) > max_per_label:
@@ -1058,11 +1424,13 @@ def build_collision_repair_prompt(
             pos_blocks.append(
                 _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
-
+        elif use_enc2 and is_kinder:
+            pos_blocks.append(_format_one_example_kinder_enc2(s, a, label=1, idx=idx))
         elif use_enc2:
             pos_blocks.append(
                 _format_one_example_enc2(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
+
         else:
             pos_blocks.append(_format_one_example_coords(s, a, label=1, idx=idx))
 
@@ -1073,6 +1441,16 @@ def build_collision_repair_prompt(
             neg_blocks.append(
                 _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
             )
+        elif use_enc2 and is_kinder:
+            if i == 0:
+                neg_blocks.append(
+                    _format_one_example_kinder_enc2(s, a, label=0, idx=idx)
+                )
+            else:
+                neg_blocks.append(
+                    _format_one_example_kinder_enc2_delta(s, a, label=0, idx=idx)
+                )
+
         elif use_enc2:
             if i == 0:
                 neg_blocks.append(
@@ -1086,6 +1464,7 @@ def build_collision_repair_prompt(
                         s, a, label=0, idx=idx, symbol_map=symbol_map
                     )
                 )
+
         else:
             neg_blocks.append(_format_one_example_coords(s, a, label=0, idx=idx))
 
@@ -1100,6 +1479,10 @@ def build_collision_repair_prompt(
                         s, a, label=1, idx=idx, symbol_map=symbol_map
                     )
                 )
+            elif use_enc2 and is_kinder:
+                pos_blocks_2.append(
+                    _format_one_example_kinder_enc2(s, a, label=1, idx=idx)
+                )
             elif use_enc2:
                 pos_blocks_2.append(
                     _format_one_example_enc2(
@@ -1108,6 +1491,7 @@ def build_collision_repair_prompt(
                 )
             else:
                 pos_blocks_2.append(_format_one_example_coords(s, a, label=1, idx=idx))
+
         for i, idx in enumerate(neg_indices_2):
             s, a = examples[idx]
             if use_ascii:
@@ -1116,6 +1500,15 @@ def build_collision_repair_prompt(
                         s, a, label=0, idx=idx, symbol_map=symbol_map
                     )
                 )
+            elif use_enc2 and is_kinder:
+                if i == 0:
+                    neg_blocks_2.append(
+                        _format_one_example_kinder_enc2(s, a, label=0, idx=idx)
+                    )
+                else:
+                    neg_blocks_2.append(
+                        _format_one_example_kinder_enc2_delta(s, a, label=0, idx=idx)
+                    )
             elif use_enc2:
                 if i == 0:
                     neg_blocks_2.append(
@@ -1131,7 +1524,6 @@ def build_collision_repair_prompt(
                     )
             else:
                 neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
-
     diff_hints_1 = ""
     if use_enc2 and pos_indices and neg_indices:
         try:
@@ -1170,7 +1562,7 @@ NEGATIVE EXAMPLES (label = 0):
         raw_token_examples = ", ".join(repr(s) for s in token_samples[:6])
         final_check_tokens = ", ".join(repr(s) for s in token_samples[:6])
     token_constants_block = "- {ENV_TOKEN_CONSTANTS}"
-    if env_name:
+    if env_name and not is_kinder:
         try:
             token_map = hint_extractor.build_token_map(env_name)
             ordered_constants: list[str] = []
@@ -1189,11 +1581,13 @@ NEGATIVE EXAMPLES (label = 0):
     # global counts, drawn compression + component stats, expanded local patch,
     # rays/distances, and per-bucket DIFF HINTS. These extra fields help cheaper
     # models separate positives/negatives while keeping code constraints strict.
-    feature_prompt_filename = (
-        "featured_collision_feedback_enc2.txt"
-        if use_enc2
-        else "featured_collision_feedback_enc1.txt"
-    )
+    if use_enc2 and is_kinder:
+        feature_prompt_filename = "featured_collision_feedback_enc2_kinder.txt"
+    elif use_enc2:
+        feature_prompt_filename = "featured_collision_feedback_enc2.txt"
+    else:
+        feature_prompt_filename = "featured_collision_feedback_enc1.txt"
+
     feature_prompt_path = (
         Path(__file__).resolve().parents[2]
         / "dsl"
@@ -1204,6 +1598,18 @@ NEGATIVE EXAMPLES (label = 0):
         / feature_prompt_filename
     )
     prompt_feature = feature_prompt_path.read_text(encoding="utf-8")
+    prompt_feature = prompt_feature.replace(
+        "${OBSERVATION_FIELD_GUIDE}",
+        _build_continuous_observation_field_guide(env_name),
+    )
+    prompt_feature = prompt_feature.replace(
+        "${existing_relevant_features}",
+        existing_feature_summary or "- None provided.",
+    )
+    prompt_feature = prompt_feature.replace(
+        "${failed_attempt_summaries}",
+        failed_attempt_summaries or "- None yet.",
+    )
     prompt_feature = prompt_feature.replace(
         "${token_constants_block}", token_constants_block
     )
@@ -1235,6 +1641,18 @@ NEGATIVE EXAMPLES (label = 0):
         )
         prompt_template = template_prompt_path.read_text(encoding="utf-8")
         prompt_template = prompt_template.replace(
+            "${OBSERVATION_FIELD_GUIDE}",
+            _build_continuous_observation_field_guide(env_name),
+        )
+        prompt_template = prompt_template.replace(
+            "${existing_relevant_features}",
+            existing_feature_summary or "- None provided.",
+        )
+        prompt_template = prompt_template.replace(
+            "${failed_attempt_summaries}",
+            failed_attempt_summaries or "- None yet.",
+        )
+        prompt_template = prompt_template.replace(
             "${bucket1_pos}", legend_block + (chr(10) * 2).join(pos_blocks[:2])
         )
         prompt_template = prompt_template.replace(
@@ -1251,6 +1669,7 @@ NEGATIVE EXAMPLES (label = 0):
         prompt_template = prompt_template.replace(
             "{final_check_tokens}", final_check_tokens
         )
+    # input(prompt_feature)
     return prompt_template if collision_template_feedback else prompt_feature
 
 
