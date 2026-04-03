@@ -603,7 +603,6 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
-            input()
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")
@@ -628,10 +627,8 @@ class PyFeatureGenerator:
                     env_name=env_name,
                     start_index=1,
                 )
-                print(script_text)
-                print(template_payload)
-                print(expanded_payload)
-                input("Press Enter to continue...")
+                logging.info(script_text)
+                logging.info(expanded_payload)
             else:
                 template_payload = self.query_llm(
                     prompt,

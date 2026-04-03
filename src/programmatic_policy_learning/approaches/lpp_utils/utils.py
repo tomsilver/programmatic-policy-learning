@@ -1669,7 +1669,7 @@ NEGATIVE EXAMPLES (label = 0):
         prompt_template = prompt_template.replace(
             "{final_check_tokens}", final_check_tokens
         )
-    input(prompt_feature)
+    # input(prompt_feature)
     return prompt_template if collision_template_feedback else prompt_feature
 
 

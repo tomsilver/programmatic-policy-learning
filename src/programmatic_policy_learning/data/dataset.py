@@ -566,9 +566,6 @@ def extract_examples_from_demonstration_item(
             bucket_edges=bucket_edges_cfg,
         )
         expert_bucket = quantizer.quantize(canonical_base[active_dims])
-        # print(f"Expert bucket: {expert_bucket}")
-        # print("action", action)
-        # input("***")
         quantized_expert = embed_active_action(
             quantizer.dequantize(expert_bucket),
             template=canonical_base,
@@ -626,8 +623,7 @@ def extract_examples_from_demonstration_item(
 
         for neg_action in neg_actions:
             negative_examples.append((state, neg_action))
-        # print(len(negative_examples), "negatives generated from quantized expansion.")
-        # input()
+
         # Keep weight order aligned with row order: [positive] + [negatives].
         aligned_buckets = [expert_bucket] + neg_buckets
 
@@ -744,11 +740,6 @@ def extract_examples_from_demonstration(
         )
         positive_examples.extend(demo_positive_examples)
         negative_examples.extend(demo_negative_examples)
-        # print(positive_examples)
-        # input("POS")
-        # print(demo_negative_examples)
-        # input("NEG")
-        # print("DONE/next")
         if demo_weights.shape[0] != (
             len(demo_positive_examples) + len(demo_negative_examples)
         ):
@@ -759,8 +750,6 @@ def extract_examples_from_demonstration(
         neg_weights.extend(demo_weights[len(demo_positive_examples) :].tolist())
 
     combined_weights = np.asarray(pos_weights + neg_weights, dtype=float)
-    # print(positive_examples)
-    # input("POS")
     return positive_examples, negative_examples, combined_weights
 
 
@@ -920,10 +909,6 @@ def run_all_programs_on_single_demonstration(
             compute_sample_weights=compute_sample_weights,
         )
     )
-    # print(positive_examples[:20])
-    # print("*****")
-    # print(negative_examples[:20])
-    # input()
 
     fn_inputs = positive_examples + negative_examples
 

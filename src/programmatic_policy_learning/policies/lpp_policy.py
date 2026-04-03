@@ -227,7 +227,6 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         )
         if self.map_choices:
             best_idx = int(np.argmax(scores))
-            # print(best_idx)
             return candidates[best_idx]
         denom = float(scores.sum())
         if denom <= 0.0:

@@ -999,7 +999,7 @@ def _evaluate_policy_function(
             try:
                 action = policy_fn(obs)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"Exception: {e}")
+                logging.exception(f"Exception: {e}")
                 action = None
             if action is None:
                 return _env.action_space.sample()
@@ -1014,7 +1014,7 @@ def _evaluate_policy_function(
             try:
                 action = policy_fn(obs)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"Exception: {e}")
+                logging.exception(f"Exception: {e}")
                 return _env.action_space.sample()
             if action is None:
                 return _env.action_space.sample()
@@ -1414,7 +1414,7 @@ def manual_eval() -> None:
         expert_fn=eval_expert,
         env_type=args.env_type,
     )
-    print(cap_results)
+    logging.info(cap_results)
     sys.exit()
 
 

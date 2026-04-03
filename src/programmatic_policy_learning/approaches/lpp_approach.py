@@ -103,7 +103,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         msg = f"Action space bounds: low={low.tolist()} high={high.tolist()}"
         logging.info(msg)
-        print(msg)
 
         if "motion2d" not in str(self.base_class_name).lower():
             return
@@ -129,7 +128,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 f"{float(active_high[idx]):.6f}] (dim {int(dim)})"
             )
             logging.info(dim_msg)
-            print(dim_msg)
 
     def __init__(
         self,
@@ -366,7 +364,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             reprompt_checks=[JSONStructureRepromptCheck(required_fields=["features"])],
             seed=self.seed_num,
         )
-        print(template_payload)
+        logging.info(template_payload)
         is_kinder = is_kinder_env(self.base_class_name)
         if not is_kinder:
             expanded_payload = py_generator.expand_template_payload(
@@ -1563,9 +1561,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     start_index=start_index,
                     feature_display_names=feature_display_names,
                 )
-        print("Final programs:")
+        logging.info("Final programs:")
         for i, prog in enumerate(programs_sa):
-            print(f"  Program {i}: {prog}")
+            logging.info(f"  Program {i}: {prog}")
         selected_hyperparams = self._select_hyperparams(
             X=X_train,
             y_bool=y_train_bool,

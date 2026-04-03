@@ -213,7 +213,9 @@ def main() -> None:
         _configure_rng(seed)
         trajectories: list[list[tuple[Any, Any, Any]]] = []
         for init_idx in num_initial_states:
-            print(f"Collecting trajectory for {env_name}, init_idx={init_idx}...")
+            logging.info(
+                f"Collecting trajectory for {env_name}, init_idx={init_idx}..."
+            )
             env = env_factory(init_idx, env_name, num_passages=num_passages)
             expert = create_kinder_expert(
                 env_name,

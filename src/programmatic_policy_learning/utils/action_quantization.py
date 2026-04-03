@@ -107,7 +107,6 @@ class Motion2DActionQuantizer:
                 f"action_high={self.action_high.tolist()}"
             )
         logging.info(msg)
-        print(msg)
 
     @classmethod
     def from_bounds(
