@@ -1,8 +1,7 @@
 """Demo collection utilities."""
 
 import logging
-from collections import defaultdict
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Any, Callable, TypeVar
 
 import numpy as np
 
