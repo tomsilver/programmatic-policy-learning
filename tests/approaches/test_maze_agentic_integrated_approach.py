@@ -10,7 +10,10 @@ from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel
 
 from programmatic_policy_learning.approaches.agentic_integrated_approach import (
+    ASTAR_INIT_DOC,
+    ASTAR_PLANNER_DOC,
     AgenticIntegratedApproach,
+    score_policy_maze,
 )
 from programmatic_policy_learning.envs.providers.maze_provider import MazeEnv
 
@@ -108,16 +111,40 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
     cache = SQLite3PretrainedLargeModelCache(cache_path)
     llm = OpenAIModel("gpt-5.2", cache)
 
+    planner_context = {
+        "get_actions": env.get_actions,
+        "get_next_state": env.get_next_state,
+        "get_cost": env.get_cost,
+        "check_goal": env.check_goal,
+    }
+
+    def _score_fn(  # type: ignore[no-untyped-def]
+        policy,
+        obs,
+        info,
+        max_ts,
+        _gns=env.get_next_state,
+        _cg=env.check_goal,
+    ):
+        return score_policy_maze(
+            policy,
+            obs,
+            info,
+            max_ts,
+            get_next_state=_gns,
+            check_goal=_cg,
+        )
+
     approach = AgenticIntegratedApproach(
         environment_description,
         env.observation_space,
         env.action_space,
         seed=126,
         llm=llm,
-        get_actions=env.get_actions,
-        get_next_state=env.get_next_state,
-        get_cost=env.get_cost,
-        check_goal=env.check_goal,
+        planner_context=planner_context,
+        planner_doc=ASTAR_PLANNER_DOC,
+        init_doc=ASTAR_INIT_DOC,
+        score_fn=_score_fn,
     )
 
     # TRAINING PHASE (obs and info already obtained from env.reset above).
@@ -151,11 +178,13 @@ def test_agentic_integrated_approach_maze_with_real_llm() -> None:
         inner_maze=inner_maze, outer_margin=outer_margin, enable_render=enable_render
     )
     obs, info = env.reset(seed=123)
-    approach.update_env_callables(
-        get_actions=env.get_actions,
-        get_next_state=env.get_next_state,
-        get_cost=env.get_cost,
-        check_goal=env.check_goal,
+    approach.update_planner_context(
+        {
+            "get_actions": env.get_actions,
+            "get_next_state": env.get_next_state,
+            "get_cost": env.get_cost,
+            "check_goal": env.check_goal,
+        }
     )
     approach.reset(obs, info)
 
