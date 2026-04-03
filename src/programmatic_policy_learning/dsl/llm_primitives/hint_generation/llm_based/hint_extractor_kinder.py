@@ -8,7 +8,7 @@ import random
 
 # import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, TypeGuard, cast
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -24,6 +24,27 @@ from programmatic_policy_learning.dsl.llm_primitives.env_specs import (
     get_env_llm_spec,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
+
+
+class _StatefulExpert(Protocol):
+    """Minimal protocol for stateful experts used in rollout collection."""
+
+    def reset(self, obs: Any, info: Any) -> None:
+        """Reset the expert to the current environment state."""
+
+    def step(self) -> Any:
+        """Produce the next expert action."""
+
+    def update(self, obs: Any, reward: float, done: bool, info: Any) -> None:
+        """Update the expert with the latest transition."""
+
+
+ExpertPolicy = Callable[[Any], Any] | _StatefulExpert
+
+
+def _is_stateful_expert(expert_fn: ExpertPolicy) -> TypeGuard[_StatefulExpert]:
+    """Return True when the expert exposes reset/step/update methods."""
+    return all(hasattr(expert_fn, attr) for attr in ("reset", "step", "update"))
 
 
 def _configure_rng(seed: int) -> None:
@@ -61,7 +82,7 @@ def env_factory(
 
 def collect_full_episode(
     env: Any,
-    expert_fn: Callable[[Any], Any],
+    expert_fn: ExpertPolicy,
     max_steps: int = 200,
     sample_count: int | None = None,
 ) -> list[tuple[Any, Any, Any]]:
@@ -69,18 +90,29 @@ def collect_full_episode(
     obs_next)."""
     obs, info = env.reset()
     trajectory = []
-    stateful_policy = all(
-        hasattr(expert_fn, attr) for attr in ("reset", "step", "update")
-    )
-    if stateful_policy:
-        expert_fn.reset(obs, info)
+    stateful_expert: _StatefulExpert | None = None
+    callable_expert: Callable[[Any], Any] | None = None
+    if _is_stateful_expert(expert_fn):
+        stateful_expert = expert_fn
+        stateful_expert.reset(obs, info)
+    else:
+        callable_expert = cast(Callable[[Any], Any], expert_fn)
 
     for _ in range(max_steps):
-        action = expert_fn.step() if stateful_policy else expert_fn(obs)
+        if stateful_expert is not None:
+            action = stateful_expert.step()
+        else:
+            assert callable_expert is not None
+            action = callable_expert(obs)
         obs_next, reward, term, trunc, next_info = env.step(action)
         trajectory.append((obs, action, obs_next))
-        if stateful_policy:
-            expert_fn.update(obs_next, float(reward), bool(term or trunc), next_info)
+        if stateful_expert is not None:
+            stateful_expert.update(
+                obs_next,
+                float(reward),
+                bool(term or trunc),
+                next_info,
+            )
         obs = obs_next
         if term or trunc:
             break

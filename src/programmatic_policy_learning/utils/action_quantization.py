@@ -68,12 +68,14 @@ def _normalize_bucket_edges(
             raise ValueError("bucket_edges must be strictly increasing per dimension.")
         if not np.isclose(edges[0], action_low[d]):
             raise ValueError(
-                f"bucket_edges for dim {d} must start at action_low={action_low[d]:.6f}, "
+                f"bucket_edges for dim {d} must start at "
+                f"action_low={action_low[d]:.6f}, "
                 f"got {edges[0]:.6f}."
             )
         if not np.isclose(edges[-1], action_high[d]):
             raise ValueError(
-                f"bucket_edges for dim {d} must end at action_high={action_high[d]:.6f}, "
+                f"bucket_edges for dim {d} must end at "
+                f"action_high={action_high[d]:.6f}, "
                 f"got {edges[-1]:.6f}."
             )
         normalized.append(edges.astype(float, copy=False))

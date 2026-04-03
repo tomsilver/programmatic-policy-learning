@@ -18,10 +18,8 @@ from typing import Any, Callable, Generator, TypeVar
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
     continuous_hint_config,
-    grid_encoder,
     grid_hint_config,
 )
 from programmatic_policy_learning.dsl.llm_primitives.hint_generation.llm_based import (
@@ -1173,10 +1171,10 @@ def _format_one_example_kinder_enc2(
     wall_right = obs0_x + obs0_w
 
     left_of_wall = robot_x + r < wall_left
-    inside_wall_x_band = (robot_x >= wall_left) and (robot_x < wall_right + r)
+    inside_wall_x_band = wall_left <= robot_x < wall_right + r
     passed_wall = robot_x >= wall_right + r
 
-    y_aligned = (robot_y >= gap_lower) and (robot_y <= gap_upper)
+    y_aligned = gap_lower <= robot_y <= gap_upper
     y_below_gap = robot_y < gap_lower
     y_above_gap = robot_y > gap_upper
 
@@ -1241,7 +1239,7 @@ def _format_one_example_kinder_enc2_delta(
 
     left_of_wall = robot_x + r < obs0_x
     passed_wall = robot_x >= wall_right + r
-    y_aligned = (robot_y >= gap_lower) and (robot_y <= gap_upper)
+    y_aligned = gap_lower <= robot_y <= gap_upper
 
     parts = [
         f"NEG idx={idx} label={label}",
@@ -1305,6 +1303,7 @@ def _format_one_example_enc2_delta(
 
 
 def is_kinder_env(env_name: str | None) -> bool:
+    """Return whether the environment name refers to a KinDER/Motion2D task."""
     if env_name is None:
         return False
     env = env_name.lower()

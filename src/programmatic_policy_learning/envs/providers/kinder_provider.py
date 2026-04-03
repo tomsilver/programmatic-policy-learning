@@ -1,6 +1,6 @@
 """KinDER environment provider."""
 
-from typing import Any
+from typing import Any, cast
 
 import kinder  # type: ignore[import-not-found]
 from gymnasium import spaces
@@ -93,14 +93,18 @@ def _extract_action_types(env: Any) -> tuple[str, ...]:
         return ("discrete",)
 
     if isinstance(action_space, spaces.MultiBinary):
-        return tuple("boolean" for _ in range(int(action_space.n)))
+        raw_n: object = action_space.n
+        size = (
+            int(raw_n) if isinstance(raw_n, int) else len(cast(tuple[int, ...], raw_n))
+        )
+        return tuple("boolean" for _ in range(size))
 
     if isinstance(action_space, spaces.MultiDiscrete):
         return tuple("discrete" for _ in action_space.nvec.tolist())
 
     if isinstance(action_space, spaces.Box):
-        shape = getattr(action_space, "shape", None) or ()
-        size = int(shape[0]) if len(shape) == 1 else 0
+        shape = tuple(int(dim) for dim in action_space.shape)
+        size = shape[0] if len(shape) == 1 else 0
         inferred = ["continuous"] * size
         spec = getattr(env, "spec", None)
         env_id = str(getattr(spec, "id", "") or "")

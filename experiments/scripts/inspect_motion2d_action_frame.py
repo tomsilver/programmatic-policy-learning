@@ -15,7 +15,8 @@ Usage::
 
     python experiments/scripts/inspect_motion2d_action_frame.py
     python experiments/scripts/inspect_motion2d_action_frame.py --passages 1 --seed 0
-    python experiments/scripts/inspect_motion2d_action_frame.py --move-step 0.05 --turn-step 0.5
+    python experiments/scripts/inspect_motion2d_action_frame.py \
+        --move-step 0.05 --turn-step 0.5
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from __future__ import annotations
 import argparse
 import math
 from dataclasses import dataclass
+from typing import Any, Callable, cast
 
 import gymnasium as gym
 import kinder
@@ -68,6 +70,7 @@ class StepProbe:
 
     @property
     def delta(self) -> np.ndarray:
+        """Return the observed world-frame change in pose for this probe."""
         return np.array(
             [
                 self.after.x - self.before.x,
@@ -178,10 +181,18 @@ def _infer_frame(
     dy_rot_angle = _movement_angle(dy_rot)
 
     if None in (dx_base_angle, dx_rot_angle, dy_base_angle, dy_rot_angle):
-        return "Could not infer frame because one of the translation probes produced ~zero motion."
+        return (
+            "Could not infer frame because one of the translation probes "
+            "produced ~zero motion."
+        )
 
-    dx_angle_change = abs(_angle_diff(dx_rot_angle, dx_base_angle))
-    dy_angle_change = abs(_angle_diff(dy_rot_angle, dy_base_angle))
+    dx_base_angle_f = cast(float, dx_base_angle)
+    dx_rot_angle_f = cast(float, dx_rot_angle)
+    dy_base_angle_f = cast(float, dy_base_angle)
+    dy_rot_angle_f = cast(float, dy_rot_angle)
+
+    dx_angle_change = abs(_angle_diff(dx_rot_angle_f, dx_base_angle_f))
+    dy_angle_change = abs(_angle_diff(dy_rot_angle_f, dy_base_angle_f))
     turn_mag = abs(float(turn_delta))
 
     if dx_angle_change < 0.15 and dy_angle_change < 0.15:
@@ -238,7 +249,8 @@ def _run_bilevel_rollout(
 
     print("\nBilevel expert rollout")
     print(
-        "This prints the raw expert action and the realized world-frame state delta at each step."
+        "This prints the raw expert action and the realized world-frame "
+        "state delta at each step."
     )
     if zero_theta:
         print("Mode: forcing dtheta=0.0 before each env step.")
@@ -286,6 +298,7 @@ def _run_bilevel_rollout(
 
 
 def main() -> None:
+    """Run the Motion2D frame-inspection probes and print their results."""
     parser = argparse.ArgumentParser(
         description="Inspect whether Motion2D dx/dy are absolute or heading-relative."
     )
@@ -356,8 +369,9 @@ def main() -> None:
         print("\nInitial robot pose")
         print(_format_pose(initial_pose))
         print(
-            "Head note: the observation gives the robot center and theta, not an explicit "
-            "head point. This script infers a front tip as center + radius * [cos(theta), sin(theta)]."
+            "Head note: the observation gives the robot center and theta, "
+            "not an explicit head point. This script infers a front tip as "
+            "center + radius * [cos(theta), sin(theta)]."
         )
 
         rotate = _clip_action(_build_action(dtheta=turn_step), action_space)
@@ -417,9 +431,10 @@ def main() -> None:
             )
         )
         print(
-            "Theta note: for pure navigation, you usually should not need dtheta if dx/dy already "
-            "move the base toward the target. Changing theta only matters if the environment or a "
-            "policy chooses heading-dependent behavior."
+            "Theta note: for pure navigation, you usually should not need "
+            "dtheta if dx/dy already move the base toward the target. "
+            "Changing theta only matters if the environment or a policy "
+            "chooses heading-dependent behavior."
         )
         if args.show_bilevel:
             _run_bilevel_rollout(
@@ -430,7 +445,9 @@ def main() -> None:
                 zero_theta=bool(args.bilevel_zero_theta),
             )
     finally:
-        env.close()
+        close_fn = cast(Callable[[], Any] | None, getattr(env, "close", None))
+        if close_fn is not None:
+            close_fn()
 
 
 if __name__ == "__main__":

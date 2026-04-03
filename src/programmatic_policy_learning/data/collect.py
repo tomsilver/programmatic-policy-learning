@@ -12,7 +12,7 @@ from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
 
-EnvFactory = Callable[[], Any]
+EnvFactory = Callable[..., Any]
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 

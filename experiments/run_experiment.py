@@ -392,7 +392,8 @@ def _run_single_episode_evaluation(
         total_rewards += reward
         if done:
             print(
-                f"Episode finished after {total_steps + 1} steps with max step {max_eval_steps:.4f}"
+                "Episode finished after "
+                f"{total_steps + 1} steps with max step {max_eval_steps:.4f}"
             )
             break
         total_steps += 1

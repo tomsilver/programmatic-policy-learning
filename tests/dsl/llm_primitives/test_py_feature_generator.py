@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _pytest.monkeypatch import MonkeyPatch
+
 from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
     PyFeatureGenerator,
 )
@@ -12,6 +14,7 @@ from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import
 def test_extract_python_script_removes_markdown_fences() -> None:
     """Fenced Python responses should be converted to raw script text."""
     generator = PyFeatureGenerator(None)
+    # pylint: disable=protected-access
     script = generator._extract_python_script(
         "```python\n"
         "def build_feature_library():\n"
@@ -22,7 +25,9 @@ def test_extract_python_script_removes_markdown_fences() -> None:
     assert "```" not in script
 
 
-def test_generate_supports_generator_script_mode(tmp_path: Path, monkeypatch) -> None:
+def test_generate_supports_generator_script_mode(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
     """generator_script mode should execute build_feature_library()."""
     prompt_path = tmp_path / "generator_prompt.txt"
     prompt_path.write_text("Generate a feature script.", encoding="utf-8")

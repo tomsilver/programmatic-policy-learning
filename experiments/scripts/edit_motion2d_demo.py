@@ -20,6 +20,12 @@ import gymnasium as gym
 import kinder
 import numpy as np
 
+imageio: Any | None
+try:
+    import imageio.v2 as imageio  # type: ignore
+except Exception:  # pylint: disable=broad-exception-caught
+    imageio = None
+
 logging.basicConfig(level=logging.INFO)
 
 _MAX_STEPS = 500
@@ -171,13 +177,13 @@ def _close_env(env: Any) -> None:
 
 def save_gif(frames: list[np.ndarray], path: str, fps: int = 12) -> None:
     """Save frames as a GIF."""
-    try:
-        import imageio.v2 as imageio  # type: ignore
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        raise RuntimeError("Saving GIFs requires imageio.") from exc
+    if imageio is None:
+        raise RuntimeError("Saving GIFs requires imageio.")
 
-    clean = [f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames]
-    imageio.mimsave(path, clean, fps=fps)
+    clean: list[np.ndarray] = [
+        f[:, :, :3] if f.ndim == 3 and f.shape[2] == 4 else f for f in frames
+    ]
+    imageio.mimsave(path, cast(Any, clean), fps=fps)
     logging.info("GIF saved to: %s  (%d frames)", path, len(clean))
 
 
@@ -209,17 +215,18 @@ def run_fixed_actions(
     actions: list[list[float]],
 ) -> tuple[list[np.ndarray], float, int, bool]:
     """Replay the given action list and return rollout artifacts."""
+    del obs
     frames: list[np.ndarray] = []
     total_reward = 0.0
     terminated = False
 
     for step, action_list in enumerate(actions[:_MAX_STEPS]):
-        raw = env.render()
+        raw: np.ndarray | list[np.ndarray] | None = env.render()
         if raw is not None:
             frames.append(np.asarray(raw))
 
         action = np.asarray(action_list, dtype=np.float32)
-        obs, reward, terminated, truncated, _ = env.step(action)
+        _, reward, terminated, truncated, _ = env.step(action)
         total_reward += float(reward)
 
         logging.info(

@@ -197,7 +197,7 @@ def get_program_set(
         program_prior_log_probs = compute_feature_log_probs(payload, object_types)
         dsl_fns = get_dsl_functions_dict()
         feature_display_names: list[str] = []
-        payload_features = _payload.get("features", [])
+        payload_features = payload.get("features", [])
         if isinstance(payload_features, list):
             for feature in payload_features:
                 if not isinstance(feature, dict):
@@ -291,7 +291,7 @@ def get_program_set(
             program_prior_log_probs = out_dict["logprobs"]
         else:
             raise ValueError(f"Unsupported prior_version: {prior_version}")
-        feature_display_names: list[str] = []
+        feature_display_names = []
         payload_features = _payload.get("features", [])
         if isinstance(payload_features, list):
             for feature in payload_features:
@@ -360,9 +360,9 @@ def _generate_with_dsl_generator(
     outer_feedback: str | None,
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
+    llm_model = program_generation.get("llm_model", "gpt-4.1")
     cache_path = _cache_path_with_model("llm_cache", llm_model)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_model = program_generation.get("llm_model", "gpt-4.1")
     llm_client = OpenAIModel(llm_model, cache)
     prompt_path = program_generation["dsl_generator_prompt"]
     with open(prompt_path, "r", encoding="utf-8") as file:

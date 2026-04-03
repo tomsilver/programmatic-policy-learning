@@ -50,7 +50,6 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     build_collision_repair_prompt,
     deduplicate_negative_examples,
     drop_negative_exact_contradictions,
-    gini_gain_per_feature,
     is_kinder_env,
     log_exact_example_label_contradictions,
     log_feature_collisions,
@@ -408,7 +407,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         if action_mode != "discrete" and not is_kinder:
             logging.info(
-                "Collision repair prompt generation unsupported for action_mode=%s env=%s.",
+                "Collision repair prompt generation unsupported "
+                "for action_mode=%s env=%s.",
                 action_mode,
                 self.base_class_name,
             )
@@ -795,7 +795,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self._action_space, "high"
         ):
             raise ValueError(
-                "Continuous action alignment requires an action space with low/high bounds."
+                "Continuous action alignment requires an action "
+                "space with low/high bounds."
             )
 
         sampling_cfg = dict(self._negative_sampling_cfg or {})
@@ -977,7 +978,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 )
                 queries_used = 0
 
-                for step_idx in range(max_steps):
+                for _ in range(max_steps):
                     expert_action = self._query_expert_action_for_recovery(
                         obs, info, env
                     )
@@ -1168,11 +1169,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     lines.append(f"- Added {added_count} new features.")
                 if after_count < before_count:
                     lines.append(
-                        f"- Collision count improved from {before_count} to {after_count}, but collisions remain."
+                        "- Collision count improved from "
+                        f"{before_count} to {after_count}, but collisions remain."
                     )
                 else:
                     lines.append(
-                        f"- Collision count stayed at {after_count}; avoid near-duplicate rephrasings of those feature families."
+                        "- Collision count stayed at "
+                        f"{after_count}; avoid near-duplicate "
+                        "rephrasings of those feature families."
                     )
                 collision_attempt_memory.append("\n".join(lines))
 
