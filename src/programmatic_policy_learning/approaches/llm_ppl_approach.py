@@ -1,6 +1,7 @@
 """An approach that synthesizes a programmatic policy using an LLM."""
 
 import logging
+from collections.abc import Hashable
 from typing import Any, Callable, TypeVar
 
 from gymnasium.spaces import Space
@@ -30,6 +31,7 @@ class LLMPPLApproach(BaseApproach[_ObsType, _ActType]):
         llm: PretrainedLargeModel,
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
+        self._seed = seed
         self._llm = llm
         # Wait to reset so that we have one example of an observation.
         self._policy: Callable[[_ObsType], _ActType] | None = None
@@ -43,6 +45,7 @@ class LLMPPLApproach(BaseApproach[_ObsType, _ActType]):
                 self._llm,
                 self._last_observation,
                 self._action_space,
+                seed=self._seed,
             )
 
     def _get_action(self) -> _ActType:
@@ -56,11 +59,16 @@ def synthesize_policy_from_environment_description(
     llm: PretrainedLargeModel,
     example_observation: _ObsType,
     action_space: Space[_ActType],
+    seed: int | None = None,
 ) -> Callable[[_ObsType], _ActType]:
     """Use the LLM to synthesize a programmatic policy."""
 
     function_name = "_policy"
-    query = Query(f"""Generate a Python function policy of the form
+    hyperparameters: dict[str, Hashable] | None = (
+        {"seed": seed} if seed is not None else None
+    )
+    query = Query(
+        f"""Generate a Python function policy of the form
 
 ```python
 def _policy(obs):
@@ -80,7 +88,9 @@ Here is an example observation:
 {example_observation}
 
 Return only the function; do not give example usages.
-""")
+""",
+        hyperparameters=hyperparameters,
+    )
     reprompt_checks = [
         SyntaxRepromptCheck(),
         FunctionOutputRepromptCheck(
