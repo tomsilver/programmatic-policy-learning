@@ -17,6 +17,13 @@ ${DEMONSTRATION_BACKGROUND}
 Demonstrations:
 ${DEMONSTRATION_DATA}
 
+Before writing the final feature library, mentally filter candidate ideas and keep features that are most likely to be:
+- interpretable,
+- reusable across multiple demonstrations,
+- helpful for separating expert actions from plausible non-expert actions in similar states.
+
+Do not keep features solely because they are easy to define from the raw variables.
+
 Important coding constraints:
 - Do not write inline geometry formulas that mix + and - without explicit parentheses.
 - Never write expressions like s[i] - s[j] + s[k] / 2.
@@ -84,3 +91,4 @@ Rules:
 - Each generated feature must be a standalone function definition encoded as source code text.
 - The script itself may use helper functions to construct those source strings.
 - The final returned objects must contain the full source code for each feature.
+- The function `build_feature_library()` must return `{"features": features}` exactly; do not wrap that dict in a list such as `[{"features": features}]`.

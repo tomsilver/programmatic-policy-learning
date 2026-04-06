@@ -532,7 +532,7 @@ def extract_examples_from_demonstration_item(
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        logging.info(f"base.shape: {base.shape}")
+        # logging.info(f"base.shape: {base.shape}")
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
