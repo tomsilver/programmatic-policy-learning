@@ -7,6 +7,10 @@ import numpy as np
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.utils.action_canonicalization import (
+    active_action_bounds,
+    get_active_action_dims,
+)
 from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
@@ -47,25 +51,40 @@ def collect_demo(
         and hasattr(action_space, "high")
     ):
         try:
-            quantizer = Motion2DActionQuantizer.from_bounds(
-                action_space.low,
-                action_space.high,
-                bucket_edges=[-0.05, -0.02, -0.006, 0.0, 0.006, 0.02, 0.05],
+            low_arr = np.asarray(action_space.low, dtype=float).reshape(-1)
+            high_arr = np.asarray(action_space.high, dtype=float).reshape(-1)
+            active_dims = get_active_action_dims(
+                {"continuous": {"active_action_dims": [0, 1]}},
+                total_dims=low_arr.size,
+                default_active_dims=[0, 1],
             )
-        except Exception:  # pylint: disable=broad-exception-caught
+            active_low_arr, active_high_arr = active_action_bounds(
+                low_arr,
+                high_arr,
+                active_dims=active_dims,
+            )
+            quantizer = Motion2DActionQuantizer.from_bounds(
+                active_low_arr,
+                active_high_arr,
+                bucket_edges=[-0.05, -0.006, 0.0, 0.006, 0.05],
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.info("Could not create quantizer for action space:", action_space)
+            logging.info("Error was:", e)
             quantizer = None
 
     t = 0
     expert.reset(obs, info)
     while True:
         action = expert.step()
-        print("ACTION:", action)
+        # print("ACTION:", action)
         if quantizer is not None:
             try:
-                print("ACTION BUCKET:", quantizer.quantize(action))
+                action_arr = np.asarray(action, dtype=float).reshape(-1)
+                logging.info("ACTION BUCKET:", quantizer.quantize(action_arr[active_dims]))
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
-        print("OBSERVATION:", obs)
+        # print("OBSERVATION:", obs)
 
         obs_list.append(obs)
         act_list.append(action)

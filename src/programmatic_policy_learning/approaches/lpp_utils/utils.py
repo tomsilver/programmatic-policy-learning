@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import signal
+from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -250,37 +251,41 @@ def log_feature_collisions(
         else:
             seen[key] = (i, label)
 
+    # if collisions:
+    #     logging.info("Feature collisions found: %d", len(collisions))
+    #     for prev_idx, cur_idx, prev_label in collisions[:10]:
+    #         logging.info(
+    #             "Collision: row %d(label=%d) vs row %d(label=%d)",
+    #             prev_idx,
+    #             prev_label,
+    #             cur_idx,
+    #             labels[cur_idx],
+    #         )
+    #         if _examples is not None:
+    #             try:
+    #                 prev_example = _examples[prev_idx]
+    #                 cur_example = _examples[cur_idx]
+    #                 logging.info("  row %d example: %s", prev_idx, prev_example)
+    #                 logging.info("  row %d example: %s", cur_idx, cur_example)
+    #             except (IndexError, TypeError):
+    #                 logging.info(
+    #                     "  Example payload unavailable for rows %d and %d.",
+    #                     prev_idx,
+    #                     cur_idx,
+    #                 )
+    #     grouped = group_collision_indices(collisions, labels)
+    #     if grouped:
+    #         top_group = max(grouped, key=lambda g: int(g["max_occur"]))
+    #         logging.info(
+    #             "Top collision group: pos=%d neg=%d max_occur=%d",
+    #             len(top_group["pos"]),
+    #             len(top_group["neg"]),
+    #             int(top_group["max_occur"]),
+    #         )
+    #     return grouped
     if collisions:
         logging.info("Feature collisions found: %d", len(collisions))
-        for prev_idx, cur_idx, prev_label in collisions[:10]:
-            logging.info(
-                "Collision: row %d(label=%d) vs row %d(label=%d)",
-                prev_idx,
-                prev_label,
-                cur_idx,
-                labels[cur_idx],
-            )
-            if _examples is not None:
-                try:
-                    prev_example = _examples[prev_idx]
-                    cur_example = _examples[cur_idx]
-                    logging.info("  row %d example: %s", prev_idx, prev_example)
-                    logging.info("  row %d example: %s", cur_idx, cur_example)
-                except (IndexError, TypeError):
-                    logging.info(
-                        "  Example payload unavailable for rows %d and %d.",
-                        prev_idx,
-                        cur_idx,
-                    )
         grouped = group_collision_indices(collisions, labels)
-        if grouped:
-            top_group = max(grouped, key=lambda g: int(g["max_occur"]))
-            logging.info(
-                "Top collision group: pos=%d neg=%d max_occur=%d",
-                len(top_group["pos"]),
-                len(top_group["neg"]),
-                int(top_group["max_occur"]),
-            )
         return grouped
 
     logging.info("No feature collisions found.")
@@ -530,36 +535,359 @@ def group_collision_indices(
     return out
 
 
+def _extract_policy_feature_names(policy_str: str) -> list[str]:
+    return sorted(
+        set(re.findall(r"\b(f\d+)\s*\(\s*s\s*,\s*a\s*\)", policy_str, flags=re.IGNORECASE))
+    )
+
+
+def _split_top_level_and(expr: str) -> list[str]:
+    expr = _strip_outer_parens(expr)
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and expr[i : i + 3] == "and":
+            prev_ok = (i == 0) or (not (expr[i - 1].isalnum() or expr[i - 1] == "_"))
+            next_ok = (i + 3 == len(expr)) or (
+                not (expr[i + 3].isalnum() or expr[i + 3] == "_")
+            )
+            if prev_ok and next_ok:
+                part = expr[last:i].strip()
+                if part:
+                    parts.append(part)
+                i += 3
+                last = i
+                continue
+        i += 1
+    tail = expr[last:].strip()
+    if tail:
+        parts.append(tail)
+    return parts if parts else [expr]
+
+
+def _extract_clause_literals(clause: str) -> list[str]:
+    literals = []
+    for part in _split_top_level_and(clause):
+        stripped = _strip_outer_parens(part)
+        if re.fullmatch(
+            r"(?:not\s+)?f\d+\s*\(\s*s\s*,\s*a\s*\)",
+            stripped,
+            flags=re.IGNORECASE,
+        ):
+            literals.append(stripped)
+    return literals
+
+
+def _feature_fn_map(dsl_functions: dict[str, Any]) -> dict[str, Callable[[Any, Any], bool]]:
+    out: dict[str, Callable[[Any, Any], bool]] = {}
+    for name, value in dsl_functions.items():
+        if re.fullmatch(r"f\d+", str(name), flags=re.IGNORECASE) and callable(value):
+            out[str(name)] = value
+    return out
+
+
+def _compute_feature_values(
+    feature_names: list[str],
+    feature_fns: dict[str, Callable[[Any, Any], bool]],
+    s: Any,
+    a: Any,
+) -> dict[str, bool]:
+    values: dict[str, bool] = {}
+    for fname in feature_names:
+        fn = feature_fns.get(fname)
+        if fn is None:
+            values[fname] = False
+            continue
+        try:
+            values[fname] = bool(fn(s, a))
+        except Exception:  # pylint: disable=broad-exception-caught
+            values[fname] = False
+    return values
+
+
+def _literal_holds(literal: str, feature_values: dict[str, bool]) -> bool:
+    match = re.fullmatch(
+        r"(not\s+)?(f\d+)\s*\(\s*s\s*,\s*a\s*\)",
+        literal.strip(),
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return False
+    negated = bool(match.group(1))
+    fname = str(match.group(2))
+    value = bool(feature_values.get(fname, False))
+    return (not value) if negated else value
+
+
+def _closest_clause_debug(
+    policy_str: str,
+    feature_values: dict[str, bool],
+) -> tuple[str | None, list[str]]:
+    """Return the nearest OR-clause and its failing feature literals.
+
+    The nearest clause is the one with the fewest unsatisfied literals
+    (breaking ties by preferring longer clauses).
+    """
+    clauses = _split_top_level_or(policy_str)
+    best_clause_idx = None
+    best_failed_literals: list[str] = []
+    best_score = None
+
+    for idx, clause in enumerate(clauses, start=1):
+        literals = _extract_clause_literals(clause)
+        failed_literals = [lit for lit in literals if not _literal_holds(lit, feature_values)]
+        score = (len(failed_literals), -len(literals))
+        if best_score is None or score < best_score:
+            best_score = score
+            best_clause_idx = idx
+            best_failed_literals = failed_literals
+
+    if best_clause_idx is None:
+        return None, []
+    normalized_failed = []
+    for literal in best_failed_literals:
+        match = re.search(r"\b(f\d+)\b", literal, flags=re.IGNORECASE)
+        normalized_failed.append(match.group(1) if match else literal)
+    return f"clause_{best_clause_idx}", normalized_failed
+
+
+def _format_action_short(action: Any) -> str:
+    if isinstance(action, np.ndarray):
+        return np.array2string(action, precision=3, separator=", ")
+    if isinstance(action, (list, tuple)):
+        try:
+            arr = np.asarray(action, dtype=float).reshape(-1)
+            return np.array2string(arr, precision=3, separator=", ")
+        except Exception:  # pylint: disable=broad-exception-caught
+            return repr(action)
+    return repr(action)
+
+
+def _enumerate_accepted_actions(
+    plp: StateActionProgram,
+    obs: Any,
+    candidate_actions: list[Any] | None,
+) -> list[Any]:
+    accepted_actions: list[Any] = []
+    if candidate_actions is not None:
+        for action in candidate_actions:
+            try:
+                if plp(obs, action):
+                    accepted_actions.append(action)
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+        return accepted_actions
+
+    if hasattr(obs, "shape") and len(getattr(obs, "shape")) == 2:
+        for r in range(obs.shape[0]):  # type: ignore[attr-defined]
+            for c in range(obs.shape[1]):  # type: ignore[attr-defined]
+                action = (r, c)
+                try:
+                    if plp(obs, action):
+                        accepted_actions.append(action)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    continue
+    return accepted_actions
+
+
+def _feature_hamming_distance(
+    lhs: dict[str, bool],
+    rhs: dict[str, bool],
+    feature_names: list[str],
+) -> int:
+    return sum(int(bool(lhs.get(name, False)) != bool(rhs.get(name, False))) for name in feature_names)
+
+
+def _action_distance(lhs: Any, rhs: Any) -> float:
+    try:
+        lhs_arr = np.asarray(lhs, dtype=float).reshape(-1)
+        rhs_arr = np.asarray(rhs, dtype=float).reshape(-1)
+        if lhs_arr.shape != rhs_arr.shape:
+            return float("inf")
+        return float(np.linalg.norm(lhs_arr - rhs_arr))
+    except Exception:  # pylint: disable=broad-exception-caught
+        return 0.0 if lhs == rhs else float("inf")
+
+
+def _motion2d_mode_tags(obs: Any) -> set[str]:
+    try:
+        s = np.asarray(obs, dtype=float).reshape(-1)
+    except Exception:  # pylint: disable=broad-exception-caught
+        return set()
+    if s.size < 39:
+        return set()
+
+    robot_x = float(s[0])
+    robot_y = float(s[1])
+    r = float(s[3])
+    target_x = float(s[9])
+    target_y = float(s[10])
+    target_w = float(s[17])
+    target_h = float(s[18])
+    obs0_x = float(s[19])
+    obs0_y = float(s[20])
+    obs0_w = float(s[27])
+    obs0_h = float(s[28])
+    obs1_y = float(s[30])
+
+    wall_left = obs0_x
+    wall_right = obs0_x + obs0_w
+    gap_lower = obs0_y + obs0_h + r
+    gap_upper = obs1_y - r
+    target_cx = target_x + target_w / 2.0
+    target_cy = target_y + target_h / 2.0
+    dist_target = float(np.hypot(target_cx - robot_x, target_cy - robot_y))
+
+    tags: set[str] = set()
+    if robot_x + r < wall_left:
+        tags.add("before_passage")
+    elif wall_left <= robot_x < wall_right + r:
+        tags.add("inside_passage")
+    else:
+        tags.add("after_passage")
+
+    if gap_lower <= robot_y <= gap_upper:
+        tags.add("aligned")
+    else:
+        tags.add("not_aligned")
+        if robot_y < gap_lower:
+            tags.add("below_gap")
+        if robot_y > gap_upper:
+            tags.add("above_gap")
+
+    if abs(robot_x - wall_left) <= 0.15 or abs(robot_x - wall_right) <= 0.15:
+        tags.add("near_wall")
+    if dist_target <= 0.35:
+        tags.add("near_target")
+    return tags
+
+
+def _mode_bucket_label(tags: set[str]) -> str:
+    if "near_target" in tags:
+        return "near target"
+    if "before_passage" in tags and "not_aligned" in tags:
+        return "not aligned before passage"
+    if "inside_passage" in tags and "aligned" in tags:
+        return "inside passage aligned"
+    if "inside_passage" in tags and "not_aligned" in tags:
+        return "inside passage misaligned"
+    if "before_passage" in tags and "aligned" in tags:
+        return "before passage aligned"
+    if "after_passage" in tags:
+        return "after passage"
+    return ", ".join(sorted(tags)) if tags else "uncategorized"
+
+
+def _active_feature_names(feature_values: dict[str, bool]) -> list[str]:
+    return sorted([name for name, value in feature_values.items() if value])
+
+
 def log_plp_violation_counts(
     plps: list[StateActionProgram],
     demonstrations: Any,
     dsl_functions: dict[str, Any],
+    *,
+    candidate_actions: list[Any] | None = None,
+    max_logged_plps: int = 10,
+    max_debug_violations: int = 20,
+    max_accepted_actions_to_show: int = 8,
+    detailed_debug: bool = False,
 ) -> list[StateActionProgram]:
     """Log how many demo steps each PLP fails (False on expert action)."""
     set_dsl_functions(dsl_functions)
-    counts: list[tuple[int, StateActionProgram, list[Any], list[Any]]] = []
+    counts: list[tuple[int, StateActionProgram, list[dict[str, Any]]]] = []
     total_steps = len(demonstrations.steps)
+    feature_fns = _feature_fn_map(dsl_functions)
 
     for plp in plps:
         violations = 0
-        all_obs = []
-        all_acts = []
-        for obs, action in demonstrations.steps:
+        violation_debug_rows: list[dict[str, Any]] = []
+        policy_str = str(plp)
+        policy_feature_names = _extract_policy_feature_names(policy_str)
+        for step_idx, (obs, action) in enumerate(demonstrations.steps):
             try:
                 if not plp(obs, action):
                     violations += 1
-                    all_obs.append(obs)
-                    all_acts.append(action)
+                    expert_feature_values = _compute_feature_values(
+                        policy_feature_names,
+                        feature_fns,
+                        obs,
+                        action,
+                    )
+                    closest_clause, failed_literals = _closest_clause_debug(
+                        policy_str,
+                        expert_feature_values,
+                    )
+                    accepted_actions = _enumerate_accepted_actions(
+                        plp,
+                        obs,
+                        candidate_actions,
+                    )
+                    best_action = None
+                    best_action_feature_values: dict[str, bool] = {}
+                    best_hamming = None
+                    for accepted_action in accepted_actions:
+                        accepted_feature_values = _compute_feature_values(
+                            policy_feature_names,
+                            feature_fns,
+                            obs,
+                            accepted_action,
+                        )
+                        hamming = _feature_hamming_distance(
+                            expert_feature_values,
+                            accepted_feature_values,
+                            policy_feature_names,
+                        )
+                        if best_hamming is None:
+                            best_action = accepted_action
+                            best_action_feature_values = accepted_feature_values
+                            best_hamming = hamming
+                            continue
+                        current_key = (
+                            hamming,
+                            _action_distance(accepted_action, action),
+                        )
+                        best_key = (
+                            int(best_hamming),
+                            _action_distance(best_action, action),
+                        )
+                        if current_key < best_key:
+                            best_action = accepted_action
+                            best_action_feature_values = accepted_feature_values
+                            best_hamming = hamming
+                    mode_tags = _motion2d_mode_tags(obs)
+                    violation_debug_rows.append(
+                        {
+                            "step_idx": step_idx,
+                            "expert_action": action,
+                            "accepted_actions": accepted_actions,
+                            "closest_clause": closest_clause,
+                            "failed_literals": failed_literals,
+                            "expert_feature_values": expert_feature_values,
+                            "best_action": best_action,
+                            "best_action_feature_values": best_action_feature_values,
+                            "best_hamming": best_hamming,
+                            "mode_tags": mode_tags,
+                            "mode_bucket": _mode_bucket_label(mode_tags),
+                        }
+                    )
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(e)
                 print(plp)
                 logging.info("EXCEPTION")
                 violations += 1
-        counts.append((violations, plp, all_obs, all_acts))
+        counts.append((violations, plp, violation_debug_rows))
 
     counts.sort(key=lambda item: item[0])
     logging.info("PLP violation counts (lower is better):")
-    for violations, plp, _, _ in counts[:10]:
+    for violations, plp, debug_rows in counts[:max_logged_plps]:
         rate = (violations / total_steps) if total_steps else 0.0
         logging.info(
             "violations=%d/%d (%.2f%%) | plp=%s",
@@ -568,12 +896,47 @@ def log_plp_violation_counts(
             100.0 * rate,
             plp,
         )
-        # for idx, item in enumerate(obs_all):
-        #     logging.info(item)
-        #     actionn = act_all[idx]
-        #     logging.info(actionn)
-        #     logging.info(item[actionn])
-    return [plp for _, plp, _, _ in counts]
+        if detailed_debug:
+            mode_counter = Counter()
+            for violation_idx, row in enumerate(debug_rows[:max_debug_violations], start=1):
+                mode_counter.update([str(row["mode_bucket"])])
+                accepted_preview = [
+                    _format_action_short(action)
+                    for action in row["accepted_actions"][:max_accepted_actions_to_show]
+                ]
+                if len(row["accepted_actions"]) > max_accepted_actions_to_show:
+                    accepted_preview.append(
+                        f"... (+{len(row['accepted_actions']) - max_accepted_actions_to_show} more)"
+                    )
+                logging.info("Violation #%d", violation_idx)
+                logging.info("demo=%s, step=%d", "unknown", int(row["step_idx"]))
+                logging.info("expert_action = %s", _format_action_short(row["expert_action"]))
+                logging.info("accepted_actions = %s", accepted_preview)
+                logging.info("closest_matching_clause = %s", row["closest_clause"])
+                logging.info("failed_literals = %s", row["failed_literals"])
+                logging.info(
+                    "active_features(expert) = %s",
+                    _active_feature_names(row["expert_feature_values"]),
+                )
+                logging.info(
+                    "active_features(accepted_best) = %s",
+                    _active_feature_names(row["best_action_feature_values"]),
+                )
+                logging.info(
+                    "feature_hamming_distance(expert, accepted_best) = %s",
+                    row["best_hamming"],
+                )
+                logging.info("mode tags = %s", sorted(row["mode_tags"]))
+            for row in debug_rows[max_debug_violations:]:
+                mode_counter.update([str(row["mode_bucket"])])
+            if len(debug_rows) > max_debug_violations:
+                logging.info(
+                    "... omitted %d additional violations for this PLP",
+                    len(debug_rows) - max_debug_violations,
+                )
+            for mode_bucket, count in mode_counter.most_common():
+                logging.info("%d violations in %s", count, mode_bucket)
+    return [plp for _, plp, _ in counts]
 
 
 def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
