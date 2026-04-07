@@ -37,7 +37,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
     prepare_programs_and_dsl,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features,
+    filter_redundant_features,
     split_and_collect_demonstrations,
 )
 
@@ -83,7 +83,7 @@ from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
 
-_filter_constant_features = filter_constant_features
+_filter_redundant_features = filter_redundant_features
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -1259,7 +1259,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
-            _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
+            _filter_redundant_features(X, programs_sa, program_prior_log_probs_opt)
         )
         all_zero = np.where(col_nnz == 0)[0]
         all_one = np.where(col_nnz == X.shape[0])[0]
@@ -1559,7 +1559,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             if program_prior_log_probs_opt is not None
             else None
         )
-        X_final, final_programs_sa, final_program_priors, _ = _filter_constant_features(
+        X_final, final_programs_sa, final_program_priors, _ = _filter_redundant_features(
             X_final, final_programs_sa, final_program_priors
         )
         y_final_bool: list[bool] = list(y_final.astype(bool).flatten())

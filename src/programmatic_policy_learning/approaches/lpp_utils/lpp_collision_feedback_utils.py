@@ -11,7 +11,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils 
     _parse_py_feature_sources,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features,
+    filter_redundant_features,
 )
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     log_feature_collisions,
@@ -25,7 +25,7 @@ from programmatic_policy_learning.learning.prior_calculation import (
 
 ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
-_filter_constant_features = filter_constant_features
+_filter_redundant_features = filter_redundant_features
 
 
 def _append_new_features_from_sources(
@@ -137,7 +137,7 @@ def run_collision_feedback_loop(
             prior_version=prior_version,
             prior_beta=prior_beta,
         )
-        X, programs_sa, program_prior_log_probs, col_nnz = _filter_constant_features(
+        X, programs_sa, program_prior_log_probs, col_nnz = _filter_redundant_features(
             X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
         )
         collision_groups = log_feature_collisions(X, y, examples)
