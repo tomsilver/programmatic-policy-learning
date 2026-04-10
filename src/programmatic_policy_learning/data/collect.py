@@ -69,8 +69,10 @@ def collect_demo(
                 bucket_edges=[-0.05, -0.006, 0.0, 0.006, 0.05],
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logging.info("Could not create quantizer for action space:", action_space)
-            logging.info("Error was:", e)
+            logging.info(
+                "Could not create quantizer for action space: %s", action_space
+            )
+            logging.info("Error was: %s", e)
             quantizer = None
 
     t = 0
@@ -81,7 +83,10 @@ def collect_demo(
         if quantizer is not None:
             try:
                 action_arr = np.asarray(action, dtype=float).reshape(-1)
-                logging.info("ACTION BUCKET:", quantizer.quantize(action_arr[active_dims]))
+                logging.info(
+                    "ACTION BUCKET: %s",
+                    quantizer.quantize(action_arr[active_dims]),
+                )
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
         # print("OBSERVATION:", obs)

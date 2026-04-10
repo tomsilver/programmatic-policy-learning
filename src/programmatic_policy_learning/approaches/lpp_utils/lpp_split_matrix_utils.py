@@ -242,7 +242,8 @@ def filter_constant_features(
 
 
 def exact_duplicate_feature_cols(X: Any) -> tuple[np.ndarray, dict[int, list[int]]]:
-    """Return duplicate feature-column indices grouped by kept representative."""
+    """Return duplicate feature-column indices grouped by kept
+    representative."""
     n_cols = int(X.shape[1])
     if n_cols == 0:
         return np.empty(0, dtype=int), {}

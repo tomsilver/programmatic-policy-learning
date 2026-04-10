@@ -820,9 +820,9 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
         split_part = f"split{split_tag}"
     demo_sig = "notraj"
     if isinstance(demo_traj, Trajectory):
-        demo_sig = hashlib.sha1(
-            pickle.dumps(demo_traj.steps, protocol=4)
-        ).hexdigest()[:12]
+        demo_sig = hashlib.sha1(pickle.dumps(demo_traj.steps, protocol=4)).hexdigest()[
+            :12
+        ]
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
@@ -873,7 +873,9 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
             prog = None
-            if _WORKER_PROGRAM_STRINGS is not None and idx < len(_WORKER_PROGRAM_STRINGS):
+            if _WORKER_PROGRAM_STRINGS is not None and idx < len(
+                _WORKER_PROGRAM_STRINGS
+            ):
                 prog = _WORKER_PROGRAM_STRINGS[idx]
             error_details = (
                 "Program evaluation failed.\n"

@@ -1,6 +1,7 @@
 """Tests for LPP Approach."""
 
 from pathlib import Path
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -17,26 +18,41 @@ from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
 class _DummyRecoveryExpert:
-    def set_env(self, env) -> None:
+    """Minimal expert stub for recovery-augmentation tests."""
+
+    def __init__(self) -> None:
+        self._env: Any | None = None
+
+    def set_env(self, env: Any) -> None:
+        """Attach the environment used to source expert actions."""
         self._env = env
 
-    def reset(self, obs, info) -> None:
+    def reset(self, obs: Any, info: Any) -> None:
+        """Reset hook matching the expert interface."""
         del obs, info
 
-    def step(self):
+    def step(self) -> np.ndarray:
+        """Return the environment-provided expert action."""
+        if self._env is None:
+            raise RuntimeError("Environment was not set on _DummyRecoveryExpert.")
         return np.asarray(self._env.expert_action, dtype=np.float32)
 
 
 class _ConstantPolicy:
+    """Policy stub that always returns the same action."""
+
     def __init__(self, action: np.ndarray) -> None:
         self._action = np.asarray(action, dtype=np.float32)
 
-    def __call__(self, obs):
+    def __call__(self, obs: Any) -> np.ndarray:
+        """Ignore the observation and return the stored action."""
         del obs
         return self._action.copy()
 
 
 class _DummyRecoveryEnv:
+    """Small deterministic env stub for recovery-augmentation tests."""
+
     def __init__(
         self,
         *,
@@ -47,18 +63,21 @@ class _DummyRecoveryEnv:
         self.expert_action = np.asarray(expert_action, dtype=np.float32)
         self._idx = 0
 
-    def reset(self, seed=None):
+    def reset(self, seed: Any = None) -> tuple[np.ndarray, dict[str, Any]]:
+        """Reset to the first observation in the scripted sequence."""
         del seed
         self._idx = 0
         return self._obs_seq[0].copy(), {}
 
-    def step(self, action):
+    def step(self, action: Any) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        """Advance one step through the scripted observation sequence."""
         del action
         self._idx = min(self._idx + 1, len(self._obs_seq) - 1)
         terminated = self._idx >= len(self._obs_seq) - 1
         return self._obs_seq[self._idx].copy(), 0.0, terminated, False, {}
 
     def close(self) -> None:
+        """Close hook matching the environment interface."""
         return None
 
 
@@ -69,6 +88,7 @@ def _make_motion2d_obs(
     target_x: float = 1.0,
     target_y: float = 1.0,
 ) -> np.ndarray:
+    """Construct a compact Motion2D-style observation vector."""
     obs = np.zeros(19, dtype=np.float32)
     obs[0] = robot_x
     obs[1] = robot_y
@@ -79,7 +99,10 @@ def _make_motion2d_obs(
     return obs
 
 
-def _make_recovery_approach(env_factory):
+def _make_recovery_approach(
+    env_factory: Callable[[int | None], _DummyRecoveryEnv],
+) -> LogicProgrammaticPolicyApproach:
+    """Build an LPP approach configured for recovery-augmentation tests."""
     approach = LogicProgrammaticPolicyApproach(
         environment_description="Motion2D-p0-v0",
         observation_space=Box(
@@ -112,6 +135,8 @@ def _make_recovery_approach(env_factory):
             "max_queries_per_env": 4,
         },
     )
+    # Tests intentionally seed the internal continuous sampling config directly.
+    # pylint: disable=protected-access
     approach._negative_sampling_cfg = {
         "action_mode": "continuous",
         "action_low": np.array([-0.05, -0.05, -1.0, -1.0, -1.0], dtype=np.float32),
@@ -200,6 +225,7 @@ def test_lpp_approach_real_data() -> None:
 
 
 def test_recovery_augmentation_adds_deviation_state_before_stuck() -> None:
+    """Deviation recovery should add a new queried state before stuck logic."""
     obs_seq = [
         _make_motion2d_obs(0.0, 0.0),
         _make_motion2d_obs(0.0, 0.0),
@@ -208,13 +234,18 @@ def test_recovery_augmentation_adds_deviation_state_before_stuck() -> None:
     ]
     expert_action = np.array([0.05, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     learner_action = np.array([-0.05, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    approach = _make_recovery_approach(
-        env_factory=lambda instance_num=None: _DummyRecoveryEnv(
+
+    def env_factory(instance_num: int | None = None) -> _DummyRecoveryEnv:
+        del instance_num
+        return _DummyRecoveryEnv(
             obs_seq=obs_seq,
             expert_action=expert_action,
         )
-    )
 
+    approach = _make_recovery_approach(env_factory=env_factory)
+
+    # Tests intentionally exercise the internal recovery augmentation routine.
+    # pylint: disable=protected-access
     aug_ids, aug_demo, aug_dict, changed = approach._augment_recovery_states(
         policy=_ConstantPolicy(learner_action),  # type: ignore[arg-type]
         train_demo_ids=(0,),
@@ -233,6 +264,7 @@ def test_recovery_augmentation_adds_deviation_state_before_stuck() -> None:
 
 
 def test_recovery_augmentation_ignores_small_bucket_difference() -> None:
+    """Tiny bucket differences should not trigger recovery augmentation."""
     obs_seq = [
         _make_motion2d_obs(0.0, 0.0),
         _make_motion2d_obs(0.03, 0.0),
@@ -240,13 +272,18 @@ def test_recovery_augmentation_ignores_small_bucket_difference() -> None:
     ]
     expert_action = np.array([0.005, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     learner_action = np.array([0.004, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    approach = _make_recovery_approach(
-        env_factory=lambda instance_num=None: _DummyRecoveryEnv(
+
+    def env_factory(instance_num: int | None = None) -> _DummyRecoveryEnv:
+        del instance_num
+        return _DummyRecoveryEnv(
             obs_seq=obs_seq,
             expert_action=expert_action,
         )
-    )
 
+    approach = _make_recovery_approach(env_factory=env_factory)
+
+    # Tests intentionally exercise the internal recovery augmentation routine.
+    # pylint: disable=protected-access
     aug_ids, aug_demo, aug_dict, changed = approach._augment_recovery_states(
         policy=_ConstantPolicy(learner_action),  # type: ignore[arg-type]
         train_demo_ids=(0,),

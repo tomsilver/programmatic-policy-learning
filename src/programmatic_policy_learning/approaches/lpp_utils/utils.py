@@ -537,7 +537,11 @@ def group_collision_indices(
 
 def _extract_policy_feature_names(policy_str: str) -> list[str]:
     return sorted(
-        set(re.findall(r"\b(f\d+)\s*\(\s*s\s*,\s*a\s*\)", policy_str, flags=re.IGNORECASE))
+        set(
+            re.findall(
+                r"\b(f\d+)\s*\(\s*s\s*,\s*a\s*\)", policy_str, flags=re.IGNORECASE
+            )
+        )
     )
 
 
@@ -585,7 +589,9 @@ def _extract_clause_literals(clause: str) -> list[str]:
     return literals
 
 
-def _feature_fn_map(dsl_functions: dict[str, Any]) -> dict[str, Callable[[Any, Any], bool]]:
+def _feature_fn_map(
+    dsl_functions: dict[str, Any],
+) -> dict[str, Callable[[Any, Any], bool]]:
     out: dict[str, Callable[[Any, Any], bool]] = {}
     for name, value in dsl_functions.items():
         if re.fullmatch(r"f\d+", str(name), flags=re.IGNORECASE) and callable(value):
@@ -642,7 +648,9 @@ def _closest_clause_debug(
 
     for idx, clause in enumerate(clauses, start=1):
         literals = _extract_clause_literals(clause)
-        failed_literals = [lit for lit in literals if not _literal_holds(lit, feature_values)]
+        failed_literals = [
+            lit for lit in literals if not _literal_holds(lit, feature_values)
+        ]
         score = (len(failed_literals), -len(literals))
         if best_score is None or score < best_score:
             best_score = score
@@ -702,7 +710,10 @@ def _feature_hamming_distance(
     rhs: dict[str, bool],
     feature_names: list[str],
 ) -> int:
-    return sum(int(bool(lhs.get(name, False)) != bool(rhs.get(name, False))) for name in feature_names)
+    return sum(
+        int(bool(lhs.get(name, False)) != bool(rhs.get(name, False)))
+        for name in feature_names
+    )
 
 
 def _action_distance(lhs: Any, rhs: Any) -> float:
@@ -897,8 +908,10 @@ def log_plp_violation_counts(
             plp,
         )
         if detailed_debug:
-            mode_counter = Counter()
-            for violation_idx, row in enumerate(debug_rows[:max_debug_violations], start=1):
+            mode_counter: Counter[str] = Counter()
+            for violation_idx, row in enumerate(
+                debug_rows[:max_debug_violations], start=1
+            ):
                 mode_counter.update([str(row["mode_bucket"])])
                 accepted_preview = [
                     _format_action_short(action)
@@ -910,7 +923,9 @@ def log_plp_violation_counts(
                     )
                 logging.info("Violation #%d", violation_idx)
                 logging.info("demo=%s, step=%d", "unknown", int(row["step_idx"]))
-                logging.info("expert_action = %s", _format_action_short(row["expert_action"]))
+                logging.info(
+                    "expert_action = %s", _format_action_short(row["expert_action"])
+                )
                 logging.info("accepted_actions = %s", accepted_preview)
                 logging.info("closest_matching_clause = %s", row["closest_clause"])
                 logging.info("failed_literals = %s", row["failed_literals"])

@@ -930,7 +930,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self,
         action: _ActType,
     ) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
-        """Return quantized active-dim buckets and sign pattern for recovery."""
+        """Return quantized active-dim buckets and sign pattern for
+        recovery."""
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if action_mode != "continuous":
             return None
@@ -940,8 +941,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return None
 
         base = np.asarray(action, dtype=float).reshape(-1)
-        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(-1)
-        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(-1)
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
+            -1
+        )
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
+            -1
+        )
         if base.shape != low_arr.shape or base.shape != high_arr.shape:
             return None
 
@@ -985,7 +990,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         bucket_tolerance: int,
         require_sign_flip: bool,
     ) -> bool:
-        """Return True when learner action meaningfully diverges from expert."""
+        """Return True when learner action meaningfully diverges from
+        expert."""
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if action_mode != "continuous":
             return not self._actions_match_for_recovery(learner_action, expert_action)
@@ -1191,7 +1197,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             event_counts["stuck"],
         )
         logging.info(
-            "Recovery augmentation expansion: positives=%d negatives=%d total_examples=%d",
+            "Recovery augmentation expansion: positives=%d negatives=%d "
+            "total_examples=%d",
             len(recovery_pos),
             len(recovery_neg),
             len(recovery_pos) + len(recovery_neg),
@@ -1559,8 +1566,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             if program_prior_log_probs_opt is not None
             else None
         )
-        X_final, final_programs_sa, final_program_priors, _ = _filter_redundant_features(
-            X_final, final_programs_sa, final_program_priors
+        X_final, final_programs_sa, final_program_priors, _ = (
+            _filter_redundant_features(X_final, final_programs_sa, final_program_priors)
         )
         y_final_bool: list[bool] = list(y_final.astype(bool).flatten())
         return (
@@ -1710,7 +1717,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     feature_display_names=feature_display_names,
                 )
                 logging.info(
-                    "Recovery augmentation round %d rebuilt train matrix: X_train.shape=%s rows=%d",
+                    "Recovery augmentation round %d rebuilt train matrix: "
+                    "X_train.shape=%s rows=%d",
                     round_idx + 1,
                     X_train.shape,
                     X_train.shape[0],
