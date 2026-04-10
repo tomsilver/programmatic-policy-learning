@@ -37,7 +37,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils i
     prepare_programs_and_dsl,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_split_matrix_utils import (
-    filter_constant_features,
+    filter_redundant_features,
     split_and_collect_demonstrations,
 )
 
@@ -56,7 +56,10 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     log_plp_violation_counts,
     run_single_episode,
 )
-from programmatic_policy_learning.data.dataset import run_all_programs_on_demonstrations
+from programmatic_policy_learning.data.dataset import (
+    extract_examples_from_demonstration,
+    run_all_programs_on_demonstrations,
+)
 from programmatic_policy_learning.data.demo_types import Trajectory
 from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
     PyFeatureGenerator,
@@ -80,7 +83,7 @@ from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
 
-_filter_constant_features = filter_constant_features
+_filter_redundant_features = filter_redundant_features
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
@@ -567,7 +570,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demonstrations
         )
         valid_plps = log_plp_violation_counts(
-            plps, aligned_demonstrations, dsl_functions
+            plps,
+            aligned_demonstrations,
+            dsl_functions,
+            candidate_actions=candidate_actions,
+            detailed_debug=False,
         )
         logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
         plps = valid_plps
@@ -577,8 +584,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             dsl_functions,
             candidate_actions=candidate_actions,
         )
-        logging.info("LIKELIHOODS: %s", likelihoods)
-        logging.info("PRIORS: %s", plp_priors)
+        # logging.info("LIKELIHOODS: %s", likelihoods)
+        # logging.info("PRIORS: %s", plp_priors)
         particles = []
         particle_log_probs = []
         for plp, prior, likelihood in zip(plps, plp_priors, likelihoods):
@@ -637,6 +644,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             logging.info("MAP program index=%d", map_idx)
             logging.info("MAP program (%s):", particle_log_probs[map_idx])
             logging.info(particles[map_idx])
+            logging.info("Detailed violation debugger for final MAP policy:")
+            log_plp_violation_counts(
+                [particles[map_idx]],
+                aligned_demonstrations,
+                dsl_functions,
+                candidate_actions=candidate_actions,
+                max_logged_plps=1,
+                detailed_debug=False,
+            )
 
             top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
                 top_particle_log_probs
@@ -910,6 +926,95 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         bb = np.asarray(self._center_continuous_action_for_scoring(b), dtype=float)
         return bool(np.allclose(aa, bb, atol=1e-8))
 
+    def _continuous_recovery_action_signature(
+        self,
+        action: _ActType,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+        """Return quantized active-dim buckets and sign pattern for
+        recovery."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "continuous":
+            return None
+        if not hasattr(self._action_space, "low") or not hasattr(
+            self._action_space, "high"
+        ):
+            return None
+
+        base = np.asarray(action, dtype=float).reshape(-1)
+        low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
+            -1
+        )
+        high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
+            -1
+        )
+        if base.shape != low_arr.shape or base.shape != high_arr.shape:
+            return None
+
+        sampling_cfg = dict(self._negative_sampling_cfg or {})
+        cont_cfg = dict(sampling_cfg.get("continuous", {}))
+        active_dims = get_active_action_dims(
+            sampling_cfg,
+            total_dims=base.shape[0],
+            default_active_dims=[0, 1],
+        )
+        inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
+        canonical_base = canonicalize_continuous_action(
+            base,
+            active_dims=active_dims,
+            fill_value=inactive_fill_value,
+        )
+        active_low_arr, active_high_arr = active_action_bounds(
+            low_arr,
+            high_arr,
+            active_dims=active_dims,
+        )
+        quantizer = Motion2DActionQuantizer.from_bounds(
+            active_low_arr,
+            active_high_arr,
+            bucket_counts=cont_cfg.get("bucket_counts"),
+            bucket_edges=cont_cfg.get("bucket_edges"),
+        )
+        active_action = canonical_base[active_dims]
+        bucket = tuple(int(idx) for idx in quantizer.quantize(active_action))
+        sign_pattern = tuple(
+            int(np.sign(value)) if not np.isclose(value, 0.0, atol=1e-8) else 0
+            for value in active_action.tolist()
+        )
+        return bucket, sign_pattern
+
+    def _is_meaningful_recovery_deviation(
+        self,
+        learner_action: _ActType,
+        expert_action: _ActType,
+        *,
+        bucket_tolerance: int,
+        require_sign_flip: bool,
+    ) -> bool:
+        """Return True when learner action meaningfully diverges from
+        expert."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode != "continuous":
+            return not self._actions_match_for_recovery(learner_action, expert_action)
+
+        learner_sig = self._continuous_recovery_action_signature(learner_action)
+        expert_sig = self._continuous_recovery_action_signature(expert_action)
+        if learner_sig is None or expert_sig is None:
+            return not self._actions_match_for_recovery(learner_action, expert_action)
+
+        learner_bucket, learner_sign = learner_sig
+        expert_bucket, expert_sign = expert_sig
+        bucket_distance = sum(
+            abs(int(a_idx) - int(b_idx))
+            for a_idx, b_idx in zip(learner_bucket, expert_bucket)
+        )
+        sign_flip = any(
+            ls != es and ls != 0 and es != 0
+            for ls, es in zip(learner_sign, expert_sign)
+        )
+        if require_sign_flip:
+            return sign_flip
+        return bucket_distance > max(0, int(bucket_tolerance)) or sign_flip
+
     def _query_expert_action_for_recovery(
         self,
         obs: _ObsType,
@@ -932,6 +1037,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         train_demo_ids: tuple[int, ...],
         demonstrations_train: Trajectory[_ObsType, _ActType],
         demo_dict_train: dict[int, Trajectory[_ObsType, _ActType]],
+        negative_sampling_cfg: dict[str, Any] | None = None,
     ) -> tuple[
         tuple[int, ...],
         Trajectory[_ObsType, _ActType],
@@ -947,11 +1053,18 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         stuck_window = max(
             2, int(cfg.get("stuck_window", cfg.get("no_progress_window", 6)))
         )
+        capture_deviation = bool(cfg.get("capture_deviation", True))
+        capture_stuck = bool(cfg.get("capture_stuck", True))
         min_progress_delta = float(cfg.get("min_progress_delta", 0.01))
         stuck_position_delta = float(cfg.get("stuck_position_delta", 0.01))
+        deviation_bucket_tolerance = int(cfg.get("deviation_bucket_tolerance", 2))
+        deviation_require_sign_flip = bool(
+            cfg.get("deviation_require_sign_flip", False)
+        )
         max_queries_per_env = max(1, int(cfg.get("max_queries_per_env", 8)))
         queried_steps: list[tuple[_ObsType, _ActType]] = []
         seen_hashes: set[Any] = set()
+        event_counts = {"deviation": 0, "stuck": 0}
         all_train_demo_ids = tuple(int(i) for i in train_demo_ids)
         rollout_env_ids = tuple(i for i in all_train_demo_ids if i >= 0)
 
@@ -975,6 +1088,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     maxlen=stuck_window
                 )
                 queries_used = 0
+                captured_events: set[str] = set()
 
                 for _ in range(max_steps):
                     expert_action = self._query_expert_action_for_recovery(
@@ -982,6 +1096,26 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     )
                     policy_action = cast(_ActType, policy(obs))
                     recent_history.append((obs, dict(info), policy_action))
+
+                    if (
+                        expert_action is not None
+                        and capture_deviation
+                        and "deviation" not in captured_events
+                        and queries_used < max_queries_per_env
+                        and self._is_meaningful_recovery_deviation(
+                            policy_action,
+                            expert_action,
+                            bucket_tolerance=deviation_bucket_tolerance,
+                            require_sign_flip=deviation_require_sign_flip,
+                        )
+                    ):
+                        obs_hash = self._recovery_obs_hash(obs)
+                        if obs_hash not in seen_hashes:
+                            queried_steps.append((obs, expert_action))
+                            seen_hashes.add(obs_hash)
+                            queries_used += 1
+                            event_counts["deviation"] += 1
+                        captured_events.add("deviation")
 
                     distance = self._motion2d_target_distance(obs)
                     position = self._motion2d_robot_position(obs)
@@ -991,7 +1125,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         position_history.append(position)
                     if (
                         expert_action is not None
+                        and capture_stuck
                         and queries_used < max_queries_per_env
+                        and "stuck" not in captured_events
                         and len(distance_history) == stuck_window
                         and len(position_history) == stuck_window
                         and len(recent_history) == stuck_window
@@ -1018,6 +1154,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                                     queried_steps.append((obs, expert_action))
                                     seen_hashes.add(obs_hash)
                                     queries_used += 1
+                                    event_counts["stuck"] += 1
+                                captured_events.add("stuck")
 
                     step_out = env.step(policy_action)
                     if len(step_out) == 4:
@@ -1038,6 +1176,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         next_demo_id = min(all_train_demo_ids, default=0) - 1
         aug_traj = Trajectory[_ObsType, _ActType](steps=queried_steps)
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        recovery_pos, recovery_neg, _ = extract_examples_from_demonstration(
+            aug_traj,
+            negative_sampling=negative_sampling_cfg,
+            action_mode=action_mode,
+        )
         augmented_demo_dict = dict(demo_dict_train)
         augmented_demo_dict[next_demo_id] = aug_traj
         augmented_demo_ids = tuple(list(all_train_demo_ids) + [next_demo_id])
@@ -1045,9 +1189,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             steps=list(demonstrations_train.steps) + queried_steps
         )
         logging.info(
-            "Recovery augmentation added %d recovery states as demo %d.",
+            "Recovery augmentation added %d recovery states as demo %d "
+            "(deviation=%d stuck=%d).",
             len(queried_steps),
             next_demo_id,
+            event_counts["deviation"],
+            event_counts["stuck"],
+        )
+        logging.info(
+            "Recovery augmentation expansion: positives=%d negatives=%d "
+            "total_examples=%d",
+            len(recovery_pos),
+            len(recovery_neg),
+            len(recovery_pos) + len(recovery_neg),
         )
         return augmented_demo_ids, augmented_demonstrations, augmented_demo_dict, True
 
@@ -1112,7 +1266,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
-            _filter_constant_features(X, programs_sa, program_prior_log_probs_opt)
+            _filter_redundant_features(X, programs_sa, program_prior_log_probs_opt)
         )
         all_zero = np.where(col_nnz == 0)[0]
         all_one = np.where(col_nnz == X.shape[0])[0]
@@ -1412,8 +1566,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             if program_prior_log_probs_opt is not None
             else None
         )
-        X_final, final_programs_sa, final_program_priors, _ = _filter_constant_features(
-            X_final, final_programs_sa, final_program_priors
+        X_final, final_programs_sa, final_program_priors, _ = (
+            _filter_redundant_features(X_final, final_programs_sa, final_program_priors)
         )
         y_final_bool: list[bool] = list(y_final.astype(bool).flatten())
         return (
@@ -1538,6 +1692,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     train_demo_ids=train_demo_ids,
                     demonstrations_train=demonstrations_train,
                     demo_dict_train=demo_dict_train,
+                    negative_sampling_cfg=negative_sampling_cfg,
                 )
                 if not changed:
                     break
@@ -1560,6 +1715,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     offline_path_name=offline_path_name,
                     start_index=start_index,
                     feature_display_names=feature_display_names,
+                )
+                logging.info(
+                    "Recovery augmentation round %d rebuilt train matrix: "
+                    "X_train.shape=%s rows=%d",
+                    round_idx + 1,
+                    X_train.shape,
+                    X_train.shape[0],
                 )
         logging.info("Final programs:")
         for i, prog in enumerate(programs_sa):

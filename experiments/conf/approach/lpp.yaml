@@ -1,6 +1,6 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0,1,2,3,4,5] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
+demo_numbers: [0,1, 2,3 ,4,5,6, 7] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
 program_generation_step_size: 1
 num_programs: 100 #for fixed
 num_dts: 5
@@ -25,7 +25,7 @@ normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: true
+collision_feedback_enabled: false
 collision_feedback_enc: "enc_2"
 collision_template_feedback: false #false: means the feedback is just features/no templates
 collision_feedback_num_buckets: 2
@@ -34,7 +34,7 @@ collision_feedback_max_rounds: 5
 collision_feedback_target_collisions: 0
 prior_version: "uniform" # v1 | v2 | uniform
 prior_beta: 2
-alpha: 0
+alpha: 0.0
 w_clauses: 0.1
 w_literals: 0.05
 w_max_clause: 0.1
@@ -47,16 +47,20 @@ split_strategy: "random"
 recovery_augmentation:
   enabled: true
   rounds: 3
+  capture_deviation: true
+  capture_stuck: true
   max_steps: 50
   stuck_window: 6
   min_progress_delta: 0.01
   stuck_position_delta: 0.01
+  deviation_bucket_tolerance: 2
+  deviation_require_sign_flip: false
   max_queries_per_env: 12
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
   demos_included: [0,1] #,6,8, 9
-  skip_rate: 10
+  skip_rate: 1
   py_feature_gen_mode: "generator_script"  # "feature_payload" | "generator_script"
   py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
   removed_primitive: "" 

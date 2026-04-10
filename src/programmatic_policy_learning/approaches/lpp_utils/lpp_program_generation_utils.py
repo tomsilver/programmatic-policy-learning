@@ -2,6 +2,7 @@
 
 import ast
 import logging
+import math
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -126,6 +127,7 @@ def _build_py_feature_functions(
         if not func_names:
             raise ValueError("Expected at least one function definition in feature.")
         module_globals = dict(dsl_functions)
+        module_globals["math"] = math
         exec(source, module_globals)  # pylint: disable=exec-used
         for name in func_names:
             fn = module_globals.get(name)

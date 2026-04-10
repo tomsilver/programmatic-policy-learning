@@ -3,6 +3,7 @@
 import numpy as np
 
 from programmatic_policy_learning.data.dataset import (
+    _cache_key_run_all_programs,
     compute_cost_sensitive_bucket_weights,
     extract_examples_from_demonstration,
     extract_examples_from_demonstration_item,
@@ -33,6 +34,36 @@ def test_run_all_programs_on_single_demonstration() -> None:
     assert X.shape[0] == len(y)
     assert X.shape[1] == len(programs)
     assert set(y) <= {0, 1}  # binary labels
+
+
+def test_cache_key_changes_when_demo_trajectory_changes() -> None:
+    """Cache key should reflect demo content, not just demo id/config."""
+    state_a = np.array([[1, 2], [3, 4]])
+    state_b = np.array([[9, 9], [9, 9]])
+    traj_a: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(
+        steps=[(state_a, (0, 1))]
+    )
+    traj_b: Trajectory[np.ndarray, tuple[int, int]] = Trajectory(
+        steps=[(state_b, (0, 1))]
+    )
+    programs = ["np.sum(s) > 10"]
+    kwargs = {
+        "seed": 0,
+        "negative_sampling": None,
+        "offline_path_name": None,
+        "split_tag": "seed0_train_0__val_none__role_train_core",
+    }
+
+    key_a = _cache_key_run_all_programs(
+        ("DummyEnv", 0, programs, traj_a, {}),
+        kwargs,
+    )
+    key_b = _cache_key_run_all_programs(
+        ("DummyEnv", 0, programs, traj_b, {}),
+        kwargs,
+    )
+
+    assert key_a != key_b
 
 
 def test_extract_examples_from_demonstration() -> None:

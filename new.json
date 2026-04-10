@@ -1,0 +1,319 @@
+{
+    "features": [
+        {
+            "id": "f61",
+            "name": "robot_left_of_target_center",
+            "source": "def f61(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    result = robot_x < target_cx\n    return bool(result)\n"
+        },
+        {
+            "id": "f62",
+            "name": "robot_right_of_target_center",
+            "source": "def f62(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    result = robot_x > target_cx\n    return bool(result)\n"
+        },
+        {
+            "id": "f63",
+            "name": "robot_below_target_center",
+            "source": "def f63(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    result = robot_y < target_cy\n    return bool(result)\n"
+        },
+        {
+            "id": "f64",
+            "name": "robot_above_target_center",
+            "source": "def f64(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    result = robot_y > target_cy\n    return bool(result)\n"
+        },
+        {
+            "id": "f65",
+            "name": "robot_inside_target_region",
+            "source": "def f65(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    inside_x = (robot_x >= target_x) and (robot_x <= target_x + target_width)\n    inside_y = (robot_y >= target_y) and (robot_y <= target_y + target_height)\n    return bool(inside_x and inside_y)\n"
+        },
+        {
+            "id": "f66",
+            "name": "robot_close_to_target_center",
+            "source": "def f66(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    manhattan = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return bool(manhattan < 0.5)\n"
+        },
+        {
+            "id": "f67",
+            "name": "robot_medium_close_to_target_center",
+            "source": "def f67(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    manhattan = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return bool(manhattan < 1.0)\n"
+        },
+        {
+            "id": "f68",
+            "name": "robot_far_from_target_center",
+            "source": "def f68(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    manhattan = abs(robot_x - target_cx) + abs(robot_y - target_cy)\n    return bool(manhattan < 2.0)\n"
+        },
+        {
+            "id": "f69",
+            "name": "robot_left_of_passage0_wall",
+            "source": "def f69(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    result = (robot_x + robot_base_radius) < obstacle0_x\n    return bool(result)\n"
+        },
+        {
+            "id": "f70",
+            "name": "robot_inside_passage0_zone",
+            "source": "def f70(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    zone_left = obstacle0_x\n    zone_right = obstacle0_x + obstacle0_width + robot_base_radius\n    result = (robot_x >= zone_left) and (robot_x < zone_right)\n    return bool(result)\n"
+        },
+        {
+            "id": "f71",
+            "name": "robot_passed_passage0_wall",
+            "source": "def f71(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    result = robot_x >= wall_right\n    return bool(result)\n"
+        },
+        {
+            "id": "f72",
+            "name": "robot_y_aligned_with_passage0_gap",
+            "source": "def f72(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    result = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    return bool(result)\n"
+        },
+        {
+            "id": "f73",
+            "name": "robot_y_below_passage0_gap",
+            "source": "def f73(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    result = robot_y < gap_lower\n    return bool(result)\n"
+        },
+        {
+            "id": "f74",
+            "name": "robot_y_above_passage0_gap",
+            "source": "def f74(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle1_y = s[30]\n    gap_upper = obstacle1_y - robot_base_radius\n    result = robot_y > gap_upper\n    return bool(result)\n"
+        },
+        {
+            "id": "f75",
+            "name": "robot_y_near_passage0_gap_center",
+            "source": "def f75(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    offset = abs(robot_y - gap_center)\n    return bool(offset < 0.05)\n"
+        },
+        {
+            "id": "f76",
+            "name": "robot_y_somewhat_near_passage0_gap_center",
+            "source": "def f76(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    offset = abs(robot_y - gap_center)\n    return bool(offset < 0.15)\n"
+        },
+        {
+            "id": "f77",
+            "name": "robot_y_far_from_passage0_gap_center",
+            "source": "def f77(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    offset = abs(robot_y - gap_center)\n    return bool(offset < 0.3)\n"
+        },
+        {
+            "id": "f78",
+            "name": "action_dx_toward_target",
+            "source": "def f78(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    to_target = target_cx - robot_x\n    delta = a[0]\n    result = (to_target * delta) > 0\n    return bool(result)\n"
+        },
+        {
+            "id": "f79",
+            "name": "action_dy_toward_target",
+            "source": "def f79(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    to_target = target_cy - robot_y\n    delta = a[1]\n    result = (to_target * delta) > 0\n    return bool(result)\n"
+        },
+        {
+            "id": "f80",
+            "name": "action_dy_toward_passage0_gap_center",
+            "source": "def f80(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    gap_center = (gap_lower + gap_upper) / 2.0\n    to_gap = gap_center - robot_y\n    delta = a[1]\n    result = (to_gap * delta) > 0\n    return bool(result)\n"
+        },
+        {
+            "id": "f81",
+            "name": "action_dx_positive_inside_passage0_zone",
+            "source": "def f81(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    zone_left = obstacle0_x\n    zone_right = obstacle0_x + obstacle0_width + robot_base_radius\n    inside_zone = (robot_x >= zone_left) and (robot_x < zone_right)\n    dx = a[0]\n    result = inside_zone and (dx > 0)\n    return bool(result)\n"
+        },
+        {
+            "id": "f82",
+            "name": "action_dx_positive_left_of_passage0_wall",
+            "source": "def f82(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    left_of_wall = (robot_x + robot_base_radius) < obstacle0_x\n    dx = a[0]\n    result = left_of_wall and (dx > 0)\n    return bool(result)\n"
+        },
+        {
+            "id": "f83",
+            "name": "action_dx_negative_right_of_passage0_wall",
+            "source": "def f83(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    wall_right = obstacle0_x + obstacle0_width + robot_base_radius\n    right_of_wall = robot_x >= wall_right\n    dx = a[0]\n    result = right_of_wall and (dx < 0)\n    return bool(result)\n"
+        },
+        {
+            "id": "f84",
+            "name": "action_dy_positive_below_passage0_gap",
+            "source": "def f84(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    below_gap = robot_y < gap_lower\n    dy = a[1]\n    result = below_gap and (dy > 0)\n    return bool(result)\n"
+        },
+        {
+            "id": "f85",
+            "name": "action_dy_negative_above_passage0_gap",
+            "source": "def f85(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle1_y = s[30]\n    gap_upper = obstacle1_y - robot_base_radius\n    above_gap = robot_y > gap_upper\n    dy = a[1]\n    result = above_gap and (dy < 0)\n    return bool(result)\n"
+        },
+        {
+            "id": "f86",
+            "name": "action_dtheta_toward_target",
+            "source": "def f86(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_theta = s[2]\n    target_x = s[9]\n    target_y = s[10]\n    target_width = s[17]\n    target_height = s[18]\n    target_cx = target_x + target_width / 2.0\n    target_cy = target_y + target_height / 2.0\n    import math\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    desired_theta = math.atan2(to_target_y, to_target_x)\n    angle_error = desired_theta - robot_theta\n    while angle_error > math.pi: angle_error -= 2*math.pi\n    while angle_error < -math.pi: angle_error += 2*math.pi\n    dtheta = a[2]\n    result = (angle_error * dtheta) > 0\n    return bool(result)\n"
+        },
+        {
+            "id": "f87",
+            "name": "action_dtheta_small",
+            "source": "def f87(s, a):\n    dtheta = a[2]\n    return bool(abs(dtheta) < 0.05)\n"
+        },
+        {
+            "id": "f88",
+            "name": "action_dtheta_large",
+            "source": "def f88(s, a):\n    dtheta = a[2]\n    return bool(abs(dtheta) < 0.2)\n"
+        },
+        {
+            "id": "f89",
+            "name": "action_darm_small",
+            "source": "def f89(s, a):\n    darm = a[3]\n    return bool(abs(darm) < 0.01)\n"
+        },
+        {
+            "id": "f90",
+            "name": "action_darm_large",
+            "source": "def f90(s, a):\n    darm = a[3]\n    return bool(abs(darm) < 0.1)\n"
+        },
+        {
+            "id": "f91",
+            "name": "action_vacuum_on",
+            "source": "def f91(s, a):\n    vac = a[4]\n    return bool(vac > 0)\n"
+        },
+        {
+            "id": "f92",
+            "name": "action_vacuum_off",
+            "source": "def f92(s, a):\n    vac = a[4]\n    return bool(vac < 0)\n"
+        },
+        {
+            "id": "f93",
+            "name": "robot_base_radius_small",
+            "source": "def f93(s, a):\n    robot_base_radius = s[3]\n    return bool(robot_base_radius < 0.12)\n"
+        },
+        {
+            "id": "f94",
+            "name": "robot_base_radius_large",
+            "source": "def f94(s, a):\n    robot_base_radius = s[3]\n    return bool(robot_base_radius < 0.18)\n"
+        },
+        {
+            "id": "f95",
+            "name": "robot_arm_extended",
+            "source": "def f95(s, a):\n    robot_arm_length = s[5]\n    return bool(robot_arm_length > 0.15)\n"
+        },
+        {
+            "id": "f96",
+            "name": "robot_arm_not_extended",
+            "source": "def f96(s, a):\n    robot_arm_length = s[5]\n    return bool(robot_arm_length > 0.05)\n"
+        },
+        {
+            "id": "f97",
+            "name": "robot_gripper_open",
+            "source": "def f97(s, a):\n    robot_gripper_width = s[8]\n    return bool(robot_gripper_width > 0.05)\n"
+        },
+        {
+            "id": "f98",
+            "name": "robot_gripper_closed",
+            "source": "def f98(s, a):\n    robot_gripper_width = s[8]\n    return bool(robot_gripper_width > 0.02)\n"
+        },
+        {
+            "id": "f99",
+            "name": "robot_inside_obstacle0",
+            "source": "def f99(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    obstacle0_x = s[19]\n    obstacle0_y = s[20]\n    obstacle0_width = s[27]\n    obstacle0_height = s[28]\n    inside_x = (robot_x >= obstacle0_x) and (robot_x <= obstacle0_x + obstacle0_width)\n    inside_y = (robot_y >= obstacle0_y) and (robot_y <= obstacle0_y + obstacle0_height)\n    return bool(inside_x and inside_y)\n"
+        },
+        {
+            "id": "f100",
+            "name": "robot_inside_obstacle1",
+            "source": "def f100(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    obstacle1_x = s[29]\n    obstacle1_y = s[30]\n    obstacle1_width = s[37]\n    obstacle1_height = s[38]\n    inside_x = (robot_x >= obstacle1_x) and (robot_x <= obstacle1_x + obstacle1_width)\n    inside_y = (robot_y >= obstacle1_y) and (robot_y <= obstacle1_y + obstacle1_height)\n    return bool(inside_x and inside_y)\n"
+        },
+        {
+            "id": "f101",
+            "name": "robot_can_fit_passage0_gap",
+            "source": "def f101(s, a):\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    gap_lower = obstacle0_y + obstacle0_height\n    gap_upper = obstacle1_y\n    gap_width = gap_upper - gap_lower\n    return bool(2 * robot_base_radius < gap_width)\n"
+        },
+        {
+            "id": "f102",
+            "name": "robot_y_between_obstacles",
+            "source": "def f102(s, a):\n    robot_y = s[1]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    top0 = obstacle0_y + obstacle0_height\n    bottom1 = obstacle1_y\n    return bool((robot_y > top0) and (robot_y < bottom1))\n"
+        },
+        {
+            "id": "f103",
+            "name": "robot_y_above_all_obstacles",
+            "source": "def f103(s, a):\n    robot_y = s[1]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    obstacle1_height = s[38]\n    top0 = obstacle0_y + obstacle0_height\n    top1 = obstacle1_y + obstacle1_height\n    return bool((robot_y > top0) and (robot_y > top1))\n"
+        },
+        {
+            "id": "f104",
+            "name": "robot_y_below_all_obstacles",
+            "source": "def f104(s, a):\n    robot_y = s[1]\n    obstacle0_y = s[20]\n    obstacle1_y = s[30]\n    return bool((robot_y < obstacle0_y) and (robot_y < obstacle1_y))\n"
+        },
+        {
+            "id": "f105",
+            "name": "robot_x_right_of_all_obstacles",
+            "source": "def f105(s, a):\n    robot_x = s[0]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    obstacle1_x = s[29]\n    obstacle1_width = s[37]\n    right0 = obstacle0_x + obstacle0_width\n    right1 = obstacle1_x + obstacle1_width\n    return bool((robot_x > right0) and (robot_x > right1))\n"
+        },
+        {
+            "id": "f106",
+            "name": "robot_x_left_of_all_obstacles",
+            "source": "def f106(s, a):\n    robot_x = s[0]\n    obstacle0_x = s[19]\n    obstacle1_x = s[29]\n    return bool((robot_x < obstacle0_x) and (robot_x < obstacle1_x))\n"
+        },
+        {
+            "id": "f107",
+            "name": "action_zero",
+            "source": "def f107(s, a):\n    return bool((a[0] == 0) and (a[1] == 0) and (a[2] == 0) and (a[3] == 0) and (a[4] == 0))\n"
+        },
+        {
+            "id": "f108",
+            "name": "action_only_dx",
+            "source": "def f108(s, a):\n    return bool((a[0] != 0) and (a[1] == 0))\n"
+        },
+        {
+            "id": "f109",
+            "name": "action_only_dy",
+            "source": "def f109(s, a):\n    return bool((a[1] != 0) and (a[0] == 0))\n"
+        },
+        {
+            "id": "f110",
+            "name": "action_diagonal",
+            "source": "def f110(s, a):\n    return bool((a[0] != 0) and (a[1] != 0))\n"
+        },
+        {
+            "id": "f111",
+            "name": "action_only_dtheta",
+            "source": "def f111(s, a):\n    return bool((a[2] != 0) and (a[0] == 0) and (a[1] == 0))\n"
+        },
+        {
+            "id": "f112",
+            "name": "action_dx_positive",
+            "source": "def f112(s, a):\n    return bool(a[0] > 0)\n"
+        },
+        {
+            "id": "f113",
+            "name": "action_dx_negative",
+            "source": "def f113(s, a):\n    return bool(a[0] < 0)\n"
+        },
+        {
+            "id": "f114",
+            "name": "action_dy_positive",
+            "source": "def f114(s, a):\n    return bool(a[1] > 0)\n"
+        },
+        {
+            "id": "f115",
+            "name": "action_dy_negative",
+            "source": "def f115(s, a):\n    return bool(a[1] < 0)\n"
+        },
+        {
+            "id": "f116",
+            "name": "action_dtheta_positive",
+            "source": "def f116(s, a):\n    return bool(a[2] > 0)\n"
+        },
+        {
+            "id": "f117",
+            "name": "action_dtheta_negative",
+            "source": "def f117(s, a):\n    return bool(a[2] < 0)\n"
+        },
+        {
+            "id": "f118",
+            "name": "action_darm_positive",
+            "source": "def f118(s, a):\n    return bool(a[3] > 0)\n"
+        },
+        {
+            "id": "f119",
+            "name": "action_darm_negative",
+            "source": "def f119(s, a):\n    return bool(a[3] < 0)\n"
+        },
+        {
+            "id": "f120",
+            "name": "action_vac_positive",
+            "source": "def f120(s, a):\n    return bool(a[4] > 0)\n"
+        },
+        {
+            "id": "f121",
+            "name": "action_vac_negative",
+            "source": "def f121(s, a):\n    return bool(a[4] < 0)\n"
+        },
+        {
+            "id": "f122",
+            "name": "robot_inside_passage0_zone_and_action_dx_positive",
+            "source": "def f122(s, a):\n    robot_x = s[0]\n    robot_base_radius = s[3]\n    obstacle0_x = s[19]\n    obstacle0_width = s[27]\n    zone_left = obstacle0_x\n    zone_right = obstacle0_x + obstacle0_width + robot_base_radius\n    inside_zone = (robot_x >= zone_left) and (robot_x < zone_right)\n    dx = a[0]\n    return bool(inside_zone and (dx > 0))\n"
+        },
+        {
+            "id": "f123",
+            "name": "robot_y_aligned_with_passage0_gap_and_action_dy_positive",
+            "source": "def f123(s, a):\n    robot_y = s[1]\n    robot_base_radius = s[3]\n    obstacle0_y = s[20]\n    obstacle0_height = s[28]\n    obstacle1_y = s[30]\n    gap_lower = obstacle0_y + obstacle0_height + robot_base_radius\n    gap_upper = obstacle1_y - robot_base_radius\n    aligned = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    dy = a[1]\n    return bool(aligned and (dy > 0))\n"
+        }
+    ]
+}

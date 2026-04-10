@@ -239,3 +239,110 @@ def filter_constant_features(
                 X.shape,
             )
     return X, programs_sa, program_prior_log_probs, col_nnz
+
+
+def exact_duplicate_feature_cols(X: Any) -> tuple[np.ndarray, dict[int, list[int]]]:
+    """Return duplicate feature-column indices grouped by kept
+    representative."""
+    n_cols = int(X.shape[1])
+    if n_cols == 0:
+        return np.empty(0, dtype=int), {}
+
+    seen: dict[bytes, int] = {}
+    duplicate_groups: dict[int, list[int]] = {}
+
+    if hasattr(X, "tocsc"):
+        X_csc = X.tocsc()
+        for col_idx in range(n_cols):
+            start = int(X_csc.indptr[col_idx])
+            end = int(X_csc.indptr[col_idx + 1])
+            indices = np.asarray(X_csc.indices[start:end], dtype=np.int32)
+            data = np.asarray(X_csc.data[start:end])
+            key = indices.tobytes() + b"||" + data.tobytes()
+            kept_idx = seen.get(key)
+            if kept_idx is None:
+                seen[key] = col_idx
+                continue
+            duplicate_groups.setdefault(kept_idx, []).append(col_idx)
+    else:
+        X_arr = np.asarray(X)
+        for col_idx in range(n_cols):
+            col = np.ascontiguousarray(X_arr[:, col_idx])
+            key = col.tobytes()
+            kept_idx = seen.get(key)
+            if kept_idx is None:
+                seen[key] = col_idx
+                continue
+            duplicate_groups.setdefault(kept_idx, []).append(col_idx)
+
+    remove = np.asarray(
+        sorted(idx for group in duplicate_groups.values() for idx in group),
+        dtype=int,
+    )
+    return remove, duplicate_groups
+
+
+def filter_exact_duplicate_features(
+    X: Any,
+    programs_sa: list[StateActionProgram],
+    program_prior_log_probs: list[float] | None,
+    *,
+    round_idx: int | None = None,
+) -> tuple[Any, list[StateActionProgram], list[float] | None]:
+    """Drop exact duplicate feature columns, keeping the first instance."""
+    remove, duplicate_groups = exact_duplicate_feature_cols(X)
+    if remove.size == 0:
+        return X, programs_sa, program_prior_log_probs
+
+    keep_mask = np.ones(X.shape[1], dtype=bool)
+    keep_mask[remove] = False
+    X = X[:, keep_mask]
+    programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+    if program_prior_log_probs is not None:
+        program_prior_log_probs = [
+            lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+        ]
+
+    num_groups = len(duplicate_groups)
+    num_removed = int(remove.size)
+    if round_idx is None:
+        logging.info(
+            "Filtered %d exact duplicate feature columns across %d groups. "
+            "New X shape: %s",
+            num_removed,
+            num_groups,
+            X.shape,
+        )
+    else:
+        logging.info(
+            "Filtered %d exact duplicate feature columns across %d groups "
+            "after feedback round %d. New X shape: %s",
+            num_removed,
+            num_groups,
+            round_idx,
+            X.shape,
+        )
+    return X, programs_sa, program_prior_log_probs
+
+
+def filter_redundant_features(
+    X: Any,
+    programs_sa: list[StateActionProgram],
+    program_prior_log_probs: list[float] | None,
+    *,
+    round_idx: int | None = None,
+) -> tuple[Any, list[StateActionProgram], list[float] | None, np.ndarray]:
+    """Drop constant and exact duplicate feature columns."""
+    X, programs_sa, program_prior_log_probs, col_nnz = filter_constant_features(
+        X,
+        programs_sa,
+        program_prior_log_probs,
+        round_idx=round_idx,
+    )
+    X, programs_sa, program_prior_log_probs = filter_exact_duplicate_features(
+        X,
+        programs_sa,
+        program_prior_log_probs,
+        round_idx=round_idx,
+    )
+    return X, programs_sa, program_prior_log_probs, col_nnz

@@ -7,6 +7,7 @@ import logging
 import multiprocessing
 import os
 import pickle
+import traceback
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
@@ -532,7 +533,7 @@ def extract_examples_from_demonstration_item(
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        logging.info(f"base.shape: {base.shape}")
+        # logging.info(f"base.shape: {base.shape}")
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
@@ -784,6 +785,7 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
 # Global worker states
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
+_WORKER_PROGRAM_STRINGS = None
 
 CACHE_DIR = "cache"
 
@@ -793,6 +795,7 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
+    demo_traj = args[3]
     program_count = len(programs) if programs is not None else 0
     seed = kwargs.get("seed")
     seed_tag = f"s{seed}" if seed is not None else "snone"
@@ -815,10 +818,15 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     split_part = "splitnone"
     if split_tag:
         split_part = f"split{split_tag}"
+    demo_sig = "notraj"
+    if isinstance(demo_traj, Trajectory):
+        demo_sig = hashlib.sha1(pickle.dumps(demo_traj.steps, protocol=4)).hexdigest()[
+            :12
+        ]
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
-        f"{split_part}-{cache_schema_version}"
+        f"{split_part}-traj{demo_sig}-{cache_schema_version}"
     )
 
 
@@ -839,8 +847,9 @@ def worker_init(
         DSL_FUNCTIONS,
     )
 
-    global _WORKER_DSL, _WORKER_PROGRAMS  # pylint: disable=global-statement
+    global _WORKER_DSL, _WORKER_PROGRAMS, _WORKER_PROGRAM_STRINGS  # pylint: disable=global-statement
     _WORKER_DSL = DSL_FUNCTIONS
+    _WORKER_PROGRAM_STRINGS = list(program_batch)
     _WORKER_PROGRAMS = [
         eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
     ]
@@ -858,12 +867,28 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
             Ensure worker_init is called before using worker_eval_example.")
 
     results = []
-    for f in _WORKER_PROGRAMS:
+    for idx, f in enumerate(_WORKER_PROGRAMS):
         try:
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            logging.info(f"Error type: {type(e).__name__}\n" f"Error message: {e}")
+            prog = None
+            if _WORKER_PROGRAM_STRINGS is not None and idx < len(
+                _WORKER_PROGRAM_STRINGS
+            ):
+                prog = _WORKER_PROGRAM_STRINGS[idx]
+            error_details = (
+                "Program evaluation failed.\n"
+                f"Program index: {idx}\n"
+                f"Program: {prog}\n"
+                f"State: {s}\n"
+                f"Action: {a}\n"
+                f"Error type: {type(e).__name__}\n"
+                f"Error message: {e}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
+            logging.error(error_details)
+            print(error_details, flush=True)
     return results
 
 
