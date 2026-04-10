@@ -30,8 +30,8 @@ import gymnasium as gym
 import kinder
 import numpy as np
 
-from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts import (
-    create_motion2d_bilevel_expert,
+from programmatic_policy_learning.approaches.experts.kinder_bilevel_experts import (
+    create_kinder_bilevel_expert,
 )
 
 ACTION_FIELD_NAMES = ("dx", "dy", "dtheta", "darm", "vac")
@@ -239,11 +239,13 @@ def _run_bilevel_rollout(
     if not isinstance(env.action_space, gym.spaces.Box):
         raise TypeError(f"Expected Box action space, got {type(env.action_space)!r}")
 
-    expert = create_motion2d_bilevel_expert(
+    expert = create_kinder_bilevel_expert(
         env.observation_space,
         env.action_space,
         seed=seed,
-        num_passages=passages,
+        env_name="Motion2D",
+        env_model_name="motion2d",
+        model_kwargs={"num_passages": int(passages)},
     )
     expert.reset(obs, info)
 

@@ -64,3 +64,15 @@ def test_lpp_yaml_weight_config_smoke_run() -> None:
     )
     # Weighted negatives should not all collapse to one value in this setup.
     assert not np.allclose(weights[1:], weights[1])
+
+
+def test_kinder_pushpullhook2d_env_config_loads() -> None:
+    """PushPullHook2D env config should expose the registered KinDER id."""
+    cfg_path = Path("experiments/conf/env/kinder_pushpullhook2d.yaml")
+    cfg = OmegaConf.load(cfg_path)
+
+    assert str(cfg.make_kwargs.base_name) == "PushPullHook2D"
+    assert str(cfg.make_kwargs.id) == "kinder/PushPullHook2D-v0"
+    assert str(cfg.provider) == "kinder"
+    assert str(cfg.observation_mode) == "continuous"
+    assert str(cfg.action_mode) == "continuous"

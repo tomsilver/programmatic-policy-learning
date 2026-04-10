@@ -11,9 +11,11 @@ description: "KinDER Motion2D-p${.num_passages}. Navigate robot to target region
 
 expert:
 #programmatic_policy_learning.approaches.motion2d_expert_approach.Motion2DExpertApproach
-#motion2d_bilevel_expert_approach.Motion2DBilevelExpertApproach
-  _target_: programmatic_policy_learning.approaches.motion2d_bilevel_expert_approach.Motion2DBilevelExpertApproach
-  num_passages: ${..num_passages}
+  _target_: programmatic_policy_learning.approaches.kinder_bilevel_expert_approach.KinderBilevelExpertApproach
+  env_name: Motion2D
+  env_model_name: motion2d
+  model_kwargs:
+    num_passages: ${..num_passages}
   # max_abstract_plans: 10
   # samples_per_step: 3
   # max_skill_horizon: 100

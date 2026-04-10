@@ -1,12 +1,13 @@
-"""Minimal integration test for the real Motion2D bilevel-planning expert."""
+"""Minimal integration test for Motion2D via the generic KinDER bilevel
+expert."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts import (
-    create_motion2d_bilevel_expert,
+from programmatic_policy_learning.approaches.experts.kinder_bilevel_experts import (
+    create_kinder_bilevel_expert,
 )
 
 
@@ -32,11 +33,13 @@ def test_motion2d_bilevel_expert_returns_valid_action() -> None:
     env = kinder.make(env_id, render_mode="rgb_array")
     try:
         obs, info = env.reset(seed=0)
-        expert = create_motion2d_bilevel_expert(
+        expert = create_kinder_bilevel_expert(
             env.observation_space,
             env.action_space,
             seed=0,
-            num_passages=0,
+            env_name="Motion2D",
+            env_model_name="motion2d",
+            model_kwargs={"num_passages": 0},
         )
 
         expert.reset(obs, info)
