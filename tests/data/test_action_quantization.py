@@ -94,3 +94,29 @@ def test_all_bucket_indices_count() -> None:
     )
     assert len(all_indices) == 15
     assert len(set(all_indices)) == 15
+
+
+def test_ragged_bucket_edges_are_supported_per_dimension() -> None:
+    """Ragged per-dimension bucket edges should normalize correctly."""
+    quantizer = Motion2DActionQuantizer.from_bounds(
+        [-0.05, -0.05, -0.1, -0.1, 0.0],
+        [0.05, 0.05, 0.1, 0.1, 1.0],
+        bucket_edges=[
+            [-0.05, -0.025, 0.0, 0.025, 0.05],
+            [-0.05, -0.025, 0.0, 0.025, 0.05],
+            [-0.1, -0.05, 0.0, 0.05, 0.1],
+            [-0.1, -0.05, 0.0, 0.05, 0.1],
+            [0.0, 0.5, 1.0],
+        ],
+    )
+
+    bucket = quantizer.quantize([0.01, -0.03, 0.0, 0.08, 1.0])
+    print(f"\n[ragged-edges] action -> bucket={bucket}")
+    assert bucket == (2, 0, 2, 3, 1)
+
+    center = quantizer.dequantize(bucket)
+    print(f"[ragged-edges] bucket -> center={center.tolist()}")
+    np.testing.assert_allclose(
+        center,
+        np.array([0.0125, -0.0375, 0.025, 0.075, 0.75]),
+    )

@@ -7,8 +7,10 @@ provider: kinder
 
 description: "KinDER PushPullHook2D. Use a hook to push or pull an object in 2D."
 
-# TODO: hook this up to `KinderBilevelExpertApproach` once the installed
-# `kinder_bilevel_planning` package ships a `pushpullhook2d` env model.
+expert:
+  _target_: programmatic_policy_learning.approaches.manual_demo_replay_expert_approach.ManualDemoReplayExpertApproach
+  demos_root: manual_demos
+  env_id: "kinder/PushPullHook2D-v0"
 
 observation_mode: continuous
 action_mode: continuous

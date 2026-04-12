@@ -544,13 +544,17 @@ def run_continuous(
     # ------------------------------------------------------------
     # 1) Setup encoder
     # ------------------------------------------------------------
-    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
+    obs_fields = continuous_hint_config.obs_field_names_for_kinder(
+        env_name,
+        num_passages,
+    )
     action_fields = continuous_hint_config.ACTION_FIELD_NAMES[env_name]
     enc_cfg = continuous_encoder.ContinuousStateEncoderConfig(
         obs_field_names=obs_fields,
         action_field_names=action_fields,
-        salient_indices=continuous_hint_config.salient_obs_indices_for_motion2d(
-            num_passages
+        salient_indices=continuous_hint_config.salient_obs_indices_for_kinder(
+            env_name,
+            num_passages,
         ),
     )
     encoder = continuous_encoder.ContinuousStateEncoder(enc_cfg)
@@ -604,6 +608,7 @@ def run_continuous(
             encoder=encoder,
             num_passages=num_passages,
             encoding_method=encoding_method,
+            env_name=env_name,
             max_steps=max_steps_per_traj,
             skip_rate=skip_rate,
         )

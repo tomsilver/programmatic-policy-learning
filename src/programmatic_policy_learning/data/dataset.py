@@ -537,7 +537,7 @@ def extract_examples_from_demonstration_item(
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
 
         low_arr = np.asarray(action_low, dtype=float)

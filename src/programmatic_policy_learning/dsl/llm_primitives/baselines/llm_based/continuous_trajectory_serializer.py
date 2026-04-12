@@ -185,6 +185,130 @@ def extract_continuous_relational_facts(
     return facts
 
 
+def extract_pushpullhook2d_relational_facts(obs: np.ndarray) -> list[str]:
+    """Derive task-relevant geometry facts from a PushPullHook2D observation."""
+    robot_x = float(obs[0])
+    robot_y = float(obs[1])
+    robot_theta = float(obs[2])
+    robot_radius = float(obs[3])
+    robot_arm_length = float(obs[5])
+
+    hook_x = float(obs[9])
+    hook_y = float(obs[10])
+    hook_theta = float(obs[11])
+    hook_width = float(obs[17])
+    hook_length_side1 = float(obs[18])
+    hook_length_side2 = float(obs[19])
+
+    movable_button_x = float(obs[20])
+    movable_button_y = float(obs[21])
+    movable_button_radius = float(obs[28])
+
+    target_button_x = float(obs[29])
+    target_button_y = float(obs[30])
+    target_button_radius = float(obs[37])
+
+    robot_hook_dx = hook_x - robot_x
+    robot_hook_dy = hook_y - robot_y
+    robot_hook_dist = float(np.hypot(robot_hook_dx, robot_hook_dy))
+
+    hook_button_dx = movable_button_x - hook_x
+    hook_button_dy = movable_button_y - hook_y
+    hook_button_dist = float(np.hypot(hook_button_dx, hook_button_dy))
+
+    button_target_dx = target_button_x - movable_button_x
+    button_target_dy = target_button_y - movable_button_y
+    button_target_dist = float(np.hypot(button_target_dx, button_target_dy))
+
+    reach_margin = robot_radius + hook_width + 0.5 * robot_arm_length
+    hook_button_contact_margin = hook_width + hook_length_side2 + movable_button_radius
+    button_press_margin = movable_button_radius + target_button_radius
+
+    heading_to_hook = float(np.arctan2(robot_hook_dy, robot_hook_dx))
+    heading_error = float(
+        np.arctan2(
+            np.sin(heading_to_hook - robot_theta),
+            np.cos(heading_to_hook - robot_theta),
+        )
+    )
+
+    facts: list[str] = []
+    facts.append(
+        "robot is "
+        + (
+            f"left of hook (robot_x={robot_x:.3f} < hook_x={hook_x:.3f})"
+            if robot_x < hook_x
+            else f"right of hook (robot_x={robot_x:.3f} >= hook_x={hook_x:.3f})"
+        )
+    )
+    facts.append(
+        "robot is "
+        + (
+            f"below hook (robot_y={robot_y:.3f} < hook_y={hook_y:.3f})"
+            if robot_y < hook_y
+            else f"above hook (robot_y={robot_y:.3f} >= hook_y={hook_y:.3f})"
+        )
+    )
+    facts.append(f"distance(robot, hook) = {robot_hook_dist:.3f}")
+    facts.append(
+        f"robot {'CAN' if robot_hook_dist <= reach_margin else 'cannot'} "
+        f"likely reach hook (dist={robot_hook_dist:.3f}, reach_margin={reach_margin:.3f})"
+    )
+    facts.append(
+        f"robot heading error to hook = {heading_error:+.3f} rad "
+        f"(robot_theta={robot_theta:.3f}, hook_theta={hook_theta:.3f})"
+    )
+    facts.append(f"distance(hook, movable_button) = {hook_button_dist:.3f}")
+    facts.append(
+        f"hook {'IS' if hook_button_dist <= hook_button_contact_margin else 'is NOT'} "
+        "close enough to contact movable_button "
+        f"(dist={hook_button_dist:.3f}, contact_margin={hook_button_contact_margin:.3f})"
+    )
+    facts.append(
+        "movable_button is "
+        + (
+            "left of target_button "
+            f"(movable_button_x={movable_button_x:.3f} < target_button_x={target_button_x:.3f})"
+            if movable_button_x < target_button_x
+            else "right of target_button "
+            f"(movable_button_x={movable_button_x:.3f} >= target_button_x={target_button_x:.3f})"
+        )
+    )
+    facts.append(
+        "movable_button is "
+        + (
+            "below target_button "
+            f"(movable_button_y={movable_button_y:.3f} < target_button_y={target_button_y:.3f})"
+            if movable_button_y < target_button_y
+            else "above target_button "
+            f"(movable_button_y={movable_button_y:.3f} >= target_button_y={target_button_y:.3f})"
+        )
+    )
+    facts.append(f"distance(movable_button, target_button) = {button_target_dist:.3f}")
+    facts.append(
+        f"movable_button {'IS' if button_target_dist <= button_press_margin else 'is NOT'} "
+        "close enough to press target_button "
+        f"(dist={button_target_dist:.3f}, press_margin={button_press_margin:.3f})"
+    )
+    facts.append(
+        f"hook geometry: width={hook_width:.3f}, side1={hook_length_side1:.3f}, "
+        f"side2={hook_length_side2:.3f}"
+    )
+    return facts
+
+
+def extract_kinder_relational_facts(
+    obs: np.ndarray,
+    *,
+    env_name: str | None,
+    num_passages: int,
+) -> list[str]:
+    """Dispatch continuous relational-fact extraction by KinDER env."""
+    if env_name == "PushPullHook2D":
+        return extract_pushpullhook2d_relational_facts(obs)
+    return extract_continuous_relational_facts(obs, num_passages)
+
+
 # ---------------------------------------------------------------------------
 # Trajectory → text  (analogous to trajectory_serializer.trajectory_to_text)
 # ---------------------------------------------------------------------------
@@ -803,6 +927,7 @@ def trajectory_to_text(
     encoder: ContinuousStateEncoder,
     num_passages: int,
     encoding_method: str,
+    env_name: str | None = None,
     max_steps: int | None = None,
     skip_rate: int = 1,
 ) -> str:
@@ -984,7 +1109,11 @@ def trajectory_to_text(
             else:
                 blocks.append("CHANGES SUMMARY:\n- (no changes)")
 
-            rel_facts = extract_continuous_relational_facts(obs_t, num_passages)
+            rel_facts = extract_kinder_relational_facts(
+                obs_t,
+                env_name=env_name,
+                num_passages=num_passages,
+            )
             blocks.append(
                 "Relational Facts:\n" + "\n".join(f"- {f}" for f in rel_facts)
             )
@@ -1002,7 +1131,11 @@ def trajectory_to_text(
         blocks.append(encoder.encode_obs(final_obs, final_display_idx))
         blocks.append("Action: None (terminal state).")
         if encoding_method == "4":
-            rel_facts = extract_continuous_relational_facts(final_obs, num_passages)
+            rel_facts = extract_kinder_relational_facts(
+                final_obs,
+                env_name=env_name,
+                num_passages=num_passages,
+            )
             blocks.append(
                 "Relational Facts:\n" + "\n".join(f"- {f}" for f in rel_facts)
             )

@@ -106,6 +106,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         msg = f"Action space bounds: low={low.tolist()} high={high.tolist()}"
         logging.info(msg)
+        action_types = self.env_specs.get("action_types")
+        if action_types:
+            logging.info("Action space types: %s", list(action_types))
 
         if "motion2d" not in str(self.base_class_name).lower():
             return
@@ -730,8 +733,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             cont_cfg = negative_sampling_cfg.setdefault("continuous", {})
             if isinstance(cont_cfg, dict):
-                if str(self.base_class_name) == "Motion2D":
-                    cont_cfg.setdefault("active_action_dims", [0, 1])
                 cont_cfg.setdefault("inactive_action_fill_value", 0.0)
         return offline_path_name, negative_sampling_cfg
 
@@ -763,15 +764,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
             -1
         )
-        if low_arr.size < 2 or high_arr.size < 2:
+        if low_arr.size == 0 or high_arr.size == 0:
             raise ValueError(
-                "Continuous quantized inference requires at least 2 action dimensions."
+                "Continuous quantized inference requires at least 1 action dimension."
             )
 
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=low_arr.size,
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         active_low_arr, active_high_arr = active_action_bounds(
@@ -821,10 +822,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        if base.shape[0] < 5:
-            raise ValueError(
-                "Continuous action alignment requires at least 5 action dimensions."
-            )
 
         low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
             -1
@@ -841,7 +838,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
@@ -955,7 +952,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
@@ -1029,7 +1026,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logging.warning("Recovery expert query failed: %s", exc)
             return None
-
+    #TODO: can't enable this with manual data collection (pushpullhook2d)
     def _augment_recovery_states(
         self,
         *,

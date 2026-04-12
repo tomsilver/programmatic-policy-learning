@@ -1,6 +1,6 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0,1, 2,3 ,4,5,6, 7] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
+demo_numbers: [0, 1, 2] #, 2, 3, 4, 5, 6, 7, 8, 9, 10
 program_generation_step_size: 1
 num_programs: 100 #for fixed
 num_dts: 5
@@ -45,7 +45,7 @@ val_size: null
 split_seed: 0
 split_strategy: "random"
 recovery_augmentation:
-  enabled: true
+  enabled: false
   rounds: 3
   capture_deviation: true
   capture_stuck: true
@@ -59,16 +59,16 @@ recovery_augmentation:
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
-  demos_included: [0,1] #,6,8, 9
+  demos_included: [0] #,6,8, 9
   skip_rate: 1
   py_feature_gen_mode: "generator_script"  # "feature_payload" | "generator_script"
-  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/generator_pushpull.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
   removed_primitive: "" 
   num_features: 50
   encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
   loading:
-    offline: 0 # 0 for using LLM / 1 for using the following path data
-    offline_json_path: "feature_library.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
+    offline: 1 # 0 for using LLM / 1 for using the following path data
+    offline_json_path: "f.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
     # Discrete-only switch. Continuous mode is always quantized expansion.
     enabled: true
@@ -82,13 +82,16 @@ program_generation:
       # Continuous actions are always quantized for training data expansion.
       # Only these action dims define action identity for training/inference.
       # For Motion2D navigation, use dx/dy and smooth dtheta/darm/vac to 0.
-      active_action_dims: [0, 1]
+      active_action_dims: [0, 1, 2, 3, 4]
       inactive_action_fill_value: 0.0
       # Explicit bins per active dimension. Each row must start at that
       # dimension's action_low and end at its action_high.
       bucket_edges:
         - [-0.05, -0.006, 0.0, 0.006, 0.05]
         - [-0.05, -0.006, 0.0, 0.006, 0.05]
+        - [-0.196350, 0.0, 0.196350]
+        - [-0.1, 0.0, 0.1]
+        - [0, 1]
       relaxed_labeling:
           enabled: true
           neighbor_radius: 2
@@ -101,7 +104,7 @@ program_generation:
         beta_pos: 1.0
         beta_neg: 1.0
         alpha: 1.0
-        lambda_per_dim: [1.0, 1.0]
+        lambda_per_dim: [1.0, 1.0, 1.0, 1.0, 1.0]
 
   
   # NOTE: The fields below are legacy from earlier experiments.

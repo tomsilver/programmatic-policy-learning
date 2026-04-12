@@ -63,6 +63,10 @@ def instantiate_approach(
             object_types = []
         else:
             object_types = env.get_object_types()
+        if not hasattr(env, "get_action_types"):
+            action_types: list[str] | tuple[str, ...] = []
+        else:
+            action_types = env.get_action_types()
 
         provider = OmegaConf.select(cfg, "env.provider", default=None)
         observation_mode = _infer_mode_from_provider(
@@ -77,6 +81,7 @@ def instantiate_approach(
         )
         env_specs = {
             "object_types": object_types,
+            "action_types": action_types,
             "observation_mode": observation_mode,
             "action_mode": action_mode,
             "observation_mode_id": _MODE_TO_ID[observation_mode],
@@ -317,6 +322,7 @@ def _main(cfg: DictConfig) -> None:
 
         # Evaluate.
         rng = np.random.default_rng(cfg.seed)
+
         metrics: list[dict[str, float]] = []
         for eval_episode in range(cfg.num_eval_episodes):
             episode_metrics = _run_single_episode_evaluation(
@@ -378,7 +384,10 @@ def _run_single_episode_evaluation(
     # For now, just record total rewards and steps.
     total_rewards = 0.0
     total_steps = 0
-    obs, info = env.reset(seed=sample_seed_from_rng(rng))
+    seed = 0
+    #TODO: for now it's fixed to seed=0 for easier debugging
+    obs, info = env.reset(seed=seed) #seed=sample_seed_from_rng(rng)
+    
     approach.reset(obs, info)
 
     for _ in range(max_eval_steps):

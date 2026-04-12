@@ -1696,16 +1696,19 @@ def _build_continuous_observation_field_guide(env_name: str | None) -> str:
     base_env_name = env_name.split("-p", maxsplit=1)[0]
     canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
 
-    if canonical_name != "Motion2D":
+    match = re.search(r"-p(\d+)", env_name)
+    num_passages = int(match.group(1)) if match else 0
+    try:
+        obs_fields = continuous_hint_config.obs_field_names_for_kinder(
+            canonical_name,
+            num_passages,
+        )
+    except ValueError:
         return (
             "- Observation fields are object-centric continuous attributes.\n"
             "- Use the serialized object names and attributes shown in the "
             "demonstrations as the source of truth."
         )
-
-    match = re.search(r"-p(\d+)", env_name)
-    num_passages = int(match.group(1)) if match else 0
-    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
     action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
 
     obs_lines = [
@@ -1717,7 +1720,11 @@ def _build_continuous_observation_field_guide(env_name: str | None) -> str:
 
     return "\n".join(
         [
-            f"- Environment variant: {canonical_name}-p{num_passages}",
+            (
+                f"- Environment variant: {canonical_name}-p{num_passages}"
+                if canonical_name == "Motion2D"
+                else f"- Environment variant: {canonical_name}"
+            ),
             "- When raw arrays are used, index them with the following schema:",
             *obs_lines,
             "- Action dimensions:",

@@ -105,6 +105,32 @@ _OBSTACLE_FEATURE_NAMES = [
     "height",
 ]
 
+_HOOK_FIELDS = [
+    "hook_x",
+    "hook_y",
+    "hook_theta",
+    "hook_static",
+    "hook_color_r",
+    "hook_color_g",
+    "hook_color_b",
+    "hook_z_order",
+    "hook_width",
+    "hook_length_side1",
+    "hook_length_side2",
+]
+
+_BUTTON_FIELDS = [
+    "x",
+    "y",
+    "theta",
+    "static",
+    "color_r",
+    "color_g",
+    "color_b",
+    "z_order",
+    "radius",
+]
+
 
 def obs_field_names_for_motion2d(num_passages: int) -> list[str]:
     """Build the full observation field-name list for Motion2D-p{num_passages}.
@@ -148,8 +174,41 @@ def obs_field_names_for_motion2d(num_passages: int) -> list[str]:
     return fields
 
 
+def obs_field_names_for_pushpullhook2d() -> list[str]:
+    """Build the full observation field-name list for PushPullHook2D.
+
+    The observation is object-centric and concatenates:
+    - robot (`crv_robot`): 9 features
+    - hook (`lobject`): 11 features
+    - movable button (`circle`): 9 features
+    - target button (`circle`): 9 features
+
+    Returns
+    -------
+    list[str]
+        The full 38-name observation schema aligned with the env's
+        flattened object-centric observation vector.
+    """
+    fields = list(_ROBOT_FIELDS)
+    fields.extend(_HOOK_FIELDS)
+    fields.extend(f"movable_button_{name}" for name in _BUTTON_FIELDS)
+    fields.extend(f"target_button_{name}" for name in _BUTTON_FIELDS)
+    return fields
+
+
+def obs_field_names_for_kinder(env_name: str, num_passages: int = 0) -> list[str]:
+    """Return the continuous observation schema for a supported KinDER env."""
+    canonical_name = canonicalize_env_name(env_name)
+    if canonical_name == "Motion2D":
+        return obs_field_names_for_motion2d(num_passages)
+    if canonical_name == "PushPullHook2D":
+        return obs_field_names_for_pushpullhook2d()
+    raise ValueError(f"Unsupported KinDER env for obs field names: {env_name}")
+
+
 ACTION_FIELD_NAMES: dict[str, list[str]] = {
     "Motion2D": ["dx", "dy", "dtheta", "darm", "vac"],
+    "PushPullHook2D": ["dx", "dy", "dtheta", "darm", "vac"],
 }
 
 
@@ -215,6 +274,18 @@ def get_env_description(env_name: str, num_passages: int = 0) -> str:
             "others to 0."
         )
         return base
+    if env_name == "PushPullHook2D":
+        return (
+            "A 2-D manipulation task with a mobile circular robot, an L-shaped hook, "
+            "a movable button, and a fixed target button. The goal is to move the "
+            "movable button until it presses the target button. The robot can use "
+            "its base motion, orientation, and arm reach to contact the hook, then "
+            "use the hook to push or pull the movable button toward the target. "
+            "The action is a 5-D vector [dx, dy, dtheta, darm, vac]: dx/dy move "
+            "the robot base, dtheta rotates it, darm extends/retracts the arm, "
+            "and vac toggles the vacuum. The task is primarily contact-based; the "
+            "hook and button positions are usually most important."
+        )
     raise ValueError(f"Unknown environment name: {env_name}")
 
 
@@ -267,3 +338,38 @@ def salient_obs_indices_for_motion2d(num_passages: int) -> list[int]:
         for offset in _OBSTACLE_SALIENT_OFFSETS:
             indices.append(base + offset)
     return indices
+
+
+def salient_obs_indices_for_pushpullhook2d() -> list[int]:
+    """Return decision-critical observation indices for PushPullHook2D."""
+    return [
+        0,   # robot_x
+        1,   # robot_y
+        2,   # robot_theta
+        3,   # robot_base_radius
+        4,   # robot_arm_joint
+        5,   # robot_arm_length
+        6,   # robot_vacuum
+        9,   # hook_x
+        10,  # hook_y
+        11,  # hook_theta
+        17,  # hook_width
+        18,  # hook_length_side1
+        19,  # hook_length_side2
+        20,  # movable_button_x
+        21,  # movable_button_y
+        28,  # movable_button_radius
+        29,  # target_button_x
+        30,  # target_button_y
+        37,  # target_button_radius
+    ]
+
+
+def salient_obs_indices_for_kinder(env_name: str, num_passages: int = 0) -> list[int]:
+    """Return decision-critical observation indices for a supported KinDER env."""
+    canonical_name = canonicalize_env_name(env_name)
+    if canonical_name == "Motion2D":
+        return salient_obs_indices_for_motion2d(num_passages)
+    if canonical_name == "PushPullHook2D":
+        return salient_obs_indices_for_pushpullhook2d()
+    raise ValueError(f"Unsupported KinDER env for salient obs indices: {env_name}")

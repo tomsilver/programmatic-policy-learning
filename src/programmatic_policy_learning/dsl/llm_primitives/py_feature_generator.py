@@ -52,12 +52,25 @@ class PyFeatureGenerator:
         encoding_method: str,
         *,
         action_mode: str,
+        env_name: str | None = None,
     ) -> Path:
         prompt_dir = Path(__file__).parent / "prompts" / "py_feature_gen"
         domain_dir = "kinder" if action_mode == "continuous" else "ggg"
-        candidate = (
-            prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
-        )
+        if env_name is not None:
+            canonical_name = continuous_hint_config.canonicalize_env_name(
+                env_name.split("-p", maxsplit=1)[0]
+            )
+            env_slug = canonical_name.lower()
+            candidate = (
+                prompt_dir
+                / "demo_backgrounds"
+                / domain_dir
+                / f"{encoding_method}_{env_slug}.txt"
+            )
+            if candidate.exists():
+                return candidate
+
+        candidate = prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
         if candidate.exists():
             return candidate
 
@@ -107,15 +120,18 @@ class PyFeatureGenerator:
         base_env_name = env_name.split("-p", maxsplit=1)[0]
         canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
 
-        if canonical_name != "Motion2D":
+        num_passages = self._motion2d_num_passages(env_name)
+        try:
+            obs_fields = continuous_hint_config.obs_field_names_for_kinder(
+                canonical_name,
+                num_passages,
+            )
+        except ValueError:
             return (
                 "- Observation fields are object-centric continuous attributes.\n"
                 "- Use the serialized object names and attributes shown in the "
                 "demonstrations as the source of truth."
             )
-
-        num_passages = self._motion2d_num_passages(env_name)
-        obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
         action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
 
         obs_lines = [
@@ -127,7 +143,11 @@ class PyFeatureGenerator:
 
         return "\n".join(
             [
-                f"- Environment variant: {canonical_name}-p{num_passages}",
+                (
+                    f"- Environment variant: {canonical_name}-p{num_passages}"
+                    if canonical_name == "Motion2D"
+                    else f"- Environment variant: {canonical_name}"
+                ),
                 "- When raw arrays are used, index them with the following schema:",
                 *obs_lines,
                 "- Action dimensions:",
@@ -168,6 +188,7 @@ class PyFeatureGenerator:
             background_path = self._resolve_demo_background_path(
                 enc_label,
                 action_mode=action_mode,
+                env_name=env_name,
             )
             background_text = background_path.read_text(encoding="utf-8").strip()
             if "${OBSERVATION_FIELD_GUIDE}" in background_text:
@@ -603,6 +624,7 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
+            input()
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")
@@ -654,7 +676,13 @@ class PyFeatureGenerator:
         # offline mode
         if offline_json_path is None:
             raise ValueError("offline_json_path is required when running offline.")
-        payload_text = Path(offline_json_path).read_text(encoding="utf-8")
+        offline_path = Path(offline_json_path)
+        if not offline_path.is_absolute() and not offline_path.exists():
+            repo_root = Path(__file__).resolve().parents[4]
+            candidate = repo_root / offline_path
+            if candidate.exists():
+                offline_path = candidate
+        payload_text = offline_path.read_text(encoding="utf-8")
         payload = json.loads(payload_text)
         payload = self._postprocess_payload_by_mode(
             payload,
@@ -663,6 +691,4 @@ class PyFeatureGenerator:
             start_index=1,
         )
         feature_programs = self.parse_feature_programs(payload)
-        self.write_json("py_feature_payload.json", payload)
-        # logging.info(feature_programs)
         return feature_programs, payload

@@ -1,0 +1,102 @@
+You are writing Python code that generates boolean feature functions for Logical Programmatic Policies (LPP).
+
+Goal:
+Write a single self-contained Python script that defines a feature generator for a continuous-control environment. The generator should return a library of interpretable boolean predicates f(s, a) that are useful for distinguishing expert actions from non-expert candidate actions.
+
+Environment assumptions:
+- Observation s is a numeric state vector.
+- Action a is a numeric action vector.
+- Demonstrations come from expert trajectories over (s, a, s').
+- Features must depend only on s and a.
+- Features are intended for downstream logical policy learning, so they must be interpretable boolean predicates.
+- The task is a geometric, object-centric manipulation problem with a robot, a hook, a movable button, and a target button.
+- Useful predicates should focus on relations such as robot-to-hook, hook-to-movable-button, movable-button-to-target-button, contact, alignment, reachability, and action direction.
+
+Input context:
+${DEMONSTRATION_BACKGROUND}
+
+Demonstrations:
+${DEMONSTRATION_DATA}
+
+Before writing the final feature library, mentally filter candidate ideas and keep features that are most likely to be:
+- interpretable,
+- reusable across multiple demonstrations,
+- helpful for separating expert actions from plausible non-expert actions in similar states.
+
+Do not keep features solely because they are easy to define from the raw variables.
+
+Important coding constraints:
+- Do not write inline geometry formulas that mix + and - without explicit parentheses.
+- Never write expressions like s[i] - s[j] + s[k] / 2.
+- Inside each feature, first define named variables for centers, boundaries, and offsets, then use those variables in the predicate.
+- Do not algebraically simplify geometry expressions.
+- Prefer explicit local variables like hook_dx, hook_dy, button_to_target_dx, button_to_target_dy, heading_error, reach_margin, and contact_margin over long raw index expressions.
+
+Requirements:
+Write one raw Python script and nothing else.
+
+The script must define a function named:
+build_feature_library()
+
+When called, it must return a list of objects of the form:
+{
+"features":[
+  {"id": "f1", "name": "some_name", "source": "def f1(s, a):\n    ..."},
+  {"id": "f2", "name": "some_other_name", "source": "def f2(s, a):\n    ..."}
+]
+}
+
+
+Each returned feature must:
+- be a boolean function of s and a only,
+- be standalone Python source code,
+- be interpretable,
+- represent a reusable structural relation between state and action,
+- help separate expert actions from plausible alternatives.
+- define exactly one standalone function with signature `def <feature_name>(s, a):`
+- not depend on any helper function, closure, shared utility, outer variable, or separately defined function
+- compute everything it needs inside that single function body from only `s` and `a`
+
+The script should not just emit random unrelated predicates.
+It should generate features through reusable feature families or templates.
+
+Guidance:
+- Use relative geometry, not episode-specific coordinates.
+- Use interpretable fixed thresholds only when necessary.
+- Favor normalized or comparison-based predicates over brittle absolute constants.
+- Include a small number of conjunction features only when they represent meaningful concepts.
+- Avoid excessive metadata-like features that are unlikely to matter for decision-making.
+- Favor features about approaching the hook, aligning with the hook, bringing the hook near the movable button, and moving the movable button toward the target button.
+- Prefer predicates that distinguish productive push/pull/contact behavior from irrelevant motion.
+
+Desired design:
+- Define helper logic for constructing feature templates.
+- Instantiate a diverse set of feature families.
+- Return a moderate-sized set of useful features (roughly 50-100).
+- Use systematic naming.
+- Avoid near-duplicate predicates.
+- Avoid trivial predicates that are almost always true or false.
+- Avoid a library dominated by single-dimension sign checks.
+
+Important:
+The output should be a generator of feature definitions, not a learner, not a training script, and not a feature-selection pipeline.
+Do not fit thresholds from data.
+Do not use imports beyond standard Python if absolutely necessary.
+Do not use external libraries.
+Do not use placeholders.
+Do not leave TODOs.
+
+The script should be clean and usable as-is.
+
+Rules:
+- Return only raw Python code.
+- No markdown.
+- No commentary.
+- No surrounding explanation.
+- Features must access s and a only through numeric indexing.
+- Each generated feature must be a standalone function definition encoded as source code text.
+- Each `"source"` entry must contain exactly one complete feature function `def ... (s, a): ...`.
+- Do not generate feature sources that call helper functions such as `hook_close_to_movable_button(...)` or any other auxiliary function.
+- Do not rely on helper builders, shared predicates, closures, imports, or previously defined functions inside the returned feature sources.
+- The final returned objects must contain the full source code for each feature.
+- The function `build_feature_library()` must return `{"features": features}` exactly; do not wrap that dict in a list such as `[{"features": features}]`.

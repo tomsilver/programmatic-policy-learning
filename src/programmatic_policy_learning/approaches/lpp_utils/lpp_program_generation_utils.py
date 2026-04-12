@@ -86,6 +86,8 @@ def _collect_full_episode_generic(
     ``skip_rate``-th transition is retained. The terminal transition is always
     kept so the prompt can still see how the episode ended.
     """
+    if hasattr(expert, "set_env"):
+        expert.set_env(env)
     try:
         reset_out = env.reset(seed=reset_seed)
     except TypeError:
@@ -210,9 +212,13 @@ def get_program_set(
         return features, program_prior_log_probs, dsl_fns, feature_display_names
 
     if strategy == "py_feature_gen":
-        cache_path = _cache_path_with_model("py_feature_cache", llm_model)
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
+        loading_cfg = program_generation.get("loading") or {}
+        offline_mode = bool(loading_cfg.get("offline", 0))
+        llm_client = None
+        if not offline_mode:
+            cache_path = _cache_path_with_model("py_feature_cache", llm_model)
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            llm_client = OpenAIModel(llm_model, cache)
         prompt_path = program_generation["py_feature_gen_prompt"]
         generation_mode = str(
             program_generation.get("py_feature_gen_mode", "feature_payload")
@@ -245,7 +251,7 @@ def get_program_set(
                 traj = _collect_full_episode_generic(
                     env_demo,
                     expert,
-                    max_steps=200,
+                    max_steps=300,
                     skip_rate=demo_skip_rate,
                     reset_seed=reset_seed,
                 )
@@ -255,8 +261,9 @@ def get_program_set(
             demo_text = llm_env_spec.serialize_demonstrations(
                 trajectories,
                 encoding_method=enc_method,
-                max_steps=50,
+                max_steps=300,
             )
+            
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logging.info("Failed to build demonstration text: %s", exc)
 
@@ -277,7 +284,7 @@ def get_program_set(
             encoding_method=enc_method,
             _seed=seed,
             reprompt_checks=py_reprompt_checks,
-            loading=program_generation.get("loading"),
+            loading=loading_cfg,
             action_mode=str((env_specs or {}).get("action_mode", "discrete")),
             generation_mode=generation_mode,
         )
