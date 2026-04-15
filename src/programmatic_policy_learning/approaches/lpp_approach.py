@@ -616,6 +616,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     tie_policy: LPPPolicy = LPPPolicy(
                         [particles[idx]],
                         [1.0],
+                        map_choices=False,
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
@@ -665,6 +666,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             policy: LPPPolicy = LPPPolicy(
                 top_particles,
                 top_particle_probs,
+                map_choices=False,
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
@@ -678,6 +680,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return LPPPolicy(
             [StateActionProgram("False")],
             [1.0],
+            map_choices=False,
             normalize_plp_actions=self.normalize_plp_actions,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
             action_space=cast(Any, self._action_space),

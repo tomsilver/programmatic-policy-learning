@@ -67,7 +67,7 @@ program_generation:
   num_features: 50
   encoding_method: "enc_4" #  "enc_1", "enc_4", "enc_5", "enc_6" are the common options
   loading:
-    offline: 1 # 0 for using LLM / 1 for using the following path data
+    offline: 0 # 0 for using LLM / 1 for using the following path data
     offline_json_path: "f.json" #features_stf_demo_only_4.1 features_stf_hint_only_4.1 expanded_stf_notemp_5.2
   negative_sampling:
     # Discrete-only switch. Continuous mode is always quantized expansion.
@@ -95,7 +95,7 @@ program_generation:
       relaxed_labeling:
           enabled: true
           neighbor_radius: 2
-          nearby_bucket_behavior: "ignore"
+          nearby_bucket_behavior: "weak_negative" # "weak_negative" or "ignore"
           weak_negative_scale: 0.25
       # Cost-sensitive weighting over quantized action buckets.
       # Disabled by default to preserve baseline behavior.
