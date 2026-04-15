@@ -71,6 +71,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         if self.action_mode == "continuous":
             return cast(_ActType, self._select_continuous_action(obs))
         action_probs = self.get_action_probs(obs).flatten()
+        # print(f"Action probabilities: {action_probs}")
         if self.map_choices:
             idx = int(np.argmax(action_probs).squeeze())
         else:
