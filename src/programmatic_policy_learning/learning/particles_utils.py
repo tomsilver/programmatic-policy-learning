@@ -21,17 +21,17 @@ def select_particles(
     selected_particles : [ Any ]
     selected_particle_log_probs : [ float ]
     """
-    sorted_log_probs, _, sorted_particles = (
-        list(t)
-        for t in zip(
-            *sorted(
-                zip(
-                    particle_log_probs, np.random.random(size=len(particles)), particles
-                ),
-                reverse=True,
-            )
-        )
+    if len(particles) != len(particle_log_probs):
+        raise ValueError("particles and particle_log_probs must have the same length.")
+    if not particles:
+        return [], []
+
+    ranked = sorted(
+        enumerate(zip(particle_log_probs, particles)),
+        key=lambda item: (-float(item[1][0]), int(item[0])),
     )
+    sorted_log_probs = [float(item[1][0]) for item in ranked]
+    sorted_particles = [item[1][1] for item in ranked]
     end = min(max_num_particles, len(sorted_particles))
     try:
         idx = sorted_log_probs.index(-np.inf)

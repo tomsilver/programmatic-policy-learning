@@ -66,7 +66,7 @@ Guidance:
 Desired design:
 - Define helper logic for constructing feature templates.
 - Instantiate a diverse set of feature families.
-- Return a moderate-sized set of useful features (roughly 50-100).
+- Return a moderate-sized set of useful features (roughly ~100).
 - Use systematic naming.
 - Avoid near-duplicate predicates.
 - Avoid trivial predicates that are almost always true or false.

@@ -25,7 +25,7 @@ normalize_plp_actions: true
 permissive_filter_enabled: false
 permissive_filter_max_avg_frac: 0.2
 permissive_filter_max_avg_count: 2
-collision_feedback_enabled: false
+collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
 collision_template_feedback: false #false: means the feedback is just features/no templates
 collision_feedback_num_buckets: 2
@@ -51,11 +51,8 @@ recovery_augmentation:
   capture_stuck: true
   max_steps: 50
   stuck_window: 6
-  min_progress_delta: 0.01
-  stuck_position_delta: 0.01
   deviation_bucket_tolerance: 2
   deviation_require_sign_flip: false
-  max_queries_per_env: 12
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"

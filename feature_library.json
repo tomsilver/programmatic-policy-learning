@@ -1,0 +1,379 @@
+{
+    "features": [
+        {
+            "id": "f1",
+            "name": "action_toward_target_center_xy_cosine_gt_0.7",
+            "source": "def f1(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dx = a[0]\n    dy = a[1]\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0:\n        return False\n    cosine = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    return cosine > 0.7\n"
+        },
+        {
+            "id": "f2",
+            "name": "action_away_from_target_center_xy_cosine_lt_-0.7",
+            "source": "def f2(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dx = a[0]\n    dy = a[1]\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0:\n        return False\n    cosine = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    return cosine < -0.7\n"
+        },
+        {
+            "id": "f3",
+            "name": "action_xy_magnitude_lt_0.02_bucket_aligned",
+            "source": "def f3(s, a):\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return mag < 0.02\n"
+        },
+        {
+            "id": "f4",
+            "name": "action_xy_magnitude_ge_0.02_bucket_aligned",
+            "source": "def f4(s, a):\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return mag >= 0.02\n"
+        },
+        {
+            "id": "f5",
+            "name": "robot_left_of_passage0_wall_and_dx_gt_0",
+            "source": "def f5(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    dx = a[0]\n    return (robot_x + robot_r < wall_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f6",
+            "name": "robot_in_passage0_zone_and_dx_gt_0",
+            "source": "def f6(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    dx = a[0]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    return inside and (dx > 0)\n"
+        },
+        {
+            "id": "f7",
+            "name": "robot_y_aligned_with_passage0_gap_and_abs_dy_lt_0.04",
+            "source": "def f7(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    dy = a[1]\n    aligned = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    return aligned and (abs(dy) < 0.04)\n"
+        },
+        {
+            "id": "f8",
+            "name": "robot_y_below_passage0_gap_and_dy_positive",
+            "source": "def f8(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    dy = a[1]\n    return (robot_y < gap_lower) and (dy > 0)\n"
+        },
+        {
+            "id": "f9",
+            "name": "robot_y_above_passage0_gap_and_dy_negative",
+            "source": "def f9(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_upper = s[30] - robot_r\n    dy = a[1]\n    return (robot_y > gap_upper) and (dy < 0)\n"
+        },
+        {
+            "id": "f10",
+            "name": "robot_past_passage0_wall_and_action_toward_target",
+            "source": "def f10(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    wall_right = wall_x + wall_w + robot_r\n    target_cx = s[9] + 0.5 * s[17]\n    dx = a[0]\n    return (robot_x >= wall_right) and (dx > 0) and (target_cx > robot_x)\n"
+        },
+        {
+            "id": "f11",
+            "name": "robot_close_to_target_and_action_small",
+            "source": "def f11(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dist = ((robot_x - target_cx) ** 2 + (robot_y - target_cy) ** 2) ** 0.5\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (dist < 0.2) and (mag < 0.04)\n"
+        },
+        {
+            "id": "f12",
+            "name": "robot_not_inside_target_region",
+            "source": "def f12(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    inside_x = (robot_x + robot_r >= target_x) and (robot_x - robot_r <= target_x + target_w)\n    inside_y = (robot_y + robot_r >= target_y) and (robot_y - robot_r <= target_y + target_h)\n    return not (inside_x and inside_y)\n"
+        },
+        {
+            "id": "f13",
+            "name": "action_dx_gt_abs_dy_and_toward_target_x",
+            "source": "def f13(s, a):\n    robot_x = s[0]\n    target_cx = s[9] + 0.5 * s[17]\n    dx = a[0]\n    dy = a[1]\n    toward = (target_cx > robot_x and dx > 0) or (target_cx < robot_x and dx < 0)\n    return (abs(dx) > abs(dy)) and toward\n"
+        },
+        {
+            "id": "f14",
+            "name": "action_abs_dy_gt_abs_dx_and_toward_target_y",
+            "source": "def f14(s, a):\n    robot_y = s[1]\n    target_cy = s[10] + 0.5 * s[18]\n    dx = a[0]\n    dy = a[1]\n    toward = (target_cy > robot_y and dy > 0) or (target_cy < robot_y and dy < 0)\n    return (abs(dy) > abs(dx)) and toward\n"
+        },
+        {
+            "id": "f15",
+            "name": "robot_left_of_target_and_dx_positive",
+            "source": "def f15(s, a):\n    robot_x = s[0]\n    target_cx = s[9] + 0.5 * s[17]\n    dx = a[0]\n    return (robot_x < target_cx) and (dx > 0)\n"
+        },
+        {
+            "id": "f16",
+            "name": "robot_right_of_target_and_dx_negative",
+            "source": "def f16(s, a):\n    robot_x = s[0]\n    target_cx = s[9] + 0.5 * s[17]\n    dx = a[0]\n    return (robot_x > target_cx) and (dx < 0)\n"
+        },
+        {
+            "id": "f17",
+            "name": "robot_below_target_and_dy_positive",
+            "source": "def f17(s, a):\n    robot_y = s[1]\n    target_cy = s[10] + 0.5 * s[18]\n    dy = a[1]\n    return (robot_y < target_cy) and (dy > 0)\n"
+        },
+        {
+            "id": "f18",
+            "name": "robot_above_target_and_dy_negative",
+            "source": "def f18(s, a):\n    robot_y = s[1]\n    target_cy = s[10] + 0.5 * s[18]\n    dy = a[1]\n    return (robot_y > target_cy) and (dy < 0)\n"
+        },
+        {
+            "id": "f19",
+            "name": "action_rotates_toward_target_theta",
+            "source": "def f19(s, a):\n    import math\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_theta = s[2]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dx = target_cx - robot_x\n    dy = target_cy - robot_y\n    angle_to_target = math.atan2(dy, dx)\n    dtheta = a[2]\n    angle_diff = angle_to_target - robot_theta\n    while angle_diff > math.pi:\n        angle_diff -= 2 * math.pi\n    while angle_diff < -math.pi:\n        angle_diff += 2 * math.pi\n    return (angle_diff > 0 and dtheta > 0) or (angle_diff < 0 and dtheta < 0)\n"
+        },
+        {
+            "id": "f20",
+            "name": "action_rotates_away_from_target_theta",
+            "source": "def f20(s, a):\n    import math\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_theta = s[2]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dx = target_cx - robot_x\n    dy = target_cy - robot_y\n    angle_to_target = math.atan2(dy, dx)\n    dtheta = a[2]\n    angle_diff = angle_to_target - robot_theta\n    while angle_diff > math.pi:\n        angle_diff -= 2 * math.pi\n    while angle_diff < -math.pi:\n        angle_diff += 2 * math.pi\n    return (angle_diff > 0 and dtheta < 0) or (angle_diff < 0 and dtheta > 0)\n"
+        },
+        {
+            "id": "f21",
+            "name": "robot_near_passage0_wall_and_dx_positive",
+            "source": "def f21(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    dx = a[0]\n    near = (abs((robot_x + robot_r) - wall_x) < 0.05)\n    return near and (dx > 0)\n"
+        },
+        {
+            "id": "f22",
+            "name": "robot_y_near_passage0_gap_center_and_abs_dy_lt_0.03",
+            "source": "def f22(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    dy = a[1]\n    return (abs(robot_y - gap_center) < 0.07) and (abs(dy) < 0.03)\n"
+        },
+        {
+            "id": "f23",
+            "name": "robot_in_passage0_zone_and_abs_dy_lt_0.03",
+            "source": "def f23(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    dy = a[1]\n    return inside and (abs(dy) < 0.03)\n"
+        },
+        {
+            "id": "f24",
+            "name": "robot_left_of_both_obstacles_and_dx_positive",
+            "source": "def f24(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    obst0_x = s[19]\n    obst1_x = s[29]\n    dx = a[0]\n    return (robot_x + robot_r < obst0_x) and (robot_x + robot_r < obst1_x) and (dx > 0)\n"
+        },
+        {
+            "id": "f25",
+            "name": "robot_between_obstacles_and_dx_positive",
+            "source": "def f25(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    obst0_x = s[19]\n    obst1_x = s[29]\n    wall_w0 = s[27]\n    wall_w1 = s[37]\n    left = min(obst0_x, obst1_x)\n    right = max(obst0_x + wall_w0, obst1_x + wall_w1)\n    dx = a[0]\n    return (robot_x + robot_r >= left) and (robot_x < right) and (dx > 0)\n"
+        },
+        {
+            "id": "f26",
+            "name": "robot_right_of_both_obstacles_and_dx_positive",
+            "source": "def f26(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    obst0_x = s[19]\n    obst1_x = s[29]\n    wall_w0 = s[27]\n    wall_w1 = s[37]\n    right0 = obst0_x + wall_w0\n    right1 = obst1_x + wall_w1\n    dx = a[0]\n    return (robot_x >= right0) and (robot_x >= right1) and (dx > 0)\n"
+        },
+        {
+            "id": "f27",
+            "name": "action_rotationally_dominant",
+            "source": "def f27(s, a):\n    dx = a[0]\n    dy = a[1]\n    dtheta = a[2]\n    return abs(dtheta) > (abs(dx) + abs(dy))\n"
+        },
+        {
+            "id": "f28",
+            "name": "action_translationally_dominant",
+            "source": "def f28(s, a):\n    dx = a[0]\n    dy = a[1]\n    dtheta = a[2]\n    return (abs(dx) + abs(dy)) > abs(dtheta)\n"
+        },
+        {
+            "id": "f29",
+            "name": "robot_near_obstacle0_and_action_not_toward_obstacle0",
+            "source": "def f29(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    obst_x = s[19] + 0.5 * s[27]\n    obst_y = s[20] + 0.5 * s[28]\n    dx = a[0]\n    dy = a[1]\n    dist = ((robot_x - obst_x) ** 2 + (robot_y - obst_y) ** 2) ** 0.5\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return (dist < 0.15) and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f30",
+            "name": "robot_near_obstacle1_and_action_not_toward_obstacle1",
+            "source": "def f30(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    obst_x = s[29] + 0.5 * s[37]\n    obst_y = s[30] + 0.5 * s[38]\n    dx = a[0]\n    dy = a[1]\n    dist = ((robot_x - obst_x) ** 2 + (robot_y - obst_y) ** 2) ** 0.5\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return (dist < 0.15) and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f31",
+            "name": "robot_y_near_passage0_gap_and_action_not_toward_obstacle0",
+            "source": "def f31(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    obst_x = s[19] + 0.5 * s[27]\n    obst_y = s[20] + 0.5 * s[28]\n    robot_x = s[0]\n    dx = a[0]\n    dy = a[1]\n    dist_y = abs(robot_y - gap_center)\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return (dist_y < 0.07) and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f32",
+            "name": "action_is_zero",
+            "source": "def f32(s, a):\n    return (a[0] == 0) and (a[1] == 0) and (a[2] == 0) and (a[3] == 0) and (a[4] == 0)\n"
+        },
+        {
+            "id": "f33",
+            "name": "action_is_not_zero",
+            "source": "def f33(s, a):\n    return not ((a[0] == 0) and (a[1] == 0) and (a[2] == 0) and (a[3] == 0) and (a[4] == 0))\n"
+        },
+        {
+            "id": "f34",
+            "name": "action_arm_or_vacuum_nonzero",
+            "source": "def f34(s, a):\n    return (abs(a[3]) > 0.01) or (abs(a[4]) > 0.01)\n"
+        },
+        {
+            "id": "f35",
+            "name": "robot_inside_target_and_action_small",
+            "source": "def f35(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    inside_x = (robot_x + robot_r >= target_x) and (robot_x - robot_r <= target_x + target_w)\n    inside_y = (robot_y + robot_r >= target_y) and (robot_y - robot_r <= target_y + target_h)\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (inside_x and inside_y) and (mag < 0.04)\n"
+        },
+        {
+            "id": "f36",
+            "name": "robot_not_inside_target_and_action_toward_target",
+            "source": "def f36(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    target_x = s[9]\n    target_y = s[10]\n    target_w = s[17]\n    target_h = s[18]\n    inside_x = (robot_x + robot_r >= target_x) and (robot_x - robot_r <= target_x + target_w)\n    inside_y = (robot_y + robot_r >= target_y) and (robot_y - robot_r <= target_y + target_h)\n    target_cx = target_x + 0.5 * target_w\n    target_cy = target_y + 0.5 * target_h\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dx = a[0]\n    dy = a[1]\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0:\n        return False\n    cosine = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    return (not (inside_x and inside_y)) and (cosine > 0.7)\n"
+        },
+        {
+            "id": "f37",
+            "name": "robot_in_passage0_zone_and_action_not_toward_obstacle0",
+            "source": "def f37(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    obst_x = s[19] + 0.5 * s[27]\n    obst_y = s[20] + 0.5 * s[28]\n    dx = a[0]\n    dy = a[1]\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return inside and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f38",
+            "name": "robot_in_passage0_zone_and_action_toward_target",
+            "source": "def f38(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    dx = a[0]\n    dy = a[1]\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0:\n        return False\n    cosine = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    return inside and (cosine > 0.7)\n"
+        },
+        {
+            "id": "f39",
+            "name": "robot_left_of_passage0_wall_and_action_not_toward_obstacle0",
+            "source": "def f39(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    dx = a[0]\n    dy = a[1]\n    obst_x = s[19] + 0.5 * s[27]\n    obst_y = s[20] + 0.5 * s[28]\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return (robot_x + robot_r < wall_x) and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f40",
+            "name": "robot_left_of_passage0_wall_and_action_toward_target",
+            "source": "def f40(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    dx = a[0]\n    dy = a[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0:\n        return False\n    cosine = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    return (robot_x + robot_r < wall_x) and (cosine > 0.7)\n"
+        },
+        {
+            "id": "f41",
+            "name": "robot_in_passage0_zone_and_action_not_toward_obstacle1",
+            "source": "def f41(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    obst_x = s[29] + 0.5 * s[37]\n    obst_y = s[30] + 0.5 * s[38]\n    dx = a[0]\n    dy = a[1]\n    to_obst_x = obst_x - robot_x\n    to_obst_y = obst_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst_norm = (to_obst_x ** 2 + to_obst_y ** 2) ** 0.5\n    if norm == 0 or to_obst_norm == 0:\n        return False\n    cosine = (dx * to_obst_x + dy * to_obst_y) / (norm * to_obst_norm)\n    return inside and (cosine < 0.3)\n"
+        },
+        {
+            "id": "f42",
+            "name": "robot_in_passage0_zone_and_action_not_toward_any_obstacle",
+            "source": "def f42(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    obst0_x = s[19] + 0.5 * s[27]\n    obst0_y = s[20] + 0.5 * s[28]\n    obst1_x = s[29] + 0.5 * s[37]\n    obst1_y = s[30] + 0.5 * s[38]\n    dx = a[0]\n    dy = a[1]\n    to_obst0_x = obst0_x - robot_x\n    to_obst0_y = obst0_y - robot_y\n    to_obst1_x = obst1_x - robot_x\n    to_obst1_y = obst1_y - robot_y\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_obst0_norm = (to_obst0_x ** 2 + to_obst0_y ** 2) ** 0.5\n    to_obst1_norm = (to_obst1_x ** 2 + to_obst1_y ** 2) ** 0.5\n    if norm == 0 or to_obst0_norm == 0 or to_obst1_norm == 0:\n        return False\n    cosine0 = (dx * to_obst0_x + dy * to_obst0_y) / (norm * to_obst0_norm)\n    cosine1 = (dx * to_obst1_x + dy * to_obst1_y) / (norm * to_obst1_norm)\n    return inside and (cosine0 < 0.3) and (cosine1 < 0.3)\n"
+        },
+        {
+            "id": "f43",
+            "name": "robot_in_passage0_zone_and_action_toward_target_not_obstacles",
+            "source": "def f43(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    to_target_x = target_cx - robot_x\n    to_target_y = target_cy - robot_y\n    obst0_x = s[19] + 0.5 * s[27]\n    obst0_y = s[20] + 0.5 * s[28]\n    obst1_x = s[29] + 0.5 * s[37]\n    obst1_y = s[30] + 0.5 * s[38]\n    dx = a[0]\n    dy = a[1]\n    norm = (dx ** 2 + dy ** 2) ** 0.5\n    to_target_norm = (to_target_x ** 2 + to_target_y ** 2) ** 0.5\n    to_obst0_x = obst0_x - robot_x\n    to_obst0_y = obst0_y - robot_y\n    to_obst1_x = obst1_x - robot_x\n    to_obst1_y = obst1_y - robot_y\n    to_obst0_norm = (to_obst0_x ** 2 + to_obst0_y ** 2) ** 0.5\n    to_obst1_norm = (to_obst1_x ** 2 + to_obst1_y ** 2) ** 0.5\n    if norm == 0 or to_target_norm == 0 or to_obst0_norm == 0 or to_obst1_norm == 0:\n        return False\n    cosine_target = (dx * to_target_x + dy * to_target_y) / (norm * to_target_norm)\n    cosine0 = (dx * to_obst0_x + dy * to_obst0_y) / (norm * to_obst0_norm)\n    cosine1 = (dx * to_obst1_x + dy * to_obst1_y) / (norm * to_obst1_norm)\n    return inside and (cosine_target > 0.7) and (cosine0 < 0.3) and (cosine1 < 0.3)\n"
+        },
+        {
+            "id": "f44",
+            "name": "robot_y_near_passage0_gap_and_dx_positive",
+            "source": "def f44(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    dx = a[0]\n    return (abs(robot_y - gap_center) < 0.07) and (dx > 0)\n"
+        },
+        {
+            "id": "f45",
+            "name": "robot_left_of_passage0_wall_and_dx_not_positive",
+            "source": "def f45(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    dx = a[0]\n    return (robot_x + robot_r < wall_x) and (dx <= 0)\n"
+        },
+        {
+            "id": "f46",
+            "name": "robot_in_passage0_zone_and_dx_not_positive",
+            "source": "def f46(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    dx = a[0]\n    inside = (robot_x + robot_r >= wall_x) and (robot_x < wall_x + wall_w + robot_r)\n    return inside and (dx <= 0)\n"
+        },
+        {
+            "id": "f47",
+            "name": "robot_past_passage0_wall_and_dx_not_positive",
+            "source": "def f47(s, a):\n    robot_x = s[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    wall_w = s[27]\n    wall_right = wall_x + wall_w + robot_r\n    dx = a[0]\n    return (robot_x >= wall_right) and (dx <= 0)\n"
+        },
+        {
+            "id": "f48",
+            "name": "robot_close_to_target_and_action_not_small_bucket_aligned",
+            "source": "def f48(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dist = ((robot_x - target_cx) ** 2 + (robot_y - target_cy) ** 2) ** 0.5\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (dist < 0.2) and (mag >= 0.02)\n"
+        },
+        {
+            "id": "f49",
+            "name": "robot_far_from_target_and_action_small_bucket_aligned",
+            "source": "def f49(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dist = ((robot_x - target_cx) ** 2 + (robot_y - target_cy) ** 2) ** 0.5\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (dist > 0.5) and (mag < 0.02)\n"
+        },
+        {
+            "id": "f50",
+            "name": "robot_far_from_target_and_action_not_small_bucket_aligned",
+            "source": "def f50(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    target_cx = s[9] + 0.5 * s[17]\n    target_cy = s[10] + 0.5 * s[18]\n    dist = ((robot_x - target_cx) ** 2 + (robot_y - target_cy) ** 2) ** 0.5\n    dx = a[0]\n    dy = a[1]\n    mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (dist > 0.5) and (mag >= 0.02)\n"
+        },
+    {
+      "id": "f51",
+      "name": "robot_y_very_close_to_passage0_gap_center_and_dx_positive",
+      "source": "def f51(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    dx = a[0]\n    return (abs(robot_y - gap_center) < 0.03) and (dx > 0)\n"
+    },
+    {
+      "id": "f52",
+      "name": "robot_y_moderately_close_to_passage0_gap_center_and_dx_positive",
+      "source": "def f52(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    dx = a[0]\n    return (abs(robot_y - gap_center) < 0.08) and (dx > 0)\n"
+    },
+    {
+      "id": "f53",
+      "name": "action_reduces_distance_to_passage0_gap_center_in_y",
+      "source": "def f53(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    before = abs(robot_y - gap_center)\n    after = abs((robot_y + dy) - gap_center)\n    return after < before\n"
+    },
+    {
+      "id": "f54",
+      "name": "action_increases_distance_to_passage0_gap_center_in_y",
+      "source": "def f54(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    before = abs(robot_y - gap_center)\n    after = abs((robot_y + dy) - gap_center)\n    return after > before\n"
+    },
+    {
+      "id": "f55",
+      "name": "action_keeps_robot_y_inside_passage0_gap_after_step",
+      "source": "def f55(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    next_y = robot_y + dy\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    return (next_y >= gap_lower) and (next_y <= gap_upper)\n"
+    },
+    {
+      "id": "f56",
+      "name": "action_moves_robot_y_outside_passage0_gap_after_step",
+      "source": "def f56(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    next_y = robot_y + dy\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    return (next_y < gap_lower) or (next_y > gap_upper)\n"
+    },
+    {
+      "id": "f57",
+      "name": "action_moves_right_and_keeps_robot_y_inside_passage0_gap_after_step",
+      "source": "def f57(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    dx = a[0]\n    robot_r = s[3]\n    next_y = robot_y + dy\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    return (dx > 0) and (next_y >= gap_lower) and (next_y <= gap_upper)\n"
+    },
+    {
+      "id": "f58",
+      "name": "action_moves_right_and_reduces_distance_to_passage0_gap_center_in_y",
+      "source": "def f58(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    dx = a[0]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    before = abs(robot_y - gap_center)\n    after = abs((robot_y + dy) - gap_center)\n    return (dx > 0) and (after < before)\n"
+    },
+    {
+      "id": "f59",
+      "name": "robot_left_of_passage0_wall_and_action_would_enter_gap_band_after_step",
+      "source": "def f59(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    next_x = robot_x + dx\n    next_y = robot_y + dy\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    return (robot_x + robot_r < wall_x) and (next_x + robot_r >= wall_x) and (next_y >= gap_lower) and (next_y <= gap_upper)\n"
+    },
+    {
+      "id": "f60",
+      "name": "robot_left_of_passage0_wall_and_action_would_hit_lower_obstacle_band_after_step",
+      "source": "def f60(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    next_x = robot_x + dx\n    next_y = robot_y + dy\n    lower_obstacle_top = s[20] + s[28] + robot_r\n    return (robot_x + robot_r < wall_x) and (next_x + robot_r >= wall_x) and (next_y < lower_obstacle_top)\n"
+    },
+    {
+      "id": "f61",
+      "name": "robot_left_of_passage0_wall_and_action_would_hit_upper_obstacle_band_after_step",
+      "source": "def f61(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    next_x = robot_x + dx\n    next_y = robot_y + dy\n    upper_obstacle_bottom = s[30] - robot_r\n    return (robot_x + robot_r < wall_x) and (next_x + robot_r >= wall_x) and (next_y > upper_obstacle_bottom)\n"
+    },
+    {
+      "id": "f62",
+      "name": "robot_inside_passage0_gap_band_now",
+      "source": "def f62(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    return (robot_y >= gap_lower) and (robot_y <= gap_upper)\n"
+    },
+    {
+      "id": "f63",
+      "name": "robot_dangerously_close_to_passage0_lower_boundary",
+      "source": "def f63(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    return (robot_y >= gap_lower) and ((robot_y - gap_lower) < 0.03)\n"
+    },
+    {
+      "id": "f64",
+      "name": "robot_dangerously_close_to_passage0_upper_boundary",
+      "source": "def f64(s, a):\n    robot_y = s[1]\n    robot_r = s[3]\n    gap_upper = s[30] - robot_r\n    return (robot_y <= gap_upper) and ((gap_upper - robot_y) < 0.03)\n"
+    },
+    {
+      "id": "f65",
+      "name": "robot_inside_passage0_gap_band_and_action_moves_away_from_lower_boundary",
+      "source": "def f65(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    inside = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    near_lower = (robot_y - gap_lower) < 0.03\n    return inside and near_lower and (dy > 0)\n"
+    },
+    {
+      "id": "f66",
+      "name": "robot_inside_passage0_gap_band_and_action_moves_away_from_upper_boundary",
+      "source": "def f66(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    inside = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    near_upper = (gap_upper - robot_y) < 0.03\n    return inside and near_upper and (dy < 0)\n"
+    },
+    {
+      "id": "f67",
+      "name": "robot_inside_passage0_gap_band_and_action_dy_small",
+      "source": "def f67(s, a):\n    robot_y = s[1]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    inside = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    return inside and (abs(dy) < 0.02)\n"
+    },
+    {
+      "id": "f68",
+      "name": "robot_inside_passage0_gap_band_and_action_moves_right_with_small_dy",
+      "source": "def f68(s, a):\n    robot_y = s[1]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    inside = (robot_y >= gap_lower) and (robot_y <= gap_upper)\n    return inside and (dx > 0) and (abs(dy) < 0.02)\n"
+    },
+    {
+      "id": "f69",
+      "name": "robot_left_of_passage0_wall_and_well_aligned_for_rightward_entry",
+      "source": "def f69(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    return (robot_x + robot_r < wall_x) and (abs(robot_y - gap_center) < 0.04) and (dx > 0)\n"
+    },
+    {
+      "id": "f70",
+      "name": "robot_left_of_passage0_wall_and_poorly_aligned_for_rightward_entry",
+      "source": "def f70(s, a):\n    robot_x = s[0]\n    robot_y = s[1]\n    dx = a[0]\n    robot_r = s[3]\n    wall_x = s[19]\n    gap_lower = s[20] + s[28] + robot_r\n    gap_upper = s[30] - robot_r\n    gap_center = 0.5 * (gap_lower + gap_upper)\n    return (robot_x + robot_r < wall_x) and (abs(robot_y - gap_center) >= 0.08) and (dx > 0)\n"
+    },
+    {
+      "id": "f71",
+      "name": "robot_left_of_passage0_wall_and_action_prefers_alignment_over_progress",
+      "source": "def f71(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    return (robot_x + robot_r < wall_x) and (abs(dy) > abs(dx))\n"
+    },
+    {
+      "id": "f72",
+      "name": "robot_left_of_passage0_wall_and_action_prefers_progress_over_alignment",
+      "source": "def f72(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    dy = a[1]\n    robot_r = s[3]\n    wall_x = s[19]\n    return (robot_x + robot_r < wall_x) and (abs(dx) >= abs(dy))\n"
+    },
+    {
+      "id": "f73",
+      "name": "action_heading_consistent_with_translation",
+      "source": "def f73(s, a):\n    import math\n    dx = a[0]\n    dy = a[1]\n    dtheta = a[2]\n    trans_mag = (dx ** 2 + dy ** 2) ** 0.5\n    if trans_mag < 1e-8:\n        return abs(dtheta) < 0.05\n    motion_angle = math.atan2(dy, dx)\n    return ((motion_angle > 0) and (dtheta >= -0.05)) or ((motion_angle < 0) and (dtheta <= 0.05)) or (abs(motion_angle) < 0.1)\n"
+    },
+    {
+      "id": "f74",
+      "name": "action_small_rotation_while_translating",
+      "source": "def f74(s, a):\n    dx = a[0]\n    dy = a[1]\n    dtheta = a[2]\n    trans_mag = (dx ** 2 + dy ** 2) ** 0.5\n    return (trans_mag > 0.02) and (abs(dtheta) < 0.05)\n"
+    },
+    {
+      "id": "f75",
+      "name": "robot_near_passage0_and_action_small_rotation_while_moving_right",
+      "source": "def f75(s, a):\n    robot_x = s[0]\n    dx = a[0]\n    dtheta = a[2]\n    robot_r = s[3]\n    wall_x = s[19]\n    near_wall = abs((robot_x + robot_r) - wall_x) < 0.08\n    return near_wall and (dx > 0) and (abs(dtheta) < 0.05)\n"
+    }
+  ]
+}

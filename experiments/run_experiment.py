@@ -52,6 +52,11 @@ def instantiate_approach(
     expert_cfg = OmegaConf.select(cfg, "env.expert", default=None)
     if expert_cfg is None:
         expert_cfg = OmegaConf.select(cfg, "expert", default=None)
+    # expert_seed = OmegaConf.select(
+    #     cfg,
+    #     "env.expert_seed",
+    #     default=OmegaConf.select(cfg, "expert_seed", default=0),
+    # )
 
     if cfg.approach_name == "lpp":
         if expert_cfg is None:
@@ -93,7 +98,8 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
-            cfg.seed,
+            cfg.seed,  # using the same seed for expert for now; can be changed to expert_seed if desired
+            # expert_seed,
         )
 
         # Instantiate the approach with additional parameters.
@@ -121,7 +127,8 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
-            cfg.seed,
+            cfg.seed,  # using the same seed for expert for now; can be changed to expert_seed if desired
+            # expert_seed,
         )
 
         return hydra.utils.instantiate(
@@ -354,6 +361,19 @@ def _main(cfg: DictConfig) -> None:
             logging.info(train_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(train_accuracies) / len(train_accuracies))
+            if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
+                if hasattr(approach, "plot_policy_vector_fields"):
+                    print("VECTOR FIELD FOR TRAIN ENVS:")
+                    approach.plot_policy_vector_fields(
+                        base_class_name=cfg.env.make_kwargs.base_name,
+                        env_nums=range(0, 11),
+                        grid_size=int(
+                            OmegaConf.select(
+                                cfg, "eval.vector_field.grid_size", default=21
+                            )
+                        ),
+                        split_name="train",
+                    )
 
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
@@ -369,6 +389,18 @@ def _main(cfg: DictConfig) -> None:
             logging.info(test_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(test_accuracies) / len(test_accuracies))
+            if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
+                if hasattr(approach, "plot_policy_vector_fields"):
+                    approach.plot_policy_vector_fields(
+                        base_class_name=cfg.env.make_kwargs.base_name,
+                        env_nums=range(11, 20),
+                        grid_size=int(
+                            OmegaConf.select(
+                                cfg, "eval.vector_field.grid_size", default=21
+                            )
+                        ),
+                        split_name="test",
+                    )
         else:
             logging.warning(
                 f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
