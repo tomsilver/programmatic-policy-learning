@@ -8,6 +8,7 @@ import multiprocessing
 import os
 import pickle
 import traceback
+from collections.abc import Mapping
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
@@ -547,7 +548,6 @@ def extract_examples_from_demonstration_item(
                 "continuous action bounds shape mismatch in quantized expansion: "
                 f"base={base.shape}, low={low_arr.shape}, high={high_arr.shape}"
             )
-
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
             base,
@@ -567,15 +567,16 @@ def extract_examples_from_demonstration_item(
             bucket_edges=bucket_edges_cfg,
         )
         expert_bucket = quantizer.quantize(canonical_base[active_dims])
+
         quantized_expert = embed_active_action(
             quantizer.dequantize(expert_bucket),
             template=canonical_base,
             active_dims=active_dims,
             fill_value=inactive_fill_value,
         )
+
         quantized_expert = np.clip(quantized_expert, low_arr, high_arr)
         positive_examples = [(state, _coerce_action_like(action, quantized_expert))]
-
         relax_cfg = dict(cfg_cont.get("relaxed_labeling", {}))
         relax_enabled = bool(relax_cfg.get("enabled", False))
         near_bucket_radius = int(relax_cfg.get("neighbor_radius", 0))
@@ -596,6 +597,7 @@ def extract_examples_from_demonstration_item(
         neg_actions: list[ActT] = []
         neg_buckets: list[tuple[int, ...]] = []
         neg_weight_scales: list[float] = []
+
         for bucket in quantizer.all_bucket_indices():
             if bucket == expert_bucket:
                 continue
@@ -791,7 +793,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    cache_schema_version = "v4"
+    cache_schema_version = "v3"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -919,12 +921,10 @@ def run_all_programs_on_single_demonstration(
 
     # Sample weighting is config-driven and only applies in continuous mode.
     compute_sample_weights = False
-    if action_mode == "continuous" and isinstance(negative_sampling, dict):
+    if action_mode == "continuous":
         cont_cfg = negative_sampling.get("continuous")
-        if isinstance(cont_cfg, dict):
-            weight_cfg = cont_cfg.get("weight_config")
-            if isinstance(weight_cfg, dict):
-                compute_sample_weights = bool(weight_cfg.get("enabled", True))
+        weight_cfg = cont_cfg.get("weight_config")
+        compute_sample_weights = bool(weight_cfg.get("enabled", True))
 
     positive_examples, negative_examples, sample_weights = (
         extract_examples_from_demonstration(
@@ -934,7 +934,8 @@ def run_all_programs_on_single_demonstration(
             compute_sample_weights=compute_sample_weights,
         )
     )
-
+    # print(sample_weights)
+    # input("Press Enter to continue...")
     fn_inputs = positive_examples + negative_examples
 
     y: list[int] = [1] * len(positive_examples) + [0] * len(negative_examples)

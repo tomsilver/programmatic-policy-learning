@@ -288,7 +288,7 @@ def get_program_set(
         if prior_version == "v2":
             out_dict = priors_from_features_v2(features, beta=prior_beta)
             program_prior_log_probs = out_dict["beta_log_scores"]
-        elif prior_version in {"v1", "uniform"}:
+        elif prior_version in {"v1", "uniform"}: #TODO
             out_dict = priors_from_features(features)
             program_prior_log_probs = out_dict["logprobs"]
         else:
