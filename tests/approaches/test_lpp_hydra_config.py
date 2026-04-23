@@ -24,6 +24,16 @@ def test_lpp_yaml_exposes_continuous_weight_config() -> None:
     assert list(weight_cfg.lambda_per_dim) == [1.0, 1.0, 1.0, 1.0, 1.0]
 
 
+def test_lpp_yaml_exposes_multi_prompt_ensemble_config() -> None:
+    """Hydra config should expose the ensemble feature-generation knobs."""
+    cfg_path = Path("experiments/conf/approach/lpp.yaml")
+    cfg = OmegaConf.load(cfg_path)
+
+    ensemble_cfg = cfg.program_generation.multi_prompt_ensemble
+    assert int(ensemble_cfg.num_seeds_per_subset) == 1
+    assert list(ensemble_cfg.demo_subsets) == [[0, 1, 2]]
+
+
 def test_lpp_yaml_weight_config_smoke_run() -> None:
     """Config-shaped weight settings should drive weighted expansion path."""
     cfg_path = Path("experiments/conf/approach/lpp.yaml")

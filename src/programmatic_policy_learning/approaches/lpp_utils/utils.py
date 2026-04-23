@@ -788,7 +788,8 @@ def _select_motion2d_reference_passage(
     s: np.ndarray,
     robot_radius: float,
 ) -> dict[str, float | int] | None:
-    """Select the next passage ahead, or the closest one if already past all."""
+    """Select the next passage ahead, or the closest one if already past
+    all."""
     passages = _parse_motion2d_passages(s, robot_radius)
     if not passages:
         return None
@@ -917,6 +918,22 @@ def log_plp_violation_counts(
                                 for candidate_action in accepted_actions_for_step
                             ],
                         )
+                    elif hasattr(obs, "shape") and len(getattr(obs, "shape")) == 2:
+                        num_grid_actions = int(obs.shape[0]) * int(obs.shape[1])
+                        logging.info(
+                            "State step=%d allowed grid actions=%d/%d",
+                            step_idx,
+                            len(accepted_actions_for_step),
+                            num_grid_actions,
+                        )
+                        logging.info(
+                            "State step=%d allowed actions = %s",
+                            step_idx,
+                            [
+                                _format_action_short(candidate_action)
+                                for candidate_action in accepted_actions_for_step
+                            ],
+                        )
 
                 if not plp(obs, action):
                     violations += 1
@@ -1034,6 +1051,18 @@ def log_plp_violation_counts(
                         "allowed candidate actions = %d/%d",
                         len(row["accepted_actions"]),
                         len(candidate_actions),
+                    )
+                elif (
+                    hasattr(row["state"], "shape")
+                    and len(getattr(row["state"], "shape")) == 2
+                ):
+                    num_grid_actions = int(row["state"].shape[0]) * int(
+                        row["state"].shape[1]
+                    )
+                    logging.info(
+                        "allowed grid actions = %d/%d",
+                        len(row["accepted_actions"]),
+                        num_grid_actions,
                     )
                 logging.info("accepted_actions = %s", accepted_preview)
                 logging.info("closest_matching_clause = %s", row["closest_clause"])

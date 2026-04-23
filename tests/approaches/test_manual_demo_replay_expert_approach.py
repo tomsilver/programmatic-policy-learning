@@ -29,7 +29,8 @@ class _DummyEnv:
 
 
 def test_manual_demo_replay_expert_replays_actions_for_seed(tmp_path: Path) -> None:
-    """Replay expert should load the matching seed and emit its saved actions."""
+    """Replay expert should load the matching seed and emit its saved
+    actions."""
     demo_root = tmp_path / "manual_demos"
     seed = 7
     obs0 = np.array([1.0, 2.0], dtype=np.float32)
@@ -94,5 +95,7 @@ def test_manual_demo_replay_expert_with_real_seed0_demo() -> None:
     for step_idx in range(num_preview_steps):
         saved_obs, saved_action = record.trajectory.steps[step_idx]
         replay_action = approach.step()
-        np.testing.assert_allclose(replay_action, np.asarray(saved_action, dtype=np.float32))
+        np.testing.assert_allclose(
+            replay_action, np.asarray(saved_action, dtype=np.float32)
+        )
         approach.update(np.asarray(saved_obs, dtype=np.float32), 0.0, False, {})

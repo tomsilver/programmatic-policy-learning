@@ -55,12 +55,17 @@ def test_demo_record_round_trip(tmp_path: Path) -> None:
     assert loaded.terminated is True
     assert loaded.truncated is False
     assert loaded.metadata == {"source": "manual"}
-    np.testing.assert_allclose(loaded.trajectory.steps[0][0], record.trajectory.steps[0][0])
-    np.testing.assert_allclose(loaded.trajectory.steps[0][1], record.trajectory.steps[0][1])
+    np.testing.assert_allclose(
+        loaded.trajectory.steps[0][0], record.trajectory.steps[0][0]
+    )
+    np.testing.assert_allclose(
+        loaded.trajectory.steps[0][1], record.trajectory.steps[0][1]
+    )
 
 
 def test_load_demo_records_from_dir(tmp_path: Path) -> None:
-    """Directory loader should return all saved demo records in sorted order."""
+    """Directory loader should return all saved demo records in sorted
+    order."""
     for seed in (2, 0):
         save_demo_record(
             tmp_path / f"seed_{seed:04d}.pkl",

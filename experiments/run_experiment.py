@@ -417,9 +417,9 @@ def _run_single_episode_evaluation(
     total_rewards = 0.0
     total_steps = 0
     seed = 0
-    #TODO: for now it's fixed to seed=0 for easier debugging
-    obs, info = env.reset(seed=seed) #seed=sample_seed_from_rng(rng)
-    
+    # TODO: for now it's fixed to seed=0 for easier debugging
+    obs, info = env.reset(seed=seed)  # seed=sample_seed_from_rng(rng)
+
     approach.reset(obs, info)
 
     for _ in range(max_eval_steps):

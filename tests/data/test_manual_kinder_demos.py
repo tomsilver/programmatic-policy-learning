@@ -75,7 +75,9 @@ def test_saved_manual_demo_pickles_are_valid_and_executable() -> None:
 
     # Only validate PushPullHook2D demos here.
     demo_paths = [
-        path for path in demo_paths if "PushPullHook2D" in str(path) or "pushpullhook2d" in str(path)
+        path
+        for path in demo_paths
+        if "PushPullHook2D" in str(path) or "pushpullhook2d" in str(path)
     ]
     if not demo_paths:
         pytest.skip("No PushPullHook2D demo pickles found.")
@@ -87,7 +89,9 @@ def test_saved_manual_demo_pickles_are_valid_and_executable() -> None:
         assert record.seed >= 0
         assert len(record.trajectory.steps) == len(record.rewards)
         assert record.metadata.get("num_actions") == len(record.trajectory.steps)
-        assert record.metadata.get("num_observations") == len(record.trajectory.steps) + 1
+        assert (
+            record.metadata.get("num_observations") == len(record.trajectory.steps) + 1
+        )
 
         env = _make_pushpullhook2d_env()
         try:
@@ -118,8 +122,12 @@ def test_saved_manual_demo_pickles_are_valid_and_executable() -> None:
                     atol=1e-5,
                     err_msg=f"Observation mismatch at step {step_idx} for {path}",
                 )
-                assert np.all(action_arr >= low), f"Action below low at step {step_idx} in {path}"
-                assert np.all(action_arr <= high), f"Action above high at step {step_idx} in {path}"
+                assert np.all(
+                    action_arr >= low
+                ), f"Action below low at step {step_idx} in {path}"
+                assert np.all(
+                    action_arr <= high
+                ), f"Action above high at step {step_idx} in {path}"
 
                 obs, reward, terminated, truncated, info = env.step(action_arr)
                 assert isinstance(obs, np.ndarray)

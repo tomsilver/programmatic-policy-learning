@@ -108,7 +108,9 @@ class AnalogStick:
             stick_y = self.center_y - int(self.y * self.radius)
             pygame.draw.circle(screen, (255, 255, 255), (stick_x, stick_y), 8)
         else:
-            pygame.draw.circle(screen, (200, 200, 200), (self.center_x, self.center_y), 8)
+            pygame.draw.circle(
+                screen, (200, 200, 200), (self.center_x, self.center_y), 8
+            )
 
 
 class ManualKinderDemoCollector:
@@ -159,7 +161,9 @@ class ManualKinderDemoCollector:
 
         stick_radius = 40
         side_panel_width = 170
-        self.left_stick = AnalogStick(side_panel_width // 2, screen_height // 2, stick_radius)
+        self.left_stick = AnalogStick(
+            side_panel_width // 2, screen_height // 2, stick_radius
+        )
         self.right_stick = AnalogStick(
             screen_width - side_panel_width // 2, screen_height // 2, stick_radius
         )
@@ -249,7 +253,8 @@ class ManualKinderDemoCollector:
         self.truncated = bool(truncated)
 
     def _update_analog_inputs(self) -> bool:
-        """Update controller or mouse stick state and return whether input changed."""
+        """Update controller or mouse stick state and return whether input
+        changed."""
         some_action_input = False
         if self.controller:
             left_x = self.controller.get_axis(0)
@@ -283,7 +288,10 @@ class ManualKinderDemoCollector:
         return left_clicked or right_clicked
 
     def handle_events(self) -> bool:
-        """Handle pygame events. Returns False when the app should quit."""
+        """Handle pygame events.
+
+        Returns False when the app should quit.
+        """
         if self.terminated or self.truncated:
             if self.terminated:
                 print("Goal reached; auto-saving successful demo.")
@@ -344,7 +352,8 @@ class ManualKinderDemoCollector:
         return True
 
     def render(self) -> None:
-        """Render the env frame and control overlay inside the pygame window."""
+        """Render the env frame and control overlay inside the pygame
+        window."""
         img: np.ndarray = self.env.render()
         img_surface = pygame.surfarray.make_surface(img[:, :, :3].swapaxes(0, 1))
         img_rect = img_surface.get_rect()
@@ -363,8 +372,13 @@ class ManualKinderDemoCollector:
 
         left_label = self.font.render("Left Stick", True, (255, 255, 255))
         right_label = self.font.render("Right Stick", True, (255, 255, 255))
-        self.screen.blit(left_label, (self.left_stick.center_x - 40, self.left_stick.center_y - 60))
-        self.screen.blit(right_label, (self.right_stick.center_x - 45, self.right_stick.center_y - 60))
+        self.screen.blit(
+            left_label, (self.left_stick.center_x - 40, self.left_stick.center_y - 60)
+        )
+        self.screen.blit(
+            right_label,
+            (self.right_stick.center_x - 45, self.right_stick.center_y - 60),
+        )
 
         top_lines = [
             f"{self.env_id}",
@@ -386,14 +400,18 @@ class ManualKinderDemoCollector:
         ]
         for idx, line in enumerate(instructions):
             text_surface = self.font.render(line, True, (200, 200, 200))
-            self.screen.blit(text_surface, (10, self.screen_height - 25 * (len(instructions) - idx)))
+            self.screen.blit(
+                text_surface, (10, self.screen_height - 25 * (len(instructions) - idx))
+            )
 
         pygame.display.flip()
 
     def run(self) -> None:
         """Run the interactive demo collection loop."""
         print("Starting manual KinDER demo collection.")
-        print("This env renders through pygame from `rgb_array`; it does not need Gym `human` mode.")
+        print(
+            "This env renders through pygame from `rgb_array`; it does not need Gym `human` mode."
+        )
         running = True
         while running:
             running = self.handle_events()

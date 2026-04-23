@@ -5,8 +5,9 @@ from typing import Any, Callable
 
 import numpy as np
 import pytest
-from gymnasium.spaces import Box
+from gymnasium.spaces import Box, MultiDiscrete
 from omegaconf import DictConfig, OmegaConf
+from scipy.sparse import csr_matrix
 
 from programmatic_policy_learning.approaches.expert_approach import ExpertApproach
 from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
@@ -14,6 +15,7 @@ from programmatic_policy_learning.approaches.lpp_approach import (
     LogicProgrammaticPolicyApproach,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
+from programmatic_policy_learning.dsl.state_action_program import StateActionProgram
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 
@@ -296,3 +298,128 @@ def test_recovery_augmentation_ignores_small_bucket_difference() -> None:
     assert aug_ids == (0,)
     assert len(aug_demo.steps) == 0
     assert list(aug_dict.keys()) == [0]
+
+
+def test_discrete_training_uses_grid_enumeration_not_empty_candidate_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discrete PLP scoring should enumerate grid cells, not an empty
+    continuous catalog."""
+    approach = LogicProgrammaticPolicyApproach(
+        environment_description="DummyGrid-v0",
+        observation_space=Box(low=0, high=1, shape=(2, 2), dtype=np.int64),
+        action_space=MultiDiscrete([2, 2]),
+        seed=0,
+        expert=None,  # type: ignore[arg-type]
+        env_factory=lambda instance_num=None: None,
+        base_class_name="DummyGrid",
+        demo_numbers=(0,),
+        env_specs={"action_mode": "discrete"},
+        max_num_particles=2,
+        prior_version="uniform",
+    )
+
+    captured_candidate_actions: list[Any] = []
+
+    def fake_compute_likelihood_plps(*args: Any, **kwargs: Any) -> list[float]:
+        captured_candidate_actions.append(kwargs.get("candidate_actions"))
+        return [0.0]
+
+    def fake_log_plp_violation_counts(*args: Any, **kwargs: Any) -> None:
+        captured_candidate_actions.append(kwargs.get("candidate_actions"))
+
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.learn_plps",
+        lambda *args, **kwargs: ([StateActionProgram("True")], [0.0]),
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.compute_likelihood_plps",
+        fake_compute_likelihood_plps,
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.log_plp_violation_counts",
+        fake_log_plp_violation_counts,
+    )
+
+    X = np.array([[True], [False]])
+    y_bool = [True, False]
+    demonstrations = Trajectory(steps=[(np.zeros((2, 2), dtype=int), (0, 0))])
+
+    # pylint: disable=protected-access
+    policy = approach._train_policy_from_matrix(
+        X,
+        y_bool,
+        sample_weight=None,
+        programs_sa=[StateActionProgram("True")],
+        program_prior_log_probs_opt=[0.0],
+        demonstrations=demonstrations,
+        dsl_functions={},
+    )
+
+    assert policy.action_mode == "discrete"
+    assert captured_candidate_actions
+    assert all(value is None for value in captured_candidate_actions)
+
+
+def test_discrete_train_matrix_passes_none_sample_weight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discrete LPP should let DecisionTreeClassifier use class_weight."""
+    approach = LogicProgrammaticPolicyApproach(
+        environment_description="DummyGrid-v0",
+        observation_space=Box(low=0, high=1, shape=(2, 2), dtype=np.int64),
+        action_space=MultiDiscrete([2, 2]),
+        seed=0,
+        expert=None,  # type: ignore[arg-type]
+        env_factory=lambda instance_num=None: None,
+        base_class_name="DummyGrid",
+        demo_numbers=(0,),
+        env_specs={"action_mode": "discrete"},
+        prior_version="uniform",
+        cross_demo_feature_filter={"enabled": False},
+    )
+
+    examples = [
+        (np.zeros((2, 2), dtype=int), (0, 0)),
+        (np.zeros((2, 2), dtype=int), (0, 1)),
+    ]
+
+    def fake_run_all_programs_on_demonstrations(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        return (
+            csr_matrix(np.array([[True], [False]])),
+            np.array([1, 0], dtype=np.uint8),
+            examples,
+            np.ones(2, dtype=float),
+            np.array([0, 0], dtype=int),
+        )
+
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.run_all_programs_on_demonstrations",
+        fake_run_all_programs_on_demonstrations,
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach._filter_redundant_features",
+        lambda X, programs, priors: (X, programs, priors, np.asarray([1])),
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.log_feature_collisions",
+        lambda *args, **kwargs: [],
+    )
+
+    # pylint: disable=protected-access
+    _X, _y, _y_bool, sample_weights, _examples, _programs, _priors = (
+        approach._build_and_process_train_matrix(
+            train_demo_ids=(0,),
+            val_demo_ids=(),
+            demo_dict_train={0: Trajectory(steps=examples)},
+            programs_sa=[StateActionProgram("True")],
+            program_prior_log_probs_opt=[0.0],
+            dsl_functions={},
+            negative_sampling_cfg=None,
+            offline_path_name=None,
+            start_index=2,
+        )
+    )
+
+    assert sample_weights is None

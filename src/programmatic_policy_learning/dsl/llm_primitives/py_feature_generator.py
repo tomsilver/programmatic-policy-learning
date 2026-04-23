@@ -70,7 +70,9 @@ class PyFeatureGenerator:
             if candidate.exists():
                 return candidate
 
-        candidate = prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
+        candidate = (
+            prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
+        )
         if candidate.exists():
             return candidate
 
@@ -157,6 +159,29 @@ class PyFeatureGenerator:
             ]
         )
 
+    def load_demo_background(
+        self,
+        encoding_method: str,
+        *,
+        action_mode: str,
+        env_name: str | None = None,
+    ) -> str:
+        """Load rendered demonstration-format background text for a prompt."""
+
+        background_path = self._resolve_demo_background_path(
+            encoding_method,
+            action_mode=action_mode,
+            env_name=env_name,
+        )
+        background_text = background_path.read_text(encoding="utf-8").strip()
+        if "${OBSERVATION_FIELD_GUIDE}" in background_text:
+            field_guide = self._build_continuous_observation_field_guide(env_name)
+            background_text = background_text.replace(
+                "${OBSERVATION_FIELD_GUIDE}",
+                field_guide,
+            )
+        return background_text
+
     def fill_prompt(
         self,
         template: str,
@@ -185,18 +210,11 @@ class PyFeatureGenerator:
                     "encoding_method is required for demonstration background."
                 )
             enc_label = str(encoding_method)
-            background_path = self._resolve_demo_background_path(
+            background_text = self.load_demo_background(
                 enc_label,
                 action_mode=action_mode,
                 env_name=env_name,
             )
-            background_text = background_path.read_text(encoding="utf-8").strip()
-            if "${OBSERVATION_FIELD_GUIDE}" in background_text:
-                field_guide = self._build_continuous_observation_field_guide(env_name)
-                background_text = background_text.replace(
-                    "${OBSERVATION_FIELD_GUIDE}",
-                    field_guide,
-                )
             rendered = rendered.replace("${DEMONSTRATION_BACKGROUND}", background_text)
 
         if "${PASSAGE_VARIANT}" in rendered or "${PASSAGE_DESCRIPTION}" in rendered:
@@ -624,7 +642,7 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
-            input()
+            # input()
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")

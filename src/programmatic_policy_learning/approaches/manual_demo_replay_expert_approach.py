@@ -8,11 +8,15 @@ from typing import Any
 import numpy as np
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
-from programmatic_policy_learning.data.demo_io import DemoRecord, load_demo_records_from_dir
+from programmatic_policy_learning.data.demo_io import (
+    DemoRecord,
+    load_demo_records_from_dir,
+)
 
 
 class ManualDemoReplayExpertApproach(BaseApproach[Any, Any]):
-    """Stateful expert that replays a saved demo trajectory for the current seed."""
+    """Stateful expert that replays a saved demo trajectory for the current
+    seed."""
 
     def __init__(
         self,

@@ -68,9 +68,9 @@ def _compute_likelihood_worker(
     """Compute log-likelihoods for all precompiled PLPs on the given
     demonstrations.
 
-    For continuous-action settings, this assumes demonstration actions have
-    already been aligned to the same candidate-action catalog used at
-    inference time (for example, quantized bucket centers).
+    For continuous-action settings, this assumes demonstration actions
+    have already been aligned to the same candidate-action catalog used
+    at inference time (for example, quantized bucket centers).
     """
     global _WORKER_CANDIDATE_ACTIONS, _WORKER_PLPS  # pylint: disable=global-variable-not-assigned
     assert _WORKER_PLPS is not None, "Worker not initialized with PLPs."

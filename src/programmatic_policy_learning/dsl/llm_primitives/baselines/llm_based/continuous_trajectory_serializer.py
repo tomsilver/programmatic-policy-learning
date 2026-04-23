@@ -186,7 +186,8 @@ def extract_continuous_relational_facts(
 
 
 def extract_pushpullhook2d_relational_facts(obs: np.ndarray) -> list[str]:
-    """Derive task-relevant geometry facts from a PushPullHook2D observation."""
+    """Derive task-relevant geometry facts from a PushPullHook2D
+    observation."""
     robot_x = float(obs[0])
     robot_y = float(obs[1])
     robot_theta = float(obs[2])

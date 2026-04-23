@@ -801,10 +801,10 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     program_count = len(programs) if programs is not None else 0
     seed = kwargs.get("seed")
     seed_tag = f"s{seed}" if seed is not None else "snone"
-    demos_included = kwargs.get("demos_included")
+    prompt_demo_ids = kwargs.get("prompt_demo_ids")
     demos_tag = "none"
-    if demos_included is not None:
-        demos_list = list(demos_included)
+    if prompt_demo_ids is not None:
+        demos_list = list(prompt_demo_ids)
         demos_tag = "d" + "-".join(str(d) for d in demos_list)
     negative_sampling = kwargs.get("negative_sampling")
     sampling_sig = "none"
@@ -890,7 +890,6 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
                 f"Traceback:\n{traceback.format_exc()}"
             )
             logging.error(error_details)
-            print(error_details, flush=True)
     return results
 
 
@@ -909,7 +908,7 @@ def run_all_programs_on_single_demonstration(
     negative_sampling: dict[str, Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
-    demos_included: Sequence[int] | None = None,  # pylint: disable=unused-argument
+    prompt_demo_ids: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
     action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
@@ -922,7 +921,7 @@ def run_all_programs_on_single_demonstration(
     # Sample weighting is config-driven and only applies in continuous mode.
     compute_sample_weights = False
     if action_mode == "continuous":
-        cont_cfg = negative_sampling.get("continuous")
+        cont_cfg = negative_sampling["continuous"] if negative_sampling else {}
         weight_cfg = cont_cfg.get("weight_config")
         compute_sample_weights = bool(weight_cfg.get("enabled", True))
 
@@ -1077,17 +1076,31 @@ def run_all_programs_on_demonstrations(
     negative_sampling: dict[str, Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,
-    demos_included: Sequence[int] | None = None,
+    prompt_demo_ids: Sequence[int] | None = None,
     split_tag: str | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
-) -> tuple[
-    Any | None, np.ndarray | None, list[tuple[ObsT, ActT]] | None, np.ndarray | None
-]:
+    return_demo_ids: bool = False,
+) -> (
+    tuple[
+        Any | None,
+        np.ndarray | None,
+        list[tuple[ObsT, ActT]] | None,
+        np.ndarray | None,
+    ]
+    | tuple[
+        Any | None,
+        np.ndarray | None,
+        list[tuple[ObsT, ActT]] | None,
+        np.ndarray | None,
+        np.ndarray,
+    ]
+):
     """Run all programs on a set of demonstrations and aggregate results."""
     X, y = None, None
     examples_all: list[tuple[ObsT, ActT]] = []
     sample_weights_all: list[np.ndarray] = []
+    row_demo_ids_all: list[np.ndarray] = []
     for demo_number in demo_numbers:
         demo_X, demo_y, demo_examples, demo_sample_weights = (
             run_all_programs_on_single_demonstration(
@@ -1099,7 +1112,7 @@ def run_all_programs_on_demonstrations(
                 negative_sampling=negative_sampling,
                 return_examples=return_examples,
                 offline_path_name=offline_path_name,
-                demos_included=demos_included,
+                prompt_demo_ids=prompt_demo_ids,
                 split_tag=split_tag,
                 action_mode=action_mode,
                 seed=seed,
@@ -1115,9 +1128,26 @@ def run_all_programs_on_demonstrations(
         sample_weights_all.append(demo_sample_weights)
         if return_examples and demo_examples:
             examples_all.extend(demo_examples)
+        if return_demo_ids:
+            row_demo_ids_all.append(
+                np.full(int(demo_y.shape[0]), int(demo_number), dtype=int)
+            )
     sample_weights = (
         np.concatenate(sample_weights_all)
         if sample_weights_all
         else np.array([], dtype=float)
     )
+    if return_demo_ids:
+        row_demo_ids = (
+            np.concatenate(row_demo_ids_all)
+            if row_demo_ids_all
+            else np.array([], dtype=int)
+        )
+        return (
+            X,
+            y,
+            (examples_all if return_examples else None),
+            sample_weights,
+            row_demo_ids,
+        )
     return X, y, (examples_all if return_examples else None), sample_weights

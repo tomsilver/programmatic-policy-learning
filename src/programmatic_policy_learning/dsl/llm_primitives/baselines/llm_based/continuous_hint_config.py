@@ -343,14 +343,14 @@ def salient_obs_indices_for_motion2d(num_passages: int) -> list[int]:
 def salient_obs_indices_for_pushpullhook2d() -> list[int]:
     """Return decision-critical observation indices for PushPullHook2D."""
     return [
-        0,   # robot_x
-        1,   # robot_y
-        2,   # robot_theta
-        3,   # robot_base_radius
-        4,   # robot_arm_joint
-        5,   # robot_arm_length
-        6,   # robot_vacuum
-        9,   # hook_x
+        0,  # robot_x
+        1,  # robot_y
+        2,  # robot_theta
+        3,  # robot_base_radius
+        4,  # robot_arm_joint
+        5,  # robot_arm_length
+        6,  # robot_vacuum
+        9,  # hook_x
         10,  # hook_y
         11,  # hook_theta
         17,  # hook_width
@@ -366,7 +366,8 @@ def salient_obs_indices_for_pushpullhook2d() -> list[int]:
 
 
 def salient_obs_indices_for_kinder(env_name: str, num_passages: int = 0) -> list[int]:
-    """Return decision-critical observation indices for a supported KinDER env."""
+    """Return decision-critical observation indices for a supported KinDER
+    env."""
     canonical_name = canonicalize_env_name(env_name)
     if canonical_name == "Motion2D":
         return salient_obs_indices_for_motion2d(num_passages)

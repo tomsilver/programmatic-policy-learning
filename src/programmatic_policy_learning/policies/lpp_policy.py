@@ -204,7 +204,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         return self._continuous_action_score(obs, action)
 
     def _find_continuous_candidate_index(self, action: _ActType) -> int | None:
-        """Return the index of a candidate action if it exists in the catalog."""
+        """Return the index of a candidate action if it exists in the
+        catalog."""
         action_arr = np.asarray(action)
         for idx, candidate in enumerate(self.candidate_actions):
             candidate_arr = np.asarray(candidate)
