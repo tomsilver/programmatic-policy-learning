@@ -15,7 +15,6 @@ from hydra.core.hydra_config import HydraConfig
 
 # from omegaconf import DictConfig
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-from prpl_llm_utils.models import OpenAIModel
 from scipy.sparse import vstack
 from scipy.special import logsumexp
 
@@ -25,6 +24,11 @@ from programmatic_policy_learning.approaches.base_approach import BaseApproach
 from programmatic_policy_learning.approaches.lpp_utils.lpp_collision_feedback_utils import (
     run_collision_feedback_loop,
 )
+from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_scoring_utils import (
+    feature_score_keep_mask,
+    score_cross_demo_features,
+    write_feature_scores,
+)
 from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils import (
     _extract_feature_names,
 )
@@ -32,6 +36,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils 
 # pylint: disable-next=line-too-long
 from programmatic_policy_learning.approaches.lpp_utils.lpp_program_generation_utils import (
     get_program_set,
+    make_llm_client_for_model,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils import (
     prepare_programs_and_dsl,
@@ -50,6 +55,7 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     build_collision_repair_prompt,
     deduplicate_negative_examples,
     drop_negative_exact_contradictions,
+    infer_episode_success,
     is_kinder_env,
     log_exact_example_label_contradictions,
     log_feature_collisions,
@@ -58,9 +64,15 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
 )
 from programmatic_policy_learning.data.dataset import (
     extract_examples_from_demonstration,
+    extract_examples_from_demonstration_item,
     run_all_programs_on_demonstrations,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
+
+# pylint: disable-next=line-too-long
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.continuous_trajectory_serializer import (
+    extract_continuous_relational_facts,
+)
 from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
     PyFeatureGenerator,
 )
@@ -82,6 +94,7 @@ from programmatic_policy_learning.utils.action_canonicalization import (
 from programmatic_policy_learning.utils.action_quantization import (
     Motion2DActionQuantizer,
 )
+from programmatic_policy_learning.utils.grid_validation import require_grid_state_action
 
 _filter_redundant_features = filter_redundant_features
 
@@ -92,6 +105,144 @@ EnvFactory = Callable[[int | None], Any]
 
 class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that learns a logical programmatic policy from data."""
+
+    def _assert_continuous_demo_alignment(
+        self,
+        demonstrations: Trajectory[_ObsType, _ActType],
+        negative_sampling_cfg: dict[str, Any] | None,
+        *,
+        max_checks: int = 5,
+    ) -> None:
+        """Sanity-check that demo centering matches dataset expansion."""
+        if str(self.env_specs.get("action_mode", "discrete")) != "continuous":
+            return
+        for obs, action in demonstrations.steps[:max_checks]:
+            pos_examples, _, _ = extract_examples_from_demonstration_item(
+                (obs, action),
+                negative_sampling=negative_sampling_cfg,
+                action_mode="continuous",
+                compute_sample_weights=False,
+            )
+            centered = np.asarray(
+                self._center_continuous_action_for_scoring(action), dtype=float
+            )
+            expected = np.asarray(pos_examples[0][1], dtype=float)
+            if not np.allclose(centered, expected, atol=1e-8):
+                raise AssertionError(
+                    "Continuous demo alignment mismatch between "
+                    "_center_continuous_action_for_scoring() and "
+                    "extract_examples_from_demonstration_item()."
+                )
+
+    def _log_sample_weight_stats(
+        self,
+        sample_weights: np.ndarray | None,
+        *,
+        label: str,
+        preview_limit: int = 25,
+        histogram_bins: int = 10,
+    ) -> None:
+        """Log sample-weight shape, preview values, and histogram."""
+        if sample_weights is None:
+            logging.info("%s sample weights: None", label)
+            return
+
+        weights = np.asarray(sample_weights, dtype=float).reshape(-1)
+        logging.info(
+            "%s sample weights: shape=%s dtype=%s min=%.6f max=%.6f "
+            "mean=%.6f std=%.6f",
+            label,
+            tuple(sample_weights.shape),
+            sample_weights.dtype,
+            float(weights.min()),
+            float(weights.max()),
+            float(weights.mean()),
+            float(weights.std()),
+        )
+        logging.info(
+            "%s sample weights preview (first %d/%d): %s",
+            label,
+            min(preview_limit, weights.size),
+            weights.size,
+            weights[:preview_limit].tolist(),
+        )
+
+        unique_vals, unique_counts = np.unique(weights, return_counts=True)
+        if unique_vals.size <= histogram_bins:
+            exact_histogram = [
+                (float(value), int(count))
+                for value, count in zip(unique_vals, unique_counts)
+            ]
+            logging.info(
+                "%s sample weights exact histogram: %s",
+                label,
+                exact_histogram,
+            )
+            return
+
+        bin_edges = np.histogram_bin_edges(weights, bins=histogram_bins)
+        counts, edges = np.histogram(weights, bins=bin_edges)
+        range_histogram = [
+            {
+                "left": float(edges[idx]),
+                "right": float(edges[idx + 1]),
+                "count": int(counts[idx]),
+            }
+            for idx in range(len(counts))
+        ]
+        logging.info("%s sample weights histogram: %s", label, range_histogram)
+
+    def _log_motion2d_demonstration_snapshots(
+        self,
+        demo_dict: Mapping[int, Trajectory[_ObsType, _ActType]],
+        *,
+        split_name: str,
+    ) -> None:
+        """Log per-state Motion2D demonstration snapshots for debugging."""
+        if "motion2d" not in str(self.base_class_name).lower():
+            return
+
+        logging.info("Motion2D %s demonstration snapshots:", split_name)
+        num_passages = int(self.env_specs.get("num_passages", 0))
+        for demo_id, trajectory in sorted(demo_dict.items(), key=lambda item: item[0]):
+            logging.info("Demo %s has %d states", demo_id, len(trajectory.steps))
+            for state_idx, (obs, action) in enumerate(trajectory.steps):
+                robot_pos = self._motion2d_robot_position(obs)
+                if robot_pos is not None:
+                    logging.info(
+                        "Demo %s state %d robot_position=(%.3f, %.3f) action=%s",
+                        demo_id,
+                        state_idx,
+                        robot_pos[0],
+                        robot_pos[1],
+                        action,
+                    )
+                else:
+                    logging.info(
+                        "Demo %s state %d robot_position=unknown action=%s",
+                        demo_id,
+                        state_idx,
+                        action,
+                    )
+                try:
+                    facts = extract_continuous_relational_facts(
+                        np.asarray(obs, dtype=float).reshape(-1),
+                        num_passages=num_passages,
+                    )
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    logging.info(
+                        "Demo %s state %d snapshot unavailable: %s",
+                        demo_id,
+                        state_idx,
+                        exc,
+                    )
+                    continue
+                logging.info(
+                    "Demo %s state %d snapshot: %s",
+                    demo_id,
+                    state_idx,
+                    " | ".join(facts),
+                )
 
     def _log_initial_action_space_ranges(self) -> None:
         """Print/log continuous action ranges for debugging."""
@@ -106,6 +257,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         msg = f"Action space bounds: low={low.tolist()} high={high.tolist()}"
         logging.info(msg)
+        action_types = self.env_specs.get("action_types")
+        if action_types:
+            logging.info("Action space types: %s", list(action_types))
 
         if "motion2d" not in str(self.base_class_name).lower():
             return
@@ -159,6 +313,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_feedback_enc: str = "enc_1",
         collision_template_feedback: bool = True,
         collision_feedback_num_buckets: int = 2,
+        collision_feedback_bucket_mode: str = "positive_anchor",
         collision_feedback_enabled: bool = False,
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
@@ -179,6 +334,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         dt_max_depth: int | None = 5,
         hyperparam_grid: Mapping[str, Sequence[Any] | Any] | None = None,
         recovery_augmentation: Mapping[str, Any] | None = None,
+        cross_demo_feature_filter: Mapping[str, Any] | None = None,
     ) -> None:
         """LPP APProach."""
         super().__init__(environment_description, observation_space, action_space, seed)
@@ -208,6 +364,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.collision_feedback_num_buckets = max(
             1, min(2, int(collision_feedback_num_buckets))
         )
+        if collision_feedback_bucket_mode not in {
+            "positive_anchor",
+            "global_mixed_label",
+        }:
+            raise ValueError(
+                "collision_feedback_bucket_mode must be one of "
+                "{'positive_anchor', 'global_mixed_label'}."
+            )
+        self.collision_feedback_bucket_mode = str(collision_feedback_bucket_mode)
         self.collision_feedback_enabled = collision_feedback_enabled
         self.collision_feedback_max_new_features = collision_feedback_max_new_features
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
@@ -239,6 +404,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             if isinstance(recovery_augmentation, Mapping)
             else {"enabled": False}
         )
+        self.cross_demo_feature_filter = (
+            dict(cross_demo_feature_filter)
+            if isinstance(cross_demo_feature_filter, Mapping)
+            else {"enabled": True, "apply_filter": False}
+        )
         self._negative_sampling_cfg: dict[str, Any] | None = None
         self._log_initial_action_space_ranges()
 
@@ -258,6 +428,179 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             "w_depth": float(self.w_depth),
             "w_ops": float(self.w_ops),
         }
+
+    @staticmethod
+    def _realign_row_demo_ids(
+        old_examples: list[tuple[_ObsType, _ActType]] | None,
+        old_row_demo_ids: np.ndarray,
+        new_examples: list[tuple[_ObsType, _ActType]] | None,
+    ) -> np.ndarray:
+        if old_examples is None or new_examples is None:
+            return old_row_demo_ids
+        row_id_by_example_identity = {
+            id(example): old_row_demo_ids[idx]
+            for idx, example in enumerate(old_examples)
+        }
+        return np.asarray(
+            [row_id_by_example_identity[id(example)] for example in new_examples],
+            dtype=int,
+        )
+
+    def _prompt_demo_ids_tag(self) -> Sequence[int] | None:
+        """Return configured prompt demo ids for cache tagging."""
+        program_generation = dict(self.program_generation or {})
+        ensemble_cfg = dict(program_generation.get("multi_prompt_ensemble") or {})
+        demo_subsets = ensemble_cfg.get("demo_subsets")
+        if not isinstance(demo_subsets, Sequence) or isinstance(
+            demo_subsets, (str, bytes)
+        ):
+            return None
+
+        normalized_subsets = [
+            list(dict.fromkeys(int(demo_id) for demo_id in demo_subset))
+            for demo_subset in demo_subsets
+            if isinstance(demo_subset, Sequence)
+            and not isinstance(demo_subset, (str, bytes))
+            and len(demo_subset) > 0
+        ]
+        if not normalized_subsets:
+            return None
+        if len(normalized_subsets) == 1:
+            return normalized_subsets[0]
+
+        union: list[int] = []
+        seen: set[int] = set()
+        for demo_subset in normalized_subsets:
+            for demo_id in demo_subset:
+                if demo_id not in seen:
+                    seen.add(demo_id)
+                    union.append(demo_id)
+        return union
+
+    def _feature_scores_output_path(self) -> Path:
+        try:
+            output_dir = Path(HydraConfig.get().runtime.output_dir)
+        except Exception:  # pylint: disable=broad-exception-caught
+            output_dir = Path.cwd()
+        return output_dir / "feature_scores.json"
+
+    def _score_and_optionally_filter_features(
+        self,
+        X: Any,
+        y: np.ndarray,
+        row_demo_ids: np.ndarray,
+        programs_sa: list[StateActionProgram],
+        program_prior_log_probs: list[float] | None,
+    ) -> tuple[Any, list[StateActionProgram], list[float] | None]:
+        cfg = dict(self.cross_demo_feature_filter or {})
+        if not bool(cfg.get("enabled", True)):
+            logging.info("Cross-demo feature scoring disabled.")
+            return X, programs_sa, program_prior_log_probs
+
+        consistency_tau = float(cfg.get("consistency_tau", 0.05))
+        scores = score_cross_demo_features(
+            X,
+            y,
+            row_demo_ids,
+            programs_sa,
+            consistency_tau=consistency_tau,
+        )
+        ranked_scores = sorted(
+            scores,
+            key=lambda score: float(score["cross_demo_score"]),
+            reverse=True,
+        )
+        logging.info(
+            "Cross-demo feature scores computed for %d features.",
+            len(scores),
+        )
+        for rank, score in enumerate(ranked_scores[:10], start=1):
+            logging.info(
+                "Feature score #%d score=%.4f pos_demo=%d "
+                "neg_demo=%d mean_abs_demo_contrast=%.4f "
+                "consistency=%.2f program=%s",
+                rank,
+                float(score["cross_demo_score"]),
+                int(score["pos_demo_support_count"]),
+                int(score["neg_demo_support_count"]),
+                float(score["mean_demo_abs_contrast"]),
+                float(score["contrast_consistency_frac"]),
+                score["program"],
+            )
+
+        write_feature_scores(
+            self._feature_scores_output_path(),
+            scores,
+            metadata={
+                "kind": "cross_demo_feature_scores",
+                "base_class_name": self.base_class_name,
+                "seed": self.seed_num,
+                "consistency_tau": consistency_tau,
+                "num_features": len(scores),
+                "num_rows": int(X.shape[0]),
+                "demo_ids": sorted(int(x) for x in np.unique(row_demo_ids)),
+            },
+        )
+
+        apply_filter = bool(cfg.get("apply_filter", cfg.get("filter_enabled", False)))
+        if not apply_filter:
+            return X, programs_sa, program_prior_log_probs
+
+        num_demos = max(1, len(np.unique(row_demo_ids)))
+        min_pos_demo_support = min(
+            num_demos,
+            int(cfg.get("min_pos_demo_support", 2 if num_demos > 1 else 1)),
+        )
+        keep_mask = feature_score_keep_mask(
+            scores,
+            min_pos_demo_support=min_pos_demo_support,
+            min_neg_demo_support=int(
+                cfg.get("min_neg_demo_support", min_pos_demo_support)
+            ),
+            allow_negative_support=bool(cfg.get("allow_negative_support", True)),
+            min_abs_mean_demo_contrast=float(
+                cfg.get("min_abs_mean_demo_contrast", 0.02)
+            ),
+            min_consistency_frac=float(cfg.get("min_consistency_frac", 0.4)),
+            min_total_fire_rate=float(cfg.get("min_total_fire_rate", 0.005)),
+            max_total_fire_rate=float(cfg.get("max_total_fire_rate", 0.95)),
+        )
+        if keep_mask.all():
+            logging.info("Cross-demo feature filter kept all %d features.", len(scores))
+            return X, programs_sa, program_prior_log_probs
+        if not keep_mask.any():
+            logging.warning(
+                "Cross-demo feature filter would remove all features; "
+                "keeping original set."
+            )
+            return X, programs_sa, program_prior_log_probs
+
+        removed = int((~keep_mask).sum())
+        logging.info(
+            "Cross-demo feature filter removed %d/%d features.",
+            removed,
+            len(scores),
+        )
+        for score in [s for s in scores if not keep_mask[int(s["feature_index"])]][:10]:
+            logging.info(
+                "Cross-demo drop score=%.4f pos_demo=%d "
+                "neg_demo=%d mean_abs_demo_contrast=%.4f "
+                "consistency=%.2f program=%s",
+                float(score["cross_demo_score"]),
+                int(score["pos_demo_support_count"]),
+                int(score["neg_demo_support_count"]),
+                float(score["mean_demo_abs_contrast"]),
+                float(score["contrast_consistency_frac"]),
+                score["program"],
+            )
+
+        X = X[:, keep_mask]
+        programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+        if program_prior_log_probs is not None:
+            program_prior_log_probs = [
+                lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+            ]
+        return X, programs_sa, program_prior_log_probs
 
     @staticmethod
     def _normalize_grid_values(raw_values: Sequence[Any] | Any) -> list[Any]:
@@ -337,7 +680,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             cache_path = Path(f"py_feature_cache_{model_slug}.db")
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            llm_client = OpenAIModel(llm_model, cache)
+            llm_client = make_llm_client_for_model(
+                llm_model,
+                cache,
+                use_response_model=(self.program_generation or {}).get(
+                    "use_response_model"
+                ),
+            )
             self._collision_py_generator = PyFeatureGenerator(llm_client)
             self._collision_llm_model = llm_model
         return self._collision_py_generator
@@ -399,7 +748,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         existing_feature_summary: str | None = None,
         failed_attempt_summaries: str | None = None,
     ) -> str | None:
-
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         is_kinder = (
             "motion2d" in str(self.base_class_name).lower()
@@ -418,15 +766,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         if not collision_groups or examples is None:
             return None
         ranked_groups = sorted(
-            collision_groups, key=lambda g: g["max_occur"], reverse=True
+            collision_groups,
+            key=lambda g: (
+                int(g.get("total_count", g["max_occur"])),
+                float(g.get("label_balance", 0.0)),
+                int(g["max_occur"]),
+            ),
+            reverse=True,
         )
-        logging.info("Collision groups (top 5 by max_occur):")
+        logging.info(
+            "Collision groups (top 5 by size/balance, mode=%s):",
+            self.collision_feedback_bucket_mode,
+        )
         for rank, group in enumerate(ranked_groups[:5], start=1):
             pos_list = group["pos"]
             neg_list = group["neg"]
             logging.info(
-                "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
+                "  %d) total=%d balance=%.3f max_occur=%d "
+                "pos_count=%d neg_count=%d pos=%s neg=%s",
                 rank,
+                int(group.get("total_count", len(pos_list) + len(neg_list))),
+                float(group.get("label_balance", 0.0)),
                 group["max_occur"],
                 len(pos_list),
                 len(neg_list),
@@ -449,6 +809,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             existing_feature_summary=existing_feature_summary,
             max_per_label=5,
             collision_feedback_enc=self.collision_feedback_enc,
+            bucket_mode=self.collision_feedback_bucket_mode,
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
             seed=self.seed_num,
@@ -491,8 +852,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         tie_break_demonstrations: Trajectory[_ObsType, _ActType] | None = None,
     ) -> LPPPolicy:
         hp = self._resolve_train_hyperparams(train_hyperparams)
-        candidate_actions = self._build_continuous_candidate_actions(
-            negative_sampling_cfg
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        candidate_actions = (
+            self._build_continuous_candidate_actions(negative_sampling_cfg)
+            if action_mode == "continuous"
+            else None
         )
         prior_version = str(hp["prior_version"])
         alpha = float(hp["alpha"])
@@ -553,8 +917,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         logging.info("LEN BEFORE FILTERING FALSE=%d", len(plps))
         filtered: list[tuple[StateActionProgram, float]] = []
+        num_false = 0
         for plp, prior in zip(plps, plp_priors):
             if str(plp).strip() == "False":
+                num_false += 1
                 continue
             filtered.append((plp, prior))
         if filtered:
@@ -564,20 +930,30 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         else:
             plps, plp_priors = [], []
 
-        logging.info("LEN AFTER FILTERING FALSE=%d", len(plps))
+        logging.info(
+            "LEN AFTER FILTERING FALSE=%d (removed %d false PLPs)",
+            len(plps),
+            num_false,
+        )
 
         aligned_demonstrations = self._align_demonstrations_for_continuous_scoring(
             demonstrations
         )
-        valid_plps = log_plp_violation_counts(
+        # plps, plp_priors = self._filter_overly_permissive_plps(
+        #     plps,
+        #     plp_priors,
+        #     aligned_demonstrations,
+        #     candidate_actions=candidate_actions,
+        # )
+
+        log_plp_violation_counts(
             plps,
             aligned_demonstrations,
             dsl_functions,
             candidate_actions=candidate_actions,
             detailed_debug=False,
         )
-        logging.info("LEN AFTER filtering violations=%d", len(valid_plps))
-        plps = valid_plps
+        # logging.info("LEN AFTER filtering violations=%d", len(plps))
         likelihoods = compute_likelihood_plps(
             plps,
             aligned_demonstrations,
@@ -596,6 +972,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         top_particles, top_particle_log_probs = select_particles(
             particles, particle_log_probs, int(hp["max_num_particles"])
         )
+        # print([str(plp) + "**\n" for plp in top_particles])
+        # input(top_particle_log_probs)
         if len(top_particle_log_probs) > 0:
             probs_arr = np.asarray(particle_log_probs)
             max_val = probs_arr.max()
@@ -613,6 +991,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     tie_policy: LPPPolicy = LPPPolicy(
                         [particles[idx]],
                         [1.0],
+                        map_choices=False,
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
@@ -651,8 +1030,22 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 dsl_functions,
                 candidate_actions=candidate_actions,
                 max_logged_plps=1,
-                detailed_debug=False,
+                detailed_debug=True,
             )
+
+            if not any(str(p) == str(particles[map_idx]) for p in top_particles):
+                map_particle = particles[map_idx]
+                map_log_prob = particle_log_probs[map_idx]
+                max_particles = int(hp["max_num_particles"])
+                if len(top_particles) < max_particles:
+                    top_particles.append(map_particle)
+                    top_particle_log_probs.append(map_log_prob)
+                elif top_particles:
+                    top_particles[-1] = map_particle
+                    top_particle_log_probs[-1] = map_log_prob
+                logging.info(
+                    "Inserted resolved MAP program into truncated mixture policy."
+                )
 
             top_particle_log_probs = np.array(top_particle_log_probs) - logsumexp(
                 top_particle_log_probs
@@ -662,11 +1055,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             policy: LPPPolicy = LPPPolicy(
                 top_particles,
                 top_particle_probs,
+                map_choices=False,
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
                 candidate_actions=candidate_actions,
             )
+            if not any(str(p) == str(particles[map_idx]) for p in top_particles):
+                raise AssertionError(
+                    "MAP representative is not included in the returned mixture "
+                    "policy. Ensure particle truncation preserves the MAP PLP."
+                )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
             return policy
@@ -675,6 +1074,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return LPPPolicy(
             [StateActionProgram("False")],
             [1.0],
+            map_choices=False,
             normalize_plp_actions=self.normalize_plp_actions,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
             action_space=cast(Any, self._action_space),
@@ -699,6 +1099,125 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             prob = float(policy.get_action_prob(obs, action))
             losses.append(-float(np.log(max(prob, eps))))
         return float(np.mean(losses))
+
+    def _compute_plp_avg_allowed_metrics(
+        self,
+        plp: StateActionProgram,
+        demonstrations: Trajectory[_ObsType, _ActType],
+        *,
+        candidate_actions: list[_ActType] | None,
+    ) -> tuple[float, float]:
+        """Return (avg_allowed_frac, avg_allowed_count) over demo states."""
+        if len(demonstrations.steps) == 0:
+            return 0.0, 0.0
+
+        total_allowed = 0.0
+        total_possible = 0.0
+        total_steps = 0
+
+        for obs, action in demonstrations.steps:
+            try:
+                obs_grid, _ = require_grid_state_action(
+                    obs,
+                    action,
+                    context="_compute_plp_avg_allowed_metrics",
+                )
+                rows, cols = obs_grid.shape[:2]
+                possible = rows * cols
+                allowed = 0
+                for r in range(rows):
+                    for c in range(cols):
+                        if plp(obs_grid, (r, c)):
+                            allowed += 1
+            except TypeError:
+                probe_actions = (
+                    list(candidate_actions)
+                    if candidate_actions is not None and len(candidate_actions) > 0
+                    else [action]
+                )
+                possible = len(probe_actions)
+                allowed = 0
+                for probe_action in probe_actions:
+                    if plp(obs, probe_action):
+                        allowed += 1
+
+            total_allowed += float(allowed)
+            total_possible += float(max(1, possible))
+            total_steps += 1
+
+        if total_steps == 0:
+            return 0.0, 0.0
+        avg_allowed_frac = total_allowed / max(1.0, total_possible)
+        avg_allowed_count = total_allowed / float(total_steps)
+        return float(avg_allowed_frac), float(avg_allowed_count)
+
+    def _filter_overly_permissive_plps(
+        self,
+        plps: list[StateActionProgram],
+        plp_priors: list[float],
+        demonstrations: Trajectory[_ObsType, _ActType],
+        *,
+        candidate_actions: list[_ActType] | None,
+    ) -> tuple[list[StateActionProgram], list[float]]:
+        """Drop PLPs that allow too many actions on average over demos."""
+        if not self.permissive_filter_enabled or len(plps) == 0:
+            return plps, plp_priors
+
+        max_avg_frac = self.permissive_filter_max_avg_frac
+        max_avg_count = self.permissive_filter_max_avg_count
+        if max_avg_frac is None and max_avg_count is None:
+            return plps, plp_priors
+
+        kept: list[tuple[StateActionProgram, float]] = []
+        removed: list[tuple[float, float, str]] = []
+        for plp, prior in zip(plps, plp_priors):
+            avg_frac, avg_count = self._compute_plp_avg_allowed_metrics(
+                plp,
+                demonstrations,
+                candidate_actions=candidate_actions,
+            )
+            too_permissive_frac = (max_avg_frac is not None) and (
+                avg_frac > float(max_avg_frac)
+            )
+            too_permissive_count = (max_avg_count is not None) and (
+                avg_count > float(max_avg_count)
+            )
+            if too_permissive_frac or too_permissive_count:
+                removed.append((avg_frac, avg_count, str(plp)))
+                continue
+            kept.append((plp, prior))
+
+        if not kept:
+            logging.warning(
+                "Permissive filter removed all PLPs; keeping original set. "
+                "Try relaxing permissive_filter_max_avg_frac/count."
+            )
+            return plps, plp_priors
+
+        if removed:
+            logging.info(
+                "Permissive filter removed %d/%d PLPs "
+                "(max_avg_frac=%s max_avg_count=%s).",
+                len(removed),
+                len(plps),
+                str(max_avg_frac),
+                str(max_avg_count),
+            )
+            removed_sorted = sorted(removed, key=lambda t: (t[0], t[1]), reverse=True)
+            for idx, (avg_frac, avg_count, plp_str) in enumerate(
+                removed_sorted[:5], start=1
+            ):
+                logging.info(
+                    "Permissive drop #%d avg_allowed_frac=%.4f "
+                    "avg_allowed_count=%.4f plp=%s",
+                    idx,
+                    avg_frac,
+                    avg_count,
+                    plp_str,
+                )
+
+        filtered_plps, filtered_priors = zip(*kept)
+        return list(filtered_plps), list(filtered_priors)
 
     def _get_data_loading_config(
         self,
@@ -730,8 +1249,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
             cont_cfg = negative_sampling_cfg.setdefault("continuous", {})
             if isinstance(cont_cfg, dict):
-                if str(self.base_class_name) == "Motion2D":
-                    cont_cfg.setdefault("active_action_dims", [0, 1])
                 cont_cfg.setdefault("inactive_action_fill_value", 0.0)
         return offline_path_name, negative_sampling_cfg
 
@@ -763,15 +1280,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         high_arr = np.asarray(getattr(self._action_space, "high"), dtype=float).reshape(
             -1
         )
-        if low_arr.size < 2 or high_arr.size < 2:
+        if low_arr.size == 0 or high_arr.size == 0:
             raise ValueError(
-                "Continuous quantized inference requires at least 2 action dimensions."
+                "Continuous quantized inference requires at least 1 action dimension."
             )
 
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=low_arr.size,
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         active_low_arr, active_high_arr = active_action_bounds(
@@ -821,10 +1338,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         base = np.asarray(action, dtype=float)
         if base.ndim == 0:
             base = base.reshape(1)
-        if base.shape[0] < 5:
-            raise ValueError(
-                "Continuous action alignment requires at least 5 action dimensions."
-            )
 
         low_arr = np.asarray(getattr(self._action_space, "low"), dtype=float).reshape(
             -1
@@ -841,7 +1354,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
@@ -918,6 +1431,113 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return None
         return float(arr[0]), float(arr[1])
 
+    def _motion2d_reference_passage(self, obs: Any) -> dict[str, float | int] | None:
+        if "motion2d" not in str(self.base_class_name).lower():
+            return None
+        arr = np.asarray(obs, dtype=float).reshape(-1)
+        if arr.size < 39:
+            return None
+        robot_x = float(arr[0])
+        robot_r = float(arr[3])
+        num_obstacles = max(0, (arr.size - 19) // 10)
+        passages: list[dict[str, float | int]] = []
+        for passage_idx in range(num_obstacles // 2):
+            bot_base = 19 + 20 * passage_idx
+            top_base = bot_base + 10
+            wall_x = float(arr[bot_base])
+            wall_w = float(arr[bot_base + 8])
+            gap_lower = float(arr[bot_base + 1] + arr[bot_base + 9] + robot_r)
+            gap_upper = float(arr[top_base + 1] - robot_r)
+            passages.append(
+                {
+                    "passage_idx": passage_idx,
+                    "wall_left": wall_x,
+                    "wall_right": wall_x + wall_w,
+                    "gap_lower": gap_lower,
+                    "gap_upper": gap_upper,
+                    "gap_center": (gap_lower + gap_upper) / 2.0,
+                }
+            )
+        if not passages:
+            return None
+        for passage in sorted(passages, key=lambda p: float(p["wall_left"])):
+            if robot_x + robot_r < float(passage["wall_right"]):
+                return passage
+        return min(passages, key=lambda p: abs(robot_x - float(p["gap_center"])))
+
+    def _format_recovery_action(self, action: Any) -> str:
+        arr = np.asarray(action, dtype=float).reshape(-1)
+        return np.array2string(arr, precision=3, separator=", ")
+
+    def _log_recovery_decision_debug(
+        self,
+        *,
+        policy: LPPPolicy,
+        obs: _ObsType,
+        policy_action: _ActType,
+        expert_action: _ActType,
+        env_num: int,
+        trigger: str,
+    ) -> None:
+        """Log a compact snapshot for a recovery-triggered state."""
+        try:
+            robot_pos = self._motion2d_robot_position(obs)
+            target_dist = self._motion2d_target_distance(obs)
+            ref_passage = self._motion2d_reference_passage(obs)
+            centered_expert = self._center_continuous_action_for_scoring(expert_action)
+            debug_parts = [
+                f"env={env_num}",
+                f"trigger={trigger}",
+                f"policy={self._format_recovery_action(policy_action)}",
+                f"expert_centered={self._format_recovery_action(centered_expert)}",
+            ]
+            if robot_pos is not None:
+                debug_parts.append(f"robot=({robot_pos[0]:.3f}, {robot_pos[1]:.3f})")
+            if target_dist is not None:
+                debug_parts.append(f"target_dist={target_dist:.3f}")
+            if ref_passage is not None:
+                debug_parts.append(
+                    "passage="
+                    f"{int(ref_passage['passage_idx'])}"
+                    f"(wall=[{float(ref_passage['wall_left']):.3f},"
+                    f"{float(ref_passage['wall_right']):.3f}],"
+                    f"gap_center={float(ref_passage['gap_center']):.3f},"
+                    f"gap=[{float(ref_passage['gap_lower']):.3f},"
+                    f"{float(ref_passage['gap_upper']):.3f}])"
+                )
+
+            if (
+                str(self.env_specs.get("action_mode", "discrete")) == "continuous"
+                and policy.candidate_actions
+            ):
+                # Accessing the policy's scored recovery candidates is
+                # intentional here for debugging.
+                # pylint: disable-next=protected-access
+                scores = policy._get_continuous_candidate_scores(obs)
+                if scores.size > 0:
+                    top_indices = np.argsort(scores)[::-1][:2]
+                    top_parts = []
+                    for rank, idx in enumerate(top_indices.tolist(), start=1):
+                        action_text = self._format_recovery_action(
+                            policy.candidate_actions[idx]
+                        )
+                        top_parts.append(
+                            f"top{rank}={action_text}@{float(scores[idx]):.4f}"
+                        )
+                    # pylint: disable-next=protected-access
+                    expert_idx = policy._find_continuous_candidate_index(
+                        cast(_ActType, centered_expert)
+                    )
+                    if expert_idx is not None:
+                        top_parts.append(
+                            f"expert_score={float(scores[expert_idx]):.4f}"
+                        )
+                    debug_parts.extend(top_parts)
+
+            logging.info("Recovery debug: %s", " | ".join(debug_parts))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logging.info("Recovery debug unavailable for env %d: %s", env_num, exc)
+
     def _actions_match_for_recovery(self, a: _ActType, b: _ActType) -> bool:
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         if action_mode != "continuous":
@@ -955,7 +1575,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         active_dims = get_active_action_dims(
             sampling_cfg,
             total_dims=base.shape[0],
-            default_active_dims=[0, 1],
+            default_active_dims=None,
         )
         inactive_fill_value = get_inactive_action_fill_value(sampling_cfg)
         canonical_base = canonicalize_continuous_action(
@@ -981,6 +1601,43 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             for value in active_action.tolist()
         )
         return bucket, sign_pattern
+
+    def _recovery_action_signature(self, action: _ActType) -> Any:
+        """Return a hashable action signature for recovery-loop checks."""
+        action_mode = str(self.env_specs.get("action_mode", "discrete"))
+        if action_mode == "continuous":
+            signature = self._continuous_recovery_action_signature(action)
+            if signature is not None:
+                return ("continuous", signature)
+        if isinstance(action, np.ndarray):
+            return ("np", str(action.dtype), tuple(action.shape), action.tobytes())
+        return ("repr", repr(action))
+
+    def _has_recovery_loop(self, recent_step_signatures: Sequence[Any]) -> bool:
+        """Return True for simple repeated state-action loops."""
+        window = list(recent_step_signatures)
+        if len(window) < 2:
+            return False
+        if all(sig == window[0] for sig in window[1:]):
+            return True
+        if len(window) % 2 != 0 or window[0] == window[1]:
+            return False
+        return all(sig == window[idx % 2] for idx, sig in enumerate(window))
+
+    def _get_recovery_stuck_indices(
+        self, recent_step_signatures: Sequence[Any]
+    ) -> list[int]:
+        """Return representative indices for a simple stuck pattern."""
+        window = list(recent_step_signatures)
+        if len(window) < 2:
+            return []
+        if all(sig == window[0] for sig in window[1:]):
+            return [len(window) - 1]
+        if len(window) % 2 != 0 or window[0] == window[1]:
+            return []
+        if all(sig == window[idx % 2] for idx, sig in enumerate(window)):
+            return [len(window) - 2, len(window) - 1]
+        return []
 
     def _is_meaningful_recovery_deviation(
         self,
@@ -1030,6 +1687,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             logging.warning("Recovery expert query failed: %s", exc)
             return None
 
+    # TODOOO: Recovery augmentation is disabled for manual data collection
+    # environments such as PushPullHook2D.
     def _augment_recovery_states(
         self,
         *,
@@ -1050,20 +1709,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             return train_demo_ids, demonstrations_train, demo_dict_train, False
 
         max_steps = int(cfg.get("max_steps", 50))
-        stuck_window = max(
-            2, int(cfg.get("stuck_window", cfg.get("no_progress_window", 6)))
-        )
+        stuck_window = max(2, int(cfg.get("stuck_window", 6)))
         capture_deviation = bool(cfg.get("capture_deviation", True))
         capture_stuck = bool(cfg.get("capture_stuck", True))
-        min_progress_delta = float(cfg.get("min_progress_delta", 0.01))
-        stuck_position_delta = float(cfg.get("stuck_position_delta", 0.01))
         deviation_bucket_tolerance = int(cfg.get("deviation_bucket_tolerance", 2))
         deviation_require_sign_flip = bool(
             cfg.get("deviation_require_sign_flip", False)
         )
-        max_queries_per_env = max(1, int(cfg.get("max_queries_per_env", 8)))
         queried_steps: list[tuple[_ObsType, _ActType]] = []
-        seen_hashes: set[Any] = set()
+        seen_hashes: set[Any] = {
+            self._recovery_obs_hash(obs) for obs, _ in demonstrations_train.steps
+        }
         event_counts = {"deviation": 0, "stuck": 0}
         all_train_demo_ids = tuple(int(i) for i in train_demo_ids)
         rollout_env_ids = tuple(i for i in all_train_demo_ids if i >= 0)
@@ -1083,12 +1739,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 recent_history: deque[
                     tuple[_ObsType, dict[str, Any], _ActType | None]
                 ] = deque(maxlen=stuck_window)
-                distance_history: deque[float] = deque(maxlen=stuck_window)
-                position_history: deque[tuple[float, float]] = deque(
-                    maxlen=stuck_window
-                )
-                queries_used = 0
-                captured_events: set[str] = set()
+                recent_step_signatures: deque[Any] = deque(maxlen=stuck_window)
+                captured_deviation = False
+                captured_stuck = False
+                env_added = 0
+                env_duplicate_skips = 0
 
                 for _ in range(max_steps):
                     expert_action = self._query_expert_action_for_recovery(
@@ -1096,12 +1751,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     )
                     policy_action = cast(_ActType, policy(obs))
                     recent_history.append((obs, dict(info), policy_action))
+                    recent_step_signatures.append(
+                        (
+                            self._recovery_obs_hash(obs),
+                            self._recovery_action_signature(policy_action),
+                        )
+                    )
 
                     if (
                         expert_action is not None
                         and capture_deviation
-                        and "deviation" not in captured_events
-                        and queries_used < max_queries_per_env
+                        and not captured_deviation
                         and self._is_meaningful_recovery_deviation(
                             policy_action,
                             expert_action,
@@ -1113,49 +1773,84 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         if obs_hash not in seen_hashes:
                             queried_steps.append((obs, expert_action))
                             seen_hashes.add(obs_hash)
-                            queries_used += 1
                             event_counts["deviation"] += 1
-                        captured_events.add("deviation")
-
-                    distance = self._motion2d_target_distance(obs)
-                    position = self._motion2d_robot_position(obs)
-                    if distance is not None:
-                        distance_history.append(distance)
-                    if position is not None:
-                        position_history.append(position)
-                    if (
-                        expert_action is not None
-                        and capture_stuck
-                        and queries_used < max_queries_per_env
-                        and "stuck" not in captured_events
-                        and len(distance_history) == stuck_window
-                        and len(position_history) == stuck_window
-                        and len(recent_history) == stuck_window
-                    ):
-                        action_window = [a for _, _, a in recent_history]
-                        first_action = action_window[0]
-                        repeated_action = first_action is not None and all(
-                            a is not None
-                            and self._actions_match_for_recovery(first_action, a)
-                            for a in action_window[1:]
-                        )
-                        first_pos = position_history[0]
-                        last_pos = position_history[-1]
-                        movement = float(
-                            np.hypot(
-                                last_pos[0] - first_pos[0], last_pos[1] - first_pos[1]
+                            captured_deviation = True
+                            env_added += 1
+                            logging.info(
+                                "Recovery env %d: added deviation state #%d.",
+                                env_num,
+                                env_added,
                             )
+                            self._log_recovery_decision_debug(
+                                policy=policy,
+                                obs=obs,
+                                policy_action=policy_action,
+                                expert_action=expert_action,
+                                env_num=env_num,
+                                trigger="deviation",
+                            )
+                        else:
+                            env_duplicate_skips += 1
+                            logging.info(
+                                "Recovery env %d: deviation trigger hit existing state; "
+                                "skipping duplicate.",
+                                env_num,
+                            )
+                    if (
+                        capture_stuck
+                        and not captured_stuck
+                        and len(recent_step_signatures) == stuck_window
+                    ):
+                        stuck_indices = self._get_recovery_stuck_indices(
+                            recent_step_signatures
                         )
-                        progress = float(distance_history[0] - distance_history[-1])
-                        if repeated_action and movement <= stuck_position_delta:
-                            if progress < min_progress_delta:
-                                obs_hash = self._recovery_obs_hash(obs)
-                                if obs_hash not in seen_hashes:
-                                    queried_steps.append((obs, expert_action))
-                                    seen_hashes.add(obs_hash)
-                                    queries_used += 1
-                                    event_counts["stuck"] += 1
-                                captured_events.add("stuck")
+                        added_stuck = 0
+                        for idx in stuck_indices:
+                            stuck_obs, stuck_info, stuck_policy_action = recent_history[
+                                idx
+                            ]
+                            stuck_hash = self._recovery_obs_hash(stuck_obs)
+                            if stuck_hash in seen_hashes:
+                                continue
+                            if idx == len(recent_history) - 1:
+                                stuck_expert_action = expert_action
+                            else:
+                                stuck_expert_action = (
+                                    self._query_expert_action_for_recovery(
+                                        stuck_obs, stuck_info, env
+                                    )
+                                )
+                            if stuck_expert_action is None:
+                                continue
+                            queried_steps.append((stuck_obs, stuck_expert_action))
+                            seen_hashes.add(stuck_hash)
+                            added_stuck += 1
+                            env_added += 1
+                            if stuck_policy_action is not None:
+                                self._log_recovery_decision_debug(
+                                    policy=policy,
+                                    obs=stuck_obs,
+                                    policy_action=stuck_policy_action,
+                                    expert_action=stuck_expert_action,
+                                    env_num=env_num,
+                                    trigger="stuck",
+                                )
+                        if added_stuck > 0:
+                            event_counts["stuck"] += added_stuck
+                            captured_stuck = True
+                            logging.info(
+                                "Recovery env %d: added %d stuck-state correction(s).",
+                                env_num,
+                                added_stuck,
+                            )
+                        elif stuck_indices:
+                            env_duplicate_skips += len(stuck_indices)
+                            logging.info(
+                                "Recovery env %d: detected stuck pattern but all "
+                                "candidate states were duplicates or missing expert "
+                                "actions.",
+                                env_num,
+                            )
 
                     step_out = env.step(policy_action)
                     if len(step_out) == 4:
@@ -1166,6 +1861,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     del reward
                     if terminated or truncated:
                         break
+                logging.info(
+                    "Recovery env %d summary: added=%d deviation=%s stuck=%s "
+                    "duplicate_skips=%d",
+                    env_num,
+                    env_added,
+                    captured_deviation,
+                    captured_stuck,
+                    env_duplicate_skips,
+                )
             finally:
                 if hasattr(env, "close"):
                     env.close()
@@ -1222,7 +1926,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Any,
         np.ndarray,
         list[bool],
-        np.ndarray,
+        np.ndarray | None,
         list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
@@ -1231,24 +1935,48 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         val_split_tag = (
             "-".join(str(x) for x in val_demo_ids) if val_demo_ids else "none"
         )
-        X, y, examples, sample_weights = run_all_programs_on_demonstrations(
-            self.base_class_name,
-            train_demo_ids,
-            programs_sa,
-            demo_dict_train,
-            dsl_functions,
-            negative_sampling=negative_sampling_cfg,
-            return_examples=True,
-            offline_path_name=offline_path_name,
-            demos_included=(self.program_generation or {}).get("demos_included"),
-            split_tag=(
-                f"seed{self.split_seed}"
-                f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
-                f"__val_{val_split_tag}"
-                "__role_train_core"
+        self._assert_continuous_demo_alignment(
+            (
+                Trajectory(steps=list(demo_dict_train.values())[0].steps[:5])
+                if demo_dict_train
+                else Trajectory(steps=[])
             ),
-            seed=self.seed_num,
-            action_mode=action_mode,
+            negative_sampling_cfg,
+        )
+        result = cast(
+            tuple[
+                Any | None,
+                np.ndarray | None,
+                list[tuple[_ObsType, _ActType]] | None,
+                np.ndarray | None,
+                np.ndarray,
+            ],
+            run_all_programs_on_demonstrations(
+                self.base_class_name,
+                train_demo_ids,
+                programs_sa,
+                demo_dict_train,
+                dsl_functions,
+                negative_sampling=negative_sampling_cfg,
+                env_factory=self.env_factory,
+                return_examples=True,
+                offline_path_name=offline_path_name,
+                prompt_demo_ids=self._prompt_demo_ids_tag(),
+                split_tag=(
+                    f"seed{self.split_seed}"
+                    f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
+                    f"__val_{val_split_tag}"
+                    "__role_train_core"
+                ),
+                seed=self.seed_num,
+                action_mode=action_mode,
+                return_demo_ids=True,
+            ),
+        )
+        X, y, examples, sample_weights, row_demo_ids = result
+        self._log_sample_weight_stats(
+            sample_weights,
+            label="train_core_raw",
         )
 
         if X is None or y is None:
@@ -1258,32 +1986,82 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
         log_exact_example_label_contradictions(examples, y)
+        old_examples = examples
+        old_row_demo_ids = row_demo_ids
         X, y, examples, sample_weights = drop_negative_exact_contradictions(
             X, y, examples, sample_weights
         )
+        row_demo_ids = self._realign_row_demo_ids(
+            old_examples,
+            old_row_demo_ids,
+            examples,
+        )
+        old_examples = examples
+        old_row_demo_ids = row_demo_ids
         X, y, examples, sample_weights = deduplicate_negative_examples(
             X, y, examples, sample_weights
         )
-        logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
+        row_demo_ids = self._realign_row_demo_ids(
+            old_examples,
+            old_row_demo_ids,
+            examples,
+        )
+        discrete_cfg = dict((negative_sampling_cfg or {}).get("discrete", {}))
+        use_discrete_sample_weights = bool(
+            discrete_cfg.get("use_sample_weights", False)
+        )
+        if action_mode == "discrete" and not use_discrete_sample_weights:
+            sample_weights = None
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
             _filter_redundant_features(X, programs_sa, program_prior_log_probs_opt)
         )
+        col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
         all_zero = np.where(col_nnz == 0)[0]
         all_one = np.where(col_nnz == X.shape[0])[0]
         logging.info("#all-zero features=%d indices=%s", len(all_zero), all_zero[:30])
         logging.info("#all-one features=%d indices=%s", len(all_one), all_one[:30])
+        logging.info("n_examples=%d n_features=%d", X.shape[0], X.shape[1])
 
-        collision_groups = log_feature_collisions(X, y, examples)
+        X, programs_sa, program_prior_log_probs_opt = (
+            self._score_and_optionally_filter_features(
+                X,
+                y,
+                row_demo_ids,
+                programs_sa,
+                program_prior_log_probs_opt,
+            )
+        )
+
+        collision_groups = log_feature_collisions(
+            X,
+            y,
+            examples,
+            bucket_mode=self.collision_feedback_bucket_mode,
+        )
 
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
             collision_attempt_memory: list[str] = []
+            current_feature_display_names = feature_display_names
 
             def _summarize_existing_features() -> str:
-                if feature_display_names:
-                    display_names = feature_display_names[:40]
+                nonlocal current_feature_display_names
+                if current_feature_display_names is not None and len(
+                    current_feature_display_names
+                ) != len(programs_sa):
+                    logging.info(
+                        "Feature display names are out of sync with the live "
+                        "program list (%d names vs %d programs); falling back "
+                        "to current programs for collision feedback prompts.",
+                        len(current_feature_display_names),
+                        len(programs_sa),
+                    )
+                    current_feature_display_names = None
+
+                if current_feature_display_names:
+                    display_names = current_feature_display_names[:40]
                     lines = [f"- {name}" for name in display_names]
-                    remaining = len(feature_display_names) - len(display_names)
+                    remaining = len(current_feature_display_names) - len(display_names)
                     if remaining > 0:
                         lines.append(f"- ... plus {remaining} more existing features")
                     return "\n".join(lines)
@@ -1323,6 +2101,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     lines.append(
                         "- Collision count improved from "
                         f"{before_count} to {after_count}, but collisions remain."
+                    )
+                elif after_count > before_count:
+                    lines.append(
+                        "- Collision count worsened from "
+                        f"{before_count} to {after_count}; avoid feature families "
+                        "that increase overlap across positive and negative rows."
                     )
                 else:
                     lines.append(
@@ -1378,6 +2162,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 record_attempt_summary=_record_attempt_summary,
                 prior_version=self.prior_version,
                 prior_beta=self.prior_beta,
+                collision_bucket_mode=self.collision_feedback_bucket_mode,
             )
             if collision_payloads and collision_output_path is not None:
                 out_path = (
@@ -1387,10 +2172,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     json.dumps({"collision_payloads": collision_payloads}, indent=4),
                     encoding="utf-8",
                 )
+            X, programs_sa, program_prior_log_probs_opt = (
+                self._score_and_optionally_filter_features(
+                    X,
+                    y,
+                    row_demo_ids,
+                    programs_sa,
+                    program_prior_log_probs_opt,
+                )
+            )
         logging.info("Data after collision feedback loop: X shape %s", X.shape)
 
         n = X.shape[0]
         logging.info("N=%d", n)
+        col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
         freq = col_nnz / n
         rare = np.where(freq <= 0.05)[0]
         common = np.where(freq >= 0.95)[0]
@@ -1408,7 +2203,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             100 * pos / len(y_bool),
             neg,
         )
-        if sample_weights is None:
+        if sample_weights is None and action_mode != "discrete":
             sample_weights = np.ones(len(y_bool), dtype=float)
         return (
             X,
@@ -1528,16 +2323,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_final = y_train
         sample_weight_final = sample_weight_train
         if val_demo_ids:
-            X_val, y_val, _, sample_weight_val = run_all_programs_on_demonstrations(
+            val_result = run_all_programs_on_demonstrations(
                 self.base_class_name,
                 val_demo_ids,
                 list(programs_sa),
                 demo_dict_val,
                 dsl_functions,
                 negative_sampling=negative_sampling_cfg,
+                env_factory=self.env_factory,
                 return_examples=False,
                 offline_path_name=offline_path_name,
-                demos_included=(self.program_generation or {}).get("demos_included"),
+                prompt_demo_ids=self._prompt_demo_ids_tag(),
                 split_tag=(
                     f"seed{self.split_seed}"
                     f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
@@ -1547,6 +2343,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 seed=self.seed_num,
                 action_mode=action_mode,
             )
+            X_val, y_val, _, sample_weight_val = val_result[:4]
             if X_val is None or y_val is None:
                 raise ValueError(
                     "X_val or y_val is None. Ensure the validation dataset is valid."
@@ -1559,6 +2356,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 sample_weight_final = np.concatenate(
                     [sample_weight_final, sample_weight_val]
                 )
+        if action_mode == "discrete":
+            sample_weight_final = None
 
         final_programs_sa = list(programs_sa)
         final_program_priors = (
@@ -1618,6 +2417,17 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             demo_dict_val,
         ) = split_result
 
+        ###### Logging and validation checks on demonstrations ######
+        self._log_motion2d_demonstration_snapshots(
+            demo_dict_train,
+            split_name="train",
+        )
+        if demo_dict_val:
+            self._log_motion2d_demonstration_snapshots(
+                demo_dict_val,
+                split_name="validation",
+            )
+        ##############################################################
         (
             programs_sa,
             program_prior_log_probs_opt,
@@ -1640,7 +2450,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             get_program_set_fn=get_program_set,
             extract_feature_names_fn=_extract_feature_names,
         )
-
         (
             X_train,
             y_train,
@@ -1804,7 +2613,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     "Recording test rollout for env %s to %s", i, video_out_path
                 )
             assert self._policy is not None, "Policy must be trained before testing."
-            reward, terminated = run_single_episode(
+            reward, terminated, final_info = run_single_episode(
                 env,
                 self._policy,
                 max_num_steps=max_num_steps,
@@ -1812,10 +2621,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 video_out_path=video_out_path,
                 reset_seed=i,
             )
-            if action_mode == "continuous":
-                result = bool(terminated)
-            else:
-                result = reward > 0
+            result = infer_episode_success(
+                reward=float(reward),
+                terminated=bool(terminated),
+                action_mode=action_mode,
+                base_class_name=base_class_name,
+                final_info=final_info,
+            )
             accuracies.append(result)
         return accuracies
 

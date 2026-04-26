@@ -5,6 +5,7 @@ hydra:
     dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
 seed: 0
+# expert_seed: 0
 num_eval_episodes: 1
 max_eval_steps: 50
 dsl_name: null
@@ -17,6 +18,9 @@ eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   mode: 0
   record_videos: true
   video_format: mp4
+  vector_field:
+    enabled: true
+    grid_size: 21
   seeds: ${range:0,20}
   dsl_variants:
     base_prime:

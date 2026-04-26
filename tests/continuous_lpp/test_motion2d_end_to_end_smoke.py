@@ -97,6 +97,8 @@ def _run_smoke_pipeline(
         "action_low": [-1.0, -1.0, -1.0, -1.0, -1.0],
         "action_high": [1.0, 1.0, 1.0, 1.0, 1.0],
         "continuous": {
+            "active_action_dims": [0, 1],
+            "inactive_action_fill_value": 0.0,
             "bucket_counts": 3,
             "weight_config": {
                 "enabled": True,

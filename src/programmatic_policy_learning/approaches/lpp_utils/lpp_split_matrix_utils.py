@@ -9,6 +9,7 @@ import numpy as np
 
 from programmatic_policy_learning.data.collect import get_demonstrations
 from programmatic_policy_learning.data.dataset import (
+    _resolve_discrete_transition_fn,
     extract_examples_from_demonstration,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
@@ -72,12 +73,14 @@ def split_and_collect_demonstrations(
     train_states, train_expanded = count_states_and_expanded_examples(
         train_demo_ids,
         demo_dict_all,
+        env_factory=env_factory,
         negative_sampling=negative_sampling_cfg,
         action_mode=action_mode,
     )
     val_states, val_expanded = count_states_and_expanded_examples(
         val_demo_ids,
         demo_dict_all,
+        env_factory=env_factory,
         negative_sampling=negative_sampling_cfg,
         action_mode=action_mode,
     )
@@ -164,6 +167,7 @@ def count_states_and_expanded_examples(
     demo_ids: Sequence[int],
     demo_dict: dict[int, Any],
     *,
+    env_factory: Any | None = None,
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
 ) -> tuple[int, int]:
@@ -173,11 +177,23 @@ def count_states_and_expanded_examples(
     for demo_id in demo_ids:
         traj = demo_dict[int(demo_id)]
         num_states += len(traj.steps)
+        discrete_transition_fn = None
+        if action_mode == "discrete":
+            discrete_cfg = dict((negative_sampling or {}).get("discrete", {}))
+            if bool(discrete_cfg.get("ignore_equivalent_transitions", False)):
+                if env_factory is not None:
+                    env = env_factory(int(demo_id))
+                    discrete_transition_fn, _ = _resolve_discrete_transition_fn(env)
+                    try:
+                        env.close()
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
         # TODOO: we can later remove this for efficiency.
         pos, neg, _ = extract_examples_from_demonstration(
             traj,
             negative_sampling=negative_sampling,
             action_mode=action_mode,
+            discrete_transition_fn=discrete_transition_fn,
         )
         expanded += len(pos) + len(neg)
     return num_states, expanded

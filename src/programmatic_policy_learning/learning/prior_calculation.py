@@ -560,7 +560,7 @@ def priors_from_features_v2(
     logprobs = probs_to_logprobs(probs)
     beta_log_scores = [float(beta) * v for v in log_scores]
     return {
-        "version": "v2",
+        "version": "v3",
         "beta": float(beta),
         "log_scores": log_scores,
         "beta_log_scores": beta_log_scores,

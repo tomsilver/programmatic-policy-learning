@@ -56,17 +56,18 @@ def run_single_episode(
     video_out_path: str | None = None,
     max_num_steps: int = 100,
     reset_seed: int | None = None,
-) -> tuple[float, np.bool_]:
+) -> tuple[float, np.bool_, dict[str, Any]]:
     """Run a single episode in the environment using the given policy.
 
     Returns
     -------
-    tuple[float, np.bool_]
-        ``(total_reward, terminated)`` — cumulative reward and whether the
-        episode ended via the environment's termination signal (as opposed
-        to reaching *max_num_steps* or being truncated).  ``terminated``
-        is ``np.bool_`` (from the environment); callers that need native
-        ``bool`` (e.g. for JSON serialization) should cast explicitly.
+    tuple[float, np.bool_, dict[str, Any]]
+        ``(total_reward, terminated, final_info)`` — cumulative reward,
+        whether the episode ended via the environment's termination signal
+        (as opposed to reaching *max_num_steps* or being truncated), and the
+        last info dict seen during the rollout. ``terminated`` is ``np.bool_``
+        (from the environment); callers that need native ``bool`` (e.g. for
+        JSON serialization) should cast explicitly.
     """
 
     record_frames: list[Any] | None = None
@@ -123,6 +124,7 @@ def run_single_episode(
             pass
     total_reward = 0.0
     episode_terminated: np.bool_ = np.bool_(False)
+    final_info: dict[str, Any] = dict(info) if isinstance(info, dict) else {}
     for _ in range(max_num_steps):
         action = policy.step() if stateful_policy else policy(obs)
         step_out = env.step(action)
@@ -132,6 +134,7 @@ def run_single_episode(
         else:
             new_obs, reward, terminated, truncated, info = step_out
         total_reward += reward
+        final_info = dict(info) if isinstance(info, dict) else {}
         if stateful_policy:
             policy.update(new_obs, reward, terminated or truncated, info)
 
@@ -160,7 +163,33 @@ def run_single_episode(
         if record_frames:
             imageio.mimsave(video_out_path, record_frames, fps=10)
 
-    return total_reward, episode_terminated
+    return total_reward, episode_terminated, final_info
+
+
+def infer_episode_success(
+    *,
+    reward: float,
+    terminated: bool,
+    action_mode: str,
+    base_class_name: str | None = None,
+    final_info: dict[str, Any] | None = None,
+) -> bool:
+    """Infer whether an evaluation rollout should count as success.
+
+    Preferred order:
+    1. Explicit ``info["is_success"]`` when the environment provides it.
+    2. Continuous tasks use ``terminated``.
+    3. TwoPileNim uses ``terminated`` because wins may have zero reward.
+    4. Other discrete tasks use ``reward > 0``.
+    """
+
+    if final_info is not None and "is_success" in final_info:
+        return bool(final_info["is_success"])
+    if action_mode == "continuous":
+        return bool(terminated)
+    if base_class_name is not None and "TwoPileNim" in str(base_class_name):
+        return bool(terminated)
+    return reward > 0
 
 
 def load_hint_text(
@@ -226,6 +255,8 @@ def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
     _examples: list[tuple[ObsT, ActT]] | None,
+    *,
+    bucket_mode: str = "positive_anchor",
 ) -> list[dict[str, Any]]:
     """Log collisions where identical feature vectors have different labels."""
     if y is None:
@@ -236,57 +267,43 @@ def log_feature_collisions(
         return []
 
     labels = y.astype(int).flatten().tolist()
-    collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
-    seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
-
+    row_keys: list[bytes] = []
     for i in range(X.shape[0]):
         row = X.getrow(i)
         dense = row.toarray().ravel().astype(np.uint8)
-        key = dense.tobytes()
-        label = labels[i]
-        if key in seen:
-            prev_idx, prev_label = seen[key]
-            if prev_label != label:
-                collisions.append((prev_idx, i, prev_label))
-        else:
-            seen[key] = (i, label)
+        row_keys.append(dense.tobytes())
 
-    # if collisions:
-    #     logging.info("Feature collisions found: %d", len(collisions))
-    #     for prev_idx, cur_idx, prev_label in collisions[:10]:
-    #         logging.info(
-    #             "Collision: row %d(label=%d) vs row %d(label=%d)",
-    #             prev_idx,
-    #             prev_label,
-    #             cur_idx,
-    #             labels[cur_idx],
-    #         )
-    #         if _examples is not None:
-    #             try:
-    #                 prev_example = _examples[prev_idx]
-    #                 cur_example = _examples[cur_idx]
-    #                 logging.info("  row %d example: %s", prev_idx, prev_example)
-    #                 logging.info("  row %d example: %s", cur_idx, cur_example)
-    #             except (IndexError, TypeError):
-    #                 logging.info(
-    #                     "  Example payload unavailable for rows %d and %d.",
-    #                     prev_idx,
-    #                     cur_idx,
-    #                 )
-    #     grouped = group_collision_indices(collisions, labels)
-    #     if grouped:
-    #         top_group = max(grouped, key=lambda g: int(g["max_occur"]))
-    #         logging.info(
-    #             "Top collision group: pos=%d neg=%d max_occur=%d",
-    #             len(top_group["pos"]),
-    #             len(top_group["neg"]),
-    #             int(top_group["max_occur"]),
-    #         )
-    #     return grouped
-    if collisions:
-        logging.info("Feature collisions found: %d", len(collisions))
-        grouped = group_collision_indices(collisions, labels)
-        return grouped
+    if bucket_mode == "positive_anchor":
+        collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
+        seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
+
+        for i, key in enumerate(row_keys):
+            label = labels[i]
+            if key in seen:
+                prev_idx, prev_label = seen[key]
+                if prev_label != label:
+                    collisions.append((prev_idx, i, prev_label))
+            else:
+                seen[key] = (i, label)
+
+        if collisions:
+            logging.info("Feature collisions found: %d", len(collisions))
+            grouped = group_collision_indices(collisions, labels)
+            return grouped
+    elif bucket_mode == "global_mixed_label":
+        grouped = group_mixed_label_feature_buckets(row_keys, labels)
+        if grouped:
+            total_pairs = sum(
+                len(group["pos"]) * len(group["neg"]) for group in grouped
+            )
+            logging.info(
+                "Feature collisions found: %d mixed-label bucket(s), approx_pairs=%d",
+                len(grouped),
+                total_pairs,
+            )
+            return grouped
+    else:
+        raise ValueError(f"Unsupported collision bucket_mode: {bucket_mode}")
 
     logging.info("No feature collisions found.")
     return []
@@ -535,6 +552,41 @@ def group_collision_indices(
     return out
 
 
+def group_mixed_label_feature_buckets(
+    row_keys: list[bytes],
+    labels: list[int],
+) -> list[dict[str, Any]]:
+    """Group all rows sharing an exact feature vector into mixed-label
+    buckets."""
+    groups: dict[bytes, dict[str, Any]] = {}
+    for idx, (key, label) in enumerate(zip(row_keys, labels)):
+        entry = groups.setdefault(key, {"pos": [], "neg": []})
+        if int(label) == 1:
+            entry["pos"].append(idx)
+        else:
+            entry["neg"].append(idx)
+
+    buckets: list[dict[str, Any]] = []
+    for data in groups.values():
+        pos_list = sorted(int(i) for i in data["pos"])
+        neg_list = sorted(int(i) for i in data["neg"])
+        if not pos_list or not neg_list:
+            continue
+        total_count = len(pos_list) + len(neg_list)
+        max_occur = max(len(pos_list), len(neg_list))
+        label_balance = min(len(pos_list), len(neg_list)) / max_occur
+        buckets.append(
+            {
+                "pos": pos_list,
+                "neg": neg_list,
+                "max_occur": max_occur,
+                "total_count": total_count,
+                "label_balance": float(label_balance),
+            }
+        )
+    return buckets
+
+
 def _extract_policy_feature_names(policy_str: str) -> list[str]:
     return sorted(
         set(
@@ -678,6 +730,14 @@ def _format_action_short(action: Any) -> str:
     return repr(action)
 
 
+def _format_state_short(state: Any) -> str:
+    try:
+        arr = np.asarray(state)
+        return np.array2string(arr, precision=3, separator=", ")
+    except Exception:  # pylint: disable=broad-exception-caught
+        return repr(state)
+
+
 def _enumerate_accepted_actions(
     plp: StateActionProgram,
     obs: Any,
@@ -727,6 +787,74 @@ def _action_distance(lhs: Any, rhs: Any) -> float:
         return 0.0 if lhs == rhs else float("inf")
 
 
+def _parse_motion2d_obstacles(
+    s: np.ndarray,
+) -> list[tuple[int, float, float, float, float]]:
+    """Return Motion2D obstacles as (idx, x, y, w, h)."""
+    num_obstacles = max(0, (len(s) - 19) // 10)
+    obstacles: list[tuple[int, float, float, float, float]] = []
+    for idx in range(num_obstacles):
+        base = 19 + 10 * idx
+        obstacles.append(
+            (
+                idx,
+                float(s[base]),
+                float(s[base + 1]),
+                float(s[base + 8]),
+                float(s[base + 9]),
+            )
+        )
+    return obstacles
+
+
+def _parse_motion2d_passages(
+    s: np.ndarray,
+    robot_radius: float,
+) -> list[dict[str, float | int]]:
+    """Return Motion2D passages parsed from obstacle pairs."""
+    obstacles = _parse_motion2d_obstacles(s)
+    passages: list[dict[str, float | int]] = []
+    for passage_idx in range(len(obstacles) // 2):
+        bot_idx, bot_x, bot_y, bot_w, bot_h = obstacles[2 * passage_idx]
+        top_idx, top_x, top_y, top_w, top_h = obstacles[2 * passage_idx + 1]
+        del top_x, top_w, top_h
+        gap_lower = bot_y + bot_h + robot_radius
+        gap_upper = top_y - robot_radius
+        passages.append(
+            {
+                "passage_idx": passage_idx,
+                "bottom_obstacle_idx": bot_idx,
+                "top_obstacle_idx": top_idx,
+                "wall_left": bot_x,
+                "wall_right": bot_x + bot_w,
+                "wall_width": bot_w,
+                "gap_lower": gap_lower,
+                "gap_upper": gap_upper,
+                "gap_center": (gap_lower + gap_upper) / 2.0,
+            }
+        )
+    return passages
+
+
+def _select_motion2d_reference_passage(
+    s: np.ndarray,
+    robot_radius: float,
+) -> dict[str, float | int] | None:
+    """Select the next passage ahead, or the closest one if already past
+    all."""
+    passages = _parse_motion2d_passages(s, robot_radius)
+    if not passages:
+        return None
+    robot_x = float(s[0])
+    for passage in sorted(passages, key=lambda p: float(p["wall_left"])):
+        if robot_x + robot_radius < float(passage["wall_right"]):
+            return passage
+    return min(
+        passages,
+        key=lambda p: abs(robot_x - float(p["gap_center"])),
+    )
+
+
 def _motion2d_mode_tags(obs: Any) -> set[str]:
     try:
         s = np.asarray(obs, dtype=float).reshape(-1)
@@ -742,39 +870,35 @@ def _motion2d_mode_tags(obs: Any) -> set[str]:
     target_y = float(s[10])
     target_w = float(s[17])
     target_h = float(s[18])
-    obs0_x = float(s[19])
-    obs0_y = float(s[20])
-    obs0_w = float(s[27])
-    obs0_h = float(s[28])
-    obs1_y = float(s[30])
-
-    wall_left = obs0_x
-    wall_right = obs0_x + obs0_w
-    gap_lower = obs0_y + obs0_h + r
-    gap_upper = obs1_y - r
     target_cx = target_x + target_w / 2.0
     target_cy = target_y + target_h / 2.0
     dist_target = float(np.hypot(target_cx - robot_x, target_cy - robot_y))
+    ref_passage = _select_motion2d_reference_passage(s, r)
 
     tags: set[str] = set()
-    if robot_x + r < wall_left:
-        tags.add("before_passage")
-    elif wall_left <= robot_x < wall_right + r:
-        tags.add("inside_passage")
-    else:
-        tags.add("after_passage")
+    if ref_passage is not None:
+        wall_left = float(ref_passage["wall_left"])
+        wall_right = float(ref_passage["wall_right"])
+        gap_lower = float(ref_passage["gap_lower"])
+        gap_upper = float(ref_passage["gap_upper"])
+        if robot_x + r < wall_left:
+            tags.add("before_passage")
+        elif wall_left <= robot_x < wall_right + r:
+            tags.add("inside_passage")
+        else:
+            tags.add("after_passage")
 
-    if gap_lower <= robot_y <= gap_upper:
-        tags.add("aligned")
-    else:
-        tags.add("not_aligned")
-        if robot_y < gap_lower:
-            tags.add("below_gap")
-        if robot_y > gap_upper:
-            tags.add("above_gap")
+        if gap_lower <= robot_y <= gap_upper:
+            tags.add("aligned")
+        else:
+            tags.add("not_aligned")
+            if robot_y < gap_lower:
+                tags.add("below_gap")
+            if robot_y > gap_upper:
+                tags.add("above_gap")
 
-    if abs(robot_x - wall_left) <= 0.15 or abs(robot_x - wall_right) <= 0.15:
-        tags.add("near_wall")
+        if abs(robot_x - wall_left) <= 0.15 or abs(robot_x - wall_right) <= 0.15:
+            tags.add("near_wall")
     if dist_target <= 0.35:
         tags.add("near_target")
     return tags
@@ -810,7 +934,7 @@ def log_plp_violation_counts(
     max_debug_violations: int = 20,
     max_accepted_actions_to_show: int = 8,
     detailed_debug: bool = False,
-) -> list[StateActionProgram]:
+) -> None:
     """Log how many demo steps each PLP fails (False on expert action)."""
     set_dsl_functions(dsl_functions)
     counts: list[tuple[int, StateActionProgram, list[dict[str, Any]]]] = []
@@ -824,6 +948,45 @@ def log_plp_violation_counts(
         policy_feature_names = _extract_policy_feature_names(policy_str)
         for step_idx, (obs, action) in enumerate(demonstrations.steps):
             try:
+                accepted_actions_for_step: list[Any] | None = None
+                if detailed_debug:
+                    accepted_actions_for_step = _enumerate_accepted_actions(
+                        plp,
+                        obs,
+                        candidate_actions,
+                    )
+                    if candidate_actions is not None:
+                        logging.info(
+                            "State step=%d allowed candidate actions=%d/%d",
+                            step_idx,
+                            len(accepted_actions_for_step),
+                            len(candidate_actions),
+                        )
+                        logging.info(
+                            "State step=%d allowed candidates = %s",
+                            step_idx,
+                            [
+                                _format_action_short(candidate_action)
+                                for candidate_action in accepted_actions_for_step
+                            ],
+                        )
+                    elif hasattr(obs, "shape") and len(getattr(obs, "shape")) == 2:
+                        num_grid_actions = int(obs.shape[0]) * int(obs.shape[1])
+                        logging.info(
+                            "State step=%d allowed grid actions=%d/%d",
+                            step_idx,
+                            len(accepted_actions_for_step),
+                            num_grid_actions,
+                        )
+                        logging.info(
+                            "State step=%d allowed actions = %s",
+                            step_idx,
+                            [
+                                _format_action_short(candidate_action)
+                                for candidate_action in accepted_actions_for_step
+                            ],
+                        )
+
                 if not plp(obs, action):
                     violations += 1
                     expert_feature_values = _compute_feature_values(
@@ -836,10 +999,14 @@ def log_plp_violation_counts(
                         policy_str,
                         expert_feature_values,
                     )
-                    accepted_actions = _enumerate_accepted_actions(
-                        plp,
-                        obs,
-                        candidate_actions,
+                    accepted_actions = (
+                        accepted_actions_for_step
+                        if accepted_actions_for_step is not None
+                        else _enumerate_accepted_actions(
+                            plp,
+                            obs,
+                            candidate_actions,
+                        )
                     )
                     best_action = None
                     best_action_feature_values: dict[str, bool] = {}
@@ -877,6 +1044,7 @@ def log_plp_violation_counts(
                     violation_debug_rows.append(
                         {
                             "step_idx": step_idx,
+                            "state": obs,
                             "expert_action": action,
                             "accepted_actions": accepted_actions,
                             "closest_clause": closest_clause,
@@ -896,9 +1064,9 @@ def log_plp_violation_counts(
                 violations += 1
         counts.append((violations, plp, violation_debug_rows))
 
-    counts.sort(key=lambda item: item[0])
+    counts_sorted = sorted(counts, key=lambda item: item[0])
     logging.info("PLP violation counts (lower is better):")
-    for violations, plp, debug_rows in counts[:max_logged_plps]:
+    for violations, plp, debug_rows in counts_sorted[:max_logged_plps]:
         rate = (violations / total_steps) if total_steps else 0.0
         logging.info(
             "violations=%d/%d (%.2f%%) | plp=%s",
@@ -923,9 +1091,31 @@ def log_plp_violation_counts(
                     )
                 logging.info("Violation #%d", violation_idx)
                 logging.info("demo=%s, step=%d", "unknown", int(row["step_idx"]))
+                logging.info("state = %s", _format_state_short(row["state"]))
+                logging.info(
+                    "chosen_action = %s", _format_action_short(row["best_action"])
+                )
                 logging.info(
                     "expert_action = %s", _format_action_short(row["expert_action"])
                 )
+                if candidate_actions is not None:
+                    logging.info(
+                        "allowed candidate actions = %d/%d",
+                        len(row["accepted_actions"]),
+                        len(candidate_actions),
+                    )
+                elif (
+                    hasattr(row["state"], "shape")
+                    and len(getattr(row["state"], "shape")) == 2
+                ):
+                    num_grid_actions = int(row["state"].shape[0]) * int(
+                        row["state"].shape[1]
+                    )
+                    logging.info(
+                        "allowed grid actions = %d/%d",
+                        len(row["accepted_actions"]),
+                        num_grid_actions,
+                    )
                 logging.info("accepted_actions = %s", accepted_preview)
                 logging.info("closest_matching_clause = %s", row["closest_clause"])
                 logging.info("failed_literals = %s", row["failed_literals"])
@@ -951,7 +1141,6 @@ def log_plp_violation_counts(
                 )
             for mode_bucket, count in mode_counter.most_common():
                 logging.info("%d violations in %s", count, mode_bucket)
-    return [plp for _, plp, _ in counts]
 
 
 def assert_features_fire(X: Any, programs: list[StateActionProgram]) -> None:
@@ -1283,7 +1472,7 @@ def _select_diverse_examples(
     remaining_pos = [p for p in pos_indices if p not in selected_pos]
     remaining_neg = [n for n in neg_indices if n not in selected_neg]
 
-    if remaining_pos and len(selected_pos) < max_pos:
+    while remaining_pos and len(selected_pos) < max_pos:
         pos_scores: list[tuple[int, int]] = []
         for p in remaining_pos:
             s_pos, _ = examples[p]
@@ -1297,8 +1486,9 @@ def _select_diverse_examples(
                 )
             pos_scores.append((best, p))
         pos_scores.sort(key=lambda item: (-item[0], item[1]))
-        selected_pos.append(pos_scores[0][1])
-        remaining_pos = [p for p in remaining_pos if p not in selected_pos]
+        chosen = pos_scores[0][1]
+        selected_pos.append(chosen)
+        remaining_pos = [p for p in remaining_pos if p != chosen]
 
     while remaining_neg and len(selected_neg) < max_neg:
         neg_scores: list[tuple[int, int]] = []
@@ -1519,14 +1709,6 @@ def _format_one_example_kinder_enc2(
     target_y = float(s[10])
     target_w = float(s[17])
     target_h = float(s[18])
-    obs0_x = float(s[19])
-    obs0_y = float(s[20])
-    obs0_w = float(s[27])
-    obs0_h = float(s[28])
-    obs1_x = float(s[29])
-    obs1_y = float(s[30])
-    obs1_w = float(s[37])
-    obs1_h = float(s[38])
 
     dx = float(a[0])
     dy = float(a[1])
@@ -1536,29 +1718,15 @@ def _format_one_example_kinder_enc2(
 
     target_cx = target_x + target_w / 2.0
     target_cy = target_y + target_h / 2.0
-
-    obs0_right = obs0_x + obs0_w
-    obs0_top = obs0_y + obs0_h
-    obs1_right = obs1_x + obs1_w
-    obs1_top = obs1_y + obs1_h
-
-    gap_lower = obs0_top + r
-    gap_upper = obs1_y - r
-    gap_center = (gap_lower + gap_upper) / 2.0
-    wall_left = obs0_x
-    wall_right = obs0_x + obs0_w
-
-    left_of_wall = robot_x + r < wall_left
-    inside_wall_x_band = wall_left <= robot_x < wall_right + r
-    passed_wall = robot_x >= wall_right + r
-
-    y_aligned = gap_lower <= robot_y <= gap_upper
-    y_below_gap = robot_y < gap_lower
-    y_above_gap = robot_y > gap_upper
+    obstacles = _parse_motion2d_obstacles(s)
+    passages = _parse_motion2d_passages(s, r)
+    ref_passage = _select_motion2d_reference_passage(s, r)
 
     x_err = target_cx - robot_x
     y_err = target_cy - robot_y
-    gap_y_err = gap_center - robot_y
+    gap_y_err = (
+        float(ref_passage["gap_center"]) - robot_y if ref_passage is not None else None
+    )
 
     next_x = robot_x + dx
     next_y = robot_y + dy
@@ -1566,16 +1734,55 @@ def _format_one_example_kinder_enc2(
     dist_target_l1 = abs(x_err) + abs(y_err)
     next_dist_target_l1 = abs(target_cx - next_x) + abs(target_cy - next_y)
 
+    obstacle_lines = [
+        (
+            f"OBSTACLE{obs_idx}: x={obs_x:.3f}, y={obs_y:.3f}, "
+            f"w={obs_w:.3f}, h={obs_h:.3f}, right={obs_x + obs_w:.3f}, "
+            f"top={obs_y + obs_h:.3f}"
+        )
+        for obs_idx, obs_x, obs_y, obs_w, obs_h in obstacles
+    ]
+
+    if ref_passage is not None:
+        wall_left = float(ref_passage["wall_left"])
+        wall_right = float(ref_passage["wall_right"])
+        gap_lower = float(ref_passage["gap_lower"])
+        gap_upper = float(ref_passage["gap_upper"])
+        gap_center = float(ref_passage["gap_center"])
+        passage_idx = int(ref_passage["passage_idx"])
+        left_of_wall = robot_x + r < wall_left
+        inside_wall_x_band = wall_left <= robot_x < wall_right + r
+        passed_wall = robot_x >= wall_right + r
+        y_aligned = gap_lower <= robot_y <= gap_upper
+        y_below_gap = robot_y < gap_lower
+        y_above_gap = robot_y > gap_upper
+        passage_line = (
+            f"REFERENCE_PASSAGE{passage_idx}: wall_left={wall_left:.3f}, "
+            f"wall_right={wall_right:.3f}, gap_lower={gap_lower:.3f}, "
+            f"gap_upper={gap_upper:.3f}, gap_center={gap_center:.3f}"
+        )
+        regime_line = (
+            "REGIME: "
+            f"left_of_wall={left_of_wall}, inside_wall_x_band={inside_wall_x_band}, "
+            f"passed_wall={passed_wall}, y_aligned={y_aligned}, "
+            f"y_below_gap={y_below_gap}, y_above_gap={y_above_gap}"
+        )
+        gap_err_text = f"{gap_y_err:.3f}"
+    else:
+        passage_line = "REFERENCE_PASSAGE: none"
+        regime_line = "REGIME: no_passage_structure=True"
+        gap_err_text = "n/a"
+
     lines = [
         f"- idx={idx} label={label}",
         f"ROBOT: x={robot_x:.3f}, y={robot_y:.3f}, theta={robot_theta:.3f}, r={r:.3f}",
         f"ACTION: dx={dx:.3f}, dy={dy:.3f}, dtheta={dtheta:.3f}, darm={darm:.3f}, vac={vac:.3f}",
         f"TARGET: x={target_x:.3f}, y={target_y:.3f}, w={target_w:.3f}, h={target_h:.3f}, cx={target_cx:.3f}, cy={target_cy:.3f}",
-        f"OBSTACLE0: x={obs0_x:.3f}, y={obs0_y:.3f}, w={obs0_w:.3f}, h={obs0_h:.3f}, right={obs0_right:.3f}, top={obs0_top:.3f}",
-        f"OBSTACLE1: x={obs1_x:.3f}, y={obs1_y:.3f}, w={obs1_w:.3f}, h={obs1_h:.3f}, right={obs1_right:.3f}, top={obs1_top:.3f}",
-        f"PASSAGE: wall_left={wall_left:.3f}, wall_right={wall_right:.3f}, gap_lower={gap_lower:.3f}, gap_upper={gap_upper:.3f}, gap_center={gap_center:.3f}",
-        f"REGIME: left_of_wall={left_of_wall}, inside_wall_x_band={inside_wall_x_band}, passed_wall={passed_wall}, y_aligned={y_aligned}, y_below_gap={y_below_gap}, y_above_gap={y_above_gap}",
-        f"ERRORS: x_err_to_target={x_err:.3f}, y_err_to_target={y_err:.3f}, y_err_to_gap_center={gap_y_err:.3f}",
+        f"PASSAGE_COUNT: {len(passages)}",
+        *obstacle_lines,
+        passage_line,
+        regime_line,
+        f"ERRORS: x_err_to_target={x_err:.3f}, y_err_to_target={y_err:.3f}, y_err_to_gap_center={gap_err_text}",
         f"NEXT_STATE_ESTIMATE: next_x={next_x:.3f}, next_y={next_y:.3f}, target_l1_now={dist_target_l1:.3f}, target_l1_next={next_dist_target_l1:.3f}",
         f"ACTION_SHAPE: mostly_x={abs(dx) > abs(dy)}, mostly_y={abs(dy) > abs(dx)}, dx_pos={dx > 0}, dx_neg={dx < 0}, dy_pos={dy > 0}, dy_neg={dy < 0}",
     ]
@@ -1599,32 +1806,38 @@ def _format_one_example_kinder_enc2_delta(
     target_y = float(s[10])
     target_w = float(s[17])
     target_h = float(s[18])
-    obs0_x = float(s[19])
-    obs0_y = float(s[20])
-    obs0_w = float(s[27])
-    obs0_h = float(s[28])
-    obs1_y = float(s[30])
 
     dx = float(a[0])
     dy = float(a[1])
 
     target_cx = target_x + target_w / 2.0
     target_cy = target_y + target_h / 2.0
-    gap_lower = obs0_y + obs0_h + r
-    gap_upper = obs1_y - r
-    gap_center = (gap_lower + gap_upper) / 2.0
-    wall_right = obs0_x + obs0_w
+    ref_passage = _select_motion2d_reference_passage(s, r)
 
-    left_of_wall = robot_x + r < obs0_x
-    passed_wall = robot_x >= wall_right + r
-    y_aligned = gap_lower <= robot_y <= gap_upper
+    if ref_passage is not None:
+        wall_left = float(ref_passage["wall_left"])
+        wall_right = float(ref_passage["wall_right"])
+        gap_lower = float(ref_passage["gap_lower"])
+        gap_upper = float(ref_passage["gap_upper"])
+        gap_center = float(ref_passage["gap_center"])
+        passage_text = f"ref_passage={int(ref_passage['passage_idx'])}"
+        left_of_wall = robot_x + r < wall_left
+        passed_wall = robot_x >= wall_right + r
+        y_aligned = gap_lower <= robot_y <= gap_upper
+        gap_err_text = f"{gap_center - robot_y:.3f}"
+    else:
+        passage_text = "ref_passage=none"
+        left_of_wall = False
+        passed_wall = False
+        y_aligned = False
+        gap_err_text = "n/a"
 
     parts = [
         f"NEG idx={idx} label={label}",
         f"ROBOT(x={robot_x:.3f}, y={robot_y:.3f})",
         f"ACTION(dx={dx:.3f}, dy={dy:.3f})",
-        f"REGIME(left_of_wall={left_of_wall}, passed_wall={passed_wall}, y_aligned={y_aligned})",
-        f"ERR(target_x={target_cx - robot_x:.3f}, target_y={target_cy - robot_y:.3f}, gap_y={gap_center - robot_y:.3f})",
+        f"REGIME({passage_text}, left_of_wall={left_of_wall}, passed_wall={passed_wall}, y_aligned={y_aligned})",
+        f"ERR(target_x={target_cx - robot_x:.3f}, target_y={target_cy - robot_y:.3f}, gap_y={gap_err_text})",
     ]
     return "; ".join(parts)
 
@@ -1696,16 +1909,19 @@ def _build_continuous_observation_field_guide(env_name: str | None) -> str:
     base_env_name = env_name.split("-p", maxsplit=1)[0]
     canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
 
-    if canonical_name != "Motion2D":
+    match = re.search(r"-p(\d+)", env_name)
+    num_passages = int(match.group(1)) if match else 0
+    try:
+        obs_fields = continuous_hint_config.obs_field_names_for_kinder(
+            canonical_name,
+            num_passages,
+        )
+    except ValueError:
         return (
             "- Observation fields are object-centric continuous attributes.\n"
             "- Use the serialized object names and attributes shown in the "
             "demonstrations as the source of truth."
         )
-
-    match = re.search(r"-p(\d+)", env_name)
-    num_passages = int(match.group(1)) if match else 0
-    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
     action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
 
     obs_lines = [
@@ -1717,7 +1933,11 @@ def _build_continuous_observation_field_guide(env_name: str | None) -> str:
 
     return "\n".join(
         [
-            f"- Environment variant: {canonical_name}-p{num_passages}",
+            (
+                f"- Environment variant: {canonical_name}-p{num_passages}"
+                if canonical_name == "Motion2D"
+                else f"- Environment variant: {canonical_name}"
+            ),
             "- When raw arrays are used, index them with the following schema:",
             *obs_lines,
             "- Action dimensions:",
@@ -1737,6 +1957,7 @@ def build_collision_repair_prompt(
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
     collision_feedback_enc: str = "enc_1",
+    bucket_mode: str = "positive_anchor",
     pos_indices_2: list[int] | None = None,
     neg_indices_2: list[int] | None = None,
     seed: int | None = None,
@@ -1767,8 +1988,14 @@ def build_collision_repair_prompt(
     # FORMAT2 note: uses richer evidence + deterministic example selection.
     if use_enc2:
         if not is_kinder:
+            max_pos = 3 if bucket_mode == "global_mixed_label" else 1
             pos_indices, neg_indices = _select_diverse_examples(
-                pos_indices, neg_indices, examples, symbol_map, max_pos=1, max_neg=3
+                pos_indices,
+                neg_indices,
+                examples,
+                symbol_map,
+                max_pos=max_pos,
+                max_neg=3,
             )
             if pos_indices_2 and neg_indices_2:
                 pos_indices_2, neg_indices_2 = _select_diverse_examples(
@@ -1776,14 +2003,15 @@ def build_collision_repair_prompt(
                     neg_indices_2,
                     examples,
                     symbol_map,
-                    max_pos=1,
+                    max_pos=max_pos,
                     max_neg=3,
                 )
         else:
-            pos_indices = pos_indices[:1]
+            max_pos = 3 if bucket_mode == "global_mixed_label" else 1
+            pos_indices = pos_indices[:max_pos]
             neg_indices = neg_indices[:3]
             if pos_indices_2 and neg_indices_2:
-                pos_indices_2 = pos_indices_2[:1]
+                pos_indices_2 = pos_indices_2[:max_pos]
                 neg_indices_2 = neg_indices_2[:3]
     else:
         rng = np.random.default_rng(seed)

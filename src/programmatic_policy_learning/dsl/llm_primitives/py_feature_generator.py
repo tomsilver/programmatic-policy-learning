@@ -52,9 +52,24 @@ class PyFeatureGenerator:
         encoding_method: str,
         *,
         action_mode: str,
+        env_name: str | None = None,
     ) -> Path:
         prompt_dir = Path(__file__).parent / "prompts" / "py_feature_gen"
         domain_dir = "kinder" if action_mode == "continuous" else "ggg"
+        if env_name is not None:
+            canonical_name = continuous_hint_config.canonicalize_env_name(
+                env_name.split("-p", maxsplit=1)[0]
+            )
+            env_slug = canonical_name.lower()
+            candidate = (
+                prompt_dir
+                / "demo_backgrounds"
+                / domain_dir
+                / f"{encoding_method}_{env_slug}.txt"
+            )
+            if candidate.exists():
+                return candidate
+
         candidate = (
             prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
         )
@@ -107,15 +122,18 @@ class PyFeatureGenerator:
         base_env_name = env_name.split("-p", maxsplit=1)[0]
         canonical_name = continuous_hint_config.canonicalize_env_name(base_env_name)
 
-        if canonical_name != "Motion2D":
+        num_passages = self._motion2d_num_passages(env_name)
+        try:
+            obs_fields = continuous_hint_config.obs_field_names_for_kinder(
+                canonical_name,
+                num_passages,
+            )
+        except ValueError:
             return (
                 "- Observation fields are object-centric continuous attributes.\n"
                 "- Use the serialized object names and attributes shown in the "
                 "demonstrations as the source of truth."
             )
-
-        num_passages = self._motion2d_num_passages(env_name)
-        obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
         action_fields = continuous_hint_config.ACTION_FIELD_NAMES[canonical_name]
 
         obs_lines = [
@@ -127,7 +145,11 @@ class PyFeatureGenerator:
 
         return "\n".join(
             [
-                f"- Environment variant: {canonical_name}-p{num_passages}",
+                (
+                    f"- Environment variant: {canonical_name}-p{num_passages}"
+                    if canonical_name == "Motion2D"
+                    else f"- Environment variant: {canonical_name}"
+                ),
                 "- When raw arrays are used, index them with the following schema:",
                 *obs_lines,
                 "- Action dimensions:",
@@ -136,6 +158,29 @@ class PyFeatureGenerator:
                 "object-centric names like robot, target, obstacle0, obstacle1, etc.",
             ]
         )
+
+    def load_demo_background(
+        self,
+        encoding_method: str,
+        *,
+        action_mode: str,
+        env_name: str | None = None,
+    ) -> str:
+        """Load rendered demonstration-format background text for a prompt."""
+
+        background_path = self._resolve_demo_background_path(
+            encoding_method,
+            action_mode=action_mode,
+            env_name=env_name,
+        )
+        background_text = background_path.read_text(encoding="utf-8").strip()
+        if "${OBSERVATION_FIELD_GUIDE}" in background_text:
+            field_guide = self._build_continuous_observation_field_guide(env_name)
+            background_text = background_text.replace(
+                "${OBSERVATION_FIELD_GUIDE}",
+                field_guide,
+            )
+        return background_text
 
     def fill_prompt(
         self,
@@ -165,17 +210,11 @@ class PyFeatureGenerator:
                     "encoding_method is required for demonstration background."
                 )
             enc_label = str(encoding_method)
-            background_path = self._resolve_demo_background_path(
+            background_text = self.load_demo_background(
                 enc_label,
                 action_mode=action_mode,
+                env_name=env_name,
             )
-            background_text = background_path.read_text(encoding="utf-8").strip()
-            if "${OBSERVATION_FIELD_GUIDE}" in background_text:
-                field_guide = self._build_continuous_observation_field_guide(env_name)
-                background_text = background_text.replace(
-                    "${OBSERVATION_FIELD_GUIDE}",
-                    field_guide,
-                )
             rendered = rendered.replace("${DEMONSTRATION_BACKGROUND}", background_text)
 
         if "${PASSAGE_VARIANT}" in rendered or "${PASSAGE_DESCRIPTION}" in rendered:
@@ -585,6 +624,7 @@ class PyFeatureGenerator:
         loading: dict[str, Any] | None = None,
         action_mode: str = "discrete",
         generation_mode: str = "feature_payload",
+        output_tag: str | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
         load_offline = bool(loading and loading.get("offline", 0))
@@ -603,9 +643,11 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
+            # input()
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")
+            tag_suffix = f"_{output_tag}" if output_tag else ""
             if generation_mode == "generator_script":
                 script_text = self.query_llm_text(
                     prompt,
@@ -615,9 +657,9 @@ class PyFeatureGenerator:
                 )
                 script_text = self._extract_python_script(script_text)
                 if self.llm_client is not None:
-                    script_path = (
-                        self.output_path
-                        / f"feature_generator_script_{prompt_label}_{env_label}.py"
+                    script_path = self.output_path / (
+                        f"feature_generator_script_{prompt_label}_{env_label}"
+                        f"{tag_suffix}.py"
                     )
                     script_path.write_text(script_text, encoding="utf-8")
                 template_payload = self._execute_generator_script(script_text)
@@ -643,18 +685,27 @@ class PyFeatureGenerator:
                     start_index=1,
                 )
             self.write_json(
-                f"template_payload_{prompt_label}_{env_label}.json",
+                f"template_payload_{prompt_label}_{env_label}{tag_suffix}.json",
                 template_payload,
             )
             feature_programs = self.parse_feature_programs(expanded_payload)
             if self.llm_client is not None:
-                self.write_json("py_feature_payload.json", expanded_payload)
+                self.write_json(
+                    f"py_feature_payload{tag_suffix}.json",
+                    expanded_payload,
+                )
             return feature_programs, expanded_payload
 
         # offline mode
         if offline_json_path is None:
             raise ValueError("offline_json_path is required when running offline.")
-        payload_text = Path(offline_json_path).read_text(encoding="utf-8")
+        offline_path = Path(offline_json_path)
+        if not offline_path.is_absolute() and not offline_path.exists():
+            repo_root = Path(__file__).resolve().parents[4]
+            candidate = repo_root / offline_path
+            if candidate.exists():
+                offline_path = candidate
+        payload_text = offline_path.read_text(encoding="utf-8")
         payload = json.loads(payload_text)
         payload = self._postprocess_payload_by_mode(
             payload,
@@ -663,6 +714,4 @@ class PyFeatureGenerator:
             start_index=1,
         )
         feature_programs = self.parse_feature_programs(payload)
-        self.write_json("py_feature_payload.json", payload)
-        # logging.info(feature_programs)
         return feature_programs, payload

@@ -47,18 +47,36 @@ def _normalize_bucket_edges(
     action_high: np.ndarray,
 ) -> tuple[np.ndarray, ...]:
     """Normalize explicit bucket edges per dimension."""
-    arr = np.asarray(bucket_edges, dtype=float)
-    if arr.ndim == 1:
-        edges_per_dim = tuple(arr.copy() for _ in range(dims))
-    elif arr.ndim == 2:
-        if arr.shape[0] != dims:
-            raise ValueError(
-                "bucket_edges row count must match number of action dimensions: "
-                f"got {arr.shape[0]}, expected {dims}."
-            )
-        edges_per_dim = tuple(arr[d].copy() for d in range(dims))
+    if isinstance(bucket_edges, np.ndarray):
+        arr = np.asarray(bucket_edges, dtype=float)
+        if arr.ndim == 1:
+            edges_per_dim = tuple(arr.copy() for _ in range(dims))
+        elif arr.ndim == 2:
+            if arr.shape[0] != dims:
+                raise ValueError(
+                    "bucket_edges row count must match number of action dimensions: "
+                    f"got {arr.shape[0]}, expected {dims}."
+                )
+            edges_per_dim = tuple(arr[d].copy() for d in range(dims))
+        else:
+            raise ValueError("bucket_edges must be a 1-D or 2-D array-like value.")
     else:
-        raise ValueError("bucket_edges must be a 1-D or 2-D array-like value.")
+        edges_seq = tuple(bucket_edges)
+        if not edges_seq:
+            raise ValueError("bucket_edges cannot be empty.")
+        first_item = edges_seq[0]
+        if np.isscalar(first_item):
+            shared_edges = np.asarray(edges_seq, dtype=float).reshape(-1)
+            edges_per_dim = tuple(shared_edges.copy() for _ in range(dims))
+        else:
+            if len(edges_seq) != dims:
+                raise ValueError(
+                    "bucket_edges row count must match number of action dimensions: "
+                    f"got {len(edges_seq)}, expected {dims}."
+                )
+            edges_per_dim = tuple(
+                np.asarray(edges, dtype=float).reshape(-1) for edges in edges_seq
+            )
 
     normalized: list[np.ndarray] = []
     for d, edges in enumerate(edges_per_dim):

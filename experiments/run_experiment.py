@@ -12,6 +12,9 @@ from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.approaches.lpp_utils.lpp_plotting_utils import (
+    plot_policy_vector_fields,
+)
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 _MODE_TO_ID = {
@@ -52,6 +55,11 @@ def instantiate_approach(
     expert_cfg = OmegaConf.select(cfg, "env.expert", default=None)
     if expert_cfg is None:
         expert_cfg = OmegaConf.select(cfg, "expert", default=None)
+    # expert_seed = OmegaConf.select(
+    #     cfg,
+    #     "env.expert_seed",
+    #     default=OmegaConf.select(cfg, "expert_seed", default=0),
+    # )
 
     if cfg.approach_name == "lpp":
         if expert_cfg is None:
@@ -63,6 +71,10 @@ def instantiate_approach(
             object_types = []
         else:
             object_types = env.get_object_types()
+        if not hasattr(env, "get_action_types"):
+            action_types: list[str] | tuple[str, ...] = []
+        else:
+            action_types = env.get_action_types()
 
         provider = OmegaConf.select(cfg, "env.provider", default=None)
         observation_mode = _infer_mode_from_provider(
@@ -77,6 +89,7 @@ def instantiate_approach(
         )
         env_specs = {
             "object_types": object_types,
+            "action_types": action_types,
             "observation_mode": observation_mode,
             "action_mode": action_mode,
             "observation_mode_id": _MODE_TO_ID[observation_mode],
@@ -88,7 +101,9 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
+            # Same expert seed for now; switch to expert_seed if needed.
             cfg.seed,
+            # expert_seed,
         )
 
         # Instantiate the approach with additional parameters.
@@ -116,7 +131,9 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
+            # Same expert seed for now; switch to expert_seed if needed.
             cfg.seed,
+            # expert_seed,
         )
 
         return hydra.utils.instantiate(
@@ -317,6 +334,7 @@ def _main(cfg: DictConfig) -> None:
 
         # Evaluate.
         rng = np.random.default_rng(cfg.seed)
+
         metrics: list[dict[str, float]] = []
         for eval_episode in range(cfg.num_eval_episodes):
             episode_metrics = _run_single_episode_evaluation(
@@ -348,6 +366,31 @@ def _main(cfg: DictConfig) -> None:
             logging.info(train_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(train_accuracies) / len(train_accuracies))
+            if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
+                policy = getattr(approach, "_policy", None)
+                env_factory = getattr(approach, "env_factory", None)
+                env_specs = getattr(approach, "env_specs", None)
+                approach_base_class_name = getattr(approach, "base_class_name", "")
+                if (
+                    policy is not None
+                    and env_factory is not None
+                    and env_specs is not None
+                ):
+                    print("VECTOR FIELD FOR TRAIN ENVS:")
+                    plot_policy_vector_fields(
+                        base_class_name=cfg.env.make_kwargs.base_name,
+                        approach_base_class_name=str(approach_base_class_name),
+                        policy=policy,
+                        env_factory=env_factory,
+                        env_specs=env_specs,
+                        env_nums=range(0, 11),
+                        grid_size=int(
+                            OmegaConf.select(
+                                cfg, "eval.vector_field.grid_size", default=21
+                            )
+                        ),
+                        split_name="train",
+                    )
 
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
@@ -363,6 +406,30 @@ def _main(cfg: DictConfig) -> None:
             logging.info(test_accuracies)
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(test_accuracies) / len(test_accuracies))
+            if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
+                policy = getattr(approach, "_policy", None)
+                env_factory = getattr(approach, "env_factory", None)
+                env_specs = getattr(approach, "env_specs", None)
+                approach_base_class_name = getattr(approach, "base_class_name", "")
+                if (
+                    policy is not None
+                    and env_factory is not None
+                    and env_specs is not None
+                ):
+                    plot_policy_vector_fields(
+                        base_class_name=cfg.env.make_kwargs.base_name,
+                        approach_base_class_name=str(approach_base_class_name),
+                        policy=policy,
+                        env_factory=env_factory,
+                        env_specs=env_specs,
+                        env_nums=range(11, 20),
+                        grid_size=int(
+                            OmegaConf.select(
+                                cfg, "eval.vector_field.grid_size", default=21
+                            )
+                        ),
+                        split_name="test",
+                    )
         else:
             logging.warning(
                 f"Approach {cfg.approach_name} does not support `test_policy_on_envs`."
@@ -378,7 +445,9 @@ def _run_single_episode_evaluation(
     # For now, just record total rewards and steps.
     total_rewards = 0.0
     total_steps = 0
-    obs, info = env.reset(seed=sample_seed_from_rng(rng))
+    seed = sample_seed_from_rng(rng)
+    obs, info = env.reset(seed=seed)
+
     approach.reset(obs, info)
 
     for _ in range(max_eval_steps):

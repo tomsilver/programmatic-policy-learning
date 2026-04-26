@@ -1,0 +1,134 @@
+You are writing Python code that generates boolean feature templates for Logical Programmatic Policies (LPP) in Generalization Grid Games (GGG).
+
+Goal:
+Write a single self-contained Python script that defines a feature-template generator for discrete grid games. The generator should return a compact library of interpretable boolean predicate templates f(s, a) that are useful for distinguishing expert clicks from plausible non-expert clicks.
+
+Environment assumptions:
+- Observation s is a 2D grid/list of token values.
+- Action a is a clicked cell coordinate: a = (row, col).
+- Action coordinates may be ordinary Python ints or numpy integer scalars.
+- Next state s' is shown in the demonstrations only for understanding transitions.
+- Features must depend only on s and a.
+- Features are intended for downstream logical policy learning, so they must be interpretable boolean predicates.
+- The same prompt should work across grid games such as TwoPileNim, Chase, StopTheFall, ReachForTheStar, and CheckmateTactic.
+
+Input context:
+${DEMONSTRATION_BACKGROUND}
+
+Demonstrations:
+${DEMONSTRATION_DATA}
+
+Before writing the final template library, infer which structural properties separate the expert action from plausible alternative clicks in the same state. Keep templates that are likely to be:
+- interpretable,
+- reusable across board sizes,
+- useful across multiple demonstrations,
+- helpful for separating expert actions from plausible non-expert actions.
+
+Do not keep templates solely because they are easy to define from the raw grid.
+
+Important:
+The output should be a generator of feature-template definitions, not a learner, not a training script, and not a feature-selection pipeline.
+Do not fit thresholds from data.
+Do not use imports.
+Do not use external libraries.
+Do not use placeholders other than the allowed placeholders below.
+Do not leave TODOs.
+
+Requirements:
+Write one raw Python script and nothing else.
+
+The script must define a function named:
+build_feature_library()
+
+When called, build_feature_library() must return exactly:
+{"features": features}
+
+where features is a list of objects of the form:
+{"id": "f1", "name": "f1", "source": "def f1(s, a):\n    ..."}
+
+Each returned feature source must:
+- define exactly one standalone function with signature `def <feature_name>(s, a):`
+- be a boolean function of s and a only,
+- be standalone Python source code,
+- be interpretable,
+- represent a reusable structural relation between the grid and the clicked cell,
+- help separate expert actions from plausible alternatives,
+- not depend on any helper function, closure, shared utility, outer variable, import, or separately defined function,
+- compute everything it needs inside that single function body from only `s` and `a`.
+
+The generator script itself may use helper functions to construct source strings and feature records. Those helpers must not be required by the generated feature sources.
+
+Action validation requirement:
+Every generated feature source must begin with this exact validation pattern, allowing only harmless whitespace differences:
+
+try:
+    r = int(a[0]); c = int(a[1])
+except:
+    return False
+
+h = len(s); w = len(s[0]) if h else 0
+if not (0 <= r < h and 0 <= c < w): return False
+
+Placeholder rules:
+Generated feature sources are templates. They must use only these placeholders:
+- ${TOKEN_A}
+- ${TOKEN_B}
+- ${DRs}
+
+Rules for placeholders:
+- Use placeholders as literal unquoted Python fragments in the generated source.
+- Do not write "${TOKEN_A}" or '${TOKEN_A}' inside feature code.
+- Do not invent additional placeholders.
+- Do not hard-code raw token values.
+- Do not compare cells to string literals such as "empty", "wall", "token", "OOB", or any game-specific symbol.
+- Do not use game-specific constants such as tpn.TOKEN or ec.WALL directly.
+- A template may use at most two distinct token placeholders.
+- A template using two token placeholders must express a meaningful relation between two roles, not a symmetric duplicate.
+- A template may use ${DRs} for a list of direction tuples supplied later by the pipeline.
+
+Numeric and scale-invariance rules:
+- Avoid numeric thresholds unless they are local constants such as adjacency or a 3x3 neighborhood.
+- Do not generate templates whose meaning depends on a fixed absolute board size.
+- Prefer scans that terminate at board boundaries.
+- Avoid global count thresholds such as "more than 5 tokens".
+- Boundary-derived comparisons are allowed, such as same row/column, nearest along a ray, edge/corner/interior, before/after in a row or column, and whether a region exists on one side of the action.
+
+Useful template families for grid games:
+- Action-cell token tests using ${TOKEN_A}.
+- Adjacent-neighbor relations around the clicked cell.
+- Directional ray scans from the clicked cell using ${DRs}.
+- First visible token along a ray.
+- Same row, same column, and diagonal alignment with ${TOKEN_A}.
+- Whether the action is between two relevant token roles.
+- Whether clicking a cell removes, advances, blocks, chases, highlights, draws, or selects a structurally meaningful object, inferred only from s and a.
+- Local 3x3 neighborhood patterns around the action.
+- Edge/corner/interior properties when they plausibly affect legal or expert clicks.
+- Row/column ordering and nearest-role relations.
+- Connectivity or component-style relations expressed with local loops inside the feature source, when the code remains readable.
+
+Design principles:
+- Prefer structural predicates over raw magnitude counts.
+- Prefer action-grounded predicates over global state descriptors.
+- Avoid absolute coordinates.
+- Avoid near-duplicate templates.
+- Do not include both a predicate and its direct complement as separate templates.
+- Avoid a library dominated by single-dimension sign checks.
+- Stop when the library has good semantic coverage. The experiment requested about ${NUM_FEATURES} features, but quality and non-redundancy matter more than hitting the number exactly.
+
+Output format:
+Return only raw Python code.
+No markdown.
+No commentary.
+No surrounding explanation.
+
+Final validation before output:
+- The script defines build_feature_library().
+- build_feature_library() returns {"features": features} exactly.
+- Each source string contains exactly one complete feature function.
+- Each feature source begins by validating the action and bounds.
+- Feature sources use no imports and no helper calls.
+- Feature sources access s and a only through ordinary Python indexing and built-ins.
+- Only placeholders used are ${TOKEN_A}, ${TOKEN_B}, and ${DRs}.
+- Placeholders are not quoted inside feature code.
+- There are no raw token comparisons and no game-specific token constants.
+- The output is raw Python code and can be executed as-is.

@@ -158,8 +158,8 @@ class GridEnvLLMSpec(EnvLLMSpec):
 
 
 @dataclass(frozen=True)
-class Motion2DEnvLLMSpec(EnvLLMSpec):
-    """Continuous Motion2D adapter."""
+class KinderContinuousEnvLLMSpec(EnvLLMSpec):
+    """Continuous KinDER adapter."""
 
     num_passages: int = 0
 
@@ -170,17 +170,19 @@ class Motion2DEnvLLMSpec(EnvLLMSpec):
         encoding_method: str,
         max_steps: int = 50,
     ) -> str:
-        obs_field_names = continuous_hint_config.obs_field_names_for_motion2d(
-            self.num_passages
+        obs_field_names = continuous_hint_config.obs_field_names_for_kinder(
+            self.env_name,
+            self.num_passages,
         )
         encoder = ContinuousStateEncoder(
             ContinuousStateEncoderConfig(
                 obs_field_names=obs_field_names,
                 action_field_names=continuous_hint_config.ACTION_FIELD_NAMES[
-                    "Motion2D"
+                    self.env_name
                 ],
-                salient_indices=continuous_hint_config.salient_obs_indices_for_motion2d(
-                    self.num_passages
+                salient_indices=continuous_hint_config.salient_obs_indices_for_kinder(
+                    self.env_name,
+                    self.num_passages,
                 ),
             )
         )
@@ -193,6 +195,7 @@ class Motion2DEnvLLMSpec(EnvLLMSpec):
                 encoder=encoder,
                 num_passages=self.num_passages,
                 encoding_method=enc_id,
+                env_name=self.env_name,
                 max_steps=max_steps,
             )
             all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
@@ -223,8 +226,18 @@ def get_env_llm_spec(
         env_name.split("-p")[0]
     )
 
-    if action_mode == "continuous" and canonical_name == "Motion2D":
-        return Motion2DEnvLLMSpec(
+    if action_mode == "continuous":
+        try:
+            continuous_hint_config.obs_field_names_for_kinder(
+                canonical_name,
+                _resolve_motion2d_passages(env_name, env_specs),
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"No LLM environment spec registered for env_name={env_name!r}, "
+                f"action_mode={action_mode!r}"
+            ) from exc
+        return KinderContinuousEnvLLMSpec(
             env_name=canonical_name,
             action_mode=action_mode,
             num_passages=_resolve_motion2d_passages(env_name, env_specs),

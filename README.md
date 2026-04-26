@@ -67,6 +67,40 @@ We use [hydra](https://hydra.cc/) to run experiments at scale. See `experiments/
 python experiments/run_experiment.py -m env=lunar_lander llm=openai seed='range(0,2)'
 ```
 
+### Running the CaP Baseline
+
+The Code-as-Policies baseline is in:
+
+```
+src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py
+```
+
+Use `--demo-env-nums` to specify the exact demonstration env ids/reset seeds.
+This replaces the older count-based style and makes CaP comparable to LPP runs
+that use explicit `demo_numbers` or `program_generation.demos_included`.
+
+For example, to mirror an LPP run using Chase demos `[0, 1, 2]` and evaluate on
+the LPP held-out test split `[11, ..., 19]`:
+
+```
+UV_CACHE_DIR=.uv-cache uv run python src/programmatic_policy_learning/dsl/llm_primitives/baselines/llm_based/CaP_baseline.py \
+  --env Chase \
+  --env-type grid \
+  --encodings 5 \
+  --seeds 0 \
+  --model gpt-4.1 \
+  --demo-env-nums 0 1 2 \
+  --eval-env-nums 11 12 13 14 15 16 17 18 19
+```
+
+CaP resets both the generated policy rollout and the expert rollout with
+`reset_seed=env_idx`, matching the LPP test rollout convention.
+
+CaP also uses the same demonstration-format background files as the LPP feature
+generator prompts, and it serializes demonstrations through the shared
+environment LLM spec. For a fair comparison, use the same encoding that LPP uses
+for `program_generation.encoding_method` (for example, `5` or `enc_5`).
+
 ## Notes
 
 ### Box2D Installation on macOS

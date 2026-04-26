@@ -23,6 +23,7 @@ class KinderEnvWithTypes:
         self._env = env
         self._type_names = type_names
         self._action_types = action_types
+        self._last_reset_seed: int | None = None
 
     def get_object_types(self) -> tuple[str, ...]:
         """Return object type names for this environment."""
@@ -44,7 +45,14 @@ class KinderEnvWithTypes:
 
     def reset(self, **kwargs: Any) -> tuple[Any, dict]:
         """Reset the environment."""
+        seed = kwargs.get("seed")
+        self._last_reset_seed = int(seed) if isinstance(seed, int) else None
         return self._env.reset(**kwargs)
+
+    @property
+    def last_reset_seed(self) -> int | None:
+        """Return the most recent reset seed seen by this wrapper."""
+        return self._last_reset_seed
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
         """Step the environment."""
@@ -75,8 +83,9 @@ def _extract_action_types(env: Any) -> tuple[str, ...]:
     """Extract per-dimension action types from a KinDER environment.
 
     Prefer environment-provided metadata when available. Otherwise fall
-    back to a generic inference from the action space, with a
-    Motion2D-specific hint for the final vacuum dimension.
+    back to a generic inference from the action space, with a KinDER-
+    specific hint for the final vacuum/toggle dimension in 5-D
+    continuous robot actions.
     """
     for attr_name in ("action_types", "action_type_names"):
         raw = getattr(env, attr_name, None)
@@ -106,9 +115,7 @@ def _extract_action_types(env: Any) -> tuple[str, ...]:
         shape = tuple(int(dim) for dim in action_space.shape)
         size = shape[0] if len(shape) == 1 else 0
         inferred = ["continuous"] * size
-        spec = getattr(env, "spec", None)
-        env_id = str(getattr(spec, "id", "") or "")
-        if "Motion2D" in env_id and size >= 5:
+        if size >= 5:
             inferred[4] = "boolean-like toggle"
         return tuple(inferred)
 

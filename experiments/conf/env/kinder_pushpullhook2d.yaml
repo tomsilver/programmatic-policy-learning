@@ -1,0 +1,16 @@
+make_kwargs:
+  base_name: "PushPullHook2D"
+  id: "kinder/PushPullHook2D-v0"
+  render_mode: rgb_array
+
+provider: kinder
+
+description: "KinDER PushPullHook2D. Use a hook to push or pull an object in 2D."
+
+expert:
+  _target_: programmatic_policy_learning.approaches.manual_demo_replay_expert_approach.ManualDemoReplayExpertApproach
+  demos_root: manual_demos
+  env_id: "kinder/PushPullHook2D-v0"
+
+observation_mode: continuous
+action_mode: continuous

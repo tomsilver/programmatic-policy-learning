@@ -1,14 +1,17 @@
 """Program generation helpers for the LPP approach."""
 
 import ast
+import inspect
 import logging
 import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, NotRequired, TypedDict, cast
 
+from prpl_llm_utils import models as llm_models
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
-from prpl_llm_utils.models import OpenAIModel
+from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
+from prpl_llm_utils.reprompting import RepromptCheck
 
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     convert_dir_lists_to_tuples,
@@ -51,6 +54,23 @@ from programmatic_policy_learning.learning.prior_calculation import (
 )
 
 EnvFactory = Callable[[int | None], Any]
+
+
+class _PyFeatureGenerateKwargs(TypedDict):
+    prompt_path: str | Path
+    hint_text: str
+    num_features: int
+    env_name: str | None
+    demonstration_data: str | None
+    encoding_method: str | None
+    _seed: int
+    reprompt_checks: list[RepromptCheck] | None
+    loading: dict[str, Any] | None
+    action_mode: str
+    generation_mode: str
+    output_tag: NotRequired[str]
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HINTS_ROOT = (
     REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
@@ -62,14 +82,25 @@ def _cache_path_with_model(stem: str, llm_model: str) -> Path:
     return Path(f"{stem}_{model_slug}.db")
 
 
-def _resolve_demos_included(
-    demo_numbers: Sequence[int] | None,
-    program_generation: dict[str, Any],
-) -> list[int]:
-    demos_included = program_generation.get("demos_included")
-    if demos_included is None:
-        return list(demo_numbers) if demo_numbers is not None else [0]
-    return list(demos_included)
+def make_llm_client_for_model(
+    llm_model: str,
+    cache: SQLite3PretrainedLargeModelCache,
+    *,
+    use_response_model: bool | None = None,
+) -> PretrainedLargeModel:
+    """Create the correct OpenAI client for chat- or responses-style models."""
+
+    if use_response_model is None:
+        use_response_model = "pro" in llm_model.lower()
+    if use_response_model:
+        response_cls = getattr(llm_models, "OpenAIResponsesModel", None)
+        if response_cls is None:
+            raise ImportError(
+                "OpenAIResponsesModel is not available in prpl_llm_utils. "
+                "Install/upgrade the package or set use_response_model=false."
+            )
+        return response_cls(llm_model, cache)
+    return OpenAIModel(llm_model, cache)
 
 
 def _collect_full_episode_generic(
@@ -86,6 +117,8 @@ def _collect_full_episode_generic(
     ``skip_rate``-th transition is retained. The terminal transition is always
     kept so the prompt can still see how the episode ended.
     """
+    if hasattr(expert, "set_env"):
+        expert.set_env(env)
     try:
         reset_out = env.reset(seed=reset_seed)
     except TypeError:
@@ -110,6 +143,248 @@ def _collect_full_episode_generic(
                 trajectory.append(transition)
             break
     return trajectory
+
+
+def _resolve_demo_subsets(
+    demo_numbers: Sequence[int] | None,
+    ensemble_cfg: dict[str, Any],
+) -> list[list[int]]:
+    """Resolve configured demo subsets for multi-prompt feature generation."""
+    explicit_demo_subsets = ensemble_cfg.get("demo_subsets")
+    if explicit_demo_subsets is None:
+        if demo_numbers is None:
+            return [[0]]
+        return [list(dict.fromkeys(int(demo_id) for demo_id in demo_numbers))]
+
+    demo_subsets = [
+        list(dict.fromkeys(int(demo_id) for demo_id in demo_subset))
+        for demo_subset in explicit_demo_subsets
+    ]
+    demo_subsets = [demo_subset for demo_subset in demo_subsets if demo_subset]
+    if not demo_subsets:
+        raise ValueError("multi_prompt_ensemble.demo_subsets cannot be empty.")
+    return demo_subsets
+
+
+def _canonicalize_feature_source(source: str) -> str:
+    """Normalize source for deduplication across renamed feature defs."""
+    tree = ast.parse(source)
+    for idx, node in enumerate(tree.body):
+        if isinstance(node, ast.FunctionDef):
+            node.name = f"feature_{idx}"
+    return ast.unparse(tree).strip()
+
+
+def _deduplicate_payload_features(
+    payload_features: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep only structurally unique features from a merged payload."""
+    deduped: list[dict[str, Any]] = []
+    seen_sources: set[str] = set()
+    for feature in payload_features:
+        source = feature.get("source")
+        if not isinstance(source, str) or not source.strip():
+            continue
+        key = _canonicalize_feature_source(source)
+        if key in seen_sources:
+            continue
+        seen_sources.add(key)
+        deduped.append(dict(feature))
+    return deduped
+
+
+def _build_serialized_demo_text(
+    *,
+    base_class_name: str,
+    env_specs: dict[str, Any] | None,
+    env_factory: EnvFactory,
+    expert: Any,
+    demo_ids: Sequence[int],
+    skip_rate: int,
+    enc_method: str,
+) -> str:
+    """Collect and serialize demonstrations for a specific prompt instance."""
+    trajectories: list[list[tuple[Any, Any, Any]]] = []
+    for init_idx in demo_ids:
+        env_demo = env_factory(init_idx)
+        traj = _collect_full_episode_generic(
+            env_demo,
+            expert,
+            max_steps=300,
+            skip_rate=skip_rate,
+            reset_seed=int(init_idx),
+        )
+        env_demo.close()
+        trajectories.append(traj)
+    llm_env_spec = get_env_llm_spec(base_class_name, env_specs)
+    return llm_env_spec.serialize_demonstrations(
+        trajectories,
+        encoding_method=enc_method,
+        max_steps=300,
+    )
+
+
+def _generate_py_feature_pool(
+    *,
+    py_generator: PyFeatureGenerator,
+    prompt_path: str,
+    hint_text: str,
+    num_features: int,
+    base_class_name: str,
+    env_specs: dict[str, Any] | None,
+    env_factory: EnvFactory,
+    expert: Any,
+    demo_numbers: Sequence[int] | None,
+    program_generation: dict[str, Any],
+    seed: int,
+    loading_cfg: dict[str, Any],
+    action_mode: str,
+    generation_mode: str,
+) -> tuple[list[str], dict[str, Any], list[str]]:
+    """Generate one merged feature pool from configured demo subsets."""
+    enc_method = str(program_generation["encoding_method"])
+    demo_skip_rate = int(program_generation.get("skip_rate", 1))
+    ensemble_cfg = dict(program_generation.get("multi_prompt_ensemble") or {})
+
+    if bool(loading_cfg.get("offline", 0)):
+        features, payload = py_generator.generate(
+            prompt_path=prompt_path,
+            hint_text=hint_text,
+            num_features=num_features,
+            env_name=base_class_name,
+            demonstration_data=None,
+            encoding_method=enc_method,
+            _seed=seed,
+            reprompt_checks=(
+                None
+                if generation_mode == "generator_script"
+                else [JSONStructureRepromptCheck(required_fields=["features"])]
+            ),
+            loading=loading_cfg,
+            action_mode=action_mode,
+            generation_mode=generation_mode,
+        )
+        feature_display_names = []
+        payload_features = payload.get("features", [])
+        if isinstance(payload_features, list):
+            for feature in payload_features:
+                if not isinstance(feature, dict):
+                    continue
+                display_name = str(feature.get("name", "")).strip()
+                if display_name:
+                    feature_display_names.append(display_name)
+        return features, payload, feature_display_names
+
+    if expert is None:
+        raise ValueError("No expert instance provided for demo serialization.")
+
+    num_seeds_per_subset = max(1, int(ensemble_cfg.get("num_seeds_per_subset", 1)))
+    demo_subsets = _resolve_demo_subsets(demo_numbers, ensemble_cfg)
+
+    all_payload_features: list[dict[str, Any]] = []
+    call_metadata: list[dict[str, Any]] = []
+    next_feature_index = 1
+    reprompt_checks: list[Any] | None
+    if generation_mode == "generator_script":
+        reprompt_checks = None
+    else:
+        reprompt_checks = [JSONStructureRepromptCheck(required_fields=["features"])]
+
+    total_calls = len(demo_subsets) * num_seeds_per_subset
+    logging.info(
+        "Running multi-prompt feature generation with %d subsets x %d seeds = %d calls.",
+        len(demo_subsets),
+        num_seeds_per_subset,
+        total_calls,
+    )
+    for subset_idx, demo_subset in enumerate(demo_subsets):
+        demo_text = _build_serialized_demo_text(
+            base_class_name=base_class_name,
+            env_specs=env_specs,
+            env_factory=env_factory,
+            expert=expert,
+            demo_ids=demo_subset,
+            skip_rate=demo_skip_rate,
+            enc_method=enc_method,
+        )
+        for seed_idx in range(num_seeds_per_subset):
+            call_seed = int(seed + len(call_metadata))
+            generate_kwargs: _PyFeatureGenerateKwargs = {
+                "prompt_path": prompt_path,
+                "hint_text": hint_text,
+                "num_features": num_features,
+                "env_name": base_class_name,
+                "demonstration_data": demo_text,
+                "encoding_method": enc_method,
+                "_seed": call_seed,
+                "reprompt_checks": reprompt_checks,
+                "loading": loading_cfg,
+                "action_mode": action_mode,
+                "generation_mode": generation_mode,
+            }
+            try:
+                generate_sig = inspect.signature(py_generator.generate)
+            except (TypeError, ValueError):
+                generate_sig = None
+            if generate_sig is None or "output_tag" in generate_sig.parameters:
+                generate_kwargs["output_tag"] = f"subset{subset_idx}_seed{call_seed}"
+            call_features, payload = py_generator.generate(**generate_kwargs)
+            renumbered_payload = py_generator.renumber_payload_features(
+                payload,
+                start_index=next_feature_index,
+            )
+            next_feature_index += len(renumbered_payload.get("features", []))
+            payload_features = renumbered_payload.get("features", [])
+            if isinstance(payload_features, list):
+                all_payload_features.extend(
+                    feature for feature in payload_features if isinstance(feature, dict)
+                )
+            call_metadata.append(
+                {
+                    "subset_index": subset_idx,
+                    "seed_index": seed_idx,
+                    "llm_seed": call_seed,
+                    "demo_subset": list(demo_subset),
+                    "generated_features": len(call_features),
+                }
+            )
+
+    deduped_features = _deduplicate_payload_features(all_payload_features)
+    merged_payload = py_generator.renumber_payload_features(
+        {"features": deduped_features},
+        start_index=1,
+    )
+    merged_sources = py_generator.parse_feature_programs(merged_payload)
+    if py_generator.llm_client is not None:
+        py_generator.write_json(
+            "py_feature_payload_ensemble_merged.json",
+            {
+                "metadata": {
+                    "mode": "multi_prompt_ensemble",
+                    "base_seed": seed,
+                    "num_demo_subsets": len(demo_subsets),
+                    "num_seeds_per_subset": num_seeds_per_subset,
+                    "raw_feature_count": len(all_payload_features),
+                    "deduped_feature_count": len(deduped_features),
+                    "calls": call_metadata,
+                },
+                "features": merged_payload.get("features", []),
+            },
+        )
+
+    feature_display_names = []
+    for feature in merged_payload.get("features", []):
+        if not isinstance(feature, dict):
+            continue
+        display_name = str(feature.get("name", "")).strip()
+        if display_name:
+            feature_display_names.append(display_name)
+    logging.info(
+        "Merged %d raw features into %d deduplicated features.",
+        len(all_payload_features),
+        len(merged_sources),
+    )
+    return merged_sources, merged_payload, feature_display_names
 
 
 def _build_py_feature_functions(
@@ -176,7 +451,11 @@ def get_program_set(
     if strategy == "feature_generator":
         cache_path = _cache_path_with_model("feature_cache", llm_model)
         cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
+        llm_client = make_llm_client_for_model(
+            llm_model,
+            cache,
+            use_response_model=program_generation.get("use_response_model"),
+        )
         prompt_path = program_generation["feature_generator_prompt"]
         num_features = program_generation["num_features"]
         env = env_factory(0)
@@ -210,17 +489,23 @@ def get_program_set(
         return features, program_prior_log_probs, dsl_fns, feature_display_names
 
     if strategy == "py_feature_gen":
-        cache_path = _cache_path_with_model("py_feature_cache", llm_model)
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
-        llm_client = OpenAIModel(llm_model, cache)
+        loading_cfg = program_generation.get("loading") or {}
+        offline_mode = bool(loading_cfg.get("offline", 0))
+        py_llm_client: PretrainedLargeModel | None = None
+        if not offline_mode:
+            cache_path = _cache_path_with_model("py_feature_cache", llm_model)
+            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            py_llm_client = make_llm_client_for_model(
+                llm_model,
+                cache,
+                use_response_model=program_generation.get("use_response_model"),
+            )
         prompt_path = program_generation["py_feature_gen_prompt"]
         generation_mode = str(
             program_generation.get("py_feature_gen_mode", "feature_payload")
         )
-        enc_method = str(program_generation["encoding_method"])
-        # enc_id = enc_method.replace("enc_", "")
         num_features = program_generation["num_features"]
-        py_generator = PyFeatureGenerator(llm_client)
+        py_generator = PyFeatureGenerator(py_llm_client)
         try:
             hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
         except FileNotFoundError:
@@ -231,53 +516,19 @@ def get_program_set(
             )
             hint_text = ""
 
-        demo_text: str | None = None
-        try:
-            trajectories: list[list[tuple[Any, Any, Any]]] = []
-            demo_ids = _resolve_demos_included(demo_numbers, program_generation)
-            demo_skip_rate = int(program_generation.get("skip_rate", 1))
-            if expert is None:
-                raise ValueError("No expert instance provided for demo serialization.")
-            for init_idx in demo_ids:
-                env_demo = env_factory(init_idx)
-                # reset_seed = int(seed) * 1000 + int(init_idx)
-                reset_seed = init_idx
-                traj = _collect_full_episode_generic(
-                    env_demo,
-                    expert,
-                    max_steps=200,
-                    skip_rate=demo_skip_rate,
-                    reset_seed=reset_seed,
-                )
-                env_demo.close()
-                trajectories.append(traj)
-            llm_env_spec = get_env_llm_spec(base_class_name, env_specs)
-            demo_text = llm_env_spec.serialize_demonstrations(
-                trajectories,
-                encoding_method=enc_method,
-                max_steps=50,
-            )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logging.info("Failed to build demonstration text: %s", exc)
-
-        py_reprompt_checks: list[Any] | None
-        if generation_mode == "generator_script":
-            py_reprompt_checks = None
-        else:
-            py_reprompt_checks = [
-                JSONStructureRepromptCheck(required_fields=["features"])
-            ]
-
-        features, _payload = py_generator.generate(
+        features, _payload, feature_display_names = _generate_py_feature_pool(
+            py_generator=py_generator,
             prompt_path=prompt_path,
             hint_text=hint_text,
             num_features=num_features,
-            env_name=base_class_name,
-            demonstration_data=demo_text,
-            encoding_method=enc_method,
-            _seed=seed,
-            reprompt_checks=py_reprompt_checks,
-            loading=program_generation.get("loading"),
+            base_class_name=base_class_name,
+            env_specs=env_specs,
+            env_factory=env_factory,
+            expert=expert,
+            demo_numbers=demo_numbers,
+            program_generation=program_generation,
+            seed=seed,
+            loading_cfg=loading_cfg,
             action_mode=str((env_specs or {}).get("action_mode", "discrete")),
             generation_mode=generation_mode,
         )
@@ -293,15 +544,6 @@ def get_program_set(
             program_prior_log_probs = out_dict["logprobs"]
         else:
             raise ValueError(f"Unsupported prior_version: {prior_version}")
-        feature_display_names = []
-        payload_features = _payload.get("features", [])
-        if isinstance(payload_features, list):
-            for feature in payload_features:
-                if not isinstance(feature, dict):
-                    continue
-                display_name = str(feature.get("name", "")).strip()
-                if display_name:
-                    feature_display_names.append(display_name)
         return features, program_prior_log_probs, dsl_fns, feature_display_names
 
     if strategy not in strategies:
@@ -365,7 +607,11 @@ def _generate_with_dsl_generator(
     llm_model = program_generation.get("llm_model", "gpt-4.1")
     cache_path = _cache_path_with_model("llm_cache", llm_model)
     cache = SQLite3PretrainedLargeModelCache(cache_path)
-    llm_client = OpenAIModel(llm_model, cache)
+    llm_client = make_llm_client_for_model(
+        llm_model,
+        cache,
+        use_response_model=program_generation.get("use_response_model"),
+    )
     prompt_path = program_generation["dsl_generator_prompt"]
     with open(prompt_path, "r", encoding="utf-8") as file:
         prompt = file.read()

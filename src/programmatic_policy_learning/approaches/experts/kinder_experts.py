@@ -10,8 +10,9 @@ from typing import Any
 
 import gymnasium as gym
 
-from programmatic_policy_learning.approaches.experts.motion2d_bilevel_experts import (
-    create_motion2d_bilevel_expert,
+from programmatic_policy_learning.approaches.experts.kinder_bilevel_experts import (
+    create_kinder_bilevel_expert,
+    resolve_bilevel_model_name,
 )
 from programmatic_policy_learning.approaches.experts.motion2d_experts import (
     create_motion2d_expert,
@@ -33,6 +34,8 @@ def create_kinder_expert(
     observation_space: Any | None = None,
     num_passages: int = 0,
     expert_kind: str = "bilevel",
+    env_model_name: str | None = None,
+    model_kwargs: dict[str, Any] | None = None,
     max_abstract_plans: int = 10,
     samples_per_step: int = 3,
     max_skill_horizon: int = 100,
@@ -55,21 +58,29 @@ def create_kinder_expert(
     A callable ``(obs) -> action``.
     """
     env_name = canonicalize_env_name(env_name)
+    if expert_kind == "bilevel":
+        if observation_space is None:
+            raise ValueError(f"{env_name} bilevel expert requires observation_space.")
+        resolved_model_kwargs = dict(model_kwargs or {})
+        if env_name == "Motion2D" and "num_passages" not in resolved_model_kwargs:
+            resolved_model_kwargs["num_passages"] = int(num_passages)
+        return create_kinder_bilevel_expert(
+            observation_space,
+            action_space,
+            seed=seed,
+            env_name=env_name,
+            env_model_name=resolve_bilevel_model_name(
+                env_name=env_name,
+                env_model_name=env_model_name,
+            ),
+            model_kwargs=resolved_model_kwargs,
+            max_abstract_plans=max_abstract_plans,
+            samples_per_step=samples_per_step,
+            max_skill_horizon=max_skill_horizon,
+            heuristic_name=heuristic_name,
+            planning_timeout=planning_timeout,
+        )
     if env_name == "Motion2D":
-        if expert_kind == "bilevel":
-            if observation_space is None:
-                raise ValueError("Motion2D bilevel expert requires observation_space.")
-            return create_motion2d_bilevel_expert(
-                observation_space,
-                action_space,
-                seed=seed,
-                num_passages=num_passages,
-                max_abstract_plans=max_abstract_plans,
-                samples_per_step=samples_per_step,
-                max_skill_horizon=max_skill_horizon,
-                heuristic_name=heuristic_name,
-                planning_timeout=planning_timeout,
-            )
         if expert_kind != "rejection":
             raise ValueError(
                 f"Unknown Motion2D expert kind '{expert_kind}'. "

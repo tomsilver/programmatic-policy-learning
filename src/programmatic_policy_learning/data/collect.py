@@ -20,6 +20,23 @@ ObsT = TypeVar("ObsT")
 ActT = TypeVar("ActT")
 
 
+def _default_bucket_edges_for_dim(
+    low: float,
+    high: float,
+    *,
+    action_type: str,
+) -> list[float]:
+    """Build simple debug bucket edges for one action dimension."""
+    normalized_type = action_type.lower().strip()
+    if normalized_type == "boolean-like toggle" or (
+        np.isclose(low, 0.0) and np.isclose(high, 1.0)
+    ):
+        return [float(low), 0.5, float(high)]
+    if low < 0.0 < high:
+        return [float(low), float(0.5 * low), 0.0, float(0.5 * high), float(high)]
+    return [float(low), float(0.5 * (low + high)), float(high)]
+
+
 def collect_demo(
     env_factory: EnvFactory,
     expert: BaseApproach,
@@ -53,20 +70,36 @@ def collect_demo(
         try:
             low_arr = np.asarray(action_space.low, dtype=float).reshape(-1)
             high_arr = np.asarray(action_space.high, dtype=float).reshape(-1)
+            get_action_types = getattr(env, "get_action_types", None)
+            action_types = (
+                tuple(get_action_types() or ()) if callable(get_action_types) else ()
+            )
             active_dims = get_active_action_dims(
-                {"continuous": {"active_action_dims": [0, 1]}},
+                None,
                 total_dims=low_arr.size,
-                default_active_dims=[0, 1],
+                default_active_dims=None,
             )
             active_low_arr, active_high_arr = active_action_bounds(
                 low_arr,
                 high_arr,
                 active_dims=active_dims,
             )
+            bucket_edges = [
+                _default_bucket_edges_for_dim(
+                    float(active_low_arr[idx]),
+                    float(active_high_arr[idx]),
+                    action_type=(
+                        action_types[int(dim)]
+                        if int(dim) < len(action_types)
+                        else "continuous"
+                    ),
+                )
+                for idx, dim in enumerate(active_dims.tolist())
+            ]
             quantizer = Motion2DActionQuantizer.from_bounds(
                 active_low_arr,
                 active_high_arr,
-                bucket_edges=[-0.05, -0.006, 0.0, 0.006, 0.05],
+                bucket_edges=bucket_edges,
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             logging.info(

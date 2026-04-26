@@ -40,6 +40,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         normalize_plp_actions : bool
             If True, normalize the action probabilities for each PLP.
         """
+        assert len(plps) == len(probs), "plps and probs must have the same length."
         assert abs(np.sum(probs) - 1.0) < 1e-5
 
         self.plps = plps
@@ -71,6 +72,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         if self.action_mode == "continuous":
             return cast(_ActType, self._select_continuous_action(obs))
         action_probs = self.get_action_probs(obs).flatten()
+        # print(f"Action probabilities: {action_probs}")
         if self.map_choices:
             idx = int(np.argmax(action_probs).squeeze())
         else:
@@ -201,13 +203,70 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
             return float(action_probs[cast(Any, action)])
         return self._continuous_action_score(obs, action)
 
+    def _find_continuous_candidate_index(self, action: _ActType) -> int | None:
+        """Return the index of a candidate action if it exists in the
+        catalog."""
+        action_arr = np.asarray(action)
+        for idx, candidate in enumerate(self.candidate_actions):
+            candidate_arr = np.asarray(candidate)
+            if candidate_arr.shape != action_arr.shape:
+                continue
+            if np.array_equal(candidate_arr, action_arr):
+                return idx
+        return None
+
+    def _get_continuous_candidate_scores(self, obs: _ObsType) -> np.ndarray:
+        """Score the fixed continuous candidate catalog for one observation."""
+        if not self.candidate_actions:
+            raise ValueError("candidate_actions is required for continuous LPPPolicy.")
+        hashed_obs = self.hash_obs(obs)
+        if hashed_obs in self._action_prob_cache:
+            return self._action_prob_cache[hashed_obs]
+
+        candidates = list(self.candidate_actions)
+        scores = np.zeros(len(candidates), dtype=np.float64)
+        for plp, prob in zip(self.plps, self.probs):
+            accepted_indices: list[int] = []
+            for idx, candidate in enumerate(candidates):
+                try:
+                    if plp(obs, candidate):
+                        accepted_indices.append(idx)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    continue
+            if not accepted_indices:
+                continue
+            per_action_prob = float(prob)
+            if self.normalize_plp_actions:
+                per_action_prob /= len(accepted_indices)
+            for idx in accepted_indices:
+                scores[idx] += per_action_prob
+        self._action_prob_cache[hashed_obs] = scores
+        return scores
+
     def _continuous_action_score(self, obs: _ObsType, action: _ActType) -> float:
         """Score a continuous action by PLP posterior mass that accepts it."""
+        candidate_idx = self._find_continuous_candidate_index(action)
+        if candidate_idx is not None:
+            scores = self._get_continuous_candidate_scores(obs)
+            return max(1e-12, min(1.0, float(scores[candidate_idx])))
+
         score = 0.0
         for plp, prob in zip(self.plps, self.probs):
             try:
-                if plp(obs, action):
-                    score += float(prob)
+                if not plp(obs, action):
+                    continue
+                per_action_prob = float(prob)
+                if self.normalize_plp_actions and self.candidate_actions:
+                    allowed_count = 0
+                    for candidate in self.candidate_actions:
+                        try:
+                            if plp(obs, candidate):
+                                allowed_count += 1
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            continue
+                    if allowed_count > 0:
+                        per_action_prob /= allowed_count
+                score += per_action_prob
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
         return max(1e-12, min(1.0, score))
@@ -221,10 +280,7 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         if not candidates:
             raise RuntimeError("No action candidates generated for continuous policy.")
 
-        scores = np.array(
-            [self._continuous_action_score(obs, cast(_ActType, a)) for a in candidates],
-            dtype=np.float64,
-        )
+        scores = self._get_continuous_candidate_scores(obs)
         if self.map_choices:
             best_idx = int(np.argmax(scores))
             return candidates[best_idx]

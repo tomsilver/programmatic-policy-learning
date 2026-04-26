@@ -96,13 +96,14 @@ def test_dataset_pipeline_with_real_env() -> None:
         logging.info(f"Demo {i}: state=\n{s}, action={a}")
 
     # Run dataset pipeline
-    X, y, _examples, _sample_weights = run_all_programs_on_demonstrations(
+    result = run_all_programs_on_demonstrations(
         base_class_name=base_class_name,
         demo_numbers=demo_numbers,
         programs=programs,
         demo_dict=demo_dict,
         dsl_functions={},
     )
+    X, y, _examples, _sample_weights = result[:4]
     if X is not None and y is not None:
         logging.info("\nDataset X (features matrix):")
         logging.info(X.toarray())

@@ -91,6 +91,7 @@ def run_collision_feedback_loop(
     ) = None,
     prior_version: str = "uniform",
     prior_beta: float = 1.0,
+    collision_bucket_mode: str = "positive_anchor",
 ) -> tuple[
     Any,
     list[StateActionProgram],
@@ -140,7 +141,12 @@ def run_collision_feedback_loop(
         X, programs_sa, program_prior_log_probs, col_nnz = _filter_redundant_features(
             X, programs_sa, program_prior_log_probs, round_idx=round_idx + 1
         )
-        collision_groups = log_feature_collisions(X, y, examples)
+        collision_groups = log_feature_collisions(
+            X,
+            y,
+            examples,
+            bucket_mode=collision_bucket_mode,
+        )
         num_collisions_after = len(collision_groups) if collision_groups else 0
         if record_attempt_summary is not None:
             record_attempt_summary(

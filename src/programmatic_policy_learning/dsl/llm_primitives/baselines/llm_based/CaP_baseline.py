@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import logging
 import math
@@ -29,17 +30,19 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 from programmatic_policy_learning.approaches.experts.kinder_experts import (
     create_kinder_expert,
 )
-from programmatic_policy_learning.approaches.lpp_utils.utils import run_single_episode
+from programmatic_policy_learning.approaches.lpp_utils.utils import (
+    infer_episode_success,
+    run_single_episode,
+)
 
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
-    continuous_encoder,
     continuous_hint_config,
-    continuous_trajectory_serializer,
-    grid_encoder,
     grid_hint_config,
-    trajectory_serializer,
-    transition_analyzer,
+)
+from programmatic_policy_learning.dsl.llm_primitives.env_specs import get_env_llm_spec
+from programmatic_policy_learning.dsl.llm_primitives.py_feature_generator import (
+    PyFeatureGenerator,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
@@ -51,6 +54,8 @@ def collect_full_episode(
     sample_count: int | None = None,
     *,
     start_obs: Any = None,
+    reset_seed: int | None = None,
+    skip_rate: int = 1,
 ) -> list[tuple[Any, Any, Any]]:
     """Roll out expert policy, optionally sampling a subset of (obs, action,
     obs_next) transitions.
@@ -73,6 +78,13 @@ def collect_full_episode(
     start_obs : Any, optional
         If provided, skip ``env.reset()`` and use this observation as the
         initial state.
+    reset_seed : int | None, optional
+        Seed passed to ``env.reset(seed=...)`` when ``start_obs`` is not
+        provided.  This mirrors the LPP rollout convention where env/demo id
+        and reset seed are the same integer.
+    skip_rate : int, optional
+        Keep every ``skip_rate``-th transition while still stepping the
+        environment every timestep. The terminal transition is always kept.
 
     Returns
     -------
@@ -95,7 +107,13 @@ def collect_full_episode(
         hasattr(expert_fn, attr) for attr in ("reset", "step", "update")
     )
     if start_obs is None:
-        reset_out = env.reset()
+        if reset_seed is None:
+            reset_out = env.reset()
+        else:
+            try:
+                reset_out = env.reset(seed=reset_seed)
+            except TypeError:
+                reset_out = env.reset()
         if isinstance(reset_out, tuple) and len(reset_out) == 2:
             obs, info = reset_out
         else:
@@ -107,14 +125,19 @@ def collect_full_episode(
         expert_fn.reset(obs, info)
     trajectory = []
 
-    for _ in range(max_steps):
+    skip_rate = max(1, int(skip_rate))
+    for step_idx in range(max_steps):
         action = expert_fn.step() if expert_is_stateful else expert_fn(obs)
         obs_next, reward, term, trunc, info = env.step(action)
         if expert_is_stateful:
             expert_fn.update(obs_next, reward, term or trunc, info)
-        trajectory.append((obs, action, obs_next))
+        transition = (obs, action, obs_next)
+        if step_idx % skip_rate == 0:
+            trajectory.append(transition)
         obs = obs_next
         if term or trunc:
+            if not trajectory or trajectory[-1] is not transition:
+                trajectory.append(transition)
             break
 
     if sample_count is None or sample_count >= len(trajectory):
@@ -138,7 +161,10 @@ def collect_full_episode(
 
 
 def build_joint_hint_prompt(
-    all_trajectories_text: str, env_name: str, encoding: str
+    all_trajectories_text: str,
+    env_name: str,
+    encoding: str,
+    demo_background: str = "",
 ) -> str:
     """Return the LLM prompt for summarising expert trajectories.
 
@@ -150,6 +176,9 @@ def build_joint_hint_prompt(
         Grid environment name (used to look up symbol maps).
     encoding : str
         Encoding mode (``"1"`` adds token-meaning metadata).
+    demo_background : str, optional
+        Demonstration format background text shared with the LPP generator
+        prompts.
 
     Returns
     -------
@@ -171,11 +200,17 @@ IMPORTANT:
 - An action is "Click cell (r,c)". {action_mask}
 - Steps within a trajectory are temporally consecutive.
 - Your job is to infer the underlying strategy/policy that generalizes across trajectories.
+- Do not hard-code map size, exact coordinates, initial states, or demo-specific layouts.
 - Do NOT describe individual steps.
 - Do NOT narrate what happens over time.
 - Prefer rules that are consistent across trajectories; ignore trajectory-specific ones.
 
 {token_meanings}
+
+========================
+DEMONSTRATION FORMAT BACKGROUND
+========================
+{demo_background}
 
 ========================
 DEMONSTRATIONS
@@ -209,6 +244,7 @@ def build_continuous_hint_prompt(
     action_field_names: list[str],
     action_low: np.ndarray,
     action_high: np.ndarray,
+    demo_background: str = "",
 ) -> str:
     """Return the LLM prompt for continuous-action expert trajectories.
 
@@ -224,6 +260,9 @@ def build_continuous_hint_prompt(
         Per-dimension lower bounds of the action space.
     action_high : np.ndarray
         Per-dimension upper bounds of the action space.
+    demo_background : str, optional
+        Demonstration format background text shared with the LPP generator
+        prompts.
 
     Returns
     -------
@@ -260,9 +299,15 @@ IMPORTANT:
 - The action is a NumPy array of shape ({len(action_field_names)},) with bounds: {bounds_lines}.
 - Steps within a trajectory are temporally consecutive.
 - Your job is to infer the underlying strategy/policy that generalizes across trajectories.
+- Do not hard-code exact numeric states, initial states, trajectory ids, or demo-specific constants.
 - Do NOT describe individual steps.
 - Do NOT narrate what happens over time.
 - Prefer rules that are consistent across trajectories; ignore trajectory-specific ones.
+
+========================
+DEMONSTRATION FORMAT BACKGROUND
+========================
+{demo_background}
 
 ========================
 DEMONSTRATIONS
@@ -387,9 +432,9 @@ def run(
     env_name: str,
     encoding_method: str,
     seed: int,
-    num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
     function_name: str = "policy",
+    demo_env_nums: Sequence[int] = (0, 1, 2, 3),
 ) -> tuple[str, str]:
     """Collect multiple env trajectories and summarise hints via the LLM.
 
@@ -403,12 +448,12 @@ def run(
         Trajectory encoding mode (``"1"``-``"4"``).
     seed : int
         Random seed for reproducibility.
-    num_initial_states : int, optional
-        Number of expert rollouts to collect (default 10).
     max_steps_per_traj : int, optional
         Maximum trajectory length fed to the LLM (default 40).
     function_name : str, optional
         Expected name of the generated policy function (default ``"policy"``).
+    demo_env_nums : Sequence[int], optional
+        Exact env ids/reset seeds to use for demonstration collection.
 
     Returns
     -------
@@ -416,55 +461,51 @@ def run(
         A ``(prompt, llm_response)`` tuple.
     """
     # ------------------------------------------------------------
-    # 1) Setup encoder + analyzer
+    # 1) Collect expert trajectories
     # ------------------------------------------------------------
-    symbol_map = grid_hint_config.get_symbol_map(env_name)
-
-    enc_cfg = grid_encoder.GridStateEncoderConfig(
-        symbol_map=symbol_map,
-        empty_token="empty",
-        coordinate_style="rc",
-    )
-    encoder = grid_encoder.GridStateEncoder(enc_cfg)
-    analyzer = transition_analyzer.GenericTransitionAnalyzer()
-
-    # ------------------------------------------------------------
-    # 2) Collect expert trajectories
-    # ------------------------------------------------------------
+    demo_ids = list(demo_env_nums)
     logging.info(
-        "Collecting %d expert trajectories for %s ...", num_initial_states, env_name
+        "Collecting %d expert trajectories for %s from demo envs=%s ...",
+        len(demo_ids),
+        env_name,
+        demo_ids,
     )
     expert = get_grid_expert(env_name)
     trajectories: list[list[tuple[Any, Any, Any]]] = []
 
-    for init_idx in range(num_initial_states):
+    for init_idx in demo_ids:
         env = env_factory(init_idx, env_name)
-        traj = collect_full_episode(env, expert, sample_count=None)
+        traj = collect_full_episode(
+            env,
+            expert,
+            sample_count=None,
+            reset_seed=init_idx,
+        )
         env.close()
         trajectories.append(traj)
     logging.info("Collected %d trajectories.", len(trajectories))
 
     # ------------------------------------------------------------
-    # 3) All trajectories hint extraction
+    # 2) Serialize demonstrations with the same adapter used by LPP.
     # ------------------------------------------------------------
-
-    all_traj_texts = []
-
-    for i, traj in enumerate(trajectories):
-        # text = trajectory_serializer.trajectory_to_diff_text(
-        text = trajectory_serializer.trajectory_to_text(
-            traj,
-            encoder=encoder,
-            analyzer=analyzer,
-            salient_tokens=grid_hint_config.SALIENT_TOKENS[env_name],
-            encoding_method=encoding_method,
-            max_steps=max_steps_per_traj,
-        )
-        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
-
-    combined_text = "\n\n".join(all_traj_texts)
+    llm_env_spec = get_env_llm_spec(env_name, {"action_mode": "discrete"})
+    combined_text = llm_env_spec.serialize_demonstrations(
+        trajectories,
+        encoding_method=_encoding_label(encoding_method),
+        max_steps=max_steps_per_traj,
+    )
+    demo_background = _load_demo_background_for_cap(
+        encoding_method,
+        env_name=env_name,
+        env_type="grid",
+    )
     logging.info("Building prompt (encoding=%s) ...", encoding_method)
-    prompt = build_joint_hint_prompt(combined_text, env_name, encoding_method)
+    prompt = build_joint_hint_prompt(
+        combined_text,
+        env_name,
+        _encoding_id(encoding_method),
+        demo_background=demo_background,
+    )
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     query = Query(
         prompt, hyperparameters={"temperature": 0.0, "seed": seed}
@@ -504,11 +545,11 @@ def run_continuous(
     encoding_method: str,
     seed: int,
     num_passages: int = 1,
-    num_initial_states: int = 10,
     max_steps_per_traj: int = 40,
     function_name: str = "policy",
     skip_rate: int = 1,
     collect_max_steps: int = 500,
+    demo_env_nums: Sequence[int] = (0, 1, 2, 3),
 ) -> tuple[str, str]:
     """Collect expert trajectories in a continuous env and query the LLM.
 
@@ -524,8 +565,6 @@ def run_continuous(
         Random seed for reproducibility.
     num_passages : int, optional
         Number of wall passages (default 1).
-    num_initial_states : int, optional
-        Number of expert rollouts to collect (default 10).
     max_steps_per_traj : int, optional
         Maximum trajectory length fed to the LLM (default 40).
     function_name : str, optional
@@ -534,6 +573,8 @@ def run_continuous(
         Sub-sampling rate for trajectories (default 1, no skipping).
     collect_max_steps : int, optional
         Maximum env steps when rolling out the expert (default 500).
+    demo_env_nums : Sequence[int], optional
+        Exact reset seeds to use for demonstration collection.
 
     Returns
     -------
@@ -542,27 +583,21 @@ def run_continuous(
     """
     env_name = continuous_hint_config.canonicalize_env_name(env_name)
     # ------------------------------------------------------------
-    # 1) Setup encoder
+    # 1) Setup action metadata
     # ------------------------------------------------------------
-    obs_fields = continuous_hint_config.obs_field_names_for_motion2d(num_passages)
     action_fields = continuous_hint_config.ACTION_FIELD_NAMES[env_name]
-    enc_cfg = continuous_encoder.ContinuousStateEncoderConfig(
-        obs_field_names=obs_fields,
-        action_field_names=action_fields,
-        salient_indices=continuous_hint_config.salient_obs_indices_for_motion2d(
-            num_passages
-        ),
-    )
-    encoder = continuous_encoder.ContinuousStateEncoder(enc_cfg)
 
     # ------------------------------------------------------------
     # 2) Collect expert trajectories
     # ------------------------------------------------------------
+    demo_ids = list(demo_env_nums)
     logging.info(
-        "Collecting %d expert trajectories for %s (num_passages=%d) ...",
-        num_initial_states,
+        "Collecting %d expert trajectories for %s (num_passages=%d) "
+        "from reset seeds=%s ...",
+        len(demo_ids),
         env_name,
         num_passages,
+        demo_ids,
     )
     ref_env, ref_obs = continuous_env_factory(env_name, num_passages, seed=seed)
     assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
@@ -585,10 +620,14 @@ def run_continuous(
     ref_env.close()
 
     trajectories: list[list[tuple[Any, Any, Any]]] = []
-    for init_idx in range(num_initial_states):
-        env, obs0 = continuous_env_factory(env_name, num_passages, seed=seed + init_idx)
+    for init_idx in demo_ids:
+        env, obs0 = continuous_env_factory(env_name, num_passages, seed=init_idx)
         traj = collect_full_episode(
-            env, expert, max_steps=collect_max_steps, start_obs=obs0
+            env,
+            expert,
+            max_steps=collect_max_steps,
+            start_obs=obs0,
+            skip_rate=skip_rate,
         )
         env.close()
         trajectories.append(traj)
@@ -597,19 +636,20 @@ def run_continuous(
     # ------------------------------------------------------------
     # 3) Serialize trajectories
     # ------------------------------------------------------------
-    all_traj_texts = []
-    for i, traj in enumerate(trajectories):
-        text = continuous_trajectory_serializer.trajectory_to_text(
-            traj,
-            encoder=encoder,
-            num_passages=num_passages,
-            encoding_method=encoding_method,
-            max_steps=max_steps_per_traj,
-            skip_rate=skip_rate,
-        )
-        all_traj_texts.append(f"\n---[TRAJECTORY {i}]---\n{text}\n\n")
-
-    combined_text = "\n\n".join(all_traj_texts)
+    llm_env_spec = get_env_llm_spec(
+        f"{env_name}-p{num_passages}",
+        {"action_mode": "continuous", "num_passages": num_passages},
+    )
+    combined_text = llm_env_spec.serialize_demonstrations(
+        trajectories,
+        encoding_method=_encoding_label(encoding_method),
+        max_steps=max_steps_per_traj,
+    )
+    demo_background = _load_demo_background_for_cap(
+        encoding_method,
+        env_name=f"{env_name}-p{num_passages}",
+        env_type="continuous",
+    )
     logging.info("Building continuous prompt (encoding=%s) ...", encoding_method)
 
     env_desc = continuous_hint_config.get_env_description(env_name, num_passages)
@@ -619,6 +659,7 @@ def run_continuous(
         action_fields,
         action_space.low,
         action_space.high,
+        demo_background=demo_background,
     )
     prompt = f"{prompt}\n\nSEED: {seed}\n"
     query = Query(prompt, hyperparameters={"temperature": 0.0, "seed": seed})
@@ -688,7 +729,7 @@ def _parse_cli_args() -> argparse.Namespace:
     Typical invocation from the command line::
 
         python CaP_baseline.py --env Motion2D --env-type continuous \\
-            --num-passages 1 --encodings 4 --seeds 0 \\
+            --num-passages 1 --encodings 4 --seeds 0 --demo-env-nums 0 1 2 3 \\
             --model gpt-4.1 --eval-max-steps 500
     """
 
@@ -735,10 +776,15 @@ def _parse_cli_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--num-initial-states",
+        "--demo-env-nums",
+        nargs="*",
         type=int,
-        default=4,
-        help="Number of expert rollouts per run.",
+        default=[0, 1, 2, 3],
+        help=(
+            "Exact env ids/reset seeds for prompt demonstrations. "
+            "Use this to mirror LPP demo_numbers or "
+            "program_generation.multi_prompt_ensemble.demo_subsets."
+        ),
     )
     parser.add_argument(
         "--max-steps-per-traj",
@@ -788,8 +834,11 @@ def _parse_cli_args() -> argparse.Namespace:
         "--eval-env-nums",
         nargs="*",
         type=int,
-        default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-        help="Optional list of environment indices for post-generation evaluation.",
+        default=list(range(11, 20)),
+        help=(
+            "Optional list of environment indices for post-generation evaluation. "
+            "Defaults to LPP's held-out test split: 11..19."
+        ),
     )
     parser.add_argument(
         "--eval-max-steps",
@@ -811,14 +860,21 @@ def _parse_cli_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--plot-results",
-        action="store_true",
-        help="Generate a plot summarizing averaged CaP vs expert success rates.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Generate a plot summarizing averaged CaP vs expert success rates. "
+            "Use --no-plot-results to disable."
+        ),
     )
     parser.add_argument(
         "--plot-path",
         type=Path,
         default=None,
-        help="Optional destination for the plot. Defaults to <output_dir>/<env>.",
+        help=(
+            "Optional destination for the plot. Defaults to "
+            "<output_dir>/<env>/<model>/demos_.../cap_vs_Expert_enc..._seeds..._<timestamp>.png."
+        ),
     )
     parser.add_argument(
         "--manual-eval-code-file",
@@ -849,6 +905,60 @@ def _configure_rng(seed: int) -> None:
 
     random.seed(seed)
     np.random.seed(seed)
+
+
+def _encoding_id(encoding_method: str) -> str:
+    """Return serializer encoding id, accepting either ``"5"`` or
+    ``"enc_5"``."""
+
+    return str(encoding_method).replace("enc_", "")
+
+
+def _encoding_label(encoding_method: str) -> str:
+    """Return demo-background encoding label such as ``"enc_5"``."""
+
+    return f"enc_{_encoding_id(encoding_method)}"
+
+
+def _load_demo_background_for_cap(
+    encoding_method: str,
+    *,
+    env_name: str,
+    env_type: str,
+) -> str:
+    """Load the same demonstration background used by LPP feature prompts."""
+
+    action_mode = "continuous" if env_type == "continuous" else "discrete"
+    generator = PyFeatureGenerator(None)
+    try:
+        return generator.load_demo_background(
+            _encoding_label(encoding_method),
+            action_mode=action_mode,
+            env_name=env_name,
+        )
+    except FileNotFoundError as exc:
+        logging.warning("No CaP demonstration background found: %s", exc)
+        return ""
+
+
+def _demo_env_nums_tag(demo_env_nums: Sequence[int]) -> str:
+    """Return a stable path/cache tag for explicit demonstration env ids."""
+
+    if not demo_env_nums:
+        raise ValueError("demo_env_nums must contain at least one env id.")
+    return "demos_" + "-".join(str(int(env_num)) for env_num in demo_env_nums)
+
+
+def _non_overwriting_path(path: Path) -> Path:
+    """Return *path* or a numbered sibling if it already exists."""
+
+    if not path.exists():
+        return path
+    for idx in itertools.count(1):
+        candidate = path.with_name(f"{path.stem}_{idx}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("Failed to find a non-overwriting path.")
 
 
 def _strip_code_block(text: str) -> str:
@@ -912,14 +1022,11 @@ def _compile_policy_function(code: str, function_name: str) -> Callable[[Any], A
     array([2., 4.])
     """
 
-    globals_dict: dict[str, Any] = {"np": np, "math": math}
-    locals_dict: dict[str, Any] = {}
-    exec(code, globals_dict, locals_dict)  # pylint: disable=exec-used
+    namespace: dict[str, Any] = {"np": np, "math": math}
+    exec(code, namespace, namespace)  # pylint: disable=exec-used
 
-    if function_name in locals_dict:
-        fn = locals_dict[function_name]
-    elif function_name in globals_dict:
-        fn = globals_dict[function_name]
+    if function_name in namespace:
+        fn = namespace[function_name]
     else:
         raise RuntimeError(f"Function '{function_name}' not found in generated code.")
 
@@ -927,6 +1034,20 @@ def _compile_policy_function(code: str, function_name: str) -> Callable[[Any], A
         raise RuntimeError(f"'{function_name}' is not callable.")
 
     return fn
+
+
+def _reset_policy_function_state(policy_fn: Callable[[Any], Any]) -> None:
+    """Clear common mutable state attached by generated policies.
+
+    Some generated CaP policies store episode-local memory as attributes on the
+    function object, e.g. ``policy._st``.  Evaluation reuses the same compiled
+    function across environment instances, so those attributes must be cleared
+    between episodes to avoid leaking state from one Chase board into the next.
+    """
+
+    for attr in ("_st", "_last_debug"):
+        if hasattr(policy_fn, attr):
+            delattr(policy_fn, attr)
 
 
 def _evaluate_policy_function(
@@ -938,6 +1059,7 @@ def _evaluate_policy_function(
     run_expert: bool,
     expert_fn: Any | None = None,
     env_type: str = "grid",
+    base_class_name: str | None = None,
 ) -> tuple[list[bool], list[bool]]:
     """Roll out CaP (and optional expert) policies on the requested envs.
 
@@ -959,6 +1081,9 @@ def _evaluate_policy_function(
     env_type : str, optional
         ``"grid"`` or ``"continuous"`` — selects the action guard
         (default ``"grid"``).
+    base_class_name : str | None, optional
+        Environment family name used for success inference on tasks with
+        custom win conditions.
 
     Returns
     -------
@@ -990,6 +1115,7 @@ def _evaluate_policy_function(
     expert_results: list[bool] = []
 
     for env_idx in tqdm(test_env_nums, desc="Evaluating envs"):
+        _reset_policy_function_state(policy_fn)
         env = env_builder(env_idx)
 
         def safe_policy(obs: Any, *, _env: Any = env) -> Any:
@@ -999,7 +1125,7 @@ def _evaluate_policy_function(
             try:
                 action = policy_fn(obs)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logging.exception(f"Exception: {e}")
+                logging.info(f"Exception: {e}")
                 action = None
             if action is None:
                 return _env.action_space.sample()
@@ -1029,17 +1155,11 @@ def _evaluate_policy_function(
         guarded_policy = (
             continuous_safe_policy if env_type == "continuous" else safe_policy
         )
-        # NOTE (double-reset for continuous envs):
-        # continuous_env_factory already calls env.reset(seed=idx), but
-        # run_single_episode calls env.reset() again without a seed.
-        # The first state is discarded; the second is still deterministic
-        # (Gymnasium preserves the seeded RNG), so results are reproducible.
-        # Evaluation states differ from training demonstrations — this is
-        # intentional: CaP evaluation tests generalisation to unseen initial
-        # conditions.  To match training states exactly, pass the seed
-        # through to run_single_episode.
-        reward, terminated = run_single_episode(
-            env, guarded_policy, max_num_steps=max_num_steps
+        reward, terminated, final_info = run_single_episode(
+            env,
+            guarded_policy,
+            max_num_steps=max_num_steps,
+            reset_seed=int(env_idx),
         )
         logging.info(
             "env_idx: %s, reward: %s, terminated: %s", env_idx, reward, terminated
@@ -1047,7 +1167,16 @@ def _evaluate_policy_function(
         logging.info(
             "reward type: %s, terminated type: %s", type(reward), type(terminated)
         )
-        cap_success = terminated if env_type == "continuous" else reward > 0
+        cap_success = infer_episode_success(
+            reward=float(reward),
+            terminated=bool(terminated),
+            action_mode="continuous" if env_type == "continuous" else "discrete",
+            base_class_name=base_class_name,
+            final_info=final_info,
+        )
+        print(
+            f"CaP policy {'succeeded' if cap_success else 'failed'} on env {env_idx}."
+        )
         cap_results.append(bool(cap_success))
         env.close()
 
@@ -1055,8 +1184,11 @@ def _evaluate_policy_function(
             if expert_fn is None:
                 raise RuntimeError("Expert policy unavailable.")
             env_e = env_builder(env_idx)
-            reward_e, terminated_e = run_single_episode(
-                env_e, expert_fn, max_num_steps=max_num_steps
+            reward_e, terminated_e, final_info_e = run_single_episode(
+                env_e,
+                expert_fn,
+                max_num_steps=max_num_steps,
+                reset_seed=int(env_idx),
             )
             logging.info("reward_e: %s, terminated_e: %s", reward_e, terminated_e)
             logging.info(
@@ -1064,7 +1196,13 @@ def _evaluate_policy_function(
                 type(reward_e),
                 type(terminated_e),
             )
-            expert_success = terminated_e if env_type == "continuous" else reward_e > 0
+            expert_success = infer_episode_success(
+                reward=float(reward_e),
+                terminated=bool(terminated_e),
+                action_mode="continuous" if env_type == "continuous" else "discrete",
+                base_class_name=base_class_name,
+                final_info=final_info_e,
+            )
             expert_results.append(bool(expert_success))
             env_e.close()
 
@@ -1282,13 +1420,13 @@ def _prepare_results_for_plot(
 def _load_eval_results_from_disk(
     output_dir: Path,
     env_name: str,
-    num_initial_states: int,
+    demo_env_tag: str,
     encodings: Sequence[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Read saved metadata JSONs and rebuild encoding_eval_results.
 
     If *encodings* is ``None``, auto-discover all ``encoding_*``
-    directories under ``output_dir / env_name / num_initial_states``.
+    directories under ``output_dir / env_name / demo_env_tag``.
 
     Parameters
     ----------
@@ -1296,8 +1434,9 @@ def _load_eval_results_from_disk(
         Root output directory (e.g. ``logs/CaP_baseline``).
     env_name : str
         Environment tag used as a subdirectory name.
-    num_initial_states : int
-        Number of initial states (used as a subdirectory name).
+    demo_env_tag : str
+        Demonstration env id tag (used as a subdirectory name), e.g.
+        ``"demos_0-1-2"``.
     encodings : Sequence[str] | None, optional
         Specific encodings to load.  ``None`` auto-discovers all.
 
@@ -1314,12 +1453,12 @@ def _load_eval_results_from_disk(
         results = _load_eval_results_from_disk(
             Path("logs/CaP_baseline"),
             env_name="Motion2D-p1/gpt-4.1",
-            num_initial_states=4,
+            demo_env_tag="demos_0-1-2-3",
             encodings=["4"],
         )
         # results["4"]["cap_runs"] == [[True, False, ...], ...]
     """
-    base_dir = output_dir / env_name / str(num_initial_states)
+    base_dir = output_dir / env_name / demo_env_tag
     if encodings is not None:
         enc_dirs = [(enc, base_dir / f"encoding_{enc}") for enc in encodings]
     else:
@@ -1388,8 +1527,8 @@ def manual_eval() -> None:
     run_expert = True
     eval_expert: Any | None
     if args.env_type == "continuous":
-        env_builder: Callable[[int], Any] = lambda idx: continuous_env_factory(
-            args.env, args.num_passages, seed=idx
+        env_builder: Callable[[int], Any] = lambda _idx: continuous_env_factory(
+            args.env, args.num_passages, seed=None
         )[0]
         ref_env, _ = continuous_env_factory(args.env, args.num_passages, seed=0)
         assert isinstance(ref_env.action_space, gymnasium.spaces.Box)
@@ -1413,6 +1552,7 @@ def manual_eval() -> None:
         run_expert=run_expert,
         expert_fn=eval_expert,
         env_type=args.env_type,
+        base_class_name=args.env,
     )
     logging.info(cap_results)
     sys.exit()
@@ -1438,25 +1578,24 @@ def main() -> None:
         else args.env
     )
     run_tag = f"{env_tag}/{args.model}"
+    demo_env_nums = [int(env_num) for env_num in args.demo_env_nums]
+    demo_env_tag = _demo_env_nums_tag(demo_env_nums)
 
     logging.info(
-        "CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s, run_tag=%s",
+        "CLI args parsed: env=%s, model=%s, encodings=%s, seeds=%s, "
+        "demo_env_nums=%s, run_tag=%s",
         args.env,
         args.model,
         args.encodings,
         args.seeds,
+        demo_env_nums,
         run_tag,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, str | int]] = []
     encoding_eval_results: dict[str, dict[str, Any]] = {}
     for encoding in args.encodings:
-        encoding_dir = (
-            args.output_dir
-            / run_tag
-            / str(args.num_initial_states)
-            / f"encoding_{encoding}"
-        )
+        encoding_dir = args.output_dir / run_tag / demo_env_tag / f"encoding_{encoding}"
         encoding_dir.mkdir(parents=True, exist_ok=True)
 
         for seed in args.seeds:
@@ -1486,11 +1625,11 @@ def main() -> None:
             suffix = cache_base.suffix or ".db"
             cache_path = (
                 cache_dir
-                / f"{stem}_{env_tag}_enc{encoding}_initial_{args.num_initial_states}_seed{seed}{suffix}"
+                / f"{stem}_{env_tag}_enc{encoding}_{demo_env_tag}_seed{seed}{suffix}"
             )
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            use_response_model = args.use_response_model or args.model == "gpt-5.2-pro"
+            use_response_model = args.use_response_model or "pro" in args.model.lower()
             logging.info(
                 "Creating LLM client (use_response_model=%s) ...", use_response_model
             )
@@ -1514,10 +1653,10 @@ def main() -> None:
                         encoding,
                         seed,
                         num_passages=args.num_passages,
-                        num_initial_states=args.num_initial_states,
                         max_steps_per_traj=args.max_steps_per_traj,
                         skip_rate=args.skip_rate,
                         collect_max_steps=args.collect_max_steps,
+                        demo_env_nums=demo_env_nums,
                     )
                 except Exception as _main_exc:  # pylint: disable=broad-exception-caught
                     logging.error("run_continuous failed: %s", _main_exc, exc_info=True)
@@ -1528,8 +1667,8 @@ def main() -> None:
                     args.env,
                     encoding,
                     seed,
-                    num_initial_states=args.num_initial_states,
                     max_steps_per_traj=args.max_steps_per_traj,
+                    demo_env_nums=demo_env_nums,
                 )
 
             policy_filename = f"policy_seed{seed}.txt"
@@ -1562,7 +1701,8 @@ def main() -> None:
                 "encoding": encoding,
                 "seed": seed,
                 "model": args.model,
-                "num_initial_states": args.num_initial_states,
+                "demo_env_nums": demo_env_nums,
+                "num_demos": len(demo_env_nums),
                 "max_steps_per_traj": args.max_steps_per_traj,
                 "timestamp": timestamp,
                 "policy_path": str(policy_path.resolve()),
@@ -1584,10 +1724,9 @@ def main() -> None:
                 code_str = _strip_code_block(final_code)
                 policy_fn = _compile_policy_function(code_str, args.function_name)
                 if args.env_type == "continuous":
-                    # See NOTE in _evaluate_policy_function on double-reset.
                     env_builder: Callable[[int], Any] = (
-                        lambda idx: continuous_env_factory(
-                            args.env, args.num_passages, seed=idx
+                        lambda _idx: continuous_env_factory(
+                            args.env, args.num_passages, seed=None
                         )[0]
                     )
                 else:
@@ -1619,6 +1758,7 @@ def main() -> None:
                     run_expert=run_expert,
                     expert_fn=eval_expert,
                     env_type=args.env_type,
+                    base_class_name=args.env,
                 )
                 enc_summary = encoding_eval_results.setdefault(
                     encoding,
@@ -1645,7 +1785,7 @@ def main() -> None:
             disk_results = _load_eval_results_from_disk(
                 args.output_dir,
                 run_tag,
-                args.num_initial_states,
+                demo_env_tag,
             )
             for enc, stats in disk_results.items():
                 if enc not in encoding_eval_results:
@@ -1667,11 +1807,23 @@ def main() -> None:
                 if labels:
                     plot_path = args.plot_path
                     if plot_path is None:
+                        encoding_tag = "enc_" + "-".join(
+                            _encoding_id(encoding) for encoding in args.encodings
+                        )
+                        seed_tag = "seeds_" + "-".join(
+                            str(int(seed)) for seed in args.seeds
+                        )
+                        plot_timestamp = time.strftime("%Y%m%d_%H%M%S")
                         plot_path = (
                             args.output_dir
                             / run_tag
-                            / f"cap_vs_expert_{args.num_initial_states}.png"
+                            / demo_env_tag
+                            / (
+                                f"cap_vs_Expert_{encoding_tag}_"
+                                f"{seed_tag}_{plot_timestamp}.png"
+                            )
                         )
+                    plot_path = _non_overwriting_path(Path(plot_path))
                     title = (
                         f"{env_tag}: Expert vs CaP "
                         f"(averaged over {len(args.seeds)} seed{'s' if len(args.seeds) > 1 else ''})"
