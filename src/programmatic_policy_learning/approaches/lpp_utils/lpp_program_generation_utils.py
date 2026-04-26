@@ -1,14 +1,17 @@
 """Program generation helpers for the LPP approach."""
 
 import ast
+import inspect
 import logging
+import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, NotRequired, TypedDict, cast
 
 from prpl_llm_utils import models as llm_models
 from prpl_llm_utils.cache import SQLite3PretrainedLargeModelCache
 from prpl_llm_utils.models import OpenAIModel, PretrainedLargeModel
+from prpl_llm_utils.reprompting import RepromptCheck
 
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     convert_dir_lists_to_tuples,
@@ -51,6 +54,23 @@ from programmatic_policy_learning.learning.prior_calculation import (
 )
 
 EnvFactory = Callable[[int | None], Any]
+
+
+class _PyFeatureGenerateKwargs(TypedDict):
+    prompt_path: str | Path
+    hint_text: str
+    num_features: int
+    env_name: str | None
+    demonstration_data: str | None
+    encoding_method: str | None
+    _seed: int
+    reprompt_checks: list[RepromptCheck] | None
+    loading: dict[str, Any] | None
+    action_mode: str
+    generation_mode: str
+    output_tag: NotRequired[str]
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HINTS_ROOT = (
     REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
@@ -289,19 +309,26 @@ def _generate_py_feature_pool(
         )
         for seed_idx in range(num_seeds_per_subset):
             call_seed = int(seed + len(call_metadata))
-            call_features, payload = py_generator.generate(
-                prompt_path=prompt_path,
-                hint_text=hint_text,
-                num_features=num_features,
-                env_name=base_class_name,
-                demonstration_data=demo_text,
-                encoding_method=enc_method,
-                _seed=call_seed,
-                reprompt_checks=reprompt_checks,
-                loading=loading_cfg,
-                action_mode=action_mode,
-                generation_mode=generation_mode,
-            )
+            generate_kwargs: _PyFeatureGenerateKwargs = {
+                "prompt_path": prompt_path,
+                "hint_text": hint_text,
+                "num_features": num_features,
+                "env_name": base_class_name,
+                "demonstration_data": demo_text,
+                "encoding_method": enc_method,
+                "_seed": call_seed,
+                "reprompt_checks": reprompt_checks,
+                "loading": loading_cfg,
+                "action_mode": action_mode,
+                "generation_mode": generation_mode,
+            }
+            try:
+                generate_sig = inspect.signature(py_generator.generate)
+            except (TypeError, ValueError):
+                generate_sig = None
+            if generate_sig is None or "output_tag" in generate_sig.parameters:
+                generate_kwargs["output_tag"] = f"subset{subset_idx}_seed{call_seed}"
+            call_features, payload = py_generator.generate(**generate_kwargs)
             renumbered_payload = py_generator.renumber_payload_features(
                 payload,
                 start_index=next_feature_index,
@@ -464,11 +491,11 @@ def get_program_set(
     if strategy == "py_feature_gen":
         loading_cfg = program_generation.get("loading") or {}
         offline_mode = bool(loading_cfg.get("offline", 0))
-        llm_client = None
+        py_llm_client: PretrainedLargeModel | None = None
         if not offline_mode:
             cache_path = _cache_path_with_model("py_feature_cache", llm_model)
             cache = SQLite3PretrainedLargeModelCache(cache_path)
-            llm_client = make_llm_client_for_model(
+            py_llm_client = make_llm_client_for_model(
                 llm_model,
                 cache,
                 use_response_model=program_generation.get("use_response_model"),
@@ -478,7 +505,7 @@ def get_program_set(
             program_generation.get("py_feature_gen_mode", "feature_payload")
         )
         num_features = program_generation["num_features"]
-        py_generator = PyFeatureGenerator(llm_client)
+        py_generator = PyFeatureGenerator(py_llm_client)
         try:
             hint_text = load_unique_hint(base_class_name, HINTS_ROOT)
         except FileNotFoundError:
@@ -512,7 +539,7 @@ def get_program_set(
         if prior_version == "v2":
             out_dict = priors_from_features_v2(features, beta=prior_beta)
             program_prior_log_probs = out_dict["beta_log_scores"]
-        elif prior_version in {"v1", "uniform"}:  # TODO
+        elif prior_version in {"v1", "uniform"}:
             out_dict = priors_from_features(features)
             program_prior_log_probs = out_dict["logprobs"]
         else:

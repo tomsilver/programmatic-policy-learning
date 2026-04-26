@@ -56,17 +56,18 @@ def run_single_episode(
     video_out_path: str | None = None,
     max_num_steps: int = 100,
     reset_seed: int | None = None,
-) -> tuple[float, np.bool_]:
+) -> tuple[float, np.bool_, dict[str, Any]]:
     """Run a single episode in the environment using the given policy.
 
     Returns
     -------
-    tuple[float, np.bool_]
-        ``(total_reward, terminated)`` — cumulative reward and whether the
-        episode ended via the environment's termination signal (as opposed
-        to reaching *max_num_steps* or being truncated).  ``terminated``
-        is ``np.bool_`` (from the environment); callers that need native
-        ``bool`` (e.g. for JSON serialization) should cast explicitly.
+    tuple[float, np.bool_, dict[str, Any]]
+        ``(total_reward, terminated, final_info)`` — cumulative reward,
+        whether the episode ended via the environment's termination signal
+        (as opposed to reaching *max_num_steps* or being truncated), and the
+        last info dict seen during the rollout. ``terminated`` is ``np.bool_``
+        (from the environment); callers that need native ``bool`` (e.g. for
+        JSON serialization) should cast explicitly.
     """
 
     record_frames: list[Any] | None = None
@@ -123,6 +124,7 @@ def run_single_episode(
             pass
     total_reward = 0.0
     episode_terminated: np.bool_ = np.bool_(False)
+    final_info: dict[str, Any] = dict(info) if isinstance(info, dict) else {}
     for _ in range(max_num_steps):
         action = policy.step() if stateful_policy else policy(obs)
         step_out = env.step(action)
@@ -132,6 +134,7 @@ def run_single_episode(
         else:
             new_obs, reward, terminated, truncated, info = step_out
         total_reward += reward
+        final_info = dict(info) if isinstance(info, dict) else {}
         if stateful_policy:
             policy.update(new_obs, reward, terminated or truncated, info)
 
@@ -160,7 +163,33 @@ def run_single_episode(
         if record_frames:
             imageio.mimsave(video_out_path, record_frames, fps=10)
 
-    return total_reward, episode_terminated
+    return total_reward, episode_terminated, final_info
+
+
+def infer_episode_success(
+    *,
+    reward: float,
+    terminated: bool,
+    action_mode: str,
+    base_class_name: str | None = None,
+    final_info: dict[str, Any] | None = None,
+) -> bool:
+    """Infer whether an evaluation rollout should count as success.
+
+    Preferred order:
+    1. Explicit ``info["is_success"]`` when the environment provides it.
+    2. Continuous tasks use ``terminated``.
+    3. TwoPileNim uses ``terminated`` because wins may have zero reward.
+    4. Other discrete tasks use ``reward > 0``.
+    """
+
+    if final_info is not None and "is_success" in final_info:
+        return bool(final_info["is_success"])
+    if action_mode == "continuous":
+        return bool(terminated)
+    if base_class_name is not None and "TwoPileNim" in str(base_class_name):
+        return bool(terminated)
+    return reward > 0
 
 
 def load_hint_text(
@@ -226,6 +255,8 @@ def log_feature_collisions(
     X: Any,
     y: np.ndarray | None,
     _examples: list[tuple[ObsT, ActT]] | None,
+    *,
+    bucket_mode: str = "positive_anchor",
 ) -> list[dict[str, Any]]:
     """Log collisions where identical feature vectors have different labels."""
     if y is None:
@@ -236,57 +267,43 @@ def log_feature_collisions(
         return []
 
     labels = y.astype(int).flatten().tolist()
-    collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
-    seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
-
+    row_keys: list[bytes] = []
     for i in range(X.shape[0]):
         row = X.getrow(i)
         dense = row.toarray().ravel().astype(np.uint8)
-        key = dense.tobytes()
-        label = labels[i]
-        if key in seen:
-            prev_idx, prev_label = seen[key]
-            if prev_label != label:
-                collisions.append((prev_idx, i, prev_label))
-        else:
-            seen[key] = (i, label)
+        row_keys.append(dense.tobytes())
 
-    # if collisions:
-    #     logging.info("Feature collisions found: %d", len(collisions))
-    #     for prev_idx, cur_idx, prev_label in collisions[:10]:
-    #         logging.info(
-    #             "Collision: row %d(label=%d) vs row %d(label=%d)",
-    #             prev_idx,
-    #             prev_label,
-    #             cur_idx,
-    #             labels[cur_idx],
-    #         )
-    #         if _examples is not None:
-    #             try:
-    #                 prev_example = _examples[prev_idx]
-    #                 cur_example = _examples[cur_idx]
-    #                 logging.info("  row %d example: %s", prev_idx, prev_example)
-    #                 logging.info("  row %d example: %s", cur_idx, cur_example)
-    #             except (IndexError, TypeError):
-    #                 logging.info(
-    #                     "  Example payload unavailable for rows %d and %d.",
-    #                     prev_idx,
-    #                     cur_idx,
-    #                 )
-    #     grouped = group_collision_indices(collisions, labels)
-    #     if grouped:
-    #         top_group = max(grouped, key=lambda g: int(g["max_occur"]))
-    #         logging.info(
-    #             "Top collision group: pos=%d neg=%d max_occur=%d",
-    #             len(top_group["pos"]),
-    #             len(top_group["neg"]),
-    #             int(top_group["max_occur"]),
-    #         )
-    #     return grouped
-    if collisions:
-        logging.info("Feature collisions found: %d", len(collisions))
-        grouped = group_collision_indices(collisions, labels)
-        return grouped
+    if bucket_mode == "positive_anchor":
+        collisions: list[tuple[int, int, int]] = []  # (idx_prev, idx_cur, label_prev)
+        seen: dict[bytes, tuple[int, int]] = {}  # key -> (index, label)
+
+        for i, key in enumerate(row_keys):
+            label = labels[i]
+            if key in seen:
+                prev_idx, prev_label = seen[key]
+                if prev_label != label:
+                    collisions.append((prev_idx, i, prev_label))
+            else:
+                seen[key] = (i, label)
+
+        if collisions:
+            logging.info("Feature collisions found: %d", len(collisions))
+            grouped = group_collision_indices(collisions, labels)
+            return grouped
+    elif bucket_mode == "global_mixed_label":
+        grouped = group_mixed_label_feature_buckets(row_keys, labels)
+        if grouped:
+            total_pairs = sum(
+                len(group["pos"]) * len(group["neg"]) for group in grouped
+            )
+            logging.info(
+                "Feature collisions found: %d mixed-label bucket(s), approx_pairs=%d",
+                len(grouped),
+                total_pairs,
+            )
+            return grouped
+    else:
+        raise ValueError(f"Unsupported collision bucket_mode: {bucket_mode}")
 
     logging.info("No feature collisions found.")
     return []
@@ -533,6 +550,41 @@ def group_collision_indices(
         max_occur = max(len(pos_list), len(neg_list))
         out.append({"pos": pos_list, "neg": neg_list, "max_occur": max_occur})
     return out
+
+
+def group_mixed_label_feature_buckets(
+    row_keys: list[bytes],
+    labels: list[int],
+) -> list[dict[str, Any]]:
+    """Group all rows sharing an exact feature vector into mixed-label
+    buckets."""
+    groups: dict[bytes, dict[str, Any]] = {}
+    for idx, (key, label) in enumerate(zip(row_keys, labels)):
+        entry = groups.setdefault(key, {"pos": [], "neg": []})
+        if int(label) == 1:
+            entry["pos"].append(idx)
+        else:
+            entry["neg"].append(idx)
+
+    buckets: list[dict[str, Any]] = []
+    for data in groups.values():
+        pos_list = sorted(int(i) for i in data["pos"])
+        neg_list = sorted(int(i) for i in data["neg"])
+        if not pos_list or not neg_list:
+            continue
+        total_count = len(pos_list) + len(neg_list)
+        max_occur = max(len(pos_list), len(neg_list))
+        label_balance = min(len(pos_list), len(neg_list)) / max_occur
+        buckets.append(
+            {
+                "pos": pos_list,
+                "neg": neg_list,
+                "max_occur": max_occur,
+                "total_count": total_count,
+                "label_balance": float(label_balance),
+            }
+        )
+    return buckets
 
 
 def _extract_policy_feature_names(policy_str: str) -> list[str]:
@@ -1420,7 +1472,7 @@ def _select_diverse_examples(
     remaining_pos = [p for p in pos_indices if p not in selected_pos]
     remaining_neg = [n for n in neg_indices if n not in selected_neg]
 
-    if remaining_pos and len(selected_pos) < max_pos:
+    while remaining_pos and len(selected_pos) < max_pos:
         pos_scores: list[tuple[int, int]] = []
         for p in remaining_pos:
             s_pos, _ = examples[p]
@@ -1434,8 +1486,9 @@ def _select_diverse_examples(
                 )
             pos_scores.append((best, p))
         pos_scores.sort(key=lambda item: (-item[0], item[1]))
-        selected_pos.append(pos_scores[0][1])
-        remaining_pos = [p for p in remaining_pos if p not in selected_pos]
+        chosen = pos_scores[0][1]
+        selected_pos.append(chosen)
+        remaining_pos = [p for p in remaining_pos if p != chosen]
 
     while remaining_neg and len(selected_neg) < max_neg:
         neg_scores: list[tuple[int, int]] = []
@@ -1904,6 +1957,7 @@ def build_collision_repair_prompt(
     existing_feature_summary: str | None = None,
     max_per_label: int = 5,
     collision_feedback_enc: str = "enc_1",
+    bucket_mode: str = "positive_anchor",
     pos_indices_2: list[int] | None = None,
     neg_indices_2: list[int] | None = None,
     seed: int | None = None,
@@ -1934,8 +1988,14 @@ def build_collision_repair_prompt(
     # FORMAT2 note: uses richer evidence + deterministic example selection.
     if use_enc2:
         if not is_kinder:
+            max_pos = 3 if bucket_mode == "global_mixed_label" else 1
             pos_indices, neg_indices = _select_diverse_examples(
-                pos_indices, neg_indices, examples, symbol_map, max_pos=1, max_neg=3
+                pos_indices,
+                neg_indices,
+                examples,
+                symbol_map,
+                max_pos=max_pos,
+                max_neg=3,
             )
             if pos_indices_2 and neg_indices_2:
                 pos_indices_2, neg_indices_2 = _select_diverse_examples(
@@ -1943,14 +2003,15 @@ def build_collision_repair_prompt(
                     neg_indices_2,
                     examples,
                     symbol_map,
-                    max_pos=1,
+                    max_pos=max_pos,
                     max_neg=3,
                 )
         else:
-            pos_indices = pos_indices[:1]
+            max_pos = 3 if bucket_mode == "global_mixed_label" else 1
+            pos_indices = pos_indices[:max_pos]
             neg_indices = neg_indices[:3]
             if pos_indices_2 and neg_indices_2:
-                pos_indices_2 = pos_indices_2[:1]
+                pos_indices_2 = pos_indices_2[:max_pos]
                 neg_indices_2 = neg_indices_2[:3]
     else:
         rng = np.random.default_rng(seed)
