@@ -1,0 +1,93 @@
+experiment_name: paper_curves_example
+output_root: results/paper_curves
+continue_on_error: true
+error_band: sem
+eval_max_steps: 100
+
+demo_id_pool: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+demo_counts: [1, 2, 3, 4, 5, 10]
+seeds: [0, 1, 2]
+test_env_nums: [11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+codebases:
+  lpp:
+    root_dir: .
+    python_executable: python
+  cap:
+    root_dir: .
+    python_executable: python
+
+environments:
+  - name: Nim
+    key: nim
+    lpp_env: ggg_nim
+    cap_env: TwoPileNim
+    cap_env_type: grid
+    plot_title: Two-Pile-Nim
+  # - name: Stop-the-Fall
+  #   key: stf
+  #   lpp_env: ggg_stf
+  #   cap_env: StopTheFall
+  #   cap_env_type: grid
+  #   plot_title: Stop-the-Fall
+
+methods:
+  - name: our_main
+    display_name: Our approach
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.collision_feedback_enabled=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+
+  # - name: lpp_main
+  #   display_name: LPP main
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+
+  # - name: lpp_no_collision
+  #   display_name: LPP no collision
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+  #     - approach.collision_feedback_enabled=false
+
+  # - name: lpp_no_filter
+  #   display_name: LPP no filter
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+  #     - approach.cross_demo_feature_filter.enabled=true
+  #     - approach.cross_demo_feature_filter.apply_filter=false
+
+  # - name: cap_enc4
+  #   display_name: CaP (enc 4)
+  #   backend: cap
+  #   cli_args:
+  #     - --encodings
+  #     - "4"
+  #     - --model
+  #     - gpt-4.1
+  #     - --max-steps-per-traj
+  #     - "40"
+
+  - name: cap_enc5
+    display_name: CaP (enc 5)
+    backend: cap
+    cli_args:
+      - --encodings
+      - "5"
+      - --model
+      - gpt-4.1
+      - --max-steps-per-traj
+      - "40"
