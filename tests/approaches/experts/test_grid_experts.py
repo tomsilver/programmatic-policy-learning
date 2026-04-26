@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from generalization_grid_games.envs import climb_to_the_block as ctb
 from generalization_grid_games.envs import two_pile_nim as tpn
 
 from programmatic_policy_learning.approaches.experts.grid_experts import get_grid_expert
@@ -21,6 +22,7 @@ def test_get_grid_expert_valid_names() -> None:
         "StopTheFall",
         "Chase",
         "ReachForTheStar",
+        "ClimbToTheBlock",
     ]:
         expert = get_grid_expert(name)
         assert callable(expert)
@@ -38,5 +40,22 @@ def test_expert_nim_policy_returns_action() -> None:
     layout[0, 0] = tpn.EMPTY
     layout[0, 1] = tpn.TOKEN
     expert_fn = get_grid_expert("TwoPileNim0-v0")
+    action = expert_fn(layout)
+    assert isinstance(action, tuple)
+
+
+def test_expert_ctb_policy_returns_action() -> None:
+    """CTB expert should either place a block or use an arrow action."""
+    layout = np.array(
+        [
+            [ctb.EMPTY, ctb.EMPTY, ctb.STAR],
+            [ctb.EMPTY, ctb.DRAWN, ctb.EMPTY],
+            [ctb.AGENT, ctb.EMPTY, ctb.EMPTY],
+            [ctb.DRAWN, ctb.DRAWN, ctb.DRAWN],
+            [ctb.DRAWN, ctb.LEFT_ARROW, ctb.RIGHT_ARROW],
+        ],
+        dtype=object,
+    )
+    expert_fn = get_grid_expert("ClimbToTheBlock0-v0")
     action = expert_fn(layout)
     assert isinstance(action, tuple)

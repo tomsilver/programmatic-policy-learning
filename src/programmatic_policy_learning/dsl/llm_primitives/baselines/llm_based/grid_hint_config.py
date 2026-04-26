@@ -13,6 +13,7 @@ SALIENT_TOKENS = {
     ],
     "TwoPileNim": ["token"],
     "ReachForTheStar": ["agent", "star", "left_arrow", "right_arrow", "drawn"],
+    "ClimbToTheBlock": ["agent", "star", "left_arrow", "right_arrow", "drawn"],
     "StopTheFall": ["falling_token", "red_token", "static_token", "advance_token"],
     "CheckmateTactic": [
         "black_king",
@@ -51,6 +52,14 @@ SYMBOL_MAPS = {
         "token": "*",
     },
     "ReachForTheStar": {
+        "empty": ".",
+        "agent": "A",
+        "star": "*",
+        "left_arrow": "<",
+        "right_arrow": ">",
+        "drawn": "#",
+    },
+    "ClimbToTheBlock": {
         "empty": ".",
         "agent": "A",
         "star": "*",

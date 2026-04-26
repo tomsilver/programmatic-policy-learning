@@ -52,3 +52,12 @@ def test_ggg_env_with_types_classname_extraction() -> None:
     object_types = env.get_object_types()
     assert "tpn.EMPTY" in object_types
     assert "tpn.TOKEN" in object_types
+
+
+def test_ggg_env_with_types_climb_to_the_block() -> None:
+    """CTB exposes the expected object vocabulary."""
+    env = GGGEnvWithTypes(base_env=None, base_class_name="ClimbToTheBlockGymEnv1")
+    object_types = env.get_object_types()
+    assert "ctb.EMPTY" in object_types
+    assert "ctb.AGENT" in object_types
+    assert "ctb.DRAWN" in object_types

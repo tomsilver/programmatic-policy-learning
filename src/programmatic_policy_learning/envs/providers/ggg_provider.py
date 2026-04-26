@@ -67,6 +67,16 @@ class GGGEnvWithTypes:
                 "rfts.RIGHT_ARROW",
                 "None",
             )
+        if self.base_class_name.startswith("ClimbToTheBlockGymEnv"):
+            return (
+                "ctb.EMPTY",
+                "ctb.AGENT",
+                "ctb.STAR",
+                "ctb.DRAWN",
+                "ctb.LEFT_ARROW",
+                "ctb.RIGHT_ARROW",
+                "None",
+            )
 
         raise ValueError(f"Unknown class name: {self.base_class_name}")
 

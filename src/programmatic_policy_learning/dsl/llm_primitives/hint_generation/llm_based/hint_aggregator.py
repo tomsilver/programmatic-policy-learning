@@ -14,6 +14,7 @@ from prpl_llm_utils.structs import Query
 ENV_NAMES = [
     "Chase",
     "CheckmateTactic",
+    "ClimbToTheBlock",
     "ReachForTheStar",
     "StopTheFall",
     "TwoPileNim",

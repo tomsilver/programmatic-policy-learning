@@ -97,6 +97,7 @@ GGG environments in this repo:
 - `ggg_stf` -> `StopTheFall`
 - `ggg_nim` -> `TwoPileNim`
 - `ggg_rfts` -> `ReachForTheStar`
+- `ggg_ctb` -> `ClimbToTheBlock`
 - `ggg_chase` -> `Chase`
 - `ggg_checkmate` -> `CheckmateTactic`
 

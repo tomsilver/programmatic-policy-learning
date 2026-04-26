@@ -8,6 +8,7 @@ from typing import Any, Callable
 import numpy as np
 from generalization_grid_games.envs import chase as ec
 from generalization_grid_games.envs import checkmate_tactic as ct
+from generalization_grid_games.envs import climb_to_the_block as ctb
 from generalization_grid_games.envs import reach_for_the_star as rfts
 from generalization_grid_games.envs import stop_the_fall as stf
 from generalization_grid_games.envs import two_pile_nim as tpn
@@ -177,12 +178,61 @@ def expert_rfts_policy(layout: np.ndarray) -> tuple[int, int]:
     return left_arrow
 
 
+def expert_ctb_policy(layout: np.ndarray) -> tuple[int, int]:
+    """Expert policy for ClimbToTheBlock."""
+    agent_r, agent_c = np.argwhere(layout == ctb.AGENT)[0]
+    goal_candidates = np.argwhere(layout == ctb.DRAWN)
+    goal_r, goal_c = next(
+        (int(r), int(c))
+        for r, c in goal_candidates
+        if int(r) < layout.shape[0] - 2
+    )
+    target_r, target_c = goal_r - 1, goal_c
+
+    right_arrow = tuple(np.argwhere(layout == ctb.RIGHT_ARROW)[0])
+    left_arrow = tuple(np.argwhere(layout == ctb.LEFT_ARROW)[0])
+
+    height_to_target = agent_r - target_r
+
+    # Build and climb the staircase from the left side.
+    if agent_c <= target_c:
+        if abs(agent_c - target_c) < height_to_target:
+            return left_arrow
+
+        sr, sc = goal_r, goal_c
+        while sc > agent_c:
+            if sr >= layout.shape[0] - 2:
+                break
+            if layout[sr, sc] != ctb.DRAWN:
+                return (sr, sc)
+            sr += 1
+            sc -= 1
+
+        return right_arrow
+
+    # Build and climb the staircase from the right side.
+    if abs(agent_c - target_c) < height_to_target:
+        return right_arrow
+
+    sr, sc = goal_r, goal_c
+    while sc < agent_c:
+        if sr >= layout.shape[0] - 2:
+            break
+        if layout[sr, sc] != ctb.DRAWN:
+            return (sr, sc)
+        sr += 1
+        sc += 1
+
+    return left_arrow
+
+
 _EXPERTS: dict[str, ExpertPolicy] = {
     "TwoPileNim": expert_nim_policy,
     "CheckmateTactic": expert_checkmate_tactic_policy,
     "StopTheFall": expert_stf_policy,
     "Chase": expert_ec_policy,
     "ReachForTheStar": expert_rfts_policy,
+    "ClimbToTheBlock": expert_ctb_policy,
 }
 
 
