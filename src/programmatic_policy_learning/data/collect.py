@@ -70,8 +70,9 @@ def collect_demo(
         try:
             low_arr = np.asarray(action_space.low, dtype=float).reshape(-1)
             high_arr = np.asarray(action_space.high, dtype=float).reshape(-1)
-            action_types = tuple(
-                getattr(env, "get_action_types", lambda: tuple())() or ()
+            get_action_types = getattr(env, "get_action_types", None)
+            action_types = (
+                tuple(get_action_types() or ()) if callable(get_action_types) else ()
             )
             active_dims = get_active_action_dims(
                 None,

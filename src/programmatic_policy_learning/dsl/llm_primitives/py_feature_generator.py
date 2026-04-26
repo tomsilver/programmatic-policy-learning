@@ -624,6 +624,7 @@ class PyFeatureGenerator:
         loading: dict[str, Any] | None = None,
         action_mode: str = "discrete",
         generation_mode: str = "feature_payload",
+        output_tag: str | None = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run the prompt pipeline and return (feature_programs, payload)."""
         load_offline = bool(loading and loading.get("offline", 0))
@@ -646,6 +647,7 @@ class PyFeatureGenerator:
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")
+            tag_suffix = f"_{output_tag}" if output_tag else ""
             if generation_mode == "generator_script":
                 script_text = self.query_llm_text(
                     prompt,
@@ -655,9 +657,9 @@ class PyFeatureGenerator:
                 )
                 script_text = self._extract_python_script(script_text)
                 if self.llm_client is not None:
-                    script_path = (
-                        self.output_path
-                        / f"feature_generator_script_{prompt_label}_{env_label}.py"
+                    script_path = self.output_path / (
+                        f"feature_generator_script_{prompt_label}_{env_label}"
+                        f"{tag_suffix}.py"
                     )
                     script_path.write_text(script_text, encoding="utf-8")
                 template_payload = self._execute_generator_script(script_text)
@@ -683,12 +685,15 @@ class PyFeatureGenerator:
                     start_index=1,
                 )
             self.write_json(
-                f"template_payload_{prompt_label}_{env_label}.json",
+                f"template_payload_{prompt_label}_{env_label}{tag_suffix}.json",
                 template_payload,
             )
             feature_programs = self.parse_feature_programs(expanded_payload)
             if self.llm_client is not None:
-                self.write_json("py_feature_payload.json", expanded_payload)
+                self.write_json(
+                    f"py_feature_payload{tag_suffix}.json",
+                    expanded_payload,
+                )
             return feature_programs, expanded_payload
 
         # offline mode

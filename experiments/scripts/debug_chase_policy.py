@@ -11,19 +11,42 @@ import argparse
 import os
 import random
 from pathlib import Path
-from typing import Any
-
-os.environ.setdefault(
-    "MPLCONFIGDIR", str((Path(".pytest_cache") / "matplotlib").resolve())
-)
+from typing import Any, cast
 
 import numpy as np
 from omegaconf import OmegaConf
+
+PIL_IMAGE: Any | None = None
+PIL_IMAGE_DRAW: Any | None = None
+PIL_IMAGE_FONT: Any | None = None
+IMAGEIO: Any | None = None
+
+try:
+    from PIL import Image as _PIL_IMAGE  # type: ignore
+    from PIL import ImageDraw as _PIL_IMAGE_DRAW  # type: ignore
+    from PIL import ImageFont as _PIL_IMAGE_FONT  # type: ignore
+
+    PIL_IMAGE = _PIL_IMAGE
+    PIL_IMAGE_DRAW = _PIL_IMAGE_DRAW
+    PIL_IMAGE_FONT = _PIL_IMAGE_FONT
+except Exception:  # pylint: disable=broad-exception-caught
+    pass
+
+try:
+    import imageio.v2 as _IMAGEIO  # type: ignore
+
+    IMAGEIO = _IMAGEIO
+except Exception:  # pylint: disable=broad-exception-caught
+    pass
 
 from programmatic_policy_learning.approaches.experts.grid_experts import (
     get_grid_expert,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
+
+os.environ.setdefault(
+    "MPLCONFIGDIR", str((Path(".pytest_cache") / "matplotlib").resolve())
+)
 
 POLICY_DEBUG = True
 TOKEN_COLORS = {
@@ -159,11 +182,14 @@ def _grid_to_frame(
         outline(action, (0, 0, 0), 6)
 
     try:
-        from PIL import Image, ImageDraw, ImageFont  # type: ignore
-
-        image = Image.fromarray(frame)
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.load_default()
+        if PIL_IMAGE is None or PIL_IMAGE_DRAW is None or PIL_IMAGE_FONT is None:
+            raise RuntimeError("Pillow is not available.")
+        image_mod = cast(Any, PIL_IMAGE)
+        image_draw_mod = cast(Any, PIL_IMAGE_DRAW)
+        image_font_mod = cast(Any, PIL_IMAGE_FONT)
+        image = image_mod.fromarray(frame)
+        draw = image_draw_mod.Draw(image)
+        font = image_font_mod.load_default()
         draw.rectangle((0, 0, w * cell_size, top), fill=(255, 255, 255))
         draw.text((10, 8), title, fill=(0, 0, 0), font=font)
         draw.text(
@@ -181,11 +207,10 @@ def _save_mp4(frames: list[np.ndarray], path: Path, fps: int = 4) -> None:
     if not frames:
         raise ValueError(f"No frames to save for {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        import imageio.v2 as imageio  # type: ignore
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        raise RuntimeError("Saving MP4 files requires imageio.") from e
-    imageio.mimsave(path, frames, fps=fps, macro_block_size=1)
+    if IMAGEIO is None:
+        raise RuntimeError("Saving MP4 files requires imageio.")
+    imageio_mod = cast(Any, IMAGEIO)
+    imageio_mod.mimsave(path, cast(list[Any], frames), fps=fps, macro_block_size=1)
 
 
 def reset_policy_state() -> None:
@@ -196,18 +221,16 @@ def reset_policy_state() -> None:
         delattr(policy, "_last_debug")
 
 
-def policy(obs):
-    """
-    Policy for the following task:
-    1. If there is a 'target' token on the board, and there is an adjacent empty cell in the direction of increasing column (axis=1), click the top-left corner cell (0,0) to move the target one cell in that direction. Repeat until the target cannot move further in that direction.
-    2. If the target cannot move further in that direction, click the empty cell immediately before the target (in the direction of decreasing column) to draw a 'drawn' token there.
-    3. Then, repeatedly click the cell containing the arrow token that moves the agent toward the target (i.e., the arrow that moves the agent along the row or column toward the target), until the agent reaches the target's cell.
-    4. When the agent is adjacent to the target, continue clicking the same arrow until the agent occupies the target's cell.
-    The function returns the (row, col) to click according to this policy.
+def policy(obs: np.ndarray) -> tuple[int, int]:
+    """Return the handwritten Chase action for a grid observation.
+
+    The policy first tries to advance the target, then marks a stopping
+    cell, and finally routes the agent toward the target or marker via
+    the directional arrow tokens.
     """
     # Token mapping
-    # 0: empty, 1: wall, 2: agent, 3: target, 4: drawn, 5: right_arrow, 6: left_arrow, 7: up_arrow, 8: down_arrow
-    import numpy as np
+    # 0: empty, 1: wall, 2: agent, 3: target, 4: drawn,
+    # 5: right_arrow, 6: left_arrow, 7: up_arrow, 8: down_arrow
 
     arr = obs
     # Find all positions
@@ -249,7 +272,8 @@ def policy(obs):
         # If not, try decreasing row direction
         if r - 1 >= 0 and arr[r - 1, c] == 0:
             return (0, 0)
-        # Step 2: Draw 'drawn' token in the cell before the target (in the direction the target was moving)
+        # Step 2: Draw a marker in the empty cell adjacent to the target,
+        # preferring the direction opposite the movement attempt.
         # Try to find an empty cell adjacent to the target (prior direction)
         # Try left
         if c - 1 >= 0 and arr[r, c - 1] == 0:
@@ -306,6 +330,7 @@ def run_episode(
     stop_on_mismatch: bool,
     video_path: Path | None = None,
 ) -> dict[str, Any]:
+    """Run one Chase episode with policy/expert comparison and logging."""
     reset_policy_state()
     reset_out = env.reset()
     obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
@@ -414,6 +439,7 @@ def record_expert_episode(
     max_steps: int,
     video_path: Path,
 ) -> dict[str, Any]:
+    """Record an expert-only Chase rollout as an MP4 and summary."""
     reset_out = env.reset()
     obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
 
@@ -444,12 +470,21 @@ def record_expert_episode(
     )
     _save_mp4(frames, video_path)
     print(f"saved expert video: {video_path}")
-    return {"total_reward": total_reward, "steps": steps, "success": total_reward > 0}
+    return {
+        "total_reward": total_reward,
+        "steps": steps,
+        "success": total_reward > 0,
+    }
 
 
 def main() -> None:
+    """Parse arguments and evaluate the handwritten Chase policy."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-nums", default="0-4", help="e.g. '0-4' or '0,3,7'")
+    parser.add_argument(
+        "--env-nums",
+        default="0-4",
+        help="e.g. '0-4' or '0,3,7'",
+    )
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--print-grid", action="store_true")

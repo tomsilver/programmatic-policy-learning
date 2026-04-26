@@ -1,7 +1,7 @@
 """Tests for LPP Approach."""
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -322,10 +322,12 @@ def test_discrete_training_uses_grid_enumeration_not_empty_candidate_catalog(
     captured_candidate_actions: list[Any] = []
 
     def fake_compute_likelihood_plps(*args: Any, **kwargs: Any) -> list[float]:
+        del args
         captured_candidate_actions.append(kwargs.get("candidate_actions"))
         return [0.0]
 
     def fake_log_plp_violation_counts(*args: Any, **kwargs: Any) -> None:
+        del args
         captured_candidate_actions.append(kwargs.get("candidate_actions"))
 
     monkeypatch.setattr(
@@ -343,7 +345,9 @@ def test_discrete_training_uses_grid_enumeration_not_empty_candidate_catalog(
 
     X = np.array([[True], [False]])
     y_bool = [True, False]
-    demonstrations = Trajectory(steps=[(np.zeros((2, 2), dtype=int), (0, 0))])
+    demonstrations = Trajectory(
+        steps=[(np.zeros((2, 2), dtype=int), np.array([0, 0], dtype=np.int64))]
+    )
 
     # pylint: disable=protected-access
     policy = approach._train_policy_from_matrix(
@@ -352,7 +356,7 @@ def test_discrete_training_uses_grid_enumeration_not_empty_candidate_catalog(
         sample_weight=None,
         programs_sa=[StateActionProgram("True")],
         program_prior_log_probs_opt=[0.0],
-        demonstrations=demonstrations,
+        demonstrations=cast(Any, demonstrations),
         dsl_functions={},
     )
 
@@ -380,8 +384,8 @@ def test_discrete_train_matrix_passes_none_sample_weight(
     )
 
     examples = [
-        (np.zeros((2, 2), dtype=int), (0, 0)),
-        (np.zeros((2, 2), dtype=int), (0, 1)),
+        (np.zeros((2, 2), dtype=int), np.array([0, 0], dtype=np.int64)),
+        (np.zeros((2, 2), dtype=int), np.array([0, 1], dtype=np.int64)),
     ]
 
     def fake_run_all_programs_on_demonstrations(*args: Any, **kwargs: Any) -> Any:
@@ -395,11 +399,13 @@ def test_discrete_train_matrix_passes_none_sample_weight(
         )
 
     monkeypatch.setattr(
-        "programmatic_policy_learning.approaches.lpp_approach.run_all_programs_on_demonstrations",
+        "programmatic_policy_learning.approaches.lpp_approach."
+        "run_all_programs_on_demonstrations",
         fake_run_all_programs_on_demonstrations,
     )
     monkeypatch.setattr(
-        "programmatic_policy_learning.approaches.lpp_approach._filter_redundant_features",
+        "programmatic_policy_learning.approaches.lpp_approach."
+        "_filter_redundant_features",
         lambda X, programs, priors: (X, programs, priors, np.asarray([1])),
     )
     monkeypatch.setattr(
@@ -412,7 +418,7 @@ def test_discrete_train_matrix_passes_none_sample_weight(
         approach._build_and_process_train_matrix(
             train_demo_ids=(0,),
             val_demo_ids=(),
-            demo_dict_train={0: Trajectory(steps=examples)},
+            demo_dict_train={0: Trajectory(steps=cast(Any, examples))},
             programs_sa=[StateActionProgram("True")],
             program_prior_log_probs_opt=[0.0],
             dsl_functions={},
@@ -423,3 +429,76 @@ def test_discrete_train_matrix_passes_none_sample_weight(
     )
 
     assert sample_weights is None
+
+
+def test_discrete_train_matrix_keeps_sample_weight_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discrete LPP should preserve explicit sample weights when enabled."""
+    approach = LogicProgrammaticPolicyApproach(
+        environment_description="DummyGrid-v0",
+        observation_space=Box(low=0, high=1, shape=(2, 2), dtype=np.int64),
+        action_space=MultiDiscrete([2, 2]),
+        seed=0,
+        expert=None,  # type: ignore[arg-type]
+        env_factory=lambda instance_num=None: None,
+        base_class_name="DummyGrid",
+        demo_numbers=(0,),
+        env_specs={"action_mode": "discrete"},
+        prior_version="uniform",
+        cross_demo_feature_filter={"enabled": False},
+    )
+
+    examples = [
+        (np.zeros((2, 2), dtype=int), np.array([0, 0], dtype=np.int64)),
+        (np.zeros((2, 2), dtype=int), np.array([0, 1], dtype=np.int64)),
+    ]
+    expected_weights = np.array([1.0, 0.5], dtype=float)
+
+    def fake_run_all_programs_on_demonstrations(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        return (
+            csr_matrix(np.array([[True], [False]])),
+            np.array([1, 0], dtype=np.uint8),
+            examples,
+            expected_weights.copy(),
+            np.array([0, 0], dtype=int),
+        )
+
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach."
+        "run_all_programs_on_demonstrations",
+        fake_run_all_programs_on_demonstrations,
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach."
+        "_filter_redundant_features",
+        lambda X, programs, priors: (X, programs, priors, np.asarray([1])),
+    )
+    monkeypatch.setattr(
+        "programmatic_policy_learning.approaches.lpp_approach.log_feature_collisions",
+        lambda *args, **kwargs: [],
+    )
+
+    # pylint: disable=protected-access
+    _X, _y, _y_bool, sample_weights, _examples, _programs, _priors = (
+        approach._build_and_process_train_matrix(
+            train_demo_ids=(0,),
+            val_demo_ids=(),
+            demo_dict_train={0: Trajectory(steps=cast(Any, examples))},
+            programs_sa=[StateActionProgram("True")],
+            program_prior_log_probs_opt=[0.0],
+            dsl_functions={},
+            negative_sampling_cfg={
+                "discrete": {
+                    "use_sample_weights": True,
+                    "sample_weight_mode": "state_balanced",
+                }
+            },
+            offline_path_name=None,
+            start_index=2,
+        )
+    )
+
+    assert sample_weights is not None
+    assert np.allclose(sample_weights, expected_weights)

@@ -20,6 +20,7 @@ from programmatic_policy_learning.data.demo_types import Trajectory
 
 class _DummySpace:
     def seed(self, seed: int) -> None:
+        """Satisfy Gym-style API expected by the approach constructor."""
         del seed
 
 
@@ -88,7 +89,7 @@ def test_manual_demo_replay_expert_with_real_seed0_demo() -> None:
     )
     approach.set_env(_DummyEnv(record.seed))
 
-    first_obs, first_action = record.trajectory.steps[0]
+    first_obs, _first_action = record.trajectory.steps[0]
     approach.reset(np.asarray(first_obs, dtype=np.float32).copy(), {})
 
     num_preview_steps = min(5, len(record.trajectory.steps))

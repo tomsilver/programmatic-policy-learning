@@ -55,6 +55,7 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     build_collision_repair_prompt,
     deduplicate_negative_examples,
     drop_negative_exact_contradictions,
+    infer_episode_success,
     is_kinder_env,
     log_exact_example_label_contradictions,
     log_feature_collisions,
@@ -67,6 +68,8 @@ from programmatic_policy_learning.data.dataset import (
     run_all_programs_on_demonstrations,
 )
 from programmatic_policy_learning.data.demo_types import Trajectory
+
+# pylint: disable-next=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.continuous_trajectory_serializer import (
     extract_continuous_relational_facts,
 )
@@ -166,16 +169,20 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         unique_vals, unique_counts = np.unique(weights, return_counts=True)
         if unique_vals.size <= histogram_bins:
-            histogram = [
+            exact_histogram = [
                 (float(value), int(count))
                 for value, count in zip(unique_vals, unique_counts)
             ]
-            logging.info("%s sample weights exact histogram: %s", label, histogram)
+            logging.info(
+                "%s sample weights exact histogram: %s",
+                label,
+                exact_histogram,
+            )
             return
 
         bin_edges = np.histogram_bin_edges(weights, bins=histogram_bins)
         counts, edges = np.histogram(weights, bins=bin_edges)
-        histogram = [
+        range_histogram = [
             {
                 "left": float(edges[idx]),
                 "right": float(edges[idx + 1]),
@@ -183,7 +190,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             }
             for idx in range(len(counts))
         ]
-        logging.info("%s sample weights histogram: %s", label, histogram)
+        logging.info("%s sample weights histogram: %s", label, range_histogram)
 
     def _log_motion2d_demonstration_snapshots(
         self,
@@ -306,6 +313,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_feedback_enc: str = "enc_1",
         collision_template_feedback: bool = True,
         collision_feedback_num_buckets: int = 2,
+        collision_feedback_bucket_mode: str = "positive_anchor",
         collision_feedback_enabled: bool = False,
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
@@ -356,6 +364,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.collision_feedback_num_buckets = max(
             1, min(2, int(collision_feedback_num_buckets))
         )
+        if collision_feedback_bucket_mode not in {
+            "positive_anchor",
+            "global_mixed_label",
+        }:
+            raise ValueError(
+                "collision_feedback_bucket_mode must be one of "
+                "{'positive_anchor', 'global_mixed_label'}."
+            )
+        self.collision_feedback_bucket_mode = str(collision_feedback_bucket_mode)
         self.collision_feedback_enabled = collision_feedback_enabled
         self.collision_feedback_max_new_features = collision_feedback_max_new_features
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
@@ -731,7 +748,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         existing_feature_summary: str | None = None,
         failed_attempt_summaries: str | None = None,
     ) -> str | None:
-
         action_mode = str(self.env_specs.get("action_mode", "discrete"))
         is_kinder = (
             "motion2d" in str(self.base_class_name).lower()
@@ -750,15 +766,27 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         if not collision_groups or examples is None:
             return None
         ranked_groups = sorted(
-            collision_groups, key=lambda g: g["max_occur"], reverse=True
+            collision_groups,
+            key=lambda g: (
+                int(g.get("total_count", g["max_occur"])),
+                float(g.get("label_balance", 0.0)),
+                int(g["max_occur"]),
+            ),
+            reverse=True,
         )
-        logging.info("Collision groups (top 5 by max_occur):")
+        logging.info(
+            "Collision groups (top 5 by size/balance, mode=%s):",
+            self.collision_feedback_bucket_mode,
+        )
         for rank, group in enumerate(ranked_groups[:5], start=1):
             pos_list = group["pos"]
             neg_list = group["neg"]
             logging.info(
-                "  %d) max_occur=%d pos_count=%d neg_count=%d pos=%s neg=%s",
+                "  %d) total=%d balance=%.3f max_occur=%d "
+                "pos_count=%d neg_count=%d pos=%s neg=%s",
                 rank,
+                int(group.get("total_count", len(pos_list) + len(neg_list))),
+                float(group.get("label_balance", 0.0)),
                 group["max_occur"],
                 len(pos_list),
                 len(neg_list),
@@ -781,6 +809,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             existing_feature_summary=existing_feature_summary,
             max_per_label=5,
             collision_feedback_enc=self.collision_feedback_enc,
+            bucket_mode=self.collision_feedback_bucket_mode,
             pos_indices_2=second_group["pos"] if second_group else None,
             neg_indices_2=second_group["neg"] if second_group else None,
             seed=self.seed_num,
@@ -1481,15 +1510,21 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 str(self.env_specs.get("action_mode", "discrete")) == "continuous"
                 and policy.candidate_actions
             ):
+                # Accessing the policy's scored recovery candidates is
+                # intentional here for debugging.
+                # pylint: disable-next=protected-access
                 scores = policy._get_continuous_candidate_scores(obs)
                 if scores.size > 0:
                     top_indices = np.argsort(scores)[::-1][:2]
                     top_parts = []
                     for rank, idx in enumerate(top_indices.tolist(), start=1):
-                        top_parts.append(
-                            f"top{rank}={self._format_recovery_action(policy.candidate_actions[idx])}"
-                            f"@{float(scores[idx]):.4f}"
+                        action_text = self._format_recovery_action(
+                            policy.candidate_actions[idx]
                         )
+                        top_parts.append(
+                            f"top{rank}={action_text}@{float(scores[idx]):.4f}"
+                        )
+                    # pylint: disable-next=protected-access
                     expert_idx = policy._find_continuous_candidate_index(
                         cast(_ActType, centered_expert)
                     )
@@ -1652,7 +1687,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             logging.warning("Recovery expert query failed: %s", exc)
             return None
 
-    # TODO: can't enable this with manual data collection (pushpullhook2d)
+    # TODOOO: Recovery augmentation is disabled for manual data collection
+    # environments such as PushPullHook2D.
     def _augment_recovery_states(
         self,
         *,
@@ -1890,7 +1926,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         Any,
         np.ndarray,
         list[bool],
-        np.ndarray,
+        np.ndarray | None,
         list[tuple[_ObsType, _ActType]] | None,
         list[StateActionProgram],
         list[float] | None,
@@ -1907,7 +1943,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             ),
             negative_sampling_cfg,
         )
-        X, y, examples, sample_weights, row_demo_ids = (
+        result = cast(
+            tuple[
+                Any | None,
+                np.ndarray | None,
+                list[tuple[_ObsType, _ActType]] | None,
+                np.ndarray | None,
+                np.ndarray,
+            ],
             run_all_programs_on_demonstrations(
                 self.base_class_name,
                 train_demo_ids,
@@ -1915,6 +1958,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 demo_dict_train,
                 dsl_functions,
                 negative_sampling=negative_sampling_cfg,
+                env_factory=self.env_factory,
                 return_examples=True,
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=self._prompt_demo_ids_tag(),
@@ -1927,8 +1971,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 seed=self.seed_num,
                 action_mode=action_mode,
                 return_demo_ids=True,
-            )
+            ),
         )
+        X, y, examples, sample_weights, row_demo_ids = result
         self._log_sample_weight_stats(
             sample_weights,
             label="train_core_raw",
@@ -1961,7 +2006,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             old_row_demo_ids,
             examples,
         )
-        if action_mode == "discrete":
+        discrete_cfg = dict((negative_sampling_cfg or {}).get("discrete", {}))
+        use_discrete_sample_weights = bool(
+            discrete_cfg.get("use_sample_weights", False)
+        )
+        if action_mode == "discrete" and not use_discrete_sample_weights:
             sample_weights = None
         X, programs_sa, program_prior_log_probs_opt, col_nnz = (
             _filter_redundant_features(X, programs_sa, program_prior_log_probs_opt)
@@ -1983,7 +2032,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             )
         )
 
-        collision_groups = log_feature_collisions(X, y, examples)
+        collision_groups = log_feature_collisions(
+            X,
+            y,
+            examples,
+            bucket_mode=self.collision_feedback_bucket_mode,
+        )
 
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
@@ -2108,6 +2162,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 record_attempt_summary=_record_attempt_summary,
                 prior_version=self.prior_version,
                 prior_beta=self.prior_beta,
+                collision_bucket_mode=self.collision_feedback_bucket_mode,
             )
             if collision_payloads and collision_output_path is not None:
                 out_path = (
@@ -2268,13 +2323,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         y_final = y_train
         sample_weight_final = sample_weight_train
         if val_demo_ids:
-            X_val, y_val, _, sample_weight_val = run_all_programs_on_demonstrations(
+            val_result = run_all_programs_on_demonstrations(
                 self.base_class_name,
                 val_demo_ids,
                 list(programs_sa),
                 demo_dict_val,
                 dsl_functions,
                 negative_sampling=negative_sampling_cfg,
+                env_factory=self.env_factory,
                 return_examples=False,
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=self._prompt_demo_ids_tag(),
@@ -2287,6 +2343,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 seed=self.seed_num,
                 action_mode=action_mode,
             )
+            X_val, y_val, _, sample_weight_val = val_result[:4]
             if X_val is None or y_val is None:
                 raise ValueError(
                     "X_val or y_val is None. Ensure the validation dataset is valid."
@@ -2556,7 +2613,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     "Recording test rollout for env %s to %s", i, video_out_path
                 )
             assert self._policy is not None, "Policy must be trained before testing."
-            reward, terminated = run_single_episode(
+            reward, terminated, final_info = run_single_episode(
                 env,
                 self._policy,
                 max_num_steps=max_num_steps,
@@ -2564,215 +2621,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 video_out_path=video_out_path,
                 reset_seed=i,
             )
-            if action_mode == "continuous":
-                result = bool(terminated)
-            else:
-                result = reward > 0
+            result = infer_episode_success(
+                reward=float(reward),
+                terminated=bool(terminated),
+                action_mode=action_mode,
+                base_class_name=base_class_name,
+                final_info=final_info,
+            )
             accuracies.append(result)
         return accuracies
-
-    def plot_policy_vector_fields(
-        self,
-        base_class_name: str,
-        env_nums: Sequence[int],
-        *,
-        grid_size: int = 21,
-        split_name: str = "eval",
-    ) -> list[str]:
-        """Save Motion2D policy vector-field plots for selected envs."""
-        if "motion2d" not in str(self.base_class_name).lower():
-            logging.info(
-                "Vector field plotting skipped: base_class_name=%s is not Motion2D.",
-                self.base_class_name,
-            )
-            return []
-        assert self._policy is not None, "Policy must be trained before plotting."
-
-        try:
-            import matplotlib.pyplot as plt  # type: ignore
-            from matplotlib.patches import Rectangle  # type: ignore
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logging.warning("Vector field plotting skipped: %s", exc)
-            return []
-
-        try:
-            output_dir = Path(HydraConfig.get().runtime.output_dir)
-        except Exception:  # pylint: disable=broad-exception-caught
-            output_dir = Path.cwd()
-        vector_dir = output_dir / "vector_fields"
-        vector_dir.mkdir(parents=True, exist_ok=True)
-
-        saved_paths: list[str] = []
-        action_mode = str(self.env_specs.get("action_mode", "discrete"))
-        if action_mode != "continuous":
-            logging.info(
-                "Vector field plotting skipped: action_mode=%s is not continuous.",
-                action_mode,
-            )
-            return []
-
-        for env_num in env_nums:
-            env = self.env_factory(int(env_num))
-            try:
-                try:
-                    reset_out = env.reset(seed=int(env_num))
-                except TypeError:
-                    reset_out = env.reset()
-                if isinstance(reset_out, tuple) and len(reset_out) == 2:
-                    obs, _info = reset_out
-                else:
-                    obs, _info = reset_out, {}
-
-                base_obs = np.asarray(obs, dtype=float).reshape(-1).copy()
-                if base_obs.size < 19:
-                    logging.warning(
-                        "Vector field plotting skipped for env %d: unexpected obs shape.",
-                        env_num,
-                    )
-                    continue
-
-                x_low = 0.2
-                x_high = 2.5
-                y_low = 0.2
-                y_high = 2.5
-
-                xs = np.linspace(x_low, x_high, max(2, int(grid_size)))
-                ys = np.linspace(y_low, y_high, max(2, int(grid_size)))
-                grid_x, grid_y = np.meshgrid(xs, ys)
-                u = np.full_like(grid_x, np.nan, dtype=float)
-                v = np.full_like(grid_y, np.nan, dtype=float)
-
-                obstacles: list[tuple[float, float, float, float]] = []
-                num_obstacles = max(0, (base_obs.size - 19) // 10)
-                for idx in range(num_obstacles):
-                    base = 19 + 10 * idx
-                    obstacles.append(
-                        (
-                            float(base_obs[base]),
-                            float(base_obs[base + 1]),
-                            float(base_obs[base + 8]),
-                            float(base_obs[base + 9]),
-                        )
-                    )
-
-                def _inside_any_obstacle(x: float, y: float) -> bool:
-                    for ox, oy, ow, oh in obstacles:
-                        if ox <= x <= ox + ow and oy <= y <= oy + oh:
-                            return True
-                    return False
-
-                for row_idx in range(grid_y.shape[0]):
-                    for col_idx in range(grid_x.shape[1]):
-                        x = float(grid_x[row_idx, col_idx])
-                        y = float(grid_y[row_idx, col_idx])
-                        if _inside_any_obstacle(x, y):
-                            continue
-                        probe_obs = base_obs.copy()
-                        probe_obs[0] = x
-                        probe_obs[1] = y
-                        action = np.asarray(
-                            self._policy(probe_obs), dtype=float
-                        ).reshape(-1)
-                        if action.size < 2:
-                            continue
-                        u[row_idx, col_idx] = float(action[0])
-                        v[row_idx, col_idx] = float(action[1])
-
-                fig, ax = plt.subplots(figsize=(7, 7))
-                ax.quiver(
-                    grid_x,
-                    grid_y,
-                    u,
-                    v,
-                    angles="xy",
-                    scale_units="xy",
-                    scale=1.0,
-                    width=0.003,
-                    color="tab:blue",
-                )
-
-                target_x = float(base_obs[9])
-                target_y = float(base_obs[10])
-                target_w = float(base_obs[17])
-                target_h = float(base_obs[18])
-                target_cx = target_x + target_w / 2.0
-                target_cy = target_y + target_h / 2.0
-                ax.add_patch(
-                    Rectangle(
-                        (target_x, target_y),
-                        target_w,
-                        target_h,
-                        facecolor="tab:green",
-                        edgecolor="tab:green",
-                        alpha=0.25,
-                        linewidth=2,
-                    )
-                )
-                ax.scatter(
-                    [target_cx],
-                    [target_cy],
-                    c="tab:green",
-                    s=70,
-                    marker="*",
-                    edgecolors="black",
-                    linewidths=0.8,
-                    label="target center",
-                    zorder=5,
-                )
-                ax.annotate(
-                    "target",
-                    (target_cx, target_cy),
-                    xytext=(6, 6),
-                    textcoords="offset points",
-                    color="tab:green",
-                    fontsize=9,
-                    weight="bold",
-                )
-
-                for ox, oy, ow, oh in obstacles:
-                    ax.add_patch(
-                        Rectangle(
-                            (ox, oy),
-                            ow,
-                            oh,
-                            facecolor="tab:red",
-                            edgecolor="tab:red",
-                            alpha=0.25,
-                            linewidth=1.5,
-                        )
-                    )
-
-                ax.scatter(
-                    [float(base_obs[0])],
-                    [float(base_obs[1])],
-                    c="black",
-                    s=40,
-                    label="reset state",
-                )
-                ax.set_xlim(x_low, x_high)
-                ax.set_ylim(y_low, y_high)
-                ax.set_aspect("equal", adjustable="box")
-                ax.set_title(
-                    f"{base_class_name} {split_name} env {env_num} policy vector field"
-                )
-                ax.set_xlabel("robot x")
-                ax.set_ylabel("robot y")
-                ax.legend(loc="upper right")
-                ax.grid(True, alpha=0.2)
-                fig.tight_layout()
-
-                out_path = (
-                    vector_dir
-                    / f"lfd_{base_class_name}_{split_name}_env{env_num}_vector_field.png"
-                )
-                fig.savefig(out_path, dpi=200)
-                plt.close(fig)
-                saved_paths.append(str(out_path))
-                logging.info("Saved vector field for env %d to %s", env_num, out_path)
-            finally:
-                if hasattr(env, "close"):
-                    env.close()
-        return saved_paths
 
     def _get_action(self) -> _ActType:
         assert self._policy is not None, "Call reset() first."

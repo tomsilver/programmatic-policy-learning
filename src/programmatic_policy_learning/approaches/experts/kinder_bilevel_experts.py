@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.continuous_hint_config import (
-    canonicalize_env_name,
+from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
+    continuous_hint_config,
 )
 
 _DEFAULT_BILEVEL_MODEL_NAMES: dict[str, str] = {
@@ -36,7 +36,7 @@ def resolve_bilevel_model_name(
         return str(env_model_name)
     if not env_name:
         raise ValueError("Either env_name or env_model_name must be provided.")
-    canonical_name = canonicalize_env_name(env_name)
+    canonical_name = continuous_hint_config.canonicalize_env_name(env_name)
     try:
         return _DEFAULT_BILEVEL_MODEL_NAMES[canonical_name]
     except KeyError as exc:

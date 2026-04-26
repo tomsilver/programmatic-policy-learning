@@ -1,6 +1,6 @@
 _target_: "programmatic_policy_learning.approaches.lpp_approach.LogicProgrammaticPolicyApproach"
 
-demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7]
+demo_numbers: [0,1,2,3,4,5,6,7,8,9]
 program_generation_step_size: 10
 num_programs: 100 # for fixed
 num_dts: 5
@@ -27,9 +27,10 @@ cross_demo_feature_filter:
 collision_feedback_enabled: true
 collision_feedback_enc: "enc_2"
 collision_template_feedback: false #false: means the feedback is just features/no templates
-collision_feedback_num_buckets: 2
+collision_feedback_num_buckets: 3
+collision_feedback_bucket_mode: "positive_anchor" # "positive_anchor" | "global_mixed_label"
 collision_feedback_max_new_features: 5000
-collision_feedback_max_rounds: 5
+collision_feedback_max_rounds: 8
 collision_feedback_target_collisions: 0
 prior_version: "uniform" # v1 | v2 | uniform
 prior_beta: 2
@@ -39,7 +40,7 @@ w_literals: 0.05
 w_max_clause: 0.1
 w_depth: 0.05
 w_ops: 0.03
-val_frac: 0.0
+val_frac: 0.2
 val_size: null
 split_seed: 0
 split_strategy: "random"
@@ -62,21 +63,29 @@ program_generation:
   num_features: 50
   encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5" are the common options
   multi_prompt_ensemble:
-    num_seeds_per_subset: 1
+    num_seeds_per_subset: 2
     demo_subsets: 
+      - [3, 4] 
       - [0, 1, 2]
+      - [8, 9]
+      - [5, 6, 7]
+
+  
   loading:
     offline: 0 # 0 for using LLM / 1 for using the following path data
     offline_json_path: "ff.json"
   negative_sampling:
     # Discrete-only switch. Continuous mode is always quantized expansion.
-    enabled: false
+    enabled: true
     discrete:
-      K: 16
+      K: 40
       local_radius: 2
       w_local: 0.55
       w_struct: 0.3
       w_random: 0.15
+      ignore_equivalent_transitions: true
+      use_sample_weights: true
+      sample_weight_mode: "state_balanced" # "uniform" | "state_balanced"
     
     continuous:
       # For Motion2D navigation, use dx/dy and smooth dtheta/darm/vac to 0.

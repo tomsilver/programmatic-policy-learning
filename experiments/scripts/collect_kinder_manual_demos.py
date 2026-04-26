@@ -14,7 +14,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 
 import kinder
 import numpy as np
@@ -136,7 +136,7 @@ class ManualKinderDemoCollector:
 
         kinder.register_all_environments()
         self.env = kinder.make(env_id, render_mode="rgb_array")
-        self.unwrapped_env = self.env.unwrapped
+        self.unwrapped_env: Any = self.env.unwrapped
         if not hasattr(self.unwrapped_env, "get_action_from_gui_input"):
             raise RuntimeError(
                 f"Environment {env_id} does not implement get_action_from_gui_input."
@@ -354,7 +354,16 @@ class ManualKinderDemoCollector:
     def render(self) -> None:
         """Render the env frame and control overlay inside the pygame
         window."""
-        img: np.ndarray = self.env.render()
+        render_out: Any = self.env.render()
+        if isinstance(render_out, list):
+            if not render_out:
+                return
+            render_out = render_out[-1]
+        if render_out is None:
+            return
+        img = np.asarray(render_out)
+        if img.ndim != 3 or img.shape[2] < 3:
+            return
         img_surface = pygame.surfarray.make_surface(img[:, :, :3].swapaxes(0, 1))
         img_rect = img_surface.get_rect()
         center_width = self.screen_width - 2 * self.side_panel_width
@@ -382,7 +391,10 @@ class ManualKinderDemoCollector:
 
         top_lines = [
             f"{self.env_id}",
-            f"seed={self.current_seed} ({self.current_seed_index + 1}/{len(self.seeds)})",
+            (
+                f"seed={self.current_seed} "
+                f"({self.current_seed_index + 1}/{len(self.seeds)})"
+            ),
             f"steps={len(self.actions)}",
         ]
         for idx, line in enumerate(top_lines):
@@ -410,14 +422,17 @@ class ManualKinderDemoCollector:
         """Run the interactive demo collection loop."""
         print("Starting manual KinDER demo collection.")
         print(
-            "This env renders through pygame from `rgb_array`; it does not need Gym `human` mode."
+            "This env renders through pygame from `rgb_array`; "
+            "it does not need Gym `human` mode."
         )
         running = True
         while running:
             running = self.handle_events()
             self.render()
             self.clock.tick(self.render_fps)
-        self.env.close()
+        close_fn = cast(Callable[[], Any] | None, getattr(self.env, "close", None))
+        if close_fn is not None:
+            close_fn()
         pygame.quit()
 
 

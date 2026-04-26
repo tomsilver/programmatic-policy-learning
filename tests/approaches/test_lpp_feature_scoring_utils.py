@@ -39,7 +39,10 @@ def test_cross_demo_feature_scores_support_contrast_and_consistency() -> None:
         consistency_tau=0.05,
     )
 
-    good, flat, bad_action = scores
+    assert len(scores) == 3
+    good = scores[0]
+    flat = scores[1]
+    bad_action = scores[2]
     assert good["pos_demo_support_count"] == 2
     assert good["pos_demo_support_frac"] == 1.0
     assert good["neg_demo_support_count"] == 0

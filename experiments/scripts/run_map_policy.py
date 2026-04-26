@@ -163,7 +163,7 @@ def main() -> None:
     for env_num in env_nums:
         env = env_factory(env_num)
         video_path = video_dir / f"{args.env}_{env_num}.{args.video_format}"
-        reward, _terminated = run_single_episode(
+        reward, _terminated, _final_info = run_single_episode(
             env,
             policy,
             record_video=True,

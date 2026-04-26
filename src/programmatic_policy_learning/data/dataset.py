@@ -8,10 +8,9 @@ import multiprocessing
 import os
 import pickle
 import traceback
-from collections.abc import Mapping
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
+from typing import Any, Callable, Sequence, TypeVar
 
 import cloudpickle
 import numpy as np
@@ -57,6 +56,74 @@ CONTINUOUS_NEGATIVE_K = 10
 CONTINUOUS_NEGATIVE_NOISE_SCALE = 0.2
 GRID_NEGATIVE_K = 30
 GRID_LOCAL_RADIUS = 2
+
+
+def _transition_states_equal(lhs: Any, rhs: Any) -> bool:
+    """Return whether two transition outputs should count as identical."""
+    try:
+        return bool(
+            np.array_equal(
+                np.asarray(lhs, dtype=object),
+                np.asarray(rhs, dtype=object),
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        return lhs == rhs
+
+
+def _is_transition_equivalent_discrete_action(
+    state_grid: np.ndarray,
+    expert_action: Coord,
+    candidate_action: Coord,
+    discrete_transition_fn: Callable[[np.ndarray, Coord], Any] | None,
+) -> bool:
+    """Return whether candidate and expert produce the same next state."""
+    if discrete_transition_fn is None:
+        return False
+    try:
+        expert_next = discrete_transition_fn(
+            np.array(state_grid, copy=True), expert_action
+        )
+        candidate_next = discrete_transition_fn(
+            np.array(state_grid, copy=True), candidate_action
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
+    return _transition_states_equal(expert_next, candidate_next)
+
+
+def _resolve_discrete_transition_fn(
+    env: Any,
+) -> tuple[Callable[[np.ndarray, Coord], Any] | None, str]:
+    """Unwrap an env until a callable transition(state, action) is found."""
+    seen: set[int] = set()
+    current = env
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        transition_attr = getattr(current, "transition", None)
+        if callable(transition_attr):
+            resolved_type = type(current).__name__
+            return (
+                lambda state, action: transition_attr(
+                    np.array(state, copy=True),
+                    (int(action[0]), int(action[1])),
+                ),
+                resolved_type,
+            )
+        next_env = getattr(current, "env", None)
+        if next_env is not None and id(next_env) not in seen:
+            current = next_env
+            continue
+        unwrapped = getattr(current, "unwrapped", None)
+        if (
+            unwrapped is not None
+            and unwrapped is not current
+            and id(unwrapped) not in seen
+        ):
+            current = unwrapped
+            continue
+        break
+    return None, type(env).__name__
 
 
 def compute_cost_sensitive_bucket_weights(
@@ -486,6 +553,7 @@ def extract_examples_from_demonstration_item(
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
     compute_sample_weights: bool = False,
+    discrete_transition_fn: Callable[[np.ndarray, Coord], Any] | None = None,
 ) -> tuple[
     list[tuple[ObsT, ActT]],
     list[tuple[ObsT, ActT]],
@@ -663,11 +731,15 @@ def extract_examples_from_demonstration_item(
         action,
         context="Discrete negative expansion",
     )
+    cfg_grid = dict(sampling_cfg.get("discrete", {}))
+    ignore_equivalent_transitions = bool(
+        cfg_grid.get("ignore_equivalent_transitions", False)
+    )
+    ignored_equivalent_actions: list[Coord] = []
 
     # `negative_sampling.enabled` only controls discrete-mode subsampling.
     discrete_sampling_enabled = bool(sampling_cfg.get("enabled", False))
     if discrete_sampling_enabled:
-        cfg_grid = dict(sampling_cfg.get("discrete", {}))
         k_total = int(cfg_grid.get("K", GRID_NEGATIVE_K))
         local_radius = int(cfg_grid.get("local_radius", GRID_LOCAL_RADIUS))
         w_local = float(cfg_grid.get("w_local", 0.5))
@@ -685,18 +757,81 @@ def extract_examples_from_demonstration_item(
             rng=rng_np,
         )
         for rc in neg_coords:
+            if (
+                ignore_equivalent_transitions
+                and _is_transition_equivalent_discrete_action(
+                    state_grid,
+                    action_grid,
+                    rc,
+                    discrete_transition_fn,
+                )
+            ):
+                ignored_equivalent_actions.append(rc)
+                continue
             negative_examples.append((state, rc))  # type: ignore[arg-type]
     else:
         for r in range(state_grid.shape[0]):
             for c in range(state_grid.shape[1]):
                 if (r, c) == action_grid:
                     continue
+                if (
+                    ignore_equivalent_transitions
+                    and _is_transition_equivalent_discrete_action(
+                        state_grid,
+                        action_grid,
+                        (r, c),
+                        discrete_transition_fn,
+                    )
+                ):
+                    ignored_equivalent_actions.append((r, c))
+                    continue
                 negative_examples.append((state, (r, c)))  # type: ignore[arg-type]
 
-    # For discrete mode, return uniform weights (1.0 for each example)
-    # TODOO: can also pass "balanced" to dt and ignore manual weight
-    # computation here, since all negatives are equally weighted anyway
-    sample_weights = np.ones(1 + len(negative_examples), dtype=float)
+    if ignore_equivalent_transitions:
+        expert_token = str(state_grid[action_grid])
+        same_token_negatives: list[Coord] = []
+        for _, candidate_action in negative_examples:
+            _, candidate_coord = require_grid_state_action(
+                state_grid,
+                candidate_action,
+                context="Discrete equivalent-transition debug logging",
+            )
+            if str(state_grid[candidate_coord[0], candidate_coord[1]]) == expert_token:
+                same_token_negatives.append(candidate_coord)
+        logging.info(
+            "Discrete equivalent-transition filtering: action=%s token=%s "
+            "ignored=%d sample_ignored=%s kept_negatives=%d same_token_negatives=%d "
+            "sample_same_token_negatives=%s transition_hook=%s",
+            action_grid,
+            expert_token,
+            len(ignored_equivalent_actions),
+            ignored_equivalent_actions[:10],
+            len(negative_examples),
+            len(same_token_negatives),
+            same_token_negatives[:10],
+            "available" if discrete_transition_fn is not None else "missing",
+        )
+
+    use_discrete_sample_weights = bool(cfg_grid.get("use_sample_weights", False))
+    discrete_sample_weight_mode = str(
+        cfg_grid.get("sample_weight_mode", "uniform")
+    ).lower()
+    if use_discrete_sample_weights:
+        if discrete_sample_weight_mode == "state_balanced":
+            sample_weights = np.ones(1 + len(negative_examples), dtype=float)
+            if negative_examples:
+                sample_weights[1:] = 1.0 / float(len(negative_examples))
+        elif discrete_sample_weight_mode == "uniform":
+            sample_weights = np.ones(1 + len(negative_examples), dtype=float)
+        else:
+            raise ValueError(
+                "Unsupported discrete sample_weight_mode: "
+                f"{discrete_sample_weight_mode!r}"
+            )
+    else:
+        # For discrete mode, default to uniform row weights and let the
+        # downstream learner decide whether to use class balancing instead.
+        sample_weights = np.ones(1 + len(negative_examples), dtype=float)
     return positive_examples, negative_examples, sample_weights
 
 
@@ -706,6 +841,7 @@ def extract_examples_from_demonstration(
     negative_sampling: dict[str, Any] | None = None,
     action_mode: str = "discrete",
     compute_sample_weights: bool = False,
+    discrete_transition_fn: Callable[[np.ndarray, Coord], Any] | None = None,
 ) -> tuple[list[tuple[ObsT, ActT]], list[tuple[ObsT, ActT]], np.ndarray]:
     """Convert demonstrated (state, action)s into positive and negative
     classification data.
@@ -739,6 +875,7 @@ def extract_examples_from_demonstration(
                 negative_sampling=negative_sampling,
                 action_mode=action_mode,
                 compute_sample_weights=compute_sample_weights,
+                discrete_transition_fn=discrete_transition_fn,
             )
         )
         positive_examples.extend(demo_positive_examples)
@@ -793,7 +930,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    cache_schema_version = "v3"
+    cache_schema_version = "v7"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -906,6 +1043,7 @@ def run_all_programs_on_single_demonstration(
     dsl_functions: dict,
     *,
     negative_sampling: dict[str, Any] | None = None,
+    env_factory: Callable[[int | None], Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
     prompt_demo_ids: Sequence[int] | None = None,  # pylint: disable=unused-argument
@@ -922,8 +1060,45 @@ def run_all_programs_on_single_demonstration(
     compute_sample_weights = False
     if action_mode == "continuous":
         cont_cfg = negative_sampling["continuous"] if negative_sampling else {}
-        weight_cfg = cont_cfg.get("weight_config")
+        weight_cfg = dict(cont_cfg.get("weight_config", {}))
         compute_sample_weights = bool(weight_cfg.get("enabled", True))
+
+    discrete_transition_fn: Callable[[np.ndarray, Coord], Any] | None = None
+    if action_mode == "discrete":
+        sampling_cfg = dict(negative_sampling or {})
+        discrete_cfg = dict(sampling_cfg.get("discrete", {}))
+        if bool(discrete_cfg.get("ignore_equivalent_transitions", False)):
+            if env_factory is None:
+                logging.info(
+                    "Discrete transition-equivalence hook setup for demo %s: "
+                    "env_factory is None",
+                    demo_number,
+                )
+            else:
+                env = env_factory(demo_number)
+                env_type = type(env).__name__
+                logging.info(
+                    "Discrete transition-equivalence hook setup for demo %s: "
+                    "env_factory_present=%s env_type=%s",
+                    demo_number,
+                    True,
+                    env_type,
+                )
+                discrete_transition_fn, resolved_type = _resolve_discrete_transition_fn(
+                    env
+                )
+                try:
+                    env.close()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+                logging.info(
+                    "Discrete transition-equivalence hook for demo %s: %s "
+                    "(env_type=%s resolved_on=%s)",
+                    demo_number,
+                    "enabled" if discrete_transition_fn is not None else "missing",
+                    env_type,
+                    resolved_type,
+                )
 
     positive_examples, negative_examples, sample_weights = (
         extract_examples_from_demonstration(
@@ -931,6 +1106,7 @@ def run_all_programs_on_single_demonstration(
             negative_sampling=negative_sampling,
             action_mode=action_mode,
             compute_sample_weights=compute_sample_weights,
+            discrete_transition_fn=discrete_transition_fn,
         )
     )
     # print(sample_weights)
@@ -1074,6 +1250,7 @@ def run_all_programs_on_demonstrations(
     dsl_functions: dict,
     *,
     negative_sampling: dict[str, Any] | None = None,
+    env_factory: Callable[[int | None], Any] | None = None,
     return_examples: bool = False,
     offline_path_name: str | None = None,
     prompt_demo_ids: Sequence[int] | None = None,
@@ -1110,6 +1287,7 @@ def run_all_programs_on_demonstrations(
                 demo_dict[demo_number],
                 dsl_functions,
                 negative_sampling=negative_sampling,
+                env_factory=env_factory,
                 return_examples=return_examples,
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=prompt_demo_ids,

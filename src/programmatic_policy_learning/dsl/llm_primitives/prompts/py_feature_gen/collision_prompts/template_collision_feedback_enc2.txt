@@ -1,29 +1,27 @@
 ## SYSTEM
 
-You are an expert feature-library repair agent for Logical Programmatic Policies in grid-based games.
+You are an expert feature-template repair agent for Logical Programmatic Policies in grid-based games.
 
 Your job:
-Given evidence of feature collisions, propose NEW boolean feature templates f_i(s, a)
-that distinguish positive vs negative examples within each collision bucket.
+Given mixed-label collision evidence, propose NEW boolean feature templates that distinguish positive vs negative examples in the same collision bucket.
 
-A feature collision means:
-All provided examples have IDENTICAL feature vectors under the current feature set,
-yet labels differ. Therefore, the current features are provably insufficient.
+A collision means:
+All shown examples currently have the SAME feature vector, yet labels differ.
+So the current templates are insufficient.
 
-Your goal is to add a SMALL number of general, structural features that fix the collision
-WITHOUT introducing brittle, instance-specific hacks.
+Your goal is to add a SMALL number of general, structural templates that resolve the missing distinction without brittle shortcuts.
 
 ---
 
 ## ENVIRONMENT
 
-- Grid observation s is a 2D list of tokens (strings).
-- Action a is a clicked cell coordinate: a = (row, col).
-- a may contain numpy integers.
-- Any auxiliary summaries shown in the evidence are for human reading only.
-  Feature functions may only access s and a.
+- Grid observation `s` is a 2D list of tokens (strings).
+- Action `a` is a clicked cell coordinate: `a = (row, col)`.
+- `a` may contain numpy integers.
+- The evidence is intentionally relational and local-to-structural.
+- Template code may access ONLY `s` and `a`.
 
-Every feature MUST begin with this exact validation logic:
+Every template MUST begin with this exact validation logic:
 
     try:
         r = int(a[0]); c = int(a[1])
@@ -38,53 +36,69 @@ No imports. Only Python built-ins.
 
 ## TOKEN RESTRICTIONS (CRITICAL)
 
-You MUST NOT use any raw token characters like {raw_token_examples}
+You MUST NOT use any raw token characters like {raw_token_examples}.
 
 You MUST use ONLY these placeholders inside feature code:
 - ${TOKEN_A}
 - ${TOKEN_B}
 - ${DRs}
 
-No other placeholders. No token lists. No third token placeholder.
+No other placeholders.
+No token lists.
+No third token placeholder.
 Each feature may use at most 4 placeholders total.
 
-Specific token names may appear in the collision evidence text;
-the prohibition applies only to feature CODE.
+Specific token names may appear in the evidence text;
+the prohibition applies only to FEATURE CODE.
 
-You MUST NOT write literal strings like 'empty', 'background', 'OOB', etc. in feature code.
+You MUST NOT write literal strings like `'empty'`, `'drawn'`, `'background'`, etc. in code.
 
 ---
 
-## GENERALIZATION DISCIPLINE (CRITICAL)
+## WHAT TO PREFER
 
-(1) NO traversal-order anchors:
-Do NOT define reference cells as "the first/last token found" in a scan.
-Do NOT rely on top-most/left-most by scan order.
+Prefer templates expressing:
+- side-of-action vs side-of-object relations,
+- same-side / opposite-side predicates,
+- local neighborhood patterns,
+- ray visibility / first-token structure,
+- boundary / frontier / extension relations,
+- connectedness / enclosure / between-ness,
+- relative closeness or ordering without fixed thresholds.
 
-Reference cells must be defined structurally (relative to action cell or via quantification),
-e.g., "exists a ${TOKEN_A} along a ray", "closest ${TOKEN_B} under some board metric",
-"any cell in the same connected component", etc.
+---
 
-(2) Prefer structural relations over numeric summaries:
-Avoid global counts, row/column counts, min/max over all cells, or comparisons to numeric constants,
-unless the same distinction cannot be expressed relationally.
+## WHAT TO AVOID
 
-(3) No fixed radii / distance thresholds:
-Do not use constants like <= 3, <= 5, >= 10. Distances may only be used relatively
-(e.g., closer to X than to Y; nearest among candidates).
+Do NOT use or imitate:
+- board size,
+- global counts,
+- drawn totals,
+- bbox width/height,
+- largest-component size,
+- hard-coded coordinates,
+- fixed distance thresholds like `<= 3`,
+- scan-order anchors,
+- global min/max summaries unless the same signal cannot be expressed relationally.
 
-(4) Invariance preference:
-Prefer features that would remain meaningful if the board were translated, resized,
-or if irrelevant tokens were added elsewhere.
+Distances may only be used RELATIVELY, such as:
+- closer to `${TOKEN_A}` than `${TOKEN_B}`,
+- first visible `${TOKEN_A}` before `${TOKEN_B}` along a ray.
 
 ---
 
 ## COLLISION EVIDENCE
 
-All examples below produce IDENTICAL feature vectors under the current feature set,
-yet expert labels differ.
-
 BUCKET 1
+
+TASK:
+These examples have the same current feature vector but different labels.
+Propose new general boolean templates that distinguish positives from negatives.
+
+IMPORTANT:
+Do not use absolute board size, total token counts, total drawn count, fixed distance thresholds,
+or hard-coded coordinates. Prefer relative/relational structure.
+
 POSITIVE EXAMPLES (label = 1):
 ${bucket1_pos}
 
@@ -97,35 +111,46 @@ ${bucket2_block}
 
 ---
 
+## EXISTING FEATURE CONTEXT
+
+These current feature families are already present and do NOT solve the collision.
+Do not propose duplicates, simple rephrasings, or polarity flips.
+
+${existing_relevant_features}
+
+Previous failed repair attempts:
+${failed_attempt_summaries}
+
+---
+
 ## TASK (TWO-STAGE)
 
-### STAGE 1: PROPOSE FEATURE FAMILIES (SCHEMAS)
-For each bucket, identify 3–6 SCHEMAS describing what structural signal is missing.
-A schema is a reusable structural relation that could distinguish positives from negatives.
-Examples of possible schema types include (but are not limited to):
-- Ray/visibility relations along ${DRs}
-- Relative proximity / nearest-token relations
-- Connected-component / reachability relations
-- Boundary / enclosure / between-ness relations (without numeric thresholds)
-- Alignment relations (same row/col/diag) and ordering along a direction
-- Pattern-of-gaps relations (e.g., first non-${TOKEN_A} along a ray)
+### STAGE 1: IDENTIFY MISSING FEATURE FAMILIES
+Infer 3-6 candidate structural families that could separate positives from negatives.
 
-Schemas must be domain-agnostic and must not reference specific raw tokens.
+Examples:
+- side-of-action relative to `${TOKEN_A}`,
+- side-of-agent relative to `${TOKEN_B}`,
+- same/opposite side comparisons,
+- frontier shape around the action,
+- ray-based visibility / ordering,
+- boundary-extension / enclosure relations.
 
-### STAGE 2: INSTANTIATE A SMALL SET OF FEATURES
-For each bucket, instantiate at most MAX_FEATURES_PER_BUCKET = 4 concrete features
-based on the schemas that are most supported by the evidence.
+### STAGE 2: INSTANTIATE A SMALL SET OF TEMPLATES
+Instantiate at most 4 concrete templates per bucket.
 
-Each instantiated feature must plausibly separate at least one positive from one negative
-in that bucket, and should not be a near-duplicate of another.
+Before keeping a template, verify mentally:
+- it likely differs on at least one positive and one negative example,
+- it is not already covered by the existing feature context,
+- it does not rely on board size, counts, or fixed thresholds.
 
-Stop early if the remaining distinctions would require brittle numeric hacks or scan-order anchors.
+Stop early if the remaining ideas would require brittle hacks.
 
 ---
 
 ## OUTPUT FORMAT (STRICT)
 
-You MUST output ONLY valid JSON, directly parsable by json.loads().
+You MUST output ONLY valid JSON, directly parsable by `json.loads()`.
 No markdown. No prose.
 
 Return exactly this structure:
@@ -135,21 +160,23 @@ Return exactly this structure:
     {
       "id": "f101",
       "name": "f101",
-      "description": "What structural distinction this feature captures and why it helps separate the bucket.",
+      "description": "What structural distinction this template captures and why it helps separate the bucket.",
       "source": "def f101(s, a):\\n    ...\\n"
-    },
-    ...
+    }
   ]
 }
 
 Rules:
-- ids/names must be sequential: f101, f102, ...
-- Each "source" must be valid Python with \\n escaped newlines.
-- Every feature returns True/False.
-- Every feature includes the exact validation boilerplate.
-- Use only ${TOKEN_A}, ${TOKEN_B}, ${DRs} placeholders in code.
-- No scan-order anchors, no global counting rules, no fixed distance thresholds.
+- ids/names must be sequential: `f101`, `f102`, ...
+- each source must be valid Python with escaped newlines,
+- every feature returns `True` or `False`,
+- every feature includes the exact validation boilerplate,
+- use only `${TOKEN_A}`, `${TOKEN_B}`, `${DRs}` placeholders in code,
+- no scan-order anchors,
+- no global counting rules,
+- no fixed distance thresholds.
 
 FINAL CHECK:
 - No raw tokens in code.
+- No board-size/count shortcuts.
 - Output JSON only.

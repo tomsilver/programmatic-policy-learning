@@ -4,6 +4,7 @@ import numpy as np
 
 from programmatic_policy_learning.data.dataset import (
     _cache_key_run_all_programs,
+    _resolve_discrete_transition_fn,
     compute_cost_sensitive_bucket_weights,
     extract_examples_from_demonstration,
     extract_examples_from_demonstration_item,
@@ -121,6 +122,91 @@ def test_discrete_negative_sampling_enabled_respects_k_and_excludes_expert() -> 
     neg_actions = [a for _, a in neg]
     assert len(set(neg_actions)) == len(neg_actions)
     assert all(a != action for a in neg_actions)
+
+
+def test_discrete_negative_sampling_ignores_transition_equivalent_actions() -> None:
+    """Discrete negatives can ignore actions with the same next state."""
+    state = np.array([[9, 1], [2, 9]])
+    action = (0, 0)
+    neg_cfg = {
+        "discrete": {
+            "ignore_equivalent_transitions": True,
+        }
+    }
+
+    def discrete_transition_fn(
+        state_grid: np.ndarray, candidate_action: tuple[int, int]
+    ) -> np.ndarray:
+        next_state = np.array(state_grid, copy=True)
+        r, c = candidate_action
+        if next_state[r, c] == 9:
+            return next_state
+        next_state[r, c] = -1
+        return next_state
+
+    _pos, neg, weights = extract_examples_from_demonstration_item(
+        (state, action),
+        negative_sampling=neg_cfg,
+        action_mode="discrete",
+        discrete_transition_fn=discrete_transition_fn,
+    )
+
+    neg_actions = [a for _, a in neg]
+    assert (1, 1) not in neg_actions
+    assert sorted(neg_actions) == [(0, 1), (1, 0)]
+    assert len(weights) == len(_pos) + len(neg)
+
+
+def test_discrete_state_balanced_sample_weights() -> None:
+    """Discrete state-balanced weights give equal total mass to negatives."""
+    state = np.array([[1, 2], [3, 4]])
+    action = (0, 0)
+    neg_cfg = {
+        "enabled": False,
+        "discrete": {
+            "use_sample_weights": True,
+            "sample_weight_mode": "state_balanced",
+        },
+    }
+
+    _pos, neg, weights = extract_examples_from_demonstration_item(
+        (state, action),
+        negative_sampling=neg_cfg,
+        action_mode="discrete",
+    )
+
+    assert len(neg) == 3
+    assert np.allclose(weights, np.array([1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]))
+
+
+def test_resolve_discrete_transition_fn_unwraps_env_chain() -> None:
+    """Transition resolver should find a hook on wrapped envs."""
+
+    class _InnerEnv:
+        @staticmethod
+        def transition(
+            state_grid: np.ndarray, candidate_action: tuple[int, int]
+        ) -> np.ndarray:
+            """Mark the selected cell to emulate a deterministic transition."""
+            next_state = np.array(state_grid, copy=True)
+            next_state[candidate_action] = -1
+            return next_state
+
+    class _MiddleEnv:
+        def __init__(self) -> None:
+            self.env = _InnerEnv()
+
+    class _OuterEnv:
+        def __init__(self) -> None:
+            self.env = _MiddleEnv()
+
+    transition_fn, resolved_type = _resolve_discrete_transition_fn(_OuterEnv())
+
+    assert transition_fn is not None
+    assert resolved_type == "_InnerEnv"
+    state = np.zeros((2, 2), dtype=int)
+    next_state = transition_fn(state, (1, 1))
+    assert next_state[1, 1] == -1
 
 
 def test_continuous_quantized_expansion_uses_full_grid() -> None:

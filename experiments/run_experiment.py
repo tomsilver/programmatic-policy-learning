@@ -12,6 +12,9 @@ from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
 from programmatic_policy_learning.approaches.base_approach import BaseApproach
+from programmatic_policy_learning.approaches.lpp_utils.lpp_plotting_utils import (
+    plot_policy_vector_fields,
+)
 from programmatic_policy_learning.envs.registry import EnvRegistry
 
 _MODE_TO_ID = {
@@ -98,7 +101,8 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
-            cfg.seed,  # using the same seed for expert for now; can be changed to expert_seed if desired
+            # Same expert seed for now; switch to expert_seed if needed.
+            cfg.seed,
             # expert_seed,
         )
 
@@ -127,7 +131,8 @@ def instantiate_approach(
             cfg.env.description,
             env.observation_space,
             env.action_space,
-            cfg.seed,  # using the same seed for expert for now; can be changed to expert_seed if desired
+            # Same expert seed for now; switch to expert_seed if needed.
+            cfg.seed,
             # expert_seed,
         )
 
@@ -362,10 +367,22 @@ def _main(cfg: DictConfig) -> None:
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(train_accuracies) / len(train_accuracies))
             if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
-                if hasattr(approach, "plot_policy_vector_fields"):
+                policy = getattr(approach, "_policy", None)
+                env_factory = getattr(approach, "env_factory", None)
+                env_specs = getattr(approach, "env_specs", None)
+                approach_base_class_name = getattr(approach, "base_class_name", "")
+                if (
+                    policy is not None
+                    and env_factory is not None
+                    and env_specs is not None
+                ):
                     print("VECTOR FIELD FOR TRAIN ENVS:")
-                    approach.plot_policy_vector_fields(
+                    plot_policy_vector_fields(
                         base_class_name=cfg.env.make_kwargs.base_name,
+                        approach_base_class_name=str(approach_base_class_name),
+                        policy=policy,
+                        env_factory=env_factory,
+                        env_specs=env_specs,
                         env_nums=range(0, 11),
                         grid_size=int(
                             OmegaConf.select(
@@ -390,9 +407,21 @@ def _main(cfg: DictConfig) -> None:
             # logging.info(df["total_rewards"].iloc[0])
             logging.info(sum(test_accuracies) / len(test_accuracies))
             if bool(OmegaConf.select(cfg, "eval.vector_field.enabled", default=False)):
-                if hasattr(approach, "plot_policy_vector_fields"):
-                    approach.plot_policy_vector_fields(
+                policy = getattr(approach, "_policy", None)
+                env_factory = getattr(approach, "env_factory", None)
+                env_specs = getattr(approach, "env_specs", None)
+                approach_base_class_name = getattr(approach, "base_class_name", "")
+                if (
+                    policy is not None
+                    and env_factory is not None
+                    and env_specs is not None
+                ):
+                    plot_policy_vector_fields(
                         base_class_name=cfg.env.make_kwargs.base_name,
+                        approach_base_class_name=str(approach_base_class_name),
+                        policy=policy,
+                        env_factory=env_factory,
+                        env_specs=env_specs,
                         env_nums=range(11, 20),
                         grid_size=int(
                             OmegaConf.select(
@@ -416,9 +445,8 @@ def _run_single_episode_evaluation(
     # For now, just record total rewards and steps.
     total_rewards = 0.0
     total_steps = 0
-    seed = 0
-    # TODO: for now it's fixed to seed=0 for easier debugging
-    obs, info = env.reset(seed=seed)  # seed=sample_seed_from_rng(rng)
+    seed = sample_seed_from_rng(rng)
+    obs, info = env.reset(seed=seed)
 
     approach.reset(obs, info)
 

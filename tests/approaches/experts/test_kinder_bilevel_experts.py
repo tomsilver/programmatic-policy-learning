@@ -37,7 +37,6 @@ def test_create_kinder_bilevel_expert_forwards_model_name_and_kwargs(
         def reset(self, obs: Any, info: dict[str, Any]) -> None:
             """Stub reset method for the fake planning agent."""
             del obs, info
-            return None
 
         def step(self) -> Any:
             """Stub step method for the fake planning agent."""
@@ -48,7 +47,6 @@ def test_create_kinder_bilevel_expert_forwards_model_name_and_kwargs(
         ) -> None:
             """Stub update method for the fake planning agent."""
             del obs, reward, done, info
-            return None
 
     def _fake_create_models(
         env_name: str, observation_space: Any, action_space: Any, **kwargs: Any

@@ -44,7 +44,8 @@ class ManualDemoReplayExpertApproach(BaseApproach[Any, Any]):
                 continue
             if record.seed in self._demo_records_by_seed:
                 raise ValueError(
-                    f"Duplicate manual demo found for seed {record.seed} under {demos_root}."
+                    "Duplicate manual demo found for seed "
+                    f"{record.seed} under {demos_root}."
                 )
             self._demo_records_by_seed[record.seed] = record
         if not self._demo_records_by_seed:
@@ -82,7 +83,8 @@ class ManualDemoReplayExpertApproach(BaseApproach[Any, Any]):
             ) from exc
         if record.env_id != self._env_id and self._env_id is not None:
             raise ValueError(
-                f"Loaded demo env_id={record.env_id!r} does not match expected {self._env_id!r}."
+                "Loaded demo env_id="
+                f"{record.env_id!r} does not match expected {self._env_id!r}."
             )
         if not record.trajectory.steps:
             raise ValueError(f"Saved manual demo for seed {seed} contains no steps.")
@@ -95,7 +97,8 @@ class ManualDemoReplayExpertApproach(BaseApproach[Any, Any]):
             atol=self._observation_tolerance,
         ):
             raise ValueError(
-                f"Reset observation for seed {seed} does not match the saved manual demo."
+                "Reset observation for seed "
+                f"{seed} does not match the saved manual demo."
             )
         self._current_record = record
         self._step_index = 0

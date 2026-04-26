@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from gymnasium.spaces import Box
 from omegaconf import OmegaConf
 
 from programmatic_policy_learning.data.demo_io import (
@@ -51,8 +52,10 @@ def test_pushpullhook2d_action_bounds() -> None:
     """Print and validate the PushPullHook2D action bounds."""
     env = _make_pushpullhook2d_env()
     try:
-        low = np.asarray(env.action_space.low, dtype=np.float32)
-        high = np.asarray(env.action_space.high, dtype=np.float32)
+        action_space = env.action_space
+        assert isinstance(action_space, Box)
+        low = np.asarray(action_space.low, dtype=np.float32)
+        high = np.asarray(action_space.high, dtype=np.float32)
         names = ["dx", "dy", "dtheta", "darm", "vac"]
 
         print("\nPushPullHook2D action bounds")
@@ -99,8 +102,10 @@ def test_saved_manual_demo_pickles_are_valid_and_executable() -> None:
             assert isinstance(info, dict)
             assert isinstance(obs, np.ndarray)
 
-            low = np.asarray(env.action_space.low, dtype=np.float32)
-            high = np.asarray(env.action_space.high, dtype=np.float32)
+            action_space = env.action_space
+            assert isinstance(action_space, Box)
+            low = np.asarray(action_space.low, dtype=np.float32)
+            high = np.asarray(action_space.high, dtype=np.float32)
 
             for step_idx, ((saved_obs, action), expected_reward) in enumerate(
                 zip(record.trajectory.steps, record.rewards)
@@ -108,10 +113,16 @@ def test_saved_manual_demo_pickles_are_valid_and_executable() -> None:
                 saved_obs_arr = np.asarray(saved_obs, dtype=np.float32)
                 action_arr = np.asarray(action, dtype=np.float32)
                 if step_idx < 5:
+                    obs_preview = np.array2string(
+                        saved_obs_arr[:6], precision=3, suppress_small=True
+                    )
+                    action_preview = np.array2string(
+                        action_arr, precision=3, suppress_small=True
+                    )
                     print(
                         f"step {step_idx}: "
-                        f"obs[:6]={np.array2string(saved_obs_arr[:6], precision=3, suppress_small=True)} "
-                        f"action={np.array2string(action_arr, precision=3, suppress_small=True)} "
+                        f"obs[:6]={obs_preview} "
+                        f"action={action_preview} "
                         f"expected_reward={expected_reward:+.1f}"
                     )
                 assert saved_obs_arr.shape == obs.shape == (38,)

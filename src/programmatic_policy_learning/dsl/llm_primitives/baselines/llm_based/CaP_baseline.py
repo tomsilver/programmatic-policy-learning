@@ -30,7 +30,10 @@ from programmatic_policy_learning.approaches.experts.grid_experts import get_gri
 from programmatic_policy_learning.approaches.experts.kinder_experts import (
     create_kinder_expert,
 )
-from programmatic_policy_learning.approaches.lpp_utils.utils import run_single_episode
+from programmatic_policy_learning.approaches.lpp_utils.utils import (
+    infer_episode_success,
+    run_single_episode,
+)
 
 # pylint: disable=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import (
@@ -955,6 +958,7 @@ def _non_overwriting_path(path: Path) -> Path:
         candidate = path.with_name(f"{path.stem}_{idx}{path.suffix}")
         if not candidate.exists():
             return candidate
+    raise RuntimeError("Failed to find a non-overwriting path.")
 
 
 def _strip_code_block(text: str) -> str:
@@ -1055,6 +1059,7 @@ def _evaluate_policy_function(
     run_expert: bool,
     expert_fn: Any | None = None,
     env_type: str = "grid",
+    base_class_name: str | None = None,
 ) -> tuple[list[bool], list[bool]]:
     """Roll out CaP (and optional expert) policies on the requested envs.
 
@@ -1076,6 +1081,9 @@ def _evaluate_policy_function(
     env_type : str, optional
         ``"grid"`` or ``"continuous"`` — selects the action guard
         (default ``"grid"``).
+    base_class_name : str | None, optional
+        Environment family name used for success inference on tasks with
+        custom win conditions.
 
     Returns
     -------
@@ -1147,7 +1155,7 @@ def _evaluate_policy_function(
         guarded_policy = (
             continuous_safe_policy if env_type == "continuous" else safe_policy
         )
-        reward, terminated = run_single_episode(
+        reward, terminated, final_info = run_single_episode(
             env,
             guarded_policy,
             max_num_steps=max_num_steps,
@@ -1159,7 +1167,13 @@ def _evaluate_policy_function(
         logging.info(
             "reward type: %s, terminated type: %s", type(reward), type(terminated)
         )
-        cap_success = terminated if env_type == "continuous" else reward > 0
+        cap_success = infer_episode_success(
+            reward=float(reward),
+            terminated=bool(terminated),
+            action_mode="continuous" if env_type == "continuous" else "discrete",
+            base_class_name=base_class_name,
+            final_info=final_info,
+        )
         print(
             f"CaP policy {'succeeded' if cap_success else 'failed'} on env {env_idx}."
         )
@@ -1170,7 +1184,7 @@ def _evaluate_policy_function(
             if expert_fn is None:
                 raise RuntimeError("Expert policy unavailable.")
             env_e = env_builder(env_idx)
-            reward_e, terminated_e = run_single_episode(
+            reward_e, terminated_e, final_info_e = run_single_episode(
                 env_e,
                 expert_fn,
                 max_num_steps=max_num_steps,
@@ -1182,7 +1196,13 @@ def _evaluate_policy_function(
                 type(reward_e),
                 type(terminated_e),
             )
-            expert_success = terminated_e if env_type == "continuous" else reward_e > 0
+            expert_success = infer_episode_success(
+                reward=float(reward_e),
+                terminated=bool(terminated_e),
+                action_mode="continuous" if env_type == "continuous" else "discrete",
+                base_class_name=base_class_name,
+                final_info=final_info_e,
+            )
             expert_results.append(bool(expert_success))
             env_e.close()
 
@@ -1532,6 +1552,7 @@ def manual_eval() -> None:
         run_expert=run_expert,
         expert_fn=eval_expert,
         env_type=args.env_type,
+        base_class_name=args.env,
     )
     logging.info(cap_results)
     sys.exit()
@@ -1737,6 +1758,7 @@ def main() -> None:
                     run_expert=run_expert,
                     expert_fn=eval_expert,
                     env_type=args.env_type,
+                    base_class_name=args.env,
                 )
                 enc_summary = encoding_eval_results.setdefault(
                     encoding,
