@@ -48,6 +48,14 @@ _DISCRETE_TOKEN_MAPS: dict[str, dict[str, str]] = {
         "right_arrow": "rfts.RIGHT_ARROW",
         "drawn": "rfts.DRAWN",
     },
+    "ClimbToTheBlock": {
+        "empty": "ctb.EMPTY",
+        "agent": "ctb.AGENT",
+        "star": "ctb.STAR",
+        "left_arrow": "ctb.LEFT_ARROW",
+        "right_arrow": "ctb.RIGHT_ARROW",
+        "drawn": "ctb.DRAWN",
+    },
     "Chase": {
         "empty": "ec.EMPTY",
         "agent": "ec.AGENT",
