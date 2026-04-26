@@ -183,9 +183,7 @@ def expert_ctb_policy(layout: np.ndarray) -> tuple[int, int]:
     agent_r, agent_c = np.argwhere(layout == ctb.AGENT)[0]
     goal_candidates = np.argwhere(layout == ctb.DRAWN)
     goal_r, goal_c = next(
-        (int(r), int(c))
-        for r, c in goal_candidates
-        if int(r) < layout.shape[0] - 2
+        (int(r), int(c)) for r, c in goal_candidates if int(r) < layout.shape[0] - 2
     )
     target_r, target_c = goal_r - 1, goal_c
 

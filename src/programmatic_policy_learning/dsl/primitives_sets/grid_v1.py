@@ -7,7 +7,6 @@ from typing import Any, Callable, Mapping, MutableMapping
 import numpy as np
 from generalization_grid_games.envs import chase as ec
 from generalization_grid_games.envs import checkmate_tactic as ct
-from generalization_grid_games.envs import climb_to_the_block as ctb
 from generalization_grid_games.envs import reach_for_the_star as rfts
 from generalization_grid_games.envs import stop_the_fall as stf
 from generalization_grid_games.envs import two_pile_nim as tpn

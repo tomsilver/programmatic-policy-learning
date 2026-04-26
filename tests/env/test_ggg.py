@@ -1,8 +1,10 @@
 """Tests for GGG environment provider."""
 
 import logging
+from typing import cast
 
 from omegaconf import OmegaConf
+from prpl_utils.gym_utils import GymToGymnasium
 
 from programmatic_policy_learning.envs.providers.ggg_provider import (
     GGGEnvWithTypes,
@@ -56,7 +58,10 @@ def test_ggg_env_with_types_classname_extraction() -> None:
 
 def test_ggg_env_with_types_climb_to_the_block() -> None:
     """CTB exposes the expected object vocabulary."""
-    env = GGGEnvWithTypes(base_env=None, base_class_name="ClimbToTheBlockGymEnv1")
+    env = GGGEnvWithTypes(
+        base_env=cast(GymToGymnasium, object()),
+        base_class_name="ClimbToTheBlockGymEnv1",
+    )
     object_types = env.get_object_types()
     assert "ctb.EMPTY" in object_types
     assert "ctb.AGENT" in object_types
