@@ -37,7 +37,7 @@ def write_json(path: Path, payload: Any) -> None:
     """Write JSON with a serializer that handles Paths."""
     ensure_dir(path.parent)
     path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, default=_json_default),
+        json.dumps(jsonable(payload), indent=2, sort_keys=True, default=_json_default),
         encoding="utf-8",
     )
 
@@ -49,6 +49,8 @@ def read_json(path: Path) -> Any:
 
 def _json_default(value: Any) -> Any:
     """JSON fallback for small utility types."""
+    if OmegaConf.is_config(value):
+        return OmegaConf.to_container(value, resolve=False)
     if isinstance(value, Path):
         return str(value)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable.")
@@ -96,6 +98,8 @@ def find_result_files(results_dir: Path) -> list[Path]:
 
 def jsonable(value: Any) -> Any:
     """Convert nested values into JSON-friendly structures."""
+    if OmegaConf.is_config(value):
+        return jsonable(OmegaConf.to_container(value, resolve=False))
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, dict):

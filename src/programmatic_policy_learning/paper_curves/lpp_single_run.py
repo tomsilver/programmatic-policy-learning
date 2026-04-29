@@ -40,6 +40,87 @@ def _append_repo_paths(repo_root: Path) -> None:
             sys.path.insert(0, candidate_str)
 
 
+def _build_synced_prompt_demo_subsets(
+    demo_ids: list[int],
+    *,
+    max_subset_size: int = 3,
+    max_num_subsets: int = 4,
+    max_num_size3_subsets: int = 2,
+) -> list[list[int]]:
+    """Split synced demo ids into contiguous prompt subsets.
+
+    Preference order:
+    1. All size-2 subsets, if they fit within ``max_num_subsets``.
+    2. Then allow up to ``max_num_size3_subsets`` size-3 subsets, keeping the
+       remaining subsets size 2 where possible.
+    3. Fall back to a singleton subset only when exact 2/3 packing is impossible.
+    """
+    if not demo_ids:
+        return [[0]]
+    if max_subset_size <= 0:
+        raise ValueError("max_subset_size must be positive.")
+    if max_num_subsets <= 0:
+        raise ValueError("max_num_subsets must be positive.")
+    if max_num_size3_subsets < 0:
+        raise ValueError("max_num_size3_subsets cannot be negative.")
+
+    num_demos = len(demo_ids)
+    feasible_sizes: list[int] | None = None
+    max_size3 = min(int(max_num_size3_subsets), int(max_num_subsets))
+
+    # Prefer all size-2 subsets whenever they fit inside the subset budget.
+    if num_demos % 2 == 0:
+        num_pairs = num_demos // 2
+        if num_pairs <= max_num_subsets:
+            feasible_sizes = [2] * num_pairs
+
+    for num_subsets in range(1, int(max_num_subsets) + 1):
+        if feasible_sizes is not None:
+            break
+        for num_size3 in range(0, min(max_size3, num_subsets) + 1):
+            remaining = num_demos - 3 * num_size3
+            num_size2 = num_subsets - num_size3
+            if remaining != 2 * num_size2:
+                continue
+            feasible_sizes = [3] * num_size3 + [2] * num_size2
+            break
+        if feasible_sizes is not None:
+            break
+
+    if feasible_sizes is None:
+        # Allow one singleton subset only when exact 2/3 packing is impossible.
+        for num_subsets in range(1, int(max_num_subsets) + 1):
+            for num_size1 in range(0, num_subsets + 1):
+                for num_size3 in range(0, min(max_size3, num_subsets - num_size1) + 1):
+                    num_size2 = num_subsets - num_size1 - num_size3
+                    if num_size2 < 0:
+                        continue
+                    total = num_size3 * 3 + num_size2 * 2 + num_size1
+                    if total != num_demos:
+                        continue
+                    feasible_sizes = [3] * num_size3 + [2] * num_size2 + [1] * num_size1
+                    break
+                if feasible_sizes is not None:
+                    break
+            if feasible_sizes is not None:
+                break
+
+    if feasible_sizes is None:
+        raise ValueError(
+            "Cannot split demo ids into prompt subsets without exceeding limits: "
+            f"{num_demos=} {max_subset_size=} {max_num_subsets=} "
+            f"{max_num_size3_subsets=}."
+        )
+
+    subsets: list[list[int]] = []
+    start = 0
+    for subset_size in feasible_sizes:
+        end = start + subset_size
+        subsets.append(list(demo_ids[start:end]))
+        start = end
+    return subsets
+
+
 def _build_lpp_cfg(job: dict[str, Any], repo_root: Path) -> Any:
     env_name = str(job["environment"]["lpp_env"])
     env_cfg = cast(
@@ -89,10 +170,29 @@ def _build_lpp_cfg(job: dict[str, Any], repo_root: Path) -> Any:
             continue
         overrides.append(override)
     if method.get("sync_prompt_demo_subsets", True):
+        max_subset_size = int(method.get("sync_prompt_max_subset_size", 3))
+        max_num_subsets = int(method.get("sync_prompt_max_subsets", 4))
+        max_num_size3_subsets = int(method.get("sync_prompt_max_size3_subsets", 2))
+        synced_subsets = _build_synced_prompt_demo_subsets(
+            list(job["demo_ids"]),
+            max_subset_size=max_subset_size,
+            max_num_subsets=max_num_subsets,
+            max_num_size3_subsets=max_num_size3_subsets,
+        )
         sync_override = (
             "approach.program_generation.multi_prompt_ensemble.demo_subsets="
-            f"[{list(job['demo_ids'])}]"
+            f"{synced_subsets}"
         )
+        print(
+            "Synced prompt demo subsets "
+            f"(demo_count={len(job['demo_ids'])}, "
+            f"max_subset_size={max_subset_size}, "
+            f"max_num_subsets={max_num_subsets}, "
+            f"max_num_size3_subsets={max_num_size3_subsets}):"
+        )
+        for subset_idx, demo_subset in enumerate(synced_subsets, start=1):
+            print(f"  subset {subset_idx}: {demo_subset}")
+            logging.info("Prompt subset %d: %s", subset_idx, demo_subset)
         if not any(
             override.startswith(
                 "approach.program_generation.multi_prompt_ensemble.demo_subsets="
@@ -152,6 +252,9 @@ def _important_lpp_config(cfg: Any, method: dict[str, Any]) -> dict[str, Any]:
         "num_features": program_generation.get("num_features"),
         "num_programs": approach.num_programs,
         "num_dts": approach.num_dts,
+        "prompt_demo_subsets": jsonable(
+            program_generation.get("multi_prompt_ensemble", {}).get("demo_subsets", [])
+        ),
         "collision_feedback_enabled": approach.collision_feedback_enabled,
         "collision_feedback_enc": approach.collision_feedback_enc,
         "cross_demo_feature_filter_enabled": cross_demo_filter.enabled,

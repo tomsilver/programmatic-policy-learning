@@ -82,6 +82,24 @@ def _cache_path_with_model(stem: str, llm_model: str) -> Path:
     return Path(f"{stem}_{model_slug}.db")
 
 
+def build_sqlite_llm_cache(
+    cache_path: Path,
+    *,
+    llm_model: str,
+    context: str,
+) -> SQLite3PretrainedLargeModelCache:
+    """Create a SQLite LLM cache and print where it lives."""
+    resolved = cache_path.resolve()
+    exists = resolved.exists()
+    size_bytes = resolved.stat().st_size if exists else 0
+    msg = (
+        f"[LPP CACHE] context={context} model={llm_model} "
+        f"db={resolved} exists={exists} size_bytes={size_bytes}"
+    )
+    logging.info(msg)
+    return SQLite3PretrainedLargeModelCache(cache_path)
+
+
 def make_llm_client_for_model(
     llm_model: str,
     cache: SQLite3PretrainedLargeModelCache,
@@ -450,7 +468,11 @@ def get_program_set(
 
     if strategy == "feature_generator":
         cache_path = _cache_path_with_model("feature_cache", llm_model)
-        cache = SQLite3PretrainedLargeModelCache(cache_path)
+        cache = build_sqlite_llm_cache(
+            cache_path,
+            llm_model=llm_model,
+            context="feature_generator",
+        )
         llm_client = make_llm_client_for_model(
             llm_model,
             cache,
@@ -494,7 +516,11 @@ def get_program_set(
         py_llm_client: PretrainedLargeModel | None = None
         if not offline_mode:
             cache_path = _cache_path_with_model("py_feature_cache", llm_model)
-            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            cache = build_sqlite_llm_cache(
+                cache_path,
+                llm_model=llm_model,
+                context="py_feature_gen",
+            )
             py_llm_client = make_llm_client_for_model(
                 llm_model,
                 cache,
@@ -606,7 +632,11 @@ def _generate_with_dsl_generator(
     """Generate programs using the DSL generator."""
     llm_model = program_generation.get("llm_model", "gpt-4.1")
     cache_path = _cache_path_with_model("llm_cache", llm_model)
-    cache = SQLite3PretrainedLargeModelCache(cache_path)
+    cache = build_sqlite_llm_cache(
+        cache_path,
+        llm_model=llm_model,
+        context="dsl_generator",
+    )
     llm_client = make_llm_client_for_model(
         llm_model,
         cache,

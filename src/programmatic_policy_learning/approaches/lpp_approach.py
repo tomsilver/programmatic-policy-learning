@@ -35,6 +35,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_feature_source_utils 
 
 # pylint: disable-next=line-too-long
 from programmatic_policy_learning.approaches.lpp_utils.lpp_program_generation_utils import (
+    build_sqlite_llm_cache,
     get_program_set,
     make_llm_client_for_model,
 )
@@ -300,6 +301,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         num_programs: int = 100,
         num_dts: int = 5,
         max_num_particles: int = 10,
+        map_choices: bool = False,
         max_demo_length: int | float = np.inf,
         env_specs: dict[str, Any] | None = None,
         start_symbol: int = 0,
@@ -349,6 +351,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.num_programs = num_programs
         self.num_dts = num_dts
         self.max_num_particles = max_num_particles
+        self.map_choices = bool(map_choices)
         self.max_demo_length = max_demo_length
         self.env_specs = env_specs if env_specs is not None else {}
         self.start_symbol = start_symbol
@@ -679,7 +682,11 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "_"
             )
             cache_path = Path(f"py_feature_cache_{model_slug}.db")
-            cache = SQLite3PretrainedLargeModelCache(cache_path)
+            cache = build_sqlite_llm_cache(
+                cache_path,
+                llm_model=llm_model,
+                context="collision_feedback_py_feature_gen",
+            )
             llm_client = make_llm_client_for_model(
                 llm_model,
                 cache,
@@ -991,7 +998,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     tie_policy: LPPPolicy = LPPPolicy(
                         [particles[idx]],
                         [1.0],
-                        map_choices=False,
+                        map_choices=self.map_choices,
                         normalize_plp_actions=self.normalize_plp_actions,
                         action_mode=str(self.env_specs.get("action_mode", "discrete")),
                         action_space=cast(Any, self._action_space),
@@ -1055,7 +1062,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             policy: LPPPolicy = LPPPolicy(
                 top_particles,
                 top_particle_probs,
-                map_choices=False,
+                map_choices=self.map_choices,
                 normalize_plp_actions=self.normalize_plp_actions,
                 action_mode=str(self.env_specs.get("action_mode", "discrete")),
                 action_space=cast(Any, self._action_space),
@@ -1074,7 +1081,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         return LPPPolicy(
             [StateActionProgram("False")],
             [1.0],
-            map_choices=False,
+            map_choices=self.map_choices,
             normalize_plp_actions=self.normalize_plp_actions,
             action_mode=str(self.env_specs.get("action_mode", "discrete")),
             action_space=cast(Any, self._action_space),
@@ -2172,15 +2179,15 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     json.dumps({"collision_payloads": collision_payloads}, indent=4),
                     encoding="utf-8",
                 )
-            X, programs_sa, program_prior_log_probs_opt = (
-                self._score_and_optionally_filter_features(
-                    X,
-                    y,
-                    row_demo_ids,
-                    programs_sa,
-                    program_prior_log_probs_opt,
-                )
-            )
+            # X, programs_sa, program_prior_log_probs_opt = (
+            #     self._score_and_optionally_filter_features(
+            #         X,
+            #         y,
+            #         row_demo_ids,
+            #         programs_sa,
+            #         program_prior_log_probs_opt,
+            #     )
+            # )
         logging.info("Data after collision feedback loop: X shape %s", X.shape)
 
         n = X.shape[0]

@@ -57,7 +57,7 @@ environments:
 
 methods:
   - name: our_main
-    display_name: Our approach
+    display_name: Our approach (MAP)
     backend: lpp
     sync_prompt_demo_subsets: true
     overrides:
@@ -66,6 +66,7 @@ methods:
       - approach.collision_feedback_enabled=false
       - approach.cross_demo_feature_filter.enabled=false
       - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.map_choices=true
 
   # - name: lpp_main
   #   display_name: LPP main

@@ -1182,6 +1182,37 @@ def _format_ascii_legend(symbol_map: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _render_grid_with_action(
+    grid: np.ndarray,
+    action: tuple[int, int],
+    symbol_map: dict[str, str] | None = None,
+) -> str:
+    """Render a full grid with the action cell marked inline."""
+    display_map = symbol_map or {}
+    grid_str = grid.astype(str)
+    code_width = max(
+        (
+            len(display_map.get(str(tok), str(tok)))
+            for tok in np.unique(grid_str)
+        ),
+        default=1,
+    )
+    h, w = grid_str.shape[0], grid_str.shape[1]
+    r, c = action
+    in_bounds = 0 <= r < h and 0 <= c < w
+    rows = []
+    for rr in range(h):
+        row_codes = []
+        for cc in range(w):
+            tok = str(grid_str[rr, cc])
+            code = display_map.get(tok, tok).rjust(code_width)
+            if in_bounds and rr == r and cc == c:
+                code = f"{code}!"
+            row_codes.append(f"'{code}'")
+        rows.append("  [" + ", ".join(row_codes) + "]")
+    return "\n".join(rows)
+
+
 def _format_one_example_ascii(
     s: Any,
     a: Any,
@@ -1192,23 +1223,9 @@ def _format_one_example_ascii(
 ) -> str:
     """Format one labeled (state, action) example using ASCII token codes."""
     s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_ascii")
-    h, w = s.shape[0], s.shape[1]
-    code_width = max((len(code) for code in symbol_map.values()), default=1)
-
-    in_bounds = 0 <= r < h and 0 <= c < w
+    in_bounds = 0 <= r < s.shape[0] and 0 <= c < s.shape[1]
     cell = s[r, c] if in_bounds else "OOB"
-    rows = []
-    for rr in range(h):
-        row_codes = []
-        for cc in range(w):
-            tok = str(s[rr, cc])
-            code = symbol_map.get(tok, "?").rjust(code_width)
-            if in_bounds and rr == r and cc == c:
-                code = f"{code}!"
-            row_codes.append(f"'{code}'")
-        rows.append("  [" + ", ".join(row_codes) + "]")
-    grid = "\n".join(rows)
-
+    grid = _render_grid_with_action(s, (r, c), symbol_map)
     return f"- idx={idx} label={label} action=({r}, {c}) cell={cell}\n[\n{grid}\n]"
 
 
@@ -1224,16 +1241,12 @@ def _format_one_example_coords(
     s_str = s.astype(str)
     h, w = s_str.shape[0], s_str.shape[1]
     tokens, counts = np.unique(s_str, return_counts=True)
-    bg_idx = int(np.argmax(counts)) if tokens.size else -1
-    background = tokens[bg_idx] if bg_idx >= 0 else ""
+    background = _choose_collision_background_token(tokens, counts)
 
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_str[r, c] if in_bounds else "OOB"
 
     lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
-    if background:
-        lines.append(f"background={background}")
-
     for tok in tokens:
         if tok == background:
             continue
@@ -1276,6 +1289,40 @@ def _compress_ranges(cols: list[int]) -> list[str]:
         start = prev = col
     ranges.append(f"{start}" if start == prev else f"{start}-{prev}")
     return ranges
+
+
+def _choose_collision_background_token(
+    tokens: np.ndarray,
+    counts: np.ndarray,
+) -> str:
+    """Prefer semantic empty space over raw majority token for collision views."""
+    token_strings = [str(tok) for tok in tokens]
+    if "empty" in token_strings:
+        return "empty"
+    bg_idx = int(np.argmax(counts)) if tokens.size else -1
+    return str(tokens[bg_idx]) if bg_idx >= 0 else ""
+
+
+def _summarize_positions_for_collision(
+    positions: list[tuple[int, int]],
+    *,
+    small_list_threshold: int = SMALL_LIST_THRESHOLD,
+) -> str:
+    """Summarize whole-grid token footprint without leading with counts."""
+    if not positions:
+        return "absent"
+    if len(positions) <= small_list_threshold:
+        return "[" + ", ".join(f"({r}, {c})" for r, c in positions) + "]"
+    row_map = _compress_rows(positions)
+    row_parts = [f"{rr}:[{', '.join(row_map[rr])}]" for rr in sorted(row_map)]
+    rmin = min(r for r, _ in positions)
+    rmax = max(r for r, _ in positions)
+    cmin = min(c for _, c in positions)
+    cmax = max(c for _, c in positions)
+    return (
+        f"rows {{{', '.join(row_parts)}}}; "
+        f"span_rows={rmin}-{rmax}; span_cols={cmin}-{cmax}"
+    )
 
 
 def _find_token_positions(grid: np.ndarray, token_name: str) -> list[tuple[int, int]]:
@@ -1345,6 +1392,25 @@ def _raycast(
         rr += dr
         cc += dc
     return None, None
+
+
+def _format_action_rays_summary(
+    grid: np.ndarray,
+    action: tuple[int, int],
+    background_token: str,
+) -> str:
+    rays = {
+        name: _raycast(grid, action, direction, background_token)
+        for name, direction in {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }.items()
+    }
+    return ", ".join(
+        f"{name}: (first={tok}, dist={dist})" for name, (tok, dist) in rays.items()
+    )
 
 
 def _manhattan_nearest(
@@ -1526,9 +1592,7 @@ def _build_diff_hints(
 
     uniq_pos, counts_pos = np.unique(s_pos_tok, return_counts=True)
     uniq_neg, _ = np.unique(s_neg_tok, return_counts=True)
-    background = (
-        str(uniq_pos[int(np.argmax(counts_pos))]) if len(uniq_pos) > 0 else "EMPTY"
-    )
+    background = _choose_collision_background_token(uniq_pos, counts_pos) or "EMPTY"
 
     pos_r, pos_c = action_pos
     neg_r, neg_c = action_neg
@@ -1580,7 +1644,6 @@ def _build_diff_hints(
     lines.append("DIFF HINTS:")
     lines.append(f"- POS_EXAMPLE_IDX: {pos_idx}")
     lines.append(f"- NEG_EXAMPLE_IDX: {neg_idx}")
-    lines.append(f"- BACKGROUND_TOKEN_POS: {background}")
     lines.append(f"- ACTION_POS: {action_pos}")
     lines.append(f"- ACTION_NEG: {action_neg}")
     lines.append(f"- ACTION_CELL_POS_TOKEN: {action_cell_pos}")
@@ -1591,6 +1654,156 @@ def _build_diff_hints(
     lines.append(f"  ACTION_NEAREST_DIST_DELTAS_POS_MINUS_NEG: {nearest_dist_deltas}")
     lines.append(f"- ACTION_PATCH_POS(window={PATCH_K}): {patch}")
     lines.append(f"- ACTION_RAYS_POS(first_non_bg_token,dist): {rays}")
+    return "\n".join(lines)
+
+
+def _build_diff_hints_enc4(
+    pos_idx: int,
+    neg_idx: int,
+    examples: list[tuple[ObsT, ActT]],
+    symbol_map: dict[str, str],
+) -> str:
+    """Build contrastive, whole-grid hints for enc_4 collision buckets."""
+    s_pos, a_pos = examples[pos_idx]
+    s_neg, a_neg = examples[neg_idx]
+    _, action_pos = require_grid_state_action(
+        s_pos, a_pos, context="_build_diff_hints_enc4"
+    )
+    _, action_neg = require_grid_state_action(
+        s_neg, a_neg, context="_build_diff_hints_enc4"
+    )
+    s_pos_tok = _maybe_map_ascii_tokens(s_pos, symbol_map)
+    s_neg_tok = _maybe_map_ascii_tokens(s_neg, symbol_map)
+
+    uniq_pos, counts_pos = np.unique(s_pos_tok, return_counts=True)
+    uniq_neg, counts_neg = np.unique(s_neg_tok, return_counts=True)
+    background_pos = _choose_collision_background_token(uniq_pos, counts_pos) or "EMPTY"
+    background_neg = _choose_collision_background_token(uniq_neg, counts_neg) or "EMPTY"
+
+    pos_r, pos_c = action_pos
+    neg_r, neg_c = action_neg
+    in_bounds_pos = 0 <= pos_r < s_pos_tok.shape[0] and 0 <= pos_c < s_pos_tok.shape[1]
+    in_bounds_neg = 0 <= neg_r < s_neg_tok.shape[0] and 0 <= neg_c < s_neg_tok.shape[1]
+    action_cell_pos = str(s_pos_tok[pos_r, pos_c]) if in_bounds_pos else "OOB"
+    action_cell_neg = str(s_neg_tok[neg_r, neg_c]) if in_bounds_neg else "OOB"
+
+    pos_tokens = {str(tok) for tok in uniq_pos if str(tok) != background_pos}
+    neg_tokens = {str(tok) for tok in uniq_neg if str(tok) != background_neg}
+    union_non_bg = sorted(pos_tokens | neg_tokens)
+    changed_tokens: list[str] = []
+    unchanged_tokens: list[str] = []
+    token_change_lines: list[str] = []
+    for tok in union_non_bg:
+        pos_positions = _find_token_positions(s_pos_tok, tok)
+        neg_positions = _find_token_positions(s_neg_tok, tok)
+        if pos_positions == neg_positions:
+            if pos_positions:
+                unchanged_tokens.append(tok)
+            continue
+        changed_tokens.append(tok)
+        token_change_lines.append(
+            f"  {tok}: POS {_summarize_positions_for_collision(pos_positions)} | "
+            f"NEG {_summarize_positions_for_collision(neg_positions)}"
+        )
+    token_change_lines = token_change_lines[:5]
+
+    rays_pos = _format_action_rays_summary(s_pos_tok, action_pos, background_pos)
+    rays_neg = _format_action_rays_summary(s_neg_tok, action_neg, background_neg)
+    diffs = _diff_cells(s_pos_tok, s_neg_tok, limit=min(8, DIFF_LIMIT))
+
+    lines = []
+    lines.append("CONTRASTIVE_HINTS:")
+    lines.append("- SAME:")
+    if s_pos_tok.shape == s_neg_tok.shape:
+        lines.append(
+            f"  board_shape={s_pos_tok.shape[0]}x{s_pos_tok.shape[1]} matches"
+        )
+    if action_pos == action_neg:
+        lines.append(f"  action matches exactly: {action_pos}")
+    else:
+        lines.append(f"  actions differ: POS {action_pos} vs NEG {action_neg}")
+    if action_cell_pos == action_cell_neg:
+        lines.append(f"  action cell token matches: {action_cell_pos}")
+    else:
+        lines.append(
+            f"  action cell token differs: POS {action_cell_pos} vs NEG {action_cell_neg}"
+        )
+    if pos_tokens == neg_tokens:
+        lines.append(f"  non-background token set matches: {sorted(pos_tokens)}")
+    else:
+        lines.append(
+            f"  token-set difference: POS_only={sorted(pos_tokens - neg_tokens)}, "
+            f"NEG_only={sorted(neg_tokens - pos_tokens)}"
+        )
+    if rays_pos == rays_neg:
+        lines.append(f"  action rays match: {rays_pos}")
+    if unchanged_tokens:
+        lines.append(
+            f"  unchanged token footprints: {unchanged_tokens[:6]}"
+        )
+
+    lines.append("- DIFFERENT:")
+    if diffs:
+        lines.append(f"  top cell diffs: {diffs}")
+    else:
+        lines.append("  no raw cell diffs captured in the first diff window")
+    if rays_pos != rays_neg:
+        lines.append(f"  action rays POS: {rays_pos}")
+        lines.append(f"  action rays NEG: {rays_neg}")
+    if token_change_lines:
+        lines.extend(token_change_lines)
+    else:
+        lines.append("  token footprints appear identical at the whole-grid level")
+
+    lines.append("- FEATURE_DIRECTION:")
+    lines.append(
+        "  explain why the same action should be separated using whole-grid structure"
+    )
+    lines.append(
+        "  prefer relative placement, alignment, extension, enclosure, or reachability"
+    )
+    lines.append(
+        "  use changed structures relative to stable anchors, not total counts or thresholds"
+    )
+    return "\n".join(lines)
+
+
+def _format_one_example_enc4(
+    s: Any,
+    a: Any,
+    *,
+    label: int,
+    idx: int,
+    symbol_map: dict[str, str],
+    small_list_threshold: int = SMALL_LIST_THRESHOLD,
+) -> str:
+    """Format one labeled (state, action) example using whole-grid enc_4."""
+    s, (r, c) = require_grid_state_action(s, a, context="_format_one_example_enc4")
+    s_tok = _maybe_map_ascii_tokens(s, symbol_map)
+    h, w = s_tok.shape[0], s_tok.shape[1]
+    tokens, counts = np.unique(s_tok, return_counts=True)
+    background = _choose_collision_background_token(tokens, counts)
+    non_bg_tokens = sorted(str(tok) for tok in tokens if str(tok) != background)
+
+    in_bounds = 0 <= r < h and 0 <= c < w
+    cell = s_tok[r, c] if in_bounds else "OOB"
+    lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
+    lines.append(f"BOARD: {h}x{w}")
+    if non_bg_tokens:
+        lines.append(f"TOKENS: [{', '.join(non_bg_tokens)}]")
+    lines.append("WHOLE_GRID:")
+    lines.append("[")
+    lines.append(_render_grid_with_action(s_tok, (r, c), symbol_map))
+    lines.append("]")
+    lines.append("GLOBAL_STRUCTURE:")
+    for tok in non_bg_tokens:
+        positions = _find_token_positions(s_tok, tok)
+        lines.append(
+            f"- {tok}: {_summarize_positions_for_collision(positions, small_list_threshold=small_list_threshold)}"
+        )
+    lines.append(
+        f"ACTION_RAYS: {_format_action_rays_summary(s_tok, (r, c), background)}"
+    )
     return "\n".join(lines)
 
 
@@ -1609,15 +1822,13 @@ def _format_one_example_enc2(
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     h, w = s_tok.shape[0], s_tok.shape[1]
     tokens, counts = np.unique(s_tok, return_counts=True)
-    bg_idx = int(np.argmax(counts)) if tokens.size else -1
-    background = tokens[bg_idx] if bg_idx >= 0 else ""
+    background = _choose_collision_background_token(tokens, counts)
 
     in_bounds = 0 <= r < h and 0 <= c < w
     cell = s_tok[r, c] if in_bounds else "OOB"
 
     lines = [f"- idx={idx} label={label} action=({r}, {c}) cell={cell}"]
     lines.append(f"BOARD: {h}x{w}")
-    lines.append(f"BACKGROUND_TOKEN: {background}")
 
     non_bg_tokens = sorted([tok for tok in tokens if tok != background])
     lines.append(f"TOKENS: [{', '.join(non_bg_tokens)}]")
@@ -1857,8 +2068,7 @@ def _format_one_example_enc2_delta(
     )
     s_tok = _maybe_map_ascii_tokens(s, symbol_map)
     tokens, counts = np.unique(s_tok, return_counts=True)
-    bg_idx = int(np.argmax(counts)) if tokens.size else -1
-    background = tokens[bg_idx] if bg_idx >= 0 else ""
+    background = _choose_collision_background_token(tokens, counts)
 
     in_bounds = 0 <= r < s_tok.shape[0] and 0 <= c < s_tok.shape[1]
     cell = s_tok[r, c] if in_bounds else "OOB"
@@ -1971,22 +2181,34 @@ def build_collision_repair_prompt(
             "Need at least 1 positive and 1 negative from the SAME feature-key bucket."
         )
 
+    enc_aliases = {"enc1": "enc_1", "enc2": "enc_2", "enc4": "enc_4"}
+    collision_feedback_enc = enc_aliases.get(
+        collision_feedback_enc, collision_feedback_enc
+    )
+
     use_ascii = collision_feedback_enc == "enc_1"
-    if collision_feedback_enc not in {"enc_1", "enc_2"}:
-        raise ValueError("collision_feedback_enc must be 'enc_1' or 'enc_2'")
+    if collision_feedback_enc not in {"enc_1", "enc_2", "enc_4"}:
+        raise ValueError(
+            "collision_feedback_enc must be 'enc_1', 'enc_2', or 'enc_4'"
+        )
     use_enc2 = collision_feedback_enc == "enc_2"
+    use_enc4 = collision_feedback_enc == "enc_4"
 
     symbol_map: dict[str, str] = {}
     legend_block = ""
     is_kinder = is_kinder_env(env_name)
+    use_grid_enc4 = use_enc4 and not is_kinder
 
     if use_ascii and env_name and not is_kinder:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
         legend_block = _format_ascii_legend(symbol_map) + "\n\n"
+    elif use_grid_enc4 and env_name:
+        symbol_map = grid_hint_config.get_symbol_map(env_name)
+        legend_block = _format_ascii_legend(symbol_map) + "\n\n"
     elif env_name and not is_kinder:
         symbol_map = grid_hint_config.get_symbol_map(env_name)
-    # FORMAT2 note: uses richer evidence + deterministic example selection.
-    if use_enc2:
+    # FORMAT2/4 note: use richer evidence + deterministic example selection.
+    if use_enc2 or use_enc4:
         if not is_kinder:
             max_pos = 3 if bucket_mode == "global_mixed_label" else 1
             pos_indices, neg_indices = _select_diverse_examples(
@@ -2030,6 +2252,10 @@ def build_collision_repair_prompt(
             pos_blocks.append(
                 _format_one_example_ascii(s, a, label=1, idx=idx, symbol_map=symbol_map)
             )
+        elif use_grid_enc4:
+            pos_blocks.append(
+                _format_one_example_enc4(s, a, label=1, idx=idx, symbol_map=symbol_map)
+            )
         elif use_enc2 and is_kinder:
             pos_blocks.append(_format_one_example_kinder_enc2(s, a, label=1, idx=idx))
         elif use_enc2:
@@ -2046,6 +2272,10 @@ def build_collision_repair_prompt(
         if use_ascii:
             neg_blocks.append(
                 _format_one_example_ascii(s, a, label=0, idx=idx, symbol_map=symbol_map)
+            )
+        elif use_grid_enc4:
+            neg_blocks.append(
+                _format_one_example_enc4(s, a, label=0, idx=idx, symbol_map=symbol_map)
             )
         elif use_enc2 and is_kinder:
             if i == 0:
@@ -2085,6 +2315,12 @@ def build_collision_repair_prompt(
                         s, a, label=1, idx=idx, symbol_map=symbol_map
                     )
                 )
+            elif use_grid_enc4:
+                pos_blocks_2.append(
+                    _format_one_example_enc4(
+                        s, a, label=1, idx=idx, symbol_map=symbol_map
+                    )
+                )
             elif use_enc2 and is_kinder:
                 pos_blocks_2.append(
                     _format_one_example_kinder_enc2(s, a, label=1, idx=idx)
@@ -2103,6 +2339,12 @@ def build_collision_repair_prompt(
             if use_ascii:
                 neg_blocks_2.append(
                     _format_one_example_ascii(
+                        s, a, label=0, idx=idx, symbol_map=symbol_map
+                    )
+                )
+            elif use_grid_enc4:
+                neg_blocks_2.append(
+                    _format_one_example_enc4(
                         s, a, label=0, idx=idx, symbol_map=symbol_map
                     )
                 )
@@ -2131,7 +2373,14 @@ def build_collision_repair_prompt(
             else:
                 neg_blocks_2.append(_format_one_example_coords(s, a, label=0, idx=idx))
     diff_hints_1 = ""
-    if use_enc2 and pos_indices and neg_indices:
+    if use_grid_enc4 and pos_indices and neg_indices:
+        try:
+            diff_hints_1 = _build_diff_hints_enc4(
+                pos_indices[0], neg_indices[0], examples, symbol_map
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            diff_hints_1 = ""
+    elif use_enc2 and pos_indices and neg_indices:
         try:
             diff_hints_1 = _build_diff_hints(
                 pos_indices[0], neg_indices[0], examples, symbol_map
@@ -2142,7 +2391,14 @@ def build_collision_repair_prompt(
     bucket2_block = ""
     if pos_blocks_2 or neg_blocks_2:
         diff_hints_2 = ""
-        if use_enc2 and pos_indices_2 and neg_indices_2:
+        if use_grid_enc4 and pos_indices_2 and neg_indices_2:
+            try:
+                diff_hints_2 = _build_diff_hints_enc4(
+                    pos_indices_2[0], neg_indices_2[0], examples, symbol_map
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                diff_hints_2 = ""
+        elif use_enc2 and pos_indices_2 and neg_indices_2:
             try:
                 diff_hints_2 = _build_diff_hints(
                     pos_indices_2[0], neg_indices_2[0], examples, symbol_map
@@ -2183,11 +2439,12 @@ NEGATIVE EXAMPLES (label = 0):
         except Exception:  # pylint: disable=broad-exception-caught
             token_constants_block = "- ENV token constants from this domain."
 
-    # FORMAT2 dev note: enc_2 collision evidence now includes explicit token anchors,
-    # global counts, drawn compression + component stats, expanded local patch,
-    # rays/distances, and per-bucket DIFF HINTS. These extra fields help cheaper
-    # models separate positives/negatives while keeping code constraints strict.
-    if use_enc2 and is_kinder:
+    # FORMAT2/4 dev note:
+    # enc_2 uses richer state dumps; enc_4 uses contrastive whole-grid buckets.
+    # KinDER currently reuses enc_2-style summaries even if enc_4 is requested.
+    if use_grid_enc4:
+        feature_prompt_filename = "featured_collision_feedback_enc4.txt"
+    elif (use_enc2 or use_enc4) and is_kinder:
         feature_prompt_filename = "featured_collision_feedback_enc2_kinder.txt"
     elif use_enc2:
         feature_prompt_filename = "featured_collision_feedback_enc2.txt"
@@ -2231,11 +2488,12 @@ NEGATIVE EXAMPLES (label = 0):
     prompt_feature = prompt_feature.replace("{final_check_tokens}", final_check_tokens)
 
     if collision_template_feedback:
-        template_prompt_filename = (
-            "template_collision_feedback_enc2.txt"
-            if use_enc2
-            else "template_collision_feedback_enc1.txt"
-        )
+        if use_grid_enc4:
+            template_prompt_filename = "template_collision_feedback_enc4.txt"
+        elif use_enc2 or (use_enc4 and is_kinder):
+            template_prompt_filename = "template_collision_feedback_enc2.txt"
+        else:
+            template_prompt_filename = "template_collision_feedback_enc1.txt"
         template_prompt_path = (
             Path(__file__).resolve().parents[2]
             / "dsl"

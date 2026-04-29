@@ -114,6 +114,25 @@ def test_global_bucket_prompt_uses_multiple_positive_representatives() -> None:
     assert prompt_global.count("label=0 action=") >= 2
 
 
+def test_enc4_prompt_uses_whole_grid_and_contrastive_hints() -> None:
+    """enc_4 prompts should use whole-grid boards plus contrastive hints."""
+    examples = [(_make_grid(i), (i % 3, (i + 1) % 3)) for i in range(4)]
+
+    prompt = build_collision_repair_prompt(
+        pos_indices=[0, 1],
+        neg_indices=[2, 3],
+        examples=examples,
+        collision_feedback_enc="enc_4",
+        collision_template_feedback=False,
+        bucket_mode="global_mixed_label",
+    )
+
+    assert "WHOLE_GRID:" in prompt
+    assert "CONTRASTIVE_HINTS:" in prompt
+    assert "GLOBAL_COUNTS:" not in prompt
+    assert "count > 4" in prompt
+
+
 def test_build_train_matrix_passes_collision_bucket_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

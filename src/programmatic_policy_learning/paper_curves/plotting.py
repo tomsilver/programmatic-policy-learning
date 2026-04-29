@@ -60,6 +60,7 @@ def save_environment_plots(
     for env_cfg in environments:
         env_name = str(env_cfg["name"])
         env_key = str(env_cfg.get("key", env_name))
+        caption = str(env_cfg.get("plot_caption", "")).strip()
         env_df = summary_df[summary_df["environment_key"] == env_key].copy()
         if env_df.empty:
             continue
@@ -108,14 +109,30 @@ def save_environment_plots(
         ax.set_title(str(env_cfg.get("plot_title", env_name)))
         ax.legend(frameon=False)
         ax.set_axisbelow(True)
-        fig.tight_layout()
+        if caption:
+            fig.text(
+                0.5,
+                0.01,
+                caption,
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                wrap=True,
+            )
+            fig.tight_layout(rect=(0.0, 0.08, 1.0, 1.0))
+        else:
+            fig.tight_layout()
 
         stem = slugify(env_key)
         png_path = plots_dir / f"{stem}.png"
         pdf_path = plots_dir / f"{stem}.pdf"
+        caption_path = plots_dir / f"{stem}.caption.txt"
         fig.savefig(png_path, bbox_inches="tight")
         fig.savefig(pdf_path, bbox_inches="tight")
         plt.close(fig)
         saved_paths.extend([png_path, pdf_path])
+        if caption:
+            caption_path.write_text(f"{caption}\n", encoding="utf-8")
+            saved_paths.append(caption_path)
 
     return saved_paths
