@@ -58,7 +58,7 @@ def _build_jobs(
     methods: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     demo_counts = [int(each) for each in config["demo_counts"]]
-    seeds = [int(each) for each in config["seeds"]]
+    global_seeds = [int(each) for each in config["seeds"]]
     demo_id_pool = [int(each) for each in config.get("demo_id_pool", list(range(11)))]
     test_env_nums = [
         int(each) for each in config.get("test_env_nums", list(range(11, 20)))
@@ -70,16 +70,17 @@ def _build_jobs(
         env_key = str(env_cfg.get("key", env_cfg["name"]))
         for method_cfg in methods:
             backend = str(method_cfg["backend"]).lower()
-            if backend not in {"lpp", "cap"}:
+            if backend not in {"lpp", "cap", "fcn", "vlm"}:
                 raise ValueError(
                     f"Unsupported backend '{backend}' for method {method_cfg['name']}."
                 )
             backend_cfg = dict(codebases.get(backend, {}))
             repo_root = Path(str(backend_cfg.get("root_dir", "."))).resolve()
             backend_python = str(backend_cfg.get("python_executable", sys.executable))
+            method_seeds = [int(each) for each in method_cfg.get("seeds", global_seeds)]
             for demo_count in demo_counts:
                 demo_ids = demo_ids_for_count(demo_id_pool, demo_count)
-                for seed in seeds:
+                for seed in method_seeds:
                     run_id = (
                         f"{slugify(env_key)}__{slugify(str(method_cfg['name']))}"
                         f"__d{demo_count}__s{seed}"
@@ -109,6 +110,10 @@ def _wrapper_module_for_backend(backend: str) -> str:
         return "programmatic_policy_learning.paper_curves.lpp_single_run"
     if backend == "cap":
         return "programmatic_policy_learning.paper_curves.cap_single_run"
+    if backend == "fcn":
+        return "programmatic_policy_learning.paper_curves.fcn_single_run"
+    if backend == "vlm":
+        return "programmatic_policy_learning.paper_curves.vlm_single_run"
     raise ValueError(f"Unsupported backend '{backend}'.")
 
 
