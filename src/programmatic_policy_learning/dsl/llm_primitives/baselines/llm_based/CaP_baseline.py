@@ -1579,6 +1579,7 @@ def main() -> None:
     )
     run_tag = f"{env_tag}/{args.model}"
     demo_env_nums = [int(env_num) for env_num in args.demo_env_nums]
+    print(f"Using demonstration env ids: {demo_env_nums}")
     demo_env_tag = _demo_env_nums_tag(demo_env_nums)
 
     logging.info(

@@ -515,7 +515,11 @@ def get_program_set(
         offline_mode = bool(loading_cfg.get("offline", 0))
         py_llm_client: PretrainedLargeModel | None = None
         if not offline_mode:
-            cache_path = _cache_path_with_model("py_feature_cache", llm_model)
+            configured_cache_path = program_generation.get("py_feature_cache_path")
+            if configured_cache_path:
+                cache_path = Path(str(configured_cache_path))
+            else:
+                cache_path = _cache_path_with_model("py_feature_cache", llm_model)
             cache = build_sqlite_llm_cache(
                 cache_path,
                 llm_model=llm_model,

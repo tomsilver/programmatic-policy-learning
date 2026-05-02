@@ -119,6 +119,37 @@ def instantiate_approach(
             env_specs=env_specs,
         )
 
+    if cfg.approach_name == "fcn":
+        if expert_cfg is None:
+            raise ValueError(
+                "Missing expert config. Set env.expert or top-level expert."
+            )
+
+        object_types: list[str] | tuple[str, ...]
+        if not hasattr(env, "get_object_types"):
+            object_types = []
+        else:
+            object_types = env.get_object_types()
+
+        expert = hydra.utils.instantiate(
+            expert_cfg,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+        )
+
+        return hydra.utils.instantiate(
+            cfg.approach,
+            cfg.env.description,
+            env.observation_space,
+            env.action_space,
+            cfg.seed,
+            expert,
+            env_factory,
+            object_types=object_types,
+        )
+
     # Handle residual learning.
     if cfg.approach_name == "residual":
         if expert_cfg is None:

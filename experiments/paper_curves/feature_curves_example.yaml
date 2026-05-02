@@ -1,0 +1,66 @@
+experiment_name: feature_curves_example
+output_root: results/feature_curves
+continue_on_error: true
+error_band: sem
+eval_max_steps: 100
+
+train_demo_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] # 2, 3, 4, 5, 6, 7, 8, 9]
+feature_counts: [10, 50, 100, 200, 500, 1000, 5000] #50, 100, 200, 500, 1000, 5000, 10000]
+seeds: [0, 1, 2, 3, 4] #, 
+test_env_nums: [10, 11, 12, 13, 14] #,  15, 16, 17, 18, 19
+
+codebases:
+  lpp:
+    root_dir: .
+    python_executable: python
+
+environments:
+  - name: StopTheFall
+    key: stf
+    lpp_env: ggg_stf
+    cap_env: StopTheFall
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  - name: CheckmateTactic
+    key: ct
+    lpp_env: ggg_checkmate
+    cap_env: CheckmateTactic
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  
+  - name: ReachForTheStar
+    key: rfts
+    lpp_env: ggg_rfts
+    cap_env: ReachForTheStar
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  - name: Chase
+    key: ec
+    lpp_env: ggg_chase
+    plot_title: Chase
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"  
+  - name: Nim
+    key: nim
+    lpp_env: ggg_nim
+    plot_title: Nim
+    plot_caption: "Feature-budget comparison between the LLM feature generator and original LPP using 10 training demos and a fixed held-out test set."
+
+methods:
+  - name: our_main_topk
+    display_name: Our approach
+    backend: lpp
+    shared_py_feature_cache: true
+    shared_run_cache: true
+    feature_budget_override: approach.cross_demo_feature_filter.top_k_features
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.cross_demo_feature_filter.enabled=true
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.collision_feedback_enabled=false
+
+  - name: lpp_original
+    display_name: LPP original
+    backend: lpp
+    seeds: [0]
+    feature_budget_override: approach.num_programs
+    overrides:
+      - approach.program_generation.strategy=fixed_grid_v1
+      - approach.program_generation_step_size=100

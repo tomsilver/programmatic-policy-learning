@@ -40,6 +40,8 @@ def save_environment_plots(
     environments: list[dict[str, Any]],
     methods: list[dict[str, Any]],
     error_band: str = "sem",
+    x_key: str = "demo_count",
+    x_label: str = "Number of demonstrations",
 ) -> list[Path]:
     """Save one line plot per environment."""
     if summary_df.empty:
@@ -69,16 +71,14 @@ def save_environment_plots(
         color_cycle = iter(plt.rcParams["axes.prop_cycle"].by_key()["color"])
 
         for method_name in method_order:
-            method_df = env_df[env_df["method_name"] == method_name].sort_values(
-                "demo_count"
-            )
+            method_df = env_df[env_df["method_name"] == method_name].sort_values(x_key)
             if method_df.empty:
                 continue
             style = dict(method_styles.get(method_name, {}))
             color = style.pop("color", next(color_cycle, None))
             linestyle = style.pop("linestyle", "-")
             marker = style.pop("marker", "o")
-            x_values = method_df["demo_count"].to_numpy()
+            x_values = method_df[x_key].to_numpy()
             y_values = method_df["mean_success_rate"].to_numpy()
             band_values = None
             if error_band == "std":
@@ -102,7 +102,7 @@ def save_environment_plots(
                 upper = (y_values + band_values).clip(0.0, 1.0)
                 ax.fill_between(x_values, lower, upper, color=color, alpha=0.18)
 
-        ax.set_xlabel("Number of demonstrations")
+        ax.set_xlabel(x_label)
         ax.set_ylabel("Test success rate")
         ax.set_ylim(0.0, 1.0)
         ax.set_xlim(left=0)

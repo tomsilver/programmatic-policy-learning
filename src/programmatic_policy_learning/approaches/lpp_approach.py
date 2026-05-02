@@ -495,6 +495,19 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         programs_sa: list[StateActionProgram],
         program_prior_log_probs: list[float] | None,
     ) -> tuple[Any, list[StateActionProgram], list[float] | None]:
+        def _apply_feature_mask(
+            keep_mask: np.ndarray,
+        ) -> tuple[Any, list[StateActionProgram], list[float] | None]:
+            X_kept = X[:, keep_mask]
+            programs_kept = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
+            if program_prior_log_probs is None:
+                priors_kept = None
+            else:
+                priors_kept = [
+                    lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
+                ]
+            return X_kept, programs_kept, priors_kept
+
         cfg = dict(self.cross_demo_feature_filter or {})
         if not bool(cfg.get("enabled", True)):
             logging.info("Cross-demo feature scoring disabled.")
@@ -542,51 +555,112 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 "num_features": len(scores),
                 "num_rows": int(X.shape[0]),
                 "demo_ids": sorted(int(x) for x in np.unique(row_demo_ids)),
+                "top_k_features": cfg.get("top_k_features"),
             },
         )
 
         apply_filter = bool(cfg.get("apply_filter", cfg.get("filter_enabled", False)))
-        if not apply_filter:
+        if apply_filter:
+            num_demos = max(1, len(np.unique(row_demo_ids)))
+            min_pos_demo_support = min(
+                num_demos,
+                int(cfg.get("min_pos_demo_support", 2 if num_demos > 1 else 1)),
+            )
+            keep_mask = feature_score_keep_mask(
+                scores,
+                min_pos_demo_support=min_pos_demo_support,
+                min_neg_demo_support=int(
+                    cfg.get("min_neg_demo_support", min_pos_demo_support)
+                ),
+                allow_negative_support=bool(cfg.get("allow_negative_support", True)),
+                min_abs_mean_demo_contrast=float(
+                    cfg.get("min_abs_mean_demo_contrast", 0.02)
+                ),
+                min_consistency_frac=float(cfg.get("min_consistency_frac", 0.4)),
+                min_total_fire_rate=float(cfg.get("min_total_fire_rate", 0.005)),
+                max_total_fire_rate=float(cfg.get("max_total_fire_rate", 0.95)),
+            )
+            if keep_mask.all():
+                logging.info(
+                    "Cross-demo feature filter kept all %d features.", len(scores)
+                )
+            elif not keep_mask.any():
+                logging.warning(
+                    "Cross-demo feature filter would remove all features; "
+                    "keeping original set."
+                )
+            else:
+                removed = int((~keep_mask).sum())
+                logging.info(
+                    "Cross-demo feature filter removed %d/%d features.",
+                    removed,
+                    len(scores),
+                )
+                for score in [
+                    s for s in scores if not keep_mask[int(s["feature_index"])]
+                ][:10]:
+                    logging.info(
+                        "Cross-demo drop score=%.4f pos_demo=%d "
+                        "neg_demo=%d mean_abs_demo_contrast=%.4f "
+                        "consistency=%.2f program=%s",
+                        float(score["cross_demo_score"]),
+                        int(score["pos_demo_support_count"]),
+                        int(score["neg_demo_support_count"]),
+                        float(score["mean_demo_abs_contrast"]),
+                        float(score["contrast_consistency_frac"]),
+                        score["program"],
+                    )
+                X, programs_sa, program_prior_log_probs = _apply_feature_mask(
+                    keep_mask
+                )
+                scores = [
+                    score
+                    for score in scores
+                    if bool(keep_mask[int(score["feature_index"])])
+                ]
+                for new_idx, score in enumerate(scores):
+                    score["feature_index"] = new_idx
+
+        top_k_raw = cfg.get("top_k_features")
+        if top_k_raw is None:
             return X, programs_sa, program_prior_log_probs
 
-        num_demos = max(1, len(np.unique(row_demo_ids)))
-        min_pos_demo_support = min(
-            num_demos,
-            int(cfg.get("min_pos_demo_support", 2 if num_demos > 1 else 1)),
-        )
-        keep_mask = feature_score_keep_mask(
-            scores,
-            min_pos_demo_support=min_pos_demo_support,
-            min_neg_demo_support=int(
-                cfg.get("min_neg_demo_support", min_pos_demo_support)
-            ),
-            allow_negative_support=bool(cfg.get("allow_negative_support", True)),
-            min_abs_mean_demo_contrast=float(
-                cfg.get("min_abs_mean_demo_contrast", 0.02)
-            ),
-            min_consistency_frac=float(cfg.get("min_consistency_frac", 0.4)),
-            min_total_fire_rate=float(cfg.get("min_total_fire_rate", 0.005)),
-            max_total_fire_rate=float(cfg.get("max_total_fire_rate", 0.95)),
-        )
-        if keep_mask.all():
-            logging.info("Cross-demo feature filter kept all %d features.", len(scores))
-            return X, programs_sa, program_prior_log_probs
-        if not keep_mask.any():
+        top_k = int(top_k_raw)
+        if top_k <= 0:
             logging.warning(
-                "Cross-demo feature filter would remove all features; "
-                "keeping original set."
+                "Ignoring non-positive cross-demo top_k_features=%s.", top_k_raw
+            )
+            return X, programs_sa, program_prior_log_probs
+        if top_k >= len(programs_sa):
+            logging.info(
+                "Cross-demo top-k cap %d >= current feature count %d; keeping all features.",
+                top_k,
+                len(programs_sa),
             )
             return X, programs_sa, program_prior_log_probs
 
-        removed = int((~keep_mask).sum())
-        logging.info(
-            "Cross-demo feature filter removed %d/%d features.",
-            removed,
-            len(scores),
+        ranked_scores = sorted(
+            scores,
+            key=lambda score: (
+                -float(score["cross_demo_score"]),
+                int(score["feature_index"]),
+            ),
         )
-        for score in [s for s in scores if not keep_mask[int(s["feature_index"])]][:10]:
+        keep_indices = sorted(
+            int(score["feature_index"]) for score in ranked_scores[:top_k]
+        )
+        keep_mask = np.zeros(len(programs_sa), dtype=bool)
+        keep_mask[keep_indices] = True
+        dropped_count = len(programs_sa) - top_k
+        logging.info(
+            "Cross-demo top-k cap kept %d/%d features and dropped %d.",
+            top_k,
+            len(programs_sa),
+            dropped_count,
+        )
+        for score in ranked_scores[: min(10, top_k)]:
             logging.info(
-                "Cross-demo drop score=%.4f pos_demo=%d "
+                "Cross-demo keep score=%.4f pos_demo=%d "
                 "neg_demo=%d mean_abs_demo_contrast=%.4f "
                 "consistency=%.2f program=%s",
                 float(score["cross_demo_score"]),
@@ -596,14 +670,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 float(score["contrast_consistency_frac"]),
                 score["program"],
             )
-
-        X = X[:, keep_mask]
-        programs_sa = [p for i, p in enumerate(programs_sa) if keep_mask[i]]
-        if program_prior_log_probs is not None:
-            program_prior_log_probs = [
-                lp for i, lp in enumerate(program_prior_log_probs) if keep_mask[i]
-            ]
-        return X, programs_sa, program_prior_log_probs
+        return _apply_feature_mask(keep_mask)
 
     @staticmethod
     def _normalize_grid_values(raw_values: Sequence[Any] | Any) -> list[Any]:

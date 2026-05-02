@@ -5,7 +5,7 @@ program_generation_step_size: 10
 num_programs: 100 # for fixed
 num_dts: 5
 max_num_particles: 25
-map_choices: false
+map_choices: true
 start_symbol: 0 # for fixed dsl/grammar
 dt_splitter: best
 dt_max_depth: null # null
@@ -17,6 +17,7 @@ permissive_filter_max_avg_count: 2
 cross_demo_feature_filter:
   enabled: false
   apply_filter: false
+  top_k_features: null
   consistency_tau: 0.05
   allow_negative_support: true
   min_pos_demo_support: 2
@@ -31,7 +32,7 @@ collision_template_feedback: false #false: means the feedback is just features/n
 collision_feedback_num_buckets: 2
 collision_feedback_bucket_mode: "positive_anchor" # "positive_anchor" | "global_mixed_label"
 collision_feedback_max_new_features: 5000
-collision_feedback_max_rounds: 5
+collision_feedback_max_rounds: 8
 collision_feedback_target_collisions: 0
 prior_version: "uniform" # v1 | v2 | uniform
 prior_beta: 2
@@ -57,6 +58,7 @@ recovery_augmentation:
 program_generation:
   strategy: "py_feature_gen"  # Options: "fixed_grid_v1" "py_feature_gen", "dsl_generator", "feature_generator", offline_loader" "grid_v1_ablated"
   llm_model: "gpt-4.1"
+  py_feature_cache_path: null
   skip_rate: 1
   py_feature_gen_mode: "feature_payload"  # "feature_payload" | "generator_script"
   py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/hybrid.txt"  # continuous_example use generator.txt when py_feature_gen_mode=generator_script
@@ -64,14 +66,16 @@ program_generation:
   num_features: 50
   encoding_method: "enc_5" #  "enc_1", "enc_4", "enc_5" are the common options
   multi_prompt_ensemble:
-    num_seeds_per_subset: 2
+    num_seeds_per_subset: 3
     demo_subsets: 
-      # - [3, 4] 
+      # - [0, 1]
+      # - [2, 3]
       - [0, 1, 2]
-      - [8, 9]
+      # - [8, 9]      
+      - [3, 4] 
       # - [7, 8, 9]
-      # - [5, 6, 7]
-
+      - [5, 6, 7]
+      - [8, 9]   
   
   loading:
     offline: 0 # 0 for using LLM / 1 for using the following path data
@@ -80,7 +84,7 @@ program_generation:
     # Discrete-only switch. Continuous mode is always quantized expansion.
     enabled: false
     discrete:
-      K: 40
+      K: 50
       local_radius: 2
       w_local: 0.55
       w_struct: 0.3

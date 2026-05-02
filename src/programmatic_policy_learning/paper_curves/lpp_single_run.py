@@ -272,6 +272,9 @@ def _run(job: dict[str, Any]) -> int:
     setup_logging(artifact_dir / "wrapper.log")
     repo_root = Path(job["repo_root"]).resolve()
     os.chdir(artifact_dir)
+    shared_run_cache_dir = job.get("shared_run_cache_dir")
+    if shared_run_cache_dir:
+        os.environ["PPL_CACHE_DIR_OVERRIDE"] = str(shared_run_cache_dir)
     _append_repo_paths(repo_root)
 
     logging.info("Starting LPP single-run wrapper for %s", job["run_id"])
@@ -326,6 +329,12 @@ def _run(job: dict[str, Any]) -> int:
             ),
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
+            "feature_count": (
+                int(job["feature_count"]) if "feature_count" in job else None
+            ),
+            "heldout_env_num": (
+                int(job["heldout_env_num"]) if "heldout_env_num" in job else None
+            ),
             "seed": int(job["seed"]),
             "test_env_nums": test_env_nums,
             "num_test_solved": num_test_solved,
@@ -376,6 +385,12 @@ def _run(job: dict[str, Any]) -> int:
             ),
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
+            "feature_count": (
+                int(job["feature_count"]) if "feature_count" in job else None
+            ),
+            "heldout_env_num": (
+                int(job["heldout_env_num"]) if "heldout_env_num" in job else None
+            ),
             "seed": int(job["seed"]),
             "test_env_nums": [int(each) for each in job["test_env_nums"]],
             "num_test_solved": None,

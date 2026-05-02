@@ -7,6 +7,16 @@ from typing import Any, Callable, Iterable, Union
 
 from scipy.sparse import csr_matrix, load_npz, save_npz
 
+_CACHE_DIR_OVERRIDE_ENV = "PPL_CACHE_DIR_OVERRIDE"
+
+
+def _resolve_cache_dir(cache_dir: str) -> str:
+    """Return the effective cache dir, honoring the runtime override env var."""
+    override = os.getenv(_CACHE_DIR_OVERRIDE_ENV)
+    if override and cache_dir == "cache":
+        return override
+    return cache_dir
+
 
 def cache_single_output(output: Any, cache_file: str) -> None:
     """Persist a single cached output to disk.
@@ -65,9 +75,6 @@ def manage_cache(
         A decorator that can be applied to functions.
     """
 
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
-
     if isinstance(extensions, str):
         single_output = True
         extensions_list: list[str] = [extensions]
@@ -77,6 +84,10 @@ def manage_cache(
 
     def decorator_manage_cache(func: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper_cache_output(*args: Any, **kwargs: Any) -> Any:
+            effective_cache_dir = _resolve_cache_dir(cache_dir)
+            if not os.path.exists(effective_cache_dir):
+                os.makedirs(effective_cache_dir)
+
             # Create a simple run id from positional args
             if key_fn is not None:
                 # key_fn should return a short string
@@ -86,7 +97,8 @@ def manage_cache(
 
             # Check the existence of the first cache file for this run
             cache_file = os.path.join(
-                cache_dir, f"{func.__name__}_{run_id}_{0}{extensions_list[0]}"
+                effective_cache_dir,
+                f"{func.__name__}_{run_id}_{0}{extensions_list[0]}",
             )
 
             if not os.path.isfile(cache_file):
@@ -98,7 +110,8 @@ def manage_cache(
                     zip(func_outputs, extensions_list)
                 ):
                     cache_file = os.path.join(
-                        cache_dir, f"{func.__name__}_{run_id}_{i}{extension}"
+                        effective_cache_dir,
+                        f"{func.__name__}_{run_id}_{i}{extension}",
                     )
                     cache_single_output(output, cache_file)
 
@@ -107,7 +120,8 @@ def manage_cache(
             outputs: list[Any] = []
             for i, extension in enumerate(extensions_list):
                 cache_file = os.path.join(
-                    cache_dir, f"{func.__name__}_{run_id}_{i}{extension}"
+                    effective_cache_dir,
+                    f"{func.__name__}_{run_id}_{i}{extension}",
                 )
                 output = load_single_cache_output(cache_file)
                 outputs.append(output)

@@ -1,0 +1,18 @@
+_target_: programmatic_policy_learning.approaches.fcn_approach.FCNApproach
+
+# The first positional args come from the runner
+# (env desc, spaces, seed, expert, env_factory).
+
+demo_numbers: [0,1,2,3,4,5,6,7,8,9]
+max_demo_length: 100
+num_epochs: 200
+min_epochs: 25
+batch_size: 64
+learning_rate: 0.001
+weight_decay: 0.0
+num_conv_layers: 8
+input_hidden_channels: 8
+hidden_channels: 4
+device: auto
+train_before_eval: true
+

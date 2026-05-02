@@ -5,8 +5,8 @@ error_band: sem
 eval_max_steps: 100
 
 demo_id_pool: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-demo_counts: [1, 2, 3, 4, 5, 6,7,8,9,10]
-seeds: [0, 1, 2, 3 , 4, 5, 6, 7, 8, 9]
+demo_counts: [1,2,10] #, 5, 10 #1, 2, 3, 4, 5, 6,7,8,9,10
+seeds: [0, 1, 2, 3 , 4, 5, 6, 7, 8, 9] #, 1, 2, 3 , 4, 5, 6, 7, 8, 9
 test_env_nums: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
 codebases:
@@ -16,37 +16,40 @@ codebases:
   cap:
     root_dir: .
     python_executable: python
+  fcn:
+    root_dir: .
+    python_executable: python
 
 environments:
-  - name: Nim
-    key: nim
-    lpp_env: ggg_nim
-    cap_env: TwoPileNim
-    cap_env_type: grid
-    plot_title: Two-Pile-Nim
-    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  # - name: Nim
+  #   key: nim
+  #   lpp_env: ggg_nim
+  #   cap_env: TwoPileNim
+  #   cap_env_type: grid
+  #   plot_title: Two-Pile-Nim
+  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
     # plot_caption: "Comparison of test success rate versus number of expert demonstrations on Two-Pile-Nim. Shaded bands show the configured across-seed uncertainty."
-  - name: CheckmateTactic
-    key: ct
-    lpp_env: ggg_checkmate
-    cap_env: CheckmateTactic
-    cap_env_type: grid
-    plot_title: Checkmate-Tactic
-    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
-  - name: StopTheFall
-    key: stf
-    lpp_env: ggg_stf
-    cap_env: StopTheFall
-    cap_env_type: grid
-    plot_title: Stop-The-Fall
-    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
-  - name: ReachForTheStar
-    key: rfts
-    lpp_env: ggg_rfts
-    cap_env: ReachForTheStar
-    cap_env_type: grid
-    plot_title: Reach-For-The-Star
-    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  # - name: CheckmateTactic
+  #   key: ct
+  #   lpp_env: ggg_checkmate
+  #   cap_env: CheckmateTactic
+  #   cap_env_type: grid
+  #   plot_title: Checkmate-Tactic
+  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  # - name: StopTheFall
+  #   key: stf
+  #   lpp_env: ggg_stf
+  #   cap_env: StopTheFall
+  #   cap_env_type: grid
+  #   plot_title: Stop-The-Fall
+  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  # - name: ReachForTheStar
+  #   key: rfts
+  #   lpp_env: ggg_rfts
+  #   cap_env: ReachForTheStar
+  #   cap_env_type: grid
+  #   plot_title: Reach-For-The-Star
+  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
   - name: Chase
     key: ec
     lpp_env: ggg_chase
@@ -56,14 +59,114 @@ environments:
     plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"  
 
 methods:
-  - name: our_main
-    display_name: Our approach
+
+  - name: our_main_1
+    display_name: Our approach 1
     backend: lpp
     sync_prompt_demo_subsets: true
     overrides:
       - approach.program_generation.strategy=py_feature_gen
       - approach.program_generation.encoding_method=enc_5
-      - approach.collision_feedback_enabled=false
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=true
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+
+  - name: our_main_2
+    display_name: Our approach 2
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=false
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=true
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+
+  - name: our_main_3
+    display_name: Our approach 3
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=true
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+
+
+  - name: our_main_4
+    display_name: Our approach 4
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=true
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
+      - approach.cross_demo_feature_filter.enabled=true
+      - approach.cross_demo_feature_filter.apply_filter=true
+
+
+  - name: our_main_5
+    display_name: Our approach 5
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=true
+      - approach.cross_demo_feature_filter.apply_filter=true
+
+
+  - name: our_main_6
+    display_name: Our approach 6
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=positive_anchor
+      - approach.collision_feedback_max_rounds=8
+      - approach.program_generation.negative_sampling.enabled=true
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
       - approach.cross_demo_feature_filter.enabled=false
       - approach.cross_demo_feature_filter.apply_filter=false
 
@@ -105,8 +208,9 @@ methods:
   #     - --max-steps-per-traj
   #     - "40"
 
+
   - name: cap_enc5
-    display_name: CaP (enc 5)
+    display_name: LLM imitation
     backend: cap
     cli_args:
       - --encodings
@@ -115,3 +219,28 @@ methods:
       - gpt-4.1
       - --max-steps-per-traj
       - "40"
+
+  - name: lpp_original
+    display_name: LPP original (oracle)
+    backend: lpp
+    seeds: [0]
+    feature_budget_override: approach.num_programs
+    plot_style:
+      linestyle: ":"
+    overrides:
+      - approach.program_generation.strategy=fixed_grid_v1
+      - approach.program_generation_step_size=100
+
+  - name: fcn
+    display_name: FCN
+    backend: fcn
+    overrides:
+      - approach.num_epochs=300
+      - approach.batch_size=128
+      - approach.learning_rate=0.001
+
+  - name: vlm_imitation
+    display_name: VLM imitation
+    backend: vlm
+    seeds: [0]
+    model: gpt-4.1

@@ -28,7 +28,11 @@ def load_results_dataframe(results_dir: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def compute_summary(results_df: pd.DataFrame) -> pd.DataFrame:
+def compute_summary(
+    results_df: pd.DataFrame,
+    *,
+    x_key: str = "demo_count",
+) -> pd.DataFrame:
     """Aggregate per-seed results into mean/std/sem curves."""
     if results_df.empty:
         return pd.DataFrame()
@@ -36,6 +40,8 @@ def compute_summary(results_df: pd.DataFrame) -> pd.DataFrame:
     success_df = results_df[results_df["status"] == "success"].copy()
     if success_df.empty:
         return pd.DataFrame()
+    if x_key not in success_df.columns:
+        raise ValueError(f"Column '{x_key}' not found in results dataframe.")
 
     grouped = (
         success_df.groupby(
@@ -44,7 +50,7 @@ def compute_summary(results_df: pd.DataFrame) -> pd.DataFrame:
                 "environment_key",
                 "method_name",
                 "method_display_name",
-                "demo_count",
+                x_key,
             ],
             dropna=False,
         )["success_rate"]
@@ -68,5 +74,5 @@ def compute_summary(results_df: pd.DataFrame) -> pd.DataFrame:
         }
     )
     return grouped.sort_values(
-        by=["environment", "method_name", "demo_count"], ignore_index=True
+        by=["environment", "method_name", x_key], ignore_index=True
     )
