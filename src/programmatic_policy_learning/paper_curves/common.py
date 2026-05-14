@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 from datetime import datetime
@@ -87,6 +88,14 @@ def demo_ids_for_count(demo_id_pool: list[int], demo_count: int) -> list[int]:
             f"{demo_count} > {len(demo_id_pool)}."
         )
     return [int(each) for each in demo_id_pool[:demo_count]]
+
+
+def shared_sqlite_cache_dir(results_dir: Path, backend: str) -> Path:
+    """Return the shared SQLite cache directory for a paper-curves backend."""
+    override_root = os.getenv("PAPER_CURVES_SHARED_SQLITE_CACHE_DIR")
+    if override_root:
+        return ensure_dir(Path(override_root).resolve() / slugify(backend))
+    return ensure_dir(results_dir / "shared_caches" / "sqlite" / slugify(backend))
 
 
 def find_result_files(results_dir: Path) -> list[Path]:

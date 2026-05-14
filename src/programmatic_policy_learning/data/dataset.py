@@ -930,7 +930,7 @@ CACHE_DIR = "cache"
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    cache_schema_version = "v7"
+    cache_schema_version = "v8"
     base_class_name = str(args[0])
     demo_number = int(args[1])
     programs = args[2]
@@ -957,6 +957,19 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     split_part = "splitnone"
     if split_tag:
         split_part = f"split{split_tag}"
+    prior_version = kwargs.get("prior_version")
+    prior_part = ""
+    if prior_version:
+        safe_prior_version = "".join(
+            ch if ch.isalnum() else "_" for ch in str(prior_version)
+        ).strip("_")
+        prior_part = f"-prior{safe_prior_version}"
+    worst_bucket_after_flat = kwargs.get(
+        "collision_feedback_target_worst_bucket_after_flat"
+    )
+    worst_bucket_part = ""
+    if worst_bucket_after_flat is not None:
+        worst_bucket_part = f"-cftargetflat{int(bool(worst_bucket_after_flat))}"
     demo_sig = "notraj"
     if isinstance(demo_traj, Trajectory):
         demo_sig = hashlib.sha1(pickle.dumps(demo_traj.steps, protocol=4)).hexdigest()[
@@ -965,7 +978,8 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
     return (
         f"{base_class_name}-demo{demo_number}-n{program_count}-"
         f"demos{demos_tag}-{seed_tag}-ns{sampling_sig}-offline{offline_tag}-"
-        f"{split_part}-traj{demo_sig}-{cache_schema_version}"
+        f"{split_part}{prior_part}{worst_bucket_part}-traj{demo_sig}-"
+        f"{cache_schema_version}"
     )
 
 
@@ -1048,6 +1062,8 @@ def run_all_programs_on_single_demonstration(
     offline_path_name: str | None = None,  # pylint: disable=unused-argument
     prompt_demo_ids: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
+    prior_version: str | None = None,  # pylint: disable=unused-argument
+    collision_feedback_target_worst_bucket_after_flat: bool | None = None,  # pylint: disable=unused-argument
     action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument
@@ -1255,6 +1271,8 @@ def run_all_programs_on_demonstrations(
     offline_path_name: str | None = None,
     prompt_demo_ids: Sequence[int] | None = None,
     split_tag: str | None = None,
+    prior_version: str | None = None,
+    collision_feedback_target_worst_bucket_after_flat: bool | None = None,
     seed: int | None = None,
     action_mode: str = "discrete",
     return_demo_ids: bool = False,
@@ -1292,6 +1310,10 @@ def run_all_programs_on_demonstrations(
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=prompt_demo_ids,
                 split_tag=split_tag,
+                prior_version=prior_version,
+                collision_feedback_target_worst_bucket_after_flat=(
+                    collision_feedback_target_worst_bucket_after_flat
+                ),
                 action_mode=action_mode,
                 seed=seed,
             )

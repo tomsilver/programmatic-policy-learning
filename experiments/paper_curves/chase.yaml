@@ -1,0 +1,141 @@
+experiment_name: chase
+output_root: results/paper_curves
+continue_on_error: true
+error_band: sem
+eval_max_steps: 100
+
+demo_id_pool: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+demo_counts: [9, 10]
+seeds: [0, 1]
+test_env_nums: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+codebases:
+  lpp:
+    root_dir: .
+    python_executable: python
+  cap:
+    root_dir: .
+    python_executable: python
+
+environments:
+  - name: Chase
+    key: ec
+    lpp_env: ggg_chase
+    cap_env: Chase
+    cap_env_type: grid
+    plot_title: Chase
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"  
+
+methods:
+
+  - name: chase_a
+    display_name: Our approach A
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=false
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=15
+      - approach.program_generation.py_feature_gen_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/new_hybrid.txt
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.program_generation.multi_prompt_ensemble.num_seeds_per_subset=3
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.collision_feedback_target_worst_bucket_after_flat=true
+      - approach.filter_constant_features_enabled=true
+      - approach.filter_duplicate_features_enabled=true
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+
+  - name: chase_b
+    display_name: Our approach B
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=false
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=15
+      - approach.program_generation.py_feature_gen_prompt=src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/hybrid.txt
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.program_generation.multi_prompt_ensemble.num_seeds_per_subset=3
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.collision_feedback_target_worst_bucket_after_flat=true
+      - approach.filter_constant_features_enabled=true
+      - approach.filter_duplicate_features_enabled=true
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+
+  # - name: our_main_1
+  #   display_name: Our approach 1
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+  #     - approach.map_choices=true
+  #     - approach.collision_feedback_enabled=true
+  #     - approach.collision_feedback_bucket_mode=positive_anchor
+  #     - approach.collision_feedback_num_buckets=3
+  #     - approach.program_generation.multi_prompt_ensemble.num_seeds_per_subset= 2
+  #     - approach.program_generation.multi_prompt_ensemble.demo_subsets=[[3, 4],[0, 1, 2],[8, 9],[5, 6, 7]]
+  #     - approach.program_generation.negative_sampling.enabled= true
+  #     - approach.program_generation.negative_sampling.K=40
+  #     - approach.collision_feedback_max_rounds=8
+  #     - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+  #     - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
+  #     - approach.cross_demo_feature_filter.enabled=false
+  #     - approach.cross_demo_feature_filter.apply_filter=false
+  #     - approach.collision_feedback_target_worst_bucket_after_flat=false
+
+  # - name: our_main_2
+  #   display_name: Our approach 2
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+  #     - approach.map_choices=true
+  #     - approach.collision_feedback_enabled=true
+  #     - approach.collision_feedback_bucket_mode=global_mixed_label
+  #     - approach.program_generation.multi_prompt_ensemble.num_seeds_per_subset= 2
+  #     - approach.program_generation.multi_prompt_ensemble.demo_subsets=[[3, 4],[0, 1, 2],[8, 9],[5, 6, 7]]
+  #     - approach.program_generation.negative_sampling.enabled= true
+  #     - approach.program_generation.negative_sampling.K=40
+  #     - approach.collision_feedback_max_rounds=8
+  #     - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+  #     - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
+  #     - approach.cross_demo_feature_filter.enabled=false
+  #     - approach.cross_demo_feature_filter.apply_filter=false
+  #     - approach.collision_feedback_target_worst_bucket_after_flat=true
+
+
+
+  # - name: our_main_3
+  #   display_name: Our approach 3
+  #   backend: lpp
+  #   sync_prompt_demo_subsets: true
+  #   overrides:
+  #     - approach.program_generation.strategy=py_feature_gen
+  #     - approach.program_generation.encoding_method=enc_5
+  #     - approach.map_choices=true
+  #     - approach.collision_feedback_enabled=true
+  #     - approach.collision_feedback_bucket_mode=global_mixed_label
+  #     - approach.program_generation.multi_prompt_ensemble.num_seeds_per_subset= 2
+  #     - approach.program_generation.multi_prompt_ensemble.demo_subsets=[[3, 4],[0, 1, 2],[8, 9],[5, 6, 7]]
+  #     - approach.program_generation.negative_sampling.enabled= true
+  #     - approach.program_generation.negative_sampling.K=40
+  #     - approach.collision_feedback_max_rounds=8
+  #     - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=true
+  #     - approach.program_generation.negative_sampling.discrete.use_sample_weights=true
+  #     - approach.cross_demo_feature_filter.enabled=false
+  #     - approach.cross_demo_feature_filter.apply_filter=false
+  #     - approach.collision_feedback_target_worst_bucket_after_flat=false

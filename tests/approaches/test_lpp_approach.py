@@ -406,7 +406,12 @@ def test_discrete_train_matrix_passes_none_sample_weight(
     monkeypatch.setattr(
         "programmatic_policy_learning.approaches.lpp_approach."
         "_filter_redundant_features",
-        lambda X, programs, priors: (X, programs, priors, np.asarray([1])),
+        lambda X, programs, priors, **kwargs: (
+            X,
+            programs,
+            priors,
+            np.asarray([1]),
+        ),
     )
     monkeypatch.setattr(
         "programmatic_policy_learning.approaches.lpp_approach.log_feature_collisions",
@@ -473,7 +478,12 @@ def test_discrete_train_matrix_keeps_sample_weight_when_enabled(
     monkeypatch.setattr(
         "programmatic_policy_learning.approaches.lpp_approach."
         "_filter_redundant_features",
-        lambda X, programs, priors: (X, programs, priors, np.asarray([1])),
+        lambda X, programs, priors, **kwargs: (
+            X,
+            programs,
+            priors,
+            np.asarray([1]),
+        ),
     )
     monkeypatch.setattr(
         "programmatic_policy_learning.approaches.lpp_approach.log_feature_collisions",

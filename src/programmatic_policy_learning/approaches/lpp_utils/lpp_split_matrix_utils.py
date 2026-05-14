@@ -347,18 +347,27 @@ def filter_redundant_features(
     program_prior_log_probs: list[float] | None,
     *,
     round_idx: int | None = None,
+    filter_constant_features_enabled: bool = True,
+    filter_duplicate_features_enabled: bool = True,
 ) -> tuple[Any, list[StateActionProgram], list[float] | None, np.ndarray]:
     """Drop constant and exact duplicate feature columns."""
-    X, programs_sa, program_prior_log_probs, col_nnz = filter_constant_features(
-        X,
-        programs_sa,
-        program_prior_log_probs,
-        round_idx=round_idx,
-    )
-    X, programs_sa, program_prior_log_probs = filter_exact_duplicate_features(
-        X,
-        programs_sa,
-        program_prior_log_probs,
-        round_idx=round_idx,
-    )
+    if filter_constant_features_enabled:
+        X, programs_sa, program_prior_log_probs, col_nnz = filter_constant_features(
+            X,
+            programs_sa,
+            program_prior_log_probs,
+            round_idx=round_idx,
+        )
+    else:
+        logging.info("Skipping constant-feature filtering.")
+        col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
+    if filter_duplicate_features_enabled:
+        X, programs_sa, program_prior_log_probs = filter_exact_duplicate_features(
+            X,
+            programs_sa,
+            program_prior_log_probs,
+            round_idx=round_idx,
+        )
+    else:
+        logging.info("Skipping exact-duplicate-feature filtering.")
     return X, programs_sa, program_prior_log_probs, col_nnz

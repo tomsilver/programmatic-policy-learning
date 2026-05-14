@@ -256,10 +256,16 @@ def _important_lpp_config(cfg: Any, method: dict[str, Any]) -> dict[str, Any]:
             program_generation.get("multi_prompt_ensemble", {}).get("demo_subsets", [])
         ),
         "collision_feedback_enabled": approach.collision_feedback_enabled,
+        "collision_feedback_max_rounds": approach.collision_feedback_max_rounds,
         "collision_feedback_enc": approach.collision_feedback_enc,
+        "collision_feedback_target_worst_bucket_after_flat": (
+            approach.collision_feedback_target_worst_bucket_after_flat
+        ),
         "cross_demo_feature_filter_enabled": cross_demo_filter.enabled,
         "cross_demo_feature_filter_apply": cross_demo_filter.apply_filter,
         "permissive_filter_enabled": approach.permissive_filter_enabled,
+        "filter_constant_features_enabled": approach.filter_constant_features_enabled,
+        "filter_duplicate_features_enabled": approach.filter_duplicate_features_enabled,
         "prior_version": approach.prior_version,
         "prior_beta": approach.prior_beta,
         "dt_max_depth": approach.dt_max_depth,
@@ -272,6 +278,10 @@ def _run(job: dict[str, Any]) -> int:
     setup_logging(artifact_dir / "wrapper.log")
     repo_root = Path(job["repo_root"]).resolve()
     os.chdir(artifact_dir)
+    shared_sqlite_cache_dir = job.get("shared_sqlite_cache_dir")
+    if shared_sqlite_cache_dir:
+        os.environ["PPL_SQLITE_CACHE_DIR"] = str(shared_sqlite_cache_dir)
+
     shared_run_cache_dir = job.get("shared_run_cache_dir")
     if shared_run_cache_dir:
         os.environ["PPL_CACHE_DIR_OVERRIDE"] = str(shared_run_cache_dir)
@@ -301,7 +311,24 @@ def _run(job: dict[str, Any]) -> int:
             obs, info = reset_output, {}
         approach.reset(obs, info)
 
+        train_env_nums = [
+            int(each) for each in job.get("train_env_nums", job["demo_ids"])
+        ]
         test_env_nums = [int(each) for each in job["test_env_nums"]]
+        num_train_total = 0
+        num_train_solved = 0
+        train_success_rate: float | None = None
+        if train_env_nums:
+            train_results = approach.test_policy_on_envs(
+                base_class_name=cfg.env.make_kwargs.base_name,
+                test_env_nums=train_env_nums,
+                max_num_steps=int(job.get("eval_max_steps", 100)),
+                record_videos=False,
+            )
+            num_train_total = len(train_results)
+            num_train_solved = int(sum(bool(each) for each in train_results))
+            if num_train_total:
+                train_success_rate = float(num_train_solved / num_train_total)
         test_results = approach.test_policy_on_envs(
             base_class_name=cfg.env.make_kwargs.base_name,
             test_env_nums=test_env_nums,
@@ -336,9 +363,14 @@ def _run(job: dict[str, Any]) -> int:
                 int(job["heldout_env_num"]) if "heldout_env_num" in job else None
             ),
             "seed": int(job["seed"]),
+            "train_env_nums": train_env_nums,
             "test_env_nums": test_env_nums,
+            "num_train_solved": num_train_solved,
+            "num_train_total": num_train_total,
+            "train_success_rate": train_success_rate,
             "num_test_solved": num_test_solved,
             "num_test_total": num_test_total,
+            "test_success_rate": success_rate,
             "success_rate": success_rate,
             "config_fields": jsonable(_important_lpp_config(cfg, dict(job["method"]))),
             "artifact_dir": str(artifact_dir),
@@ -392,9 +424,16 @@ def _run(job: dict[str, Any]) -> int:
                 int(job["heldout_env_num"]) if "heldout_env_num" in job else None
             ),
             "seed": int(job["seed"]),
+            "train_env_nums": [
+                int(each) for each in job.get("train_env_nums", job["demo_ids"])
+            ],
             "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "num_train_solved": None,
+            "num_train_total": None,
+            "train_success_rate": None,
             "num_test_solved": None,
             "num_test_total": len(job["test_env_nums"]),
+            "test_success_rate": None,
             "success_rate": None,
             "config_fields": {"backend": "lpp"},
             "artifact_dir": str(artifact_dir),

@@ -834,7 +834,7 @@ def _parse_cli_args() -> argparse.Namespace:
         "--eval-env-nums",
         nargs="*",
         type=int,
-        default=list(range(11, 20)),
+        default=list(range(10, 20)),
         help=(
             "Optional list of environment indices for post-generation evaluation. "
             "Defaults to LPP's held-out test split: 11..19."

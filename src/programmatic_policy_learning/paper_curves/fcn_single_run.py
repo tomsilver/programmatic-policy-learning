@@ -133,7 +133,24 @@ def _run(job: dict[str, Any]) -> int:
             obs, info = reset_output, {}
         approach.reset(obs, info)
 
+        train_env_nums = [
+            int(each) for each in job.get("train_env_nums", job["demo_ids"])
+        ]
         test_env_nums = [int(each) for each in job["test_env_nums"]]
+        num_train_total = 0
+        num_train_solved = 0
+        train_success_rate: float | None = None
+        if train_env_nums:
+            train_results = approach.test_policy_on_envs(
+                base_class_name=cfg.env.make_kwargs.base_name,
+                test_env_nums=train_env_nums,
+                max_num_steps=int(job.get("eval_max_steps", 100)),
+                record_videos=False,
+            )
+            num_train_total = len(train_results)
+            num_train_solved = int(sum(bool(each) for each in train_results))
+            if num_train_total:
+                train_success_rate = float(num_train_solved / num_train_total)
         test_results = approach.test_policy_on_envs(
             base_class_name=cfg.env.make_kwargs.base_name,
             test_env_nums=test_env_nums,
@@ -177,9 +194,14 @@ def _run(job: dict[str, Any]) -> int:
                 int(job["heldout_env_num"]) if "heldout_env_num" in job else None
             ),
             "seed": int(job["seed"]),
+            "train_env_nums": train_env_nums,
             "test_env_nums": test_env_nums,
+            "num_train_solved": num_train_solved,
+            "num_train_total": num_train_total,
+            "train_success_rate": train_success_rate,
             "num_test_solved": num_test_solved,
             "num_test_total": num_test_total,
+            "test_success_rate": success_rate,
             "success_rate": success_rate,
             "config_fields": jsonable(_important_fcn_config(cfg, dict(job["method"]))),
             "artifact_dir": str(artifact_dir),
@@ -236,9 +258,16 @@ def _run(job: dict[str, Any]) -> int:
                 int(job["heldout_env_num"]) if "heldout_env_num" in job else None
             ),
             "seed": int(job["seed"]),
+            "train_env_nums": [
+                int(each) for each in job.get("train_env_nums", job["demo_ids"])
+            ],
             "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "num_train_solved": None,
+            "num_train_total": len(job.get("train_env_nums", job["demo_ids"])),
+            "train_success_rate": None,
             "num_test_solved": None,
             "num_test_total": len(job["test_env_nums"]),
+            "test_success_rate": None,
             "success_rate": None,
             "config_fields": {"backend": "fcn"},
             "artifact_dir": str(artifact_dir),
@@ -266,4 +295,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -15,6 +15,7 @@ from programmatic_policy_learning.paper_curves.aggregate import (
 from programmatic_policy_learning.paper_curves.common import (
     ensure_dir,
     load_yaml_config,
+    shared_sqlite_cache_dir,
     setup_logging,
     slugify,
     write_json,
@@ -171,11 +172,15 @@ def _build_jobs(
             backend_python = str(backend_cfg.get("python_executable", "python"))
             method_seeds = [int(each) for each in method_cfg.get("seeds", global_seeds)]
             for feature_count in feature_counts:
-                feature_method_cfg = _apply_feature_budget_override(
+                base_feature_method_cfg = _apply_feature_budget_override(
                     method_cfg,
                     feature_count,
                 )
                 for seed in method_seeds:
+                    feature_method_cfg = dict(base_feature_method_cfg)
+                    feature_method_cfg["overrides"] = list(
+                        base_feature_method_cfg.get("overrides", [])
+                    )
                     shared_cache_override = _shared_py_feature_cache_override(
                         results_dir=results_dir,
                         env_key=env_key,
@@ -191,10 +196,7 @@ def _build_jobs(
                         seed=seed,
                     )
                     if shared_cache_override is not None:
-                        feature_method_cfg = dict(feature_method_cfg)
-                        feature_method_cfg["overrides"] = list(
-                            feature_method_cfg.get("overrides", [])
-                        ) + [shared_cache_override]
+                        feature_method_cfg["overrides"].append(shared_cache_override)
                     run_id = (
                         f"{env_key.lower()}__"
                         f"{str(feature_method_cfg['name']).replace('_', '-').lower()}__"
@@ -213,7 +215,11 @@ def _build_jobs(
                             "demo_count": len(train_demo_ids),
                             "demo_ids": list(train_demo_ids),
                             "feature_count": int(feature_count),
+                            "train_env_nums": list(train_demo_ids),
                             "test_env_nums": list(test_env_nums),
+                            "shared_sqlite_cache_dir": str(
+                                shared_sqlite_cache_dir(results_dir, backend).resolve()
+                            ),
                             "shared_run_cache_dir": shared_run_cache_dir,
                             "eval_max_steps": int(config.get("eval_max_steps", 100)),
                             "artifact_dir": str(artifact_dir.resolve()),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import subprocess
@@ -18,6 +19,8 @@ from programmatic_policy_learning.paper_curves.common import (
     demo_ids_for_count,
     ensure_dir,
     load_yaml_config,
+    read_json,
+    shared_sqlite_cache_dir,
     setup_logging,
     slugify,
     utc_timestamp,
@@ -50,6 +53,55 @@ def _default_output_dir(config: dict[str, Any]) -> Path:
     return output_root / suffix
 
 
+def _shared_run_cache_dir(
+    *,
+    results_dir: Path,
+    env_key: str,
+    method_cfg: dict[str, Any],
+    train_demo_ids: list[int],
+    seed: int,
+) -> str | None:
+    """Return a shared run-matrix cache dir for repeatable LPP jobs."""
+    if not bool(method_cfg.get("shared_run_cache", False)):
+        return None
+
+    ignore_prefixes = [
+        str(prefix)
+        for prefix in method_cfg.get("shared_cache_ignore_override_prefixes", [])
+    ]
+    signature_overrides: list[str] = []
+    for raw_override in method_cfg.get("overrides", []):
+        override = str(raw_override)
+        if any(override.startswith(prefix) for prefix in ignore_prefixes):
+            continue
+        signature_overrides.append(override)
+
+    signature_payload = {
+        "method_name": str(
+            method_cfg.get("shared_cache_base_name", method_cfg.get("name", ""))
+        ),
+        "train_demo_ids": [int(each) for each in train_demo_ids],
+        "signature_overrides": sorted(signature_overrides),
+        "seed": int(seed),
+        "kind": "run_cache",
+    }
+    signature = hashlib.sha1(
+        __import__("json").dumps(signature_payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
+    cache_dir = ensure_dir(
+        results_dir / "shared_caches" / slugify(env_key) / "run_cache"
+    )
+    return str(
+        (
+            cache_dir
+            / (
+                f"{slugify(str(method_cfg.get('shared_cache_base_name', method_cfg.get('name', 'method'))))}"
+                f"__seed{int(seed)}__{signature}"
+            )
+        ).resolve()
+    )
+
+
 def _build_jobs(
     config: dict[str, Any],
     *,
@@ -61,7 +113,7 @@ def _build_jobs(
     global_seeds = [int(each) for each in config["seeds"]]
     demo_id_pool = [int(each) for each in config.get("demo_id_pool", list(range(11)))]
     test_env_nums = [
-        int(each) for each in config.get("test_env_nums", list(range(11, 20)))
+        int(each) for each in config.get("test_env_nums", list(range(10, 20)))
     ]
     codebases = dict(config.get("codebases", {}))
     jobs: list[dict[str, Any]] = []
@@ -81,6 +133,13 @@ def _build_jobs(
             for demo_count in demo_counts:
                 demo_ids = demo_ids_for_count(demo_id_pool, demo_count)
                 for seed in method_seeds:
+                    shared_run_cache_dir = _shared_run_cache_dir(
+                        results_dir=results_dir,
+                        env_key=env_key,
+                        method_cfg=method_cfg,
+                        train_demo_ids=demo_ids,
+                        seed=seed,
+                    )
                     run_id = (
                         f"{slugify(env_key)}__{slugify(str(method_cfg['name']))}"
                         f"__d{demo_count}__s{seed}"
@@ -96,7 +155,12 @@ def _build_jobs(
                         "seed": int(seed),
                         "demo_count": int(demo_count),
                         "demo_ids": demo_ids,
+                        "train_env_nums": list(demo_ids),
                         "test_env_nums": test_env_nums,
+                        "shared_sqlite_cache_dir": str(
+                            shared_sqlite_cache_dir(results_dir, backend).resolve()
+                        ),
+                        "shared_run_cache_dir": shared_run_cache_dir,
                         "eval_max_steps": int(config.get("eval_max_steps", 100)),
                         "artifact_dir": str(artifact_dir.resolve()),
                         "result_path": str(result_path.resolve()),
@@ -115,6 +179,30 @@ def _wrapper_module_for_backend(backend: str) -> str:
     if backend == "vlm":
         return "programmatic_policy_learning.paper_curves.vlm_single_run"
     raise ValueError(f"Unsupported backend '{backend}'.")
+
+
+def _should_skip_existing_result(result_path: Path) -> bool:
+    """Return True only for existing successful result files."""
+    if not result_path.exists():
+        return False
+    try:
+        payload = read_json(result_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logging.warning(
+            "Existing result %s is unreadable (%s); rerunning.",
+            result_path,
+            exc,
+        )
+        return False
+    status = str(payload.get("status", "")).lower()
+    if status == "success":
+        return True
+    logging.info(
+        "Existing result %s has status=%r; rerunning.",
+        result_path,
+        payload.get("status"),
+    )
+    return False
 
 
 def _run_jobs(
@@ -152,7 +240,7 @@ def _run_jobs(
             job["demo_count"],
             job["seed"],
         )
-        if skip_existing and result_path.exists():
+        if skip_existing and _should_skip_existing_result(result_path):
             logging.info("Skipping existing result: %s", result_path)
             continue
         if dry_run:

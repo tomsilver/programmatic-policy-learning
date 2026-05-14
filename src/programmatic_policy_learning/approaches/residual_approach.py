@@ -218,7 +218,7 @@ class ResidualApproach(BaseApproach[np.ndarray, np.ndarray]):
 
     def test_policy_on_envs(
         self,
-        test_env_nums: Iterable[int] = range(11, 20),
+        test_env_nums: Iterable[int] = range(10, 20),
         max_num_steps: int = 50,
         *,
         _base_class_name: str | None = None,

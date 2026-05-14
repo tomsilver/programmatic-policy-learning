@@ -1,0 +1,143 @@
+experiment_name: redundancy_filter_ablation
+output_root: results/paper_curves
+continue_on_error: true
+error_band: sem
+eval_max_steps: 100
+
+demo_id_pool: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+demo_counts: [8, 9, 10]
+seeds: [0, 1, 2, 3, 4]
+
+test_env_nums: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+codebases:
+  lpp:
+    root_dir: .
+    python_executable: python
+
+environments:
+  # - name: Nim
+  #   key: nim
+  #   lpp_env: ggg_nim
+  #   plot_title: Two-Pile Nim
+  #   plot_caption: "Ablation of constant/duplicate feature removal in LPP."
+
+  - name: CheckmateTactic
+    key: ct
+    lpp_env: ggg_checkmate
+    plot_title: Checkmate-Tactic
+    plot_caption: "Ablation of constant/duplicate feature removal in LPP."
+  - name: StopTheFall
+    key: stf
+    lpp_env: ggg_stf
+    plot_title: Stop-The-Fall
+    plot_caption: "Ablation of constant/duplicate feature removal in LPP."
+  # - name: ReachForTheStar
+  #   key: rfts
+  #   lpp_env: ggg_rfts
+  #   plot_title: Reach-For-The-Star  
+  #   plot_caption: "Ablation of constant/duplicate feature removal in LPP."
+methods:
+  - name: both_on
+    display_name: Constants + duplicates
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    shared_run_cache: true
+    shared_cache_base_name: redundancy-filter-ablation
+    shared_cache_ignore_override_prefixes:
+      - approach.filter_constant_features_enabled=
+      - approach.filter_duplicate_features_enabled=
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=5
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.prior_version=uniform
+      - approach.filter_constant_features_enabled=true
+      - approach.filter_duplicate_features_enabled=true
+
+  - name: constants_only
+    display_name: Constants only
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    shared_run_cache: true
+    shared_cache_base_name: redundancy-filter-ablation
+    shared_cache_ignore_override_prefixes:
+      - approach.filter_constant_features_enabled=
+      - approach.filter_duplicate_features_enabled=
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=5
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.prior_version=uniform
+      - approach.filter_constant_features_enabled=true
+      - approach.filter_duplicate_features_enabled=false
+
+  - name: duplicates_only
+    display_name: Duplicates only
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    shared_run_cache: true
+    shared_cache_base_name: redundancy-filter-ablation
+    shared_cache_ignore_override_prefixes:
+      - approach.filter_constant_features_enabled=
+      - approach.filter_duplicate_features_enabled=
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=5
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.prior_version=uniform
+      - approach.filter_constant_features_enabled=false
+      - approach.filter_duplicate_features_enabled=true
+
+  - name: both_off
+    display_name: No constant/duplicate filtering
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    shared_run_cache: true
+    shared_cache_base_name: redundancy-filter-ablation
+    shared_cache_ignore_override_prefixes:
+      - approach.filter_constant_features_enabled=
+      - approach.filter_duplicate_features_enabled=
+    overrides:
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.encoding_method=enc_5
+      - approach.map_choices=true
+      - approach.collision_feedback_enabled=true
+      - approach.collision_feedback_bucket_mode=global_mixed_label
+      - approach.collision_feedback_max_rounds=5
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.K=50
+      - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
+      - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.prior_version=uniform
+      - approach.filter_constant_features_enabled=false
+      - approach.filter_duplicate_features_enabled=false
