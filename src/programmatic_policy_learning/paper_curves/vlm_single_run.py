@@ -96,6 +96,11 @@ def _run(job: dict[str, Any]) -> int:
     sample_every_n_frames = int(method_cfg.get("sample_every_n_frames", 15))
     function_name = str(method_cfg.get("function_name", "policy"))
     demo_video_paths = _resolve_demo_video_paths(job=job, repo_root=repo_root)
+    train_env_nums = [
+        int(each) for each in job.get("train_env_nums", job["demo_ids"])
+    ]
+    test_env_nums = [int(each) for each in job["test_env_nums"]]
+    eval_env_nums = train_env_nums + test_env_nums
 
     command = [
         backend_python,
@@ -111,7 +116,7 @@ def _run(job: dict[str, Any]) -> int:
         "--function-name",
         function_name,
         "--eval-env-nums",
-        *[str(int(each)) for each in job["test_env_nums"]],
+        *[str(int(each)) for each in eval_env_nums],
         "--eval-max-steps",
         str(int(job.get("eval_max_steps", 100))),
         "--max-frames-per-video",
@@ -149,8 +154,20 @@ def _run(job: dict[str, Any]) -> int:
             raise RuntimeError(
                 f"No VLM imitation evaluation results found in {metadata_path}."
             )
-        num_test_total = len(results)
-        num_test_solved = int(sum(results))
+        if len(results) != len(eval_env_nums):
+            raise RuntimeError(
+                "VLM result count does not match requested eval env count: "
+                f"{len(results)} != {len(eval_env_nums)}."
+            )
+        train_results = results[: len(train_env_nums)]
+        test_results = results[len(train_env_nums) :]
+        num_train_total = len(train_results)
+        num_train_solved = int(sum(train_results))
+        train_success_rate = (
+            float(num_train_solved / num_train_total) if num_train_total else None
+        )
+        num_test_total = len(test_results)
+        num_test_solved = int(sum(test_results))
         success_rate = float(num_test_solved / num_test_total)
         policy_path = Path(str(metadata.get("policy_path", "")))
         debug_log_path = Path(str(metadata.get("debug_log_path", "")))
@@ -167,9 +184,14 @@ def _run(job: dict[str, Any]) -> int:
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
             "seed": int(job["seed"]),
-            "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "train_env_nums": train_env_nums,
+            "test_env_nums": test_env_nums,
+            "num_train_solved": num_train_solved,
+            "num_train_total": num_train_total,
+            "train_success_rate": train_success_rate,
             "num_test_solved": num_test_solved,
             "num_test_total": num_test_total,
+            "test_success_rate": success_rate,
             "success_rate": success_rate,
             "config_fields": jsonable(
                 {
@@ -180,6 +202,7 @@ def _run(job: dict[str, Any]) -> int:
                     "function_name": function_name,
                     "demo_video_paths": [str(path) for path in demo_video_paths],
                     "task_description": metadata.get("task_description"),
+                    "eval_env_nums": eval_env_nums,
                 }
             ),
             "artifact_dir": str(artifact_dir),
@@ -221,9 +244,16 @@ def _run(job: dict[str, Any]) -> int:
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
             "seed": int(job["seed"]),
+            "train_env_nums": [
+                int(each) for each in job.get("train_env_nums", job["demo_ids"])
+            ],
             "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "num_train_solved": None,
+            "num_train_total": len(job.get("train_env_nums", job["demo_ids"])),
+            "train_success_rate": None,
             "num_test_solved": None,
             "num_test_total": len(job["test_env_nums"]),
+            "test_success_rate": None,
             "success_rate": None,
             "config_fields": {
                 "backend": "vlm",

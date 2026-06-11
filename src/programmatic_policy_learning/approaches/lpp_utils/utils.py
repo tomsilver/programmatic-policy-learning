@@ -309,6 +309,39 @@ def log_feature_collisions(
     return []
 
 
+def summarize_collision_groups(
+    collision_groups: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Summarize mixed-label feature collisions for per-round tracking."""
+    approx_pairs = 0
+    lower_bound_error_count = 0
+    pos_rows: set[int] = set()
+    neg_rows: set[int] = set()
+    max_bucket_pairs = 0
+    max_bucket_size = 0
+    for group in collision_groups:
+        pos = [int(i) for i in group.get("pos", [])]
+        neg = [int(i) for i in group.get("neg", [])]
+        bucket_pairs = len(pos) * len(neg)
+        bucket_lower_bound_error = min(len(pos), len(neg))
+        approx_pairs += bucket_pairs
+        lower_bound_error_count += bucket_lower_bound_error
+        max_bucket_pairs = max(max_bucket_pairs, bucket_pairs)
+        max_bucket_size = max(max_bucket_size, len(pos) + len(neg))
+        pos_rows.update(pos)
+        neg_rows.update(neg)
+    return {
+        "mixed_buckets": len(collision_groups),
+        "approx_pairs": int(approx_pairs),
+        "lower_bound_error_count": int(lower_bound_error_count),
+        "collided_pos_rows": len(pos_rows),
+        "collided_neg_rows": len(neg_rows),
+        "collided_rows": len(pos_rows | neg_rows),
+        "max_bucket_pairs": int(max_bucket_pairs),
+        "max_bucket_size": int(max_bucket_size),
+    }
+
+
 def _example_value_to_hashable_bytes(value: Any) -> bytes:
     """Convert nested example values into a stable byte key."""
     if isinstance(value, np.ndarray):

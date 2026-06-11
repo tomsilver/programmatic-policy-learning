@@ -38,6 +38,7 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_program_generation_ut
     build_sqlite_llm_cache,
     get_program_set,
     make_llm_client_for_model,
+    resolve_sqlite_cache_path,
 )
 from programmatic_policy_learning.approaches.lpp_utils.lpp_program_setup_utils import (
     prepare_programs_and_dsl,
@@ -62,6 +63,7 @@ from programmatic_policy_learning.approaches.lpp_utils.utils import (
     log_feature_collisions,
     log_plp_violation_counts,
     run_single_episode,
+    summarize_collision_groups,
 )
 from programmatic_policy_learning.data.dataset import (
     extract_examples_from_demonstration,
@@ -310,6 +312,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         permissive_filter_enabled: bool = False,
         permissive_filter_max_avg_frac: float | None = None,
         permissive_filter_max_avg_count: int | None = None,
+        filter_constant_features_enabled: bool = True,
+        filter_duplicate_features_enabled: bool = True,
         dt_splitter: str = "random",
         cc_alpha: float = 0.0,
         collision_feedback_enc: str = "enc_1",
@@ -320,7 +324,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_feedback_max_new_features: int = 10,
         collision_feedback_max_rounds: int = 3,
         collision_feedback_target_collisions: int = 0,
-        prior_version: str = "v1",
+        collision_feedback_target_worst_bucket_after_flat: bool = False,
+        prior_version: str = "uniform",
         prior_beta: float = 1.0,
         alpha: float = 0.0,
         w_clauses: float = 0.1,
@@ -328,7 +333,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         w_max_clause: float = 0.1,
         w_depth: float = 0.05,
         w_ops: float = 0.03,
-        val_frac: float | None = 0.2,
+        val_frac: float | None = 0.0,
         val_size: int | None = None,
         split_seed: int = 0,
         split_strategy: str = "random",
@@ -360,6 +365,8 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.permissive_filter_enabled = permissive_filter_enabled
         self.permissive_filter_max_avg_frac = permissive_filter_max_avg_frac
         self.permissive_filter_max_avg_count = permissive_filter_max_avg_count
+        self.filter_constant_features_enabled = bool(filter_constant_features_enabled)
+        self.filter_duplicate_features_enabled = bool(filter_duplicate_features_enabled)
         self.dt_splitter = dt_splitter
         self.cc_alpha = cc_alpha
         self.collision_feedback_enc = collision_feedback_enc
@@ -380,6 +387,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         self.collision_feedback_max_new_features = collision_feedback_max_new_features
         self.collision_feedback_max_rounds = collision_feedback_max_rounds
         self.collision_feedback_target_collisions = collision_feedback_target_collisions
+        self.collision_feedback_target_worst_bucket_after_flat = bool(
+            collision_feedback_target_worst_bucket_after_flat
+        )
         self.collision_feedback_reprompt_max_attempts = 5
         self._collision_llm_model: str | None = None
         self._collision_py_generator: PyFeatureGenerator | None = None
@@ -486,6 +496,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         except Exception:  # pylint: disable=broad-exception-caught
             output_dir = Path.cwd()
         return output_dir / "feature_scores.json"
+
+    def _collision_round_metrics_output_path(self) -> Path:
+        try:
+            output_dir = Path(HydraConfig.get().runtime.output_dir)
+        except Exception:  # pylint: disable=broad-exception-caught
+            output_dir = Path.cwd()
+        return output_dir / "collision_round_metrics.json"
 
     def _score_and_optionally_filter_features(
         self,
@@ -745,10 +762,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             self._collision_py_generator is None
             or self._collision_llm_model != llm_model
         ):
-            model_slug = "".join(ch if ch.isalnum() else "_" for ch in llm_model).strip(
-                "_"
-            )
-            cache_path = Path(f"py_feature_cache_{model_slug}.db")
+            cache_path = resolve_sqlite_cache_path("py_feature_cache", llm_model)
             cache = build_sqlite_llm_cache(
                 cache_path,
                 llm_model=llm_model,
@@ -819,6 +833,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         collision_groups: list[dict[str, Any]],
         examples: list[tuple[_ObsType, _ActType]] | None,
         *,
+        target_worst_bucket_reprompt: bool = False,
         existing_feature_summary: str | None = None,
         failed_attempt_summaries: str | None = None,
     ) -> str | None:
@@ -839,15 +854,28 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
 
         if not collision_groups or examples is None:
             return None
-        ranked_groups = sorted(
-            collision_groups,
-            key=lambda g: (
-                int(g.get("total_count", g["max_occur"])),
-                float(g.get("label_balance", 0.0)),
-                int(g["max_occur"]),
-            ),
-            reverse=True,
-        )
+        if target_worst_bucket_reprompt:
+            ranked_groups = sorted(
+                collision_groups,
+                key=lambda g: (
+                    min(len(g["pos"]), len(g["neg"])),
+                    len(g["pos"]) * len(g["neg"]),
+                    int(g.get("total_count", g["max_occur"])),
+                    float(g.get("label_balance", 0.0)),
+                    int(g["max_occur"]),
+                ),
+                reverse=True,
+            )
+        else:
+            ranked_groups = sorted(
+                collision_groups,
+                key=lambda g: (
+                    int(g.get("total_count", g["max_occur"])),
+                    float(g.get("label_balance", 0.0)),
+                    int(g["max_occur"]),
+                ),
+                reverse=True,
+            )
         logging.info(
             "Collision groups (top 5 by size/balance, mode=%s):",
             self.collision_feedback_bucket_mode,
@@ -868,11 +896,13 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 neg_list[:10],
             )
         best_group = ranked_groups[0]
-        second_group = (
-            ranked_groups[1]
-            if self.collision_feedback_num_buckets >= 2 and len(ranked_groups) > 1
-            else None
-        )
+        second_group = None
+        if not target_worst_bucket_reprompt:
+            second_group = (
+                ranked_groups[1]
+                if self.collision_feedback_num_buckets >= 2 and len(ranked_groups) > 1
+                else None
+            )
 
         prompt = build_collision_repair_prompt(
             pos_indices=best_group["pos"],
@@ -890,6 +920,34 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             collision_template_feedback=self.collision_template_feedback,
             failed_attempt_summaries=failed_attempt_summaries,
         )
+        if target_worst_bucket_reprompt:
+            pos_count = len(best_group["pos"])
+            neg_count = len(best_group["neg"])
+            bucket_lb_error = min(pos_count, neg_count)
+            bucket_pairs = pos_count * neg_count
+            targeted_block = (
+                "## TARGETED REPAIR OVERRIDE\n\n"
+                "The last two collision-repair rounds were flat: collision severity "
+                "did not improve.\n\n"
+                "Focus ONLY on the single worst mixed bucket shown below.\n"
+                "Do not optimize for generic global usefulness.\n"
+                "Your primary objective is to propose features that reduce the "
+                "collision-implied minimum train error for this bucket.\n\n"
+                f"Current bucket stats: pos_count={pos_count}, "
+                f"neg_count={neg_count}, "
+                f"bucket_lower_bound_error={bucket_lb_error}, "
+                f"bucket_approx_pairs={bucket_pairs}.\n\n"
+                "Preferred features:\n"
+                "- split this bucket into smaller subgroups\n"
+                "- isolate at least one positive from one negative\n"
+                "- refine an existing coarse concept into a sharper structural "
+                "predicate\n\n"
+                "Avoid:\n"
+                "- broad global features that likely fire on both labels\n"
+                "- rephrasings of failed prior repair attempts\n"
+                "- features that depend on board size, scan order, or brittle counts\n"
+            )
+            prompt = f"{targeted_block}\n\n{prompt}"
         try:
             output_dir = Path(HydraConfig.get().runtime.output_dir)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -2036,6 +2094,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 return_examples=True,
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=self._prompt_demo_ids_tag(),
+                prior_version=self.prior_version,
+                collision_feedback_target_worst_bucket_after_flat=(
+                    self.collision_feedback_target_worst_bucket_after_flat
+                ),
                 split_tag=(
                     f"seed{self.split_seed}"
                     f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
@@ -2086,9 +2148,29 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
         )
         if action_mode == "discrete" and not use_discrete_sample_weights:
             sample_weights = None
-        X, programs_sa, program_prior_log_probs_opt, col_nnz = (
-            _filter_redundant_features(X, programs_sa, program_prior_log_probs_opt)
-        )
+        if (
+            self.filter_constant_features_enabled
+            or self.filter_duplicate_features_enabled
+        ):
+            X, programs_sa, program_prior_log_probs_opt, col_nnz = (
+                _filter_redundant_features(
+                    X,
+                    programs_sa,
+                    program_prior_log_probs_opt,
+                    filter_constant_features_enabled=(
+                        self.filter_constant_features_enabled
+                    ),
+                    filter_duplicate_features_enabled=(
+                        self.filter_duplicate_features_enabled
+                    ),
+                )
+            )
+        else:
+            logging.info(
+                "Skipping redundant-feature filtering "
+                "(constant and duplicate removal disabled)."
+            )
+            col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
         col_nnz = np.asarray(X.getnnz(axis=0)).ravel()
         all_zero = np.where(col_nnz == 0)[0]
         all_one = np.where(col_nnz == X.shape[0])[0]
@@ -2112,6 +2194,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             examples,
             bucket_mode=self.collision_feedback_bucket_mode,
         )
+        collision_round_metrics = [
+            {
+                "round": 0,
+                "stage": "post_initial_filter",
+                "generated_feature_count": 0,
+                "num_rows": int(X.shape[0]),
+                "num_features": int(X.shape[1]),
+                **summarize_collision_groups(collision_groups),
+            }
+        ]
 
         if self.collision_feedback_enabled and examples is not None:
             max_rounds = max(1, self.collision_feedback_max_rounds)
@@ -2200,6 +2292,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             def _make_collision_prompt(
                 collision_groups: list[dict[str, Any]],
                 examples: list[tuple[_ObsType, _ActType]],
+                target_worst_bucket_reprompt: bool,
             ) -> str | None:
                 failed_attempts = (
                     "\n\n".join(collision_attempt_memory)
@@ -2209,6 +2302,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 return self._handle_collision_feedback(
                     collision_groups,
                     examples,
+                    target_worst_bucket_reprompt=target_worst_bucket_reprompt,
                     existing_feature_summary=_summarize_existing_features(),
                     failed_attempt_summaries=failed_attempts,
                 )
@@ -2220,6 +2314,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 collision_payloads,
                 collision_output_path,
                 col_nnz,
+                collision_round_metrics,
             ) = run_collision_feedback_loop(
                 collision_groups=collision_groups,
                 examples=examples,
@@ -2237,6 +2332,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 prior_version=self.prior_version,
                 prior_beta=self.prior_beta,
                 collision_bucket_mode=self.collision_feedback_bucket_mode,
+                worst_bucket_reprompt_enabled=(
+                    self.collision_feedback_target_worst_bucket_after_flat
+                ),
             )
             if collision_payloads and collision_output_path is not None:
                 out_path = (
@@ -2246,15 +2344,26 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     json.dumps({"collision_payloads": collision_payloads}, indent=4),
                     encoding="utf-8",
                 )
-            # X, programs_sa, program_prior_log_probs_opt = (
-            #     self._score_and_optionally_filter_features(
-            #         X,
-            #         y,
-            #         row_demo_ids,
-            #         programs_sa,
-            #         program_prior_log_probs_opt,
-            #     )
-            # )
+
+        metrics_payload = {
+            "kind": "collision_round_metrics",
+            "base_class_name": self.base_class_name,
+            "seed": self.seed_num,
+            "bucket_mode": self.collision_feedback_bucket_mode,
+            "collision_feedback_enabled": bool(self.collision_feedback_enabled),
+            "collision_feedback_max_rounds": int(self.collision_feedback_max_rounds),
+            "collision_feedback_target_worst_bucket_after_flat": bool(
+                self.collision_feedback_target_worst_bucket_after_flat
+            ),
+            "round_metrics": collision_round_metrics,
+        }
+        metrics_out_path = self._collision_round_metrics_output_path()
+        metrics_out_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_out_path.write_text(
+            json.dumps(metrics_payload, indent=4),
+            encoding="utf-8",
+        )
+        logging.info("Collision round metrics written to %s", metrics_out_path)
         logging.info("Data after collision feedback loop: X shape %s", X.shape)
 
         n = X.shape[0]
@@ -2408,6 +2517,10 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 return_examples=False,
                 offline_path_name=offline_path_name,
                 prompt_demo_ids=self._prompt_demo_ids_tag(),
+                prior_version=self.prior_version,
+                collision_feedback_target_worst_bucket_after_flat=(
+                    self.collision_feedback_target_worst_bucket_after_flat
+                ),
                 split_tag=(
                     f"seed{self.split_seed}"
                     f"_train_{'-'.join(str(x) for x in train_demo_ids)}"
@@ -2438,9 +2551,6 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             list(program_prior_log_probs_opt)
             if program_prior_log_probs_opt is not None
             else None
-        )
-        X_final, final_programs_sa, final_program_priors, _ = (
-            _filter_redundant_features(X_final, final_programs_sa, final_program_priors)
         )
         y_final_bool: list[bool] = list(y_final.astype(bool).flatten())
         return (
@@ -2606,9 +2716,9 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                     X_train.shape,
                     X_train.shape[0],
                 )
-        logging.info("Final programs:")
-        for i, prog in enumerate(programs_sa):
-            logging.info(f"  Program {i}: {prog}")
+        # logging.info("Final programs:")
+        # for i, prog in enumerate(programs_sa):
+        #     logging.info(f"  Program {i}: {prog}")
         selected_hyperparams = self._select_hyperparams(
             X=X_train,
             y_bool=y_train_bool,
@@ -2662,7 +2772,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
     def test_policy_on_envs(
         self,
         base_class_name: str,
-        test_env_nums: Sequence[int] = range(11, 20),
+        test_env_nums: Sequence[int] = range(10, 20),
         max_num_steps: int = 50,
         record_videos: bool = False,
         video_format: str | None = "mp4",

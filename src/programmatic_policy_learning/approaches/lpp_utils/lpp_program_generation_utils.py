@@ -4,6 +4,7 @@ import ast
 import inspect
 import logging
 import math
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Callable, NotRequired, TypedDict, cast
@@ -75,11 +76,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HINTS_ROOT = (
     REPO_ROOT / "dsl" / "llm_primitives" / "hint_generation" / "llm_based" / "new_hints"
 )
+_SQLITE_CACHE_DIR_OVERRIDE_ENV = "PPL_SQLITE_CACHE_DIR"
 
 
-def _cache_path_with_model(stem: str, llm_model: str) -> Path:
+def resolve_sqlite_cache_path(stem: str, llm_model: str) -> Path:
+    """Return a model-specific SQLite cache path, honoring the shared override."""
     model_slug = "".join(ch if ch.isalnum() else "_" for ch in llm_model).strip("_")
-    return Path(f"{stem}_{model_slug}.db")
+    filename = f"{stem}_{model_slug}.db"
+    override = os.getenv(_SQLITE_CACHE_DIR_OVERRIDE_ENV)
+    if override:
+        return Path(override) / filename
+    return Path(filename)
 
 
 def build_sqlite_llm_cache(
@@ -90,6 +97,7 @@ def build_sqlite_llm_cache(
 ) -> SQLite3PretrainedLargeModelCache:
     """Create a SQLite LLM cache and print where it lives."""
     resolved = cache_path.resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
     exists = resolved.exists()
     size_bytes = resolved.stat().st_size if exists else 0
     msg = (
@@ -467,7 +475,7 @@ def get_program_set(
     llm_model = program_generation.get("llm_model", "gpt-4.1")
 
     if strategy == "feature_generator":
-        cache_path = _cache_path_with_model("feature_cache", llm_model)
+        cache_path = resolve_sqlite_cache_path("feature_cache", llm_model)
         cache = build_sqlite_llm_cache(
             cache_path,
             llm_model=llm_model,
@@ -519,7 +527,7 @@ def get_program_set(
             if configured_cache_path:
                 cache_path = Path(str(configured_cache_path))
             else:
-                cache_path = _cache_path_with_model("py_feature_cache", llm_model)
+                cache_path = resolve_sqlite_cache_path("py_feature_cache", llm_model)
             cache = build_sqlite_llm_cache(
                 cache_path,
                 llm_model=llm_model,
@@ -635,7 +643,7 @@ def _generate_with_dsl_generator(
 ) -> tuple[GrammarBasedProgramGenerator, dict[str, Any]]:
     """Generate programs using the DSL generator."""
     llm_model = program_generation.get("llm_model", "gpt-4.1")
-    cache_path = _cache_path_with_model("llm_cache", llm_model)
+    cache_path = resolve_sqlite_cache_path("llm_cache", llm_model)
     cache = build_sqlite_llm_cache(
         cache_path,
         llm_model=llm_model,

@@ -50,6 +50,12 @@ def _run(job: dict[str, Any]) -> int:
     env_cfg = dict(job["environment"])
     method_cfg = dict(job["method"])
     cli_args = [str(each) for each in method_cfg.get("cli_args", [])]
+    train_env_nums = [
+        int(each) for each in job.get("train_env_nums", job["demo_ids"])
+    ]
+    test_env_nums = [int(each) for each in job["test_env_nums"]]
+    eval_env_nums = train_env_nums + test_env_nums
+    shared_sqlite_cache_dir = job.get("shared_sqlite_cache_dir")
     command = [
         backend_python,
         str(cap_script),
@@ -61,7 +67,7 @@ def _run(job: dict[str, Any]) -> int:
         "--demo-env-nums",
         *[str(int(each)) for each in job["demo_ids"]],
         "--eval-env-nums",
-        *[str(int(each)) for each in job["test_env_nums"]],
+        *[str(int(each)) for each in eval_env_nums],
         "--output-dir",
         str(raw_output_dir),
         "--sleep-between-runs",
@@ -71,6 +77,16 @@ def _run(job: dict[str, Any]) -> int:
         "--no-plot-results",
         "--no-eval-run-expert",
     ]
+    if shared_sqlite_cache_dir:
+        command.extend(
+            [
+                "--cache-path",
+                str(
+                    Path(str(shared_sqlite_cache_dir)).resolve()
+                    / "baseline_llm_cache.db"
+                ),
+            ]
+        )
     if "cap_env_type" in env_cfg:
         command.extend(["--env-type", str(env_cfg["cap_env_type"])])
     if "cap_num_passages" in env_cfg:
@@ -100,8 +116,20 @@ def _run(job: dict[str, Any]) -> int:
             raise RuntimeError(
                 f"No CaP evaluation results found in metadata file {metadata_path}."
             )
-        num_test_total = len(cap_results)
-        num_test_solved = int(sum(cap_results))
+        if len(cap_results) != len(eval_env_nums):
+            raise RuntimeError(
+                "CaP result count does not match requested eval env count: "
+                f"{len(cap_results)} != {len(eval_env_nums)}."
+            )
+        train_results = cap_results[: len(train_env_nums)]
+        test_results = cap_results[len(train_env_nums) :]
+        num_train_total = len(train_results)
+        num_train_solved = int(sum(train_results))
+        train_success_rate = (
+            float(num_train_solved / num_train_total) if num_train_total else None
+        )
+        num_test_total = len(test_results)
+        num_test_solved = int(sum(test_results))
         success_rate = float(num_test_solved / num_test_total)
 
         encoding = metadata.get("encoding")
@@ -123,9 +151,14 @@ def _run(job: dict[str, Any]) -> int:
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
             "seed": int(job["seed"]),
-            "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "train_env_nums": train_env_nums,
+            "test_env_nums": test_env_nums,
+            "num_train_solved": num_train_solved,
+            "num_train_total": num_train_total,
+            "train_success_rate": train_success_rate,
             "num_test_solved": num_test_solved,
             "num_test_total": num_test_total,
+            "test_success_rate": success_rate,
             "success_rate": success_rate,
             "config_fields": jsonable(
                 {
@@ -137,6 +170,7 @@ def _run(job: dict[str, Any]) -> int:
                     "demo_env_nums": metadata.get("demo_env_nums"),
                     "num_demos": metadata.get("num_demos"),
                     "eval_max_steps": evaluation.get("eval_max_steps"),
+                    "eval_env_nums": eval_env_nums,
                 }
             ),
             "artifact_dir": str(artifact_dir),
@@ -180,9 +214,16 @@ def _run(job: dict[str, Any]) -> int:
             "demo_count": int(job["demo_count"]),
             "demo_ids": [int(each) for each in job["demo_ids"]],
             "seed": int(job["seed"]),
+            "train_env_nums": [
+                int(each) for each in job.get("train_env_nums", job["demo_ids"])
+            ],
             "test_env_nums": [int(each) for each in job["test_env_nums"]],
+            "num_train_solved": None,
+            "num_train_total": len(job.get("train_env_nums", job["demo_ids"])),
+            "train_success_rate": None,
             "num_test_solved": None,
             "num_test_total": len(job["test_env_nums"]),
+            "test_success_rate": None,
             "success_rate": None,
             "config_fields": {"backend": "cap", "cli_args": cli_args},
             "artifact_dir": str(artifact_dir),

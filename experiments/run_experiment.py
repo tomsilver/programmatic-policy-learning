@@ -246,7 +246,7 @@ def evaluate_single(
     if hasattr(approach, "test_policy_on_envs"):
         test_accuracies = approach.test_policy_on_envs(
             base_class_name=cfg.env.make_kwargs.base_name,
-            test_env_nums=range(11, 20),
+            test_env_nums=range(10, 20),
             max_num_steps=50,
             record_videos=bool(
                 OmegaConf.select(cfg, "eval.record_videos", default=False)
@@ -385,7 +385,7 @@ def _main(cfg: DictConfig) -> None:
         if hasattr(approach, "test_policy_on_envs"):
             train_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
-                test_env_nums=range(0, 11),
+                test_env_nums=range(0, 10),
                 max_num_steps=1000,
                 record_videos=bool(
                     OmegaConf.select(cfg, "eval.record_videos", default=False)
@@ -414,7 +414,7 @@ def _main(cfg: DictConfig) -> None:
                         policy=policy,
                         env_factory=env_factory,
                         env_specs=env_specs,
-                        env_nums=range(0, 11),
+                        env_nums=range(0, 10),
                         grid_size=int(
                             OmegaConf.select(
                                 cfg, "eval.vector_field.grid_size", default=21
@@ -425,7 +425,7 @@ def _main(cfg: DictConfig) -> None:
 
             test_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
-                test_env_nums=range(11, 20),
+                test_env_nums=range(10, 20),
                 max_num_steps=1000,
                 record_videos=bool(
                     OmegaConf.select(cfg, "eval.record_videos", default=False)
@@ -453,7 +453,7 @@ def _main(cfg: DictConfig) -> None:
                         policy=policy,
                         env_factory=env_factory,
                         env_specs=env_specs,
-                        env_nums=range(11, 20),
+                        env_nums=range(10, 20),
                         grid_size=int(
                             OmegaConf.select(
                                 cfg, "eval.vector_field.grid_size", default=21

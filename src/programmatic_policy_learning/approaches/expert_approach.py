@@ -61,7 +61,7 @@ class ExpertApproach(BaseApproach[_ObsType, _ActType]):
 
     def test_policy_on_envs(
         self,
-        test_env_nums: range = range(11, 20),
+        test_env_nums: range = range(10, 20),
         max_num_steps: int = 50,
         *,
         _base_class_name: str | None = None,
