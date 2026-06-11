@@ -7,6 +7,8 @@ import logging
 import multiprocessing
 import os
 import pickle
+import signal
+import time
 import traceback
 from importlib import import_module
 from pathlib import Path
@@ -925,8 +927,34 @@ def eval_program_fn(s: np.ndarray, a: tuple[int, int], prog: str) -> bool | None
 _WORKER_DSL = None
 _WORKER_PROGRAMS = None
 _WORKER_PROGRAM_STRINGS = None
+_WORKER_PROGRESS = None
+_WORKER_PROGRAM_BATCH_OFFSET = 0
+_WORKER_PROGRAM_TIMEOUT_SECS = max(
+    0.0, float(os.getenv("PPL_PROGRAM_EVAL_TIMEOUT_SECS", "5.0"))
+)
+_WORKER_SLOW_PROGRAM_WARNING_SECS = max(
+    0.0, float(os.getenv("PPL_PROGRAM_SLOW_WARNING_SECS", "1.0"))
+)
+_PROGRAM_BATCH_STALL_TIMEOUT_SECS = max(
+    0.0, float(os.getenv("PPL_PROGRAM_BATCH_STALL_TIMEOUT_SECS", "120.0"))
+)
+_PROGRAM_BATCH_PROGRESS_LOG_SECS = max(
+    1.0, float(os.getenv("PPL_PROGRAM_BATCH_PROGRESS_LOG_SECS", "30.0"))
+)
 
 CACHE_DIR = "cache"
+
+
+class ProgramEvalTimeoutError(TimeoutError):
+    """Raised when one program evaluation exceeds the configured timeout."""
+
+
+def _raise_program_eval_timeout(signum: int, frame: Any) -> None:
+    del signum, frame
+    raise ProgramEvalTimeoutError(
+        "Program evaluation exceeded timeout "
+        f"({_WORKER_PROGRAM_TIMEOUT_SECS:.3f}s)."
+    )
 
 
 def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
@@ -970,7 +998,11 @@ def _cache_key_run_all_programs(args: tuple[Any, ...], kwargs: dict[str, Any]) -
 
 
 def worker_init(
-    dsl_blob: bytes, module_map: dict[str, str], program_batch: list[str]
+    dsl_blob: bytes,
+    module_map: dict[str, str],
+    program_batch: list[str],
+    progress_proxy: Any | None = None,
+    program_batch_offset: int = 0,
 ) -> None:
     """Set up the worker once.
 
@@ -987,38 +1019,244 @@ def worker_init(
     )
 
     global _WORKER_DSL, _WORKER_PROGRAMS, _WORKER_PROGRAM_STRINGS  # pylint: disable=global-statement
+    global _WORKER_PROGRESS, _WORKER_PROGRAM_BATCH_OFFSET  # pylint: disable=global-statement
     _WORKER_DSL = DSL_FUNCTIONS
     _WORKER_PROGRAM_STRINGS = list(program_batch)
+    _WORKER_PROGRESS = progress_proxy
+    _WORKER_PROGRAM_BATCH_OFFSET = int(program_batch_offset)
     _WORKER_PROGRAMS = [
         eval("lambda s, a: " + prog, DSL_FUNCTIONS) for prog in program_batch
     ]
 
 
-def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
+def _short_program_repr(program: str | None, limit: int = 160) -> str | None:
+    """Return a log-friendly single-line preview of a program string."""
+    if program is None:
+        return None
+    single_line = " ".join(str(program).split())
+    if len(single_line) <= limit:
+        return single_line
+    return single_line[: limit - 3] + "..."
+
+
+def _set_worker_progress(**fields: Any) -> None:
+    """Update the shared worker progress snapshot, if enabled."""
+    if _WORKER_PROGRESS is None:
+        return
+    pid = os.getpid()
+    payload = dict(_WORKER_PROGRESS.get(pid, {}))
+    payload.update(fields)
+    payload["pid"] = pid
+    payload["updated_at"] = time.time()
+    _WORKER_PROGRESS[pid] = payload
+
+
+def _format_worker_progress_snapshot(progress_entries: list[dict[str, Any]]) -> str:
+    """Format a worker-progress snapshot for logs and exceptions."""
+    if not progress_entries:
+        return "no worker progress available"
+    now = time.time()
+    parts = []
+    for entry in progress_entries:
+        age = max(0.0, now - float(entry.get("updated_at", now)))
+        parts.append(
+            "pid={pid} status={status} completed_examples={completed} "
+            "example_index={example_idx} program_index={program_idx} age={age:.1f}s "
+            "program={program}".format(
+                pid=entry.get("pid", "?"),
+                status=entry.get("status", "unknown"),
+                completed=entry.get("completed_examples", 0),
+                example_idx=entry.get("example_index"),
+                program_idx=entry.get("program_index"),
+                age=age,
+                program=entry.get("program_preview"),
+            )
+        )
+    return " | ".join(parts)
+
+
+def _worker_progress_signature(progress_entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """Return a comparable snapshot of worker progress for stall detection."""
+    normalized = []
+    for entry in progress_entries:
+        normalized.append(
+            (
+                int(entry.get("pid", -1)),
+                str(entry.get("status", "")),
+                entry.get("completed_examples", 0),
+                entry.get("example_index"),
+                entry.get("program_index"),
+                entry.get("program_preview"),
+            )
+        )
+    return tuple(sorted(normalized))
+
+
+def _worker_heartbeat_signature(progress_entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """Return per-worker heartbeat timestamps for liveness tracking."""
+    heartbeats = []
+    for entry in progress_entries:
+        heartbeats.append(
+            (
+                int(entry.get("pid", -1)),
+                float(entry.get("updated_at", 0.0)),
+            )
+        )
+    return tuple(sorted(heartbeats))
+
+
+def _run_program_batch_with_monitoring(
+    ctx: multiprocessing.context.BaseContext,
+    *,
+    dsl_blob: bytes,
+    module_map: dict[str, str],
+    program_batch: list[str],
+    program_batch_offset: int,
+    indexed_inputs: list[tuple[int, tuple[ObsT, ActT]]],
+    num_workers: int,
+    chunksize: int,
+    batch_log_label: str,
+) -> list[list[Any]]:
+    """Evaluate a batch in a worker pool while watching for stalls."""
+    last_completed = 0
+    last_progress_time = time.monotonic()
+    last_snapshot_log_time = time.monotonic()
+    last_progress_signature: tuple[Any, ...] = ()
+    last_heartbeat_signature: tuple[Any, ...] = ()
+
+    with ctx.Manager() as manager:
+        progress_proxy = manager.dict()
+        with ctx.Pool(
+            processes=num_workers,
+            initializer=worker_init,
+            initargs=(
+                dsl_blob,
+                module_map,
+                program_batch,
+                progress_proxy,
+                program_batch_offset,
+            ),
+            maxtasksperchild=100,
+        ) as pool:
+            async_result = pool.map_async(
+                worker_eval_example,
+                indexed_inputs,
+                chunksize=chunksize,
+            )
+            while not async_result.ready():
+                time.sleep(min(5.0, _PROGRAM_BATCH_PROGRESS_LOG_SECS))
+                progress_entries = [
+                    dict(progress_proxy[pid]) for pid in list(progress_proxy.keys())
+                ]
+                completed = sum(
+                    int(entry.get("completed_examples", 0))
+                    for entry in progress_entries
+                )
+                progress_signature = _worker_progress_signature(progress_entries)
+                heartbeat_signature = _worker_heartbeat_signature(progress_entries)
+                now = time.monotonic()
+                if (
+                    completed > last_completed
+                    or progress_signature != last_progress_signature
+                    or heartbeat_signature != last_heartbeat_signature
+                ):
+                    last_completed = completed
+                    last_progress_time = now
+                    last_progress_signature = progress_signature
+                    last_heartbeat_signature = heartbeat_signature
+                if now - last_snapshot_log_time >= _PROGRAM_BATCH_PROGRESS_LOG_SECS:
+                    logging.info(
+                        "%s progress: %d/%d examples completed. Worker snapshot: %s",
+                        batch_log_label,
+                        completed,
+                        len(indexed_inputs),
+                        _format_worker_progress_snapshot(progress_entries),
+                    )
+                    last_snapshot_log_time = now
+                if (
+                    _PROGRAM_BATCH_STALL_TIMEOUT_SECS > 0.0
+                    and now - last_progress_time >= _PROGRAM_BATCH_STALL_TIMEOUT_SECS
+                ):
+                    snapshot = _format_worker_progress_snapshot(progress_entries)
+                    logging.error(
+                        "%s stalled for %.1fs. Terminating worker pool. "
+                        "Worker snapshot: %s",
+                        batch_log_label,
+                        _PROGRAM_BATCH_STALL_TIMEOUT_SECS,
+                        snapshot,
+                    )
+                    pool.terminate()
+                    pool.join()
+                    raise RuntimeError(
+                        f"{batch_log_label} stalled for "
+                        f"{_PROGRAM_BATCH_STALL_TIMEOUT_SECS:.1f}s. "
+                        f"Worker snapshot: {snapshot}"
+                    )
+            return async_result.get()
+
+
+def worker_eval_example(
+    fn_input: tuple[int, tuple[ObsT, ActT]] | tuple[ObsT, ActT]
+) -> list[Any]:
     """Run all precompiled programs on one (state, action) example.
 
     Uses the DSL and program_batch already set up by worker_init.
     """
-    s, a = fn_input
+    example_index = None
+    if (
+        isinstance(fn_input, tuple)
+        and len(fn_input) == 2
+        and isinstance(fn_input[0], int)
+        and isinstance(fn_input[1], tuple)
+        and len(fn_input[1]) == 2
+    ):
+        example_index = fn_input[0]
+        s, a = fn_input[1]
+    else:
+        s, a = fn_input
 
     if _WORKER_PROGRAMS is None:
         raise RuntimeError("_WORKER_PROGRAMS is not initialized.\
             Ensure worker_init is called before using worker_eval_example.")
 
     results = []
+    timeout_enabled = _WORKER_PROGRAM_TIMEOUT_SECS > 0.0
+    previous_handler = None
+    if timeout_enabled:
+        previous_handler = signal.signal(signal.SIGALRM, _raise_program_eval_timeout)
+    _set_worker_progress(
+        status="example_started",
+        example_index=example_index,
+        completed_examples=_WORKER_PROGRESS.get(os.getpid(), {}).get(
+            "completed_examples", 0
+        )
+        if _WORKER_PROGRESS is not None
+        else 0,
+        program_index=None,
+        program_preview=None,
+    )
     for idx, f in enumerate(_WORKER_PROGRAMS):
+        prog = None
+        if _WORKER_PROGRAM_STRINGS is not None and idx < len(_WORKER_PROGRAM_STRINGS):
+            prog = _WORKER_PROGRAM_STRINGS[idx]
+        global_program_index = _WORKER_PROGRAM_BATCH_OFFSET + idx
+        _set_worker_progress(
+            status="running_program",
+            example_index=example_index,
+            program_index=global_program_index,
+            program_preview=_short_program_repr(prog),
+        )
+        started_at = time.perf_counter()
         try:
+            if timeout_enabled:
+                signal.setitimer(signal.ITIMER_REAL, _WORKER_PROGRAM_TIMEOUT_SECS)
             results.append(f(s, a))
         except Exception as e:  # pylint: disable=broad-exception-caught
             results.append(None)
-            prog = None
-            if _WORKER_PROGRAM_STRINGS is not None and idx < len(
-                _WORKER_PROGRAM_STRINGS
-            ):
-                prog = _WORKER_PROGRAM_STRINGS[idx]
             error_details = (
                 "Program evaluation failed.\n"
-                f"Program index: {idx}\n"
+                f"Example index: {example_index}\n"
+                f"Program index: {global_program_index}\n"
                 f"Program: {prog}\n"
                 f"State: {s}\n"
                 f"Action: {a}\n"
@@ -1027,6 +1265,34 @@ def worker_eval_example(fn_input: tuple[ObsT, ActT]) -> list[bool]:
                 f"Traceback:\n{traceback.format_exc()}"
             )
             logging.error(error_details)
+        finally:
+            if timeout_enabled:
+                signal.setitimer(signal.ITIMER_REAL, 0.0)
+            elapsed = time.perf_counter() - started_at
+            if elapsed >= _WORKER_SLOW_PROGRAM_WARNING_SECS > 0.0:
+                logging.warning(
+                    "Slow program evaluation: example_index=%s program_index=%s "
+                    "elapsed=%.3fs timeout=%.3fs program=%s",
+                    example_index,
+                    global_program_index,
+                    elapsed,
+                    _WORKER_PROGRAM_TIMEOUT_SECS,
+                    _short_program_repr(prog),
+                )
+    if timeout_enabled and previous_handler is not None:
+        signal.signal(signal.SIGALRM, previous_handler)
+    completed_examples = 1
+    if _WORKER_PROGRESS is not None:
+        completed_examples += int(
+            _WORKER_PROGRESS.get(os.getpid(), {}).get("completed_examples", 0)
+        )
+    _set_worker_progress(
+        status="example_finished",
+        example_index=example_index,
+        completed_examples=completed_examples,
+        program_index=None,
+        program_preview=None,
+    )
     return results
 
 
@@ -1145,16 +1411,45 @@ def run_all_programs_on_single_demonstration(
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
-        with ctx.Pool(
-            processes=num_workers,
-            initializer=worker_init,
-            initargs=(dsl_blob, module_map, program_batch),
-            maxtasksperchild=100,
-        ) as pool:
-            results_iter = pool.imap(worker_eval_example, fn_inputs, chunksize=64)
-            batch_rows_list = list(results_iter)
+        batch_index = (p_start // program_interval) + 1
+        total_batches = (num_programs + program_interval - 1) // program_interval
+        batch_start_time = time.perf_counter()
+        logging.info(
+            "Demo %s: evaluating program batch %d/%d (programs %d-%d of %d) "
+            "over %d examples with %d workers.",
+            demo_number,
+            batch_index,
+            total_batches,
+            p_start,
+            p_end - 1,
+            num_programs,
+            num_data,
+            num_workers,
+        )
+        indexed_inputs = list(enumerate(fn_inputs))
+        batch_rows_list = _run_program_batch_with_monitoring(
+            ctx,
+            dsl_blob=dsl_blob,
+            module_map=module_map,
+            program_batch=program_batch,
+            program_batch_offset=p_start,
+            indexed_inputs=indexed_inputs,
+            num_workers=num_workers,
+            chunksize=64,
+            batch_log_label=(
+                f"Demo {demo_number}: batch {batch_index}/{total_batches} "
+                f"(programs {p_start}-{p_end - 1} of {num_programs})"
+            ),
+        )
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
+        logging.info(
+            "Demo %s: finished program batch %d/%d in %.2fs.",
+            demo_number,
+            batch_index,
+            total_batches,
+            time.perf_counter() - batch_start_time,
+        )
     examples = fn_inputs if return_examples else None
     return X.tocsr(), np.array(y, dtype=np.uint8), examples, sample_weights
 
@@ -1225,16 +1520,43 @@ def run_programs_on_examples(
     for p_start in range(0, num_programs, program_interval):
         p_end = min(p_start + program_interval, num_programs)
         program_batch = program_strs[p_start:p_end]
-        with ctx.Pool(
-            processes=num_workers,
-            initializer=worker_init,
-            initargs=(dsl_blob, module_map, program_batch),
-            maxtasksperchild=100,
-        ) as pool:
-            results_iter = pool.imap(worker_eval_example, examples, chunksize=64)
-            batch_rows_list = list(results_iter)
+        batch_index = (p_start // program_interval) + 1
+        total_batches = (num_programs + program_interval - 1) // program_interval
+        batch_start_time = time.perf_counter()
+        logging.info(
+            "Collision/program eval: evaluating batch %d/%d (programs %d-%d of %d) "
+            "over %d examples with %d workers.",
+            batch_index,
+            total_batches,
+            p_start,
+            p_end - 1,
+            num_programs,
+            num_data,
+            num_workers,
+        )
+        indexed_inputs = list(enumerate(examples))
+        batch_rows_list = _run_program_batch_with_monitoring(
+            ctx,
+            dsl_blob=dsl_blob,
+            module_map=module_map,
+            program_batch=program_batch,
+            program_batch_offset=p_start,
+            indexed_inputs=indexed_inputs,
+            num_workers=num_workers,
+            chunksize=64,
+            batch_log_label=(
+                f"Collision/program eval batch {batch_index}/{total_batches} "
+                f"(programs {p_start}-{p_end - 1} of {num_programs})"
+            ),
+        )
         batch_matrix = np.array(batch_rows_list, dtype=bool)
         X[:, p_start:p_end] = batch_matrix
+        logging.info(
+            "Collision/program eval: finished batch %d/%d in %.2fs.",
+            batch_index,
+            total_batches,
+            time.perf_counter() - batch_start_time,
+        )
 
     X_csr = X.tocsr()
     if cache_dir is not None:

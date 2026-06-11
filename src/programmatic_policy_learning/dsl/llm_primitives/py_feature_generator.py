@@ -643,7 +643,7 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
-            # input()
+            input()
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")

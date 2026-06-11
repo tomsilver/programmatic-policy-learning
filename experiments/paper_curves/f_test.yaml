@@ -15,32 +15,32 @@ codebases:
     python_executable: python
 
 environments:
-  # - name: StopTheFall
-  #   key: stf
-  #   lpp_env: ggg_stf
-  #   cap_env: StopTheFall
-  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
-  # - name: CheckmateTactic
-  #   key: ct
-  #   lpp_env: ggg_checkmate
-  #   cap_env: CheckmateTactic
-  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  - name: StopTheFall
+    key: stf
+    lpp_env: ggg_stf
+    cap_env: StopTheFall
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  - name: CheckmateTactic
+    key: ct
+    lpp_env: ggg_checkmate
+    cap_env: CheckmateTactic
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
   
-  # - name: ReachForTheStar
-  #   key: rfts
-  #   lpp_env: ggg_rfts
-  #   cap_env: ReachForTheStar
-  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
-  - name: Chase
-    key: ec
-    lpp_env: ggg_chase
-    plot_title: Chase
-    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"  
-  - name: Nim
-    key: nim
-    lpp_env: ggg_nim
-    plot_title: Nim
-    plot_caption: "Feature-budget comparison between the LLM feature generator and original LPP using 10 training demos and a fixed held-out test set."
+  - name: ReachForTheStar
+    key: rfts
+    lpp_env: ggg_rfts
+    cap_env: ReachForTheStar
+    plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"
+  # - name: Chase
+  #   key: ec
+  #   lpp_env: ggg_chase
+  #   plot_title: Chase
+  #   plot_caption: "No Collision feedback, no example subsampling, and uniform prior!"  
+  # - name: Nim
+  #   key: nim
+  #   lpp_env: ggg_nim
+  #   plot_title: Nim
+  #   plot_caption: "Feature-budget comparison between the LLM feature generator and original LPP using 10 training demos and a fixed held-out test set."
 
 methods:
   - name: our_main_topk
@@ -62,11 +62,11 @@ methods:
       - approach.program_generation.negative_sampling.discrete.ignore_equivalent_transitions=false
       - approach.program_generation.negative_sampling.discrete.use_sample_weights=false
 
-  # - name: lpp_original
-  #   display_name: LPP original
-  #   backend: lpp
-  #   seeds: [0]
-  #   feature_budget_override: approach.num_programs
-  #   overrides:
-  #     - approach.program_generation.strategy=fixed_grid_v1
-  #     - approach.program_generation_step_size=100
+  - name: lpp_original
+    display_name: LPP original
+    backend: lpp
+    seeds: [0]
+    feature_budget_override: approach.num_programs
+    overrides:
+      - approach.program_generation.strategy=fixed_grid_v1
+      - approach.program_generation_step_size=100
