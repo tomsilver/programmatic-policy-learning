@@ -207,6 +207,11 @@ astar_metrics.json
 # Maze experiment results and graphs
 experiments/maze_experiments/maze_results/
 
+# Motion2D experiment outputs
+experiments/motion2d_experiments/results/birrt/
+experiments/motion2d_experiments/results/llm_ppl/
+experiments/motion2d_experiments/plots/
+
 # Integrated approach (WIP)
 src/programmatic_policy_learning/approaches/integrated_approach.py
 tests/approaches/test_maze_integrated_approach.py

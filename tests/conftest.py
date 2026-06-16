@@ -15,3 +15,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run tests with real LLMs",
     )
+    parser.addoption(
+        "--runvisual",
+        action="store_true",
+        dest="runvisual",
+        default=False,
+        help="Run visual/render tests that save videos and print metrics.",
+    )

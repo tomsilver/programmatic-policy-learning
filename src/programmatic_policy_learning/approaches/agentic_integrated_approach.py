@@ -1,12 +1,17 @@
 """An approach that uses an LLM to generate a class-based policy with planner
-access."""
+access.
+
+Supports both discrete (A*/maze) and continuous (BiRRT/motion2d)
+environments by accepting environment-specific planner documentation,
+constructor kwargs for the generated policy, and a scoring callback.
+"""
 
 import ast
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Callable, List, TypeVar
+from typing import Any, Callable, TypeVar
 
 from gymnasium.spaces import Space
 from prpl_llm_utils.models import PretrainedLargeModel
@@ -23,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 _ObsType = TypeVar("_ObsType")
 _ActType = TypeVar("_ActType")
-_State = tuple[int, int]
 
-PLANNER_DOC = '''
+# ── A* planner documentation (used by maze environments) ─────────────────
+
+ASTAR_PLANNER_DOC = '''
     ## Planner
 
     You have access to an A* search planner. Import it at the top of each file:
@@ -116,15 +122,279 @@ PLANNER_DOC = '''
     you will follow it without interruption.
 '''
 
+ASTAR_INIT_DOC = '''
+        class GeneratedPolicy:
+            def __init__(self, get_actions, get_next_state, get_cost, check_goal):
+                """Initialize with environment transition functions.
+
+                Args:
+                    get_actions(): Returns a list of all possible actions.
+                    get_next_state(state, action): Returns the resulting state after
+                        taking an action. If the action is invalid or blocked,
+                        returns the same state unchanged.
+                    get_cost(): Returns the cost of a single action (a float).
+                    check_goal(state, goal): Returns True if the state satisfies
+                        the goal condition.
+                """
+                ...
+
+            def reset(self, obs, info):
+                """Called at the start of each episode with the initial observation
+                and info dict (which may contain environment metadata)."""
+                ...
+
+            def get_action(self, obs):
+                """Return a valid action for the given observation.
+
+                Called once per timestep. Must ALWAYS return a valid action integer.
+                Must NEVER return None.
+                """
+                ...
+'''
+
+# ── BiRRT planner documentation (used by motion2d environments) ──────────
+
+BIRRT_PLANNER_DOC = """
+    ## Planner
+
+    You have access to a BiRRT (Bidirectional Rapidly-Exploring Random Trees)
+    motion planner.  Import the helper at the top of each file:
+
+    ```
+    from programmatic_policy_learning.utils.motion_planning_utils import (
+        run_motion_planning_for_crv_robot,
+        crv_pose_plan_to_action_plan,
+    )
+    from kinder.envs.kinematic2d.structs import SE2Pose
+    ```
+
+    ### run_motion_planning_for_crv_robot
+
+    ```
+    def run_motion_planning_for_crv_robot(
+        state,            # ObjectCentricState — full world state
+        robot,            # Object — the robot object
+        target_pose,      # SE2Pose(x, y, theta) — goal pose
+        action_space,     # CRVRobotActionSpace — bounds on dx, dy, dtheta
+        seed=0,           # int — RNG seed
+        num_attempts=10,  # independent BiRRT attempts
+        num_iters=100,    # RRT iterations per attempt
+        smooth_amt=50,    # path smoothing passes
+    ) -> tuple[list[SE2Pose] | None, MotionPlanningMetrics]:
+    ```
+
+    Returns ``(pose_plan, metrics)``.  ``pose_plan`` is ``None`` when no
+    collision-free path was found.
+
+    ### crv_pose_plan_to_action_plan
+
+    ```
+    def crv_pose_plan_to_action_plan(
+        pose_plan,        # list[SE2Pose] — from run_motion_planning_for_crv_robot
+        action_space,     # CRVRobotActionSpace
+    ) -> list[numpy.ndarray]:
+    ```
+
+    Converts a pose plan into a list of 5-dim action arrays ready to pass to
+    ``env.step()``.
+
+    ### Typical usage inside GeneratedPolicy
+
+    All helper objects you need are passed to ``__init__``:
+
+    ```python
+    def reset(self, obs, info):
+        state = self.get_object_centric_state(obs)
+        # pick target_pose from obs (see environment description)
+        target_x = float(obs[9]) + float(obs[17]) / 2.0
+        target_y = float(obs[10]) + float(obs[18]) / 2.0
+        target_pose = SE2Pose(target_x, target_y, 0.0)
+
+        pose_plan, metrics = run_motion_planning_for_crv_robot(
+            state, self.robot, target_pose, self.action_space,
+            seed=0, num_attempts=10, num_iters=200, smooth_amt=50,
+        )
+        if pose_plan is not None:
+            self.plan = list(crv_pose_plan_to_action_plan(
+                pose_plan, self.action_space
+            ))
+
+    def get_action(self, obs):
+        if self.plan:
+            return self.plan.pop(0)
+        # fallback: reactive action
+        ...
+    ```
+
+    ## Plan Caching
+
+    Since this is a class, you can cache plans across calls using self.
+    BiRRT plans a full trajectory at once, so you typically plan once in
+    ``reset()`` and replay the action sequence from ``self.plan`` in
+    ``get_action()``. If the plan is exhausted before reaching the goal,
+    you can replan by calling ``run_motion_planning_for_crv_robot`` again
+    from the current observation.
+
+    ## Tuning
+
+    - Increasing ``num_attempts`` and ``num_iters`` makes planning more
+      likely to succeed in tight spaces but costs more collision checks.
+    - ``smooth_amt`` shortens the path but adds collision checks.
+    - For environments with few or no passages (p<=1), lower values
+      suffice. For many passages (p>=5), higher values are needed.
+"""
+
+BIRRT_INIT_DOC = '''
+        class GeneratedPolicy:
+            def __init__(self, get_object_centric_state, robot, action_space):
+                """Initialize with motion-planning helpers.
+
+                Args:
+                    get_object_centric_state(obs): Callable that converts a flat
+                        numpy observation into an ObjectCentricState needed by the
+                        BiRRT planner.
+                    robot: The robot Object to plan for.
+                    action_space: CRVRobotActionSpace with bounds on (dx, dy,
+                        dtheta, darm, vacuum).
+                """
+                ...
+
+            def reset(self, obs, info):
+                """Called at the start of each episode with the initial observation
+                and info dict."""
+                ...
+
+            def get_action(self, obs):
+                """Return a valid 5-dim float32 numpy action array.
+
+                Called once per timestep. Must ALWAYS return a valid action.
+                Must NEVER return None.
+                """
+                ...
+'''
+
+# ── Scoring helpers ──────────────────────────────────────────────────────
+
+ScoreFn = Callable[
+    [Any, Any, dict, int],  # policy, initial_obs, initial_info, max_timesteps
+    tuple[bool, int],  # (goal_reached, -cost_metric)
+]
+
+
+def read_and_clear_metrics(env_var: str, metric_key: str) -> int:
+    """Read total of *metric_key* from a JSONL metrics file, then clear it.
+
+    Returns 0 if the env var is unset or the file doesn't exist.
+    """
+    metrics_path_str = os.environ.get(env_var)
+    if not metrics_path_str:
+        return 0
+    path = Path(metrics_path_str)
+    if not path.exists():
+        return 0
+    total = 0
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                total += json.loads(line)[metric_key]
+    path.write_text("", encoding="utf-8")
+    return total
+
+
+def score_policy_maze(
+    policy: Any,
+    initial_obs: Any,
+    initial_info: dict,
+    max_timesteps: int,
+    get_next_state: Callable,
+    check_goal: Callable,
+) -> tuple[bool, int]:
+    """Score a maze policy by deterministic simulation with get_next_state.
+
+    Returns ``(goal_reached, -num_expansions)`` for lexicographic
+    comparison — higher is better.
+    """
+    read_and_clear_metrics("astar_metrics_path", "num_expansions")
+    goal = initial_info["goal"]
+    policy.reset(initial_obs, initial_info)
+    state = initial_obs
+    goal_reached = False
+    for _ in range(max_timesteps):
+        action = policy.get_action(state)
+        state = get_next_state(state, action)
+        if check_goal(state, goal):
+            goal_reached = True
+            break
+    num_expansions = read_and_clear_metrics("astar_metrics_path", "num_expansions")
+    return (goal_reached, -num_expansions)
+
+
+def score_policy_motion2d(
+    policy: Any,
+    initial_obs: Any,
+    initial_info: dict,
+    max_timesteps: int,
+    env_factory: Callable,
+    timeout: float = 120.0,
+) -> tuple[bool, int]:
+    """Score a motion2d policy by running a full episode in the gym env.
+
+    ``env_factory()`` must return a fresh, already-reset gym environment
+    whose ``reset()`` produces the same ``(obs, info)`` pair passed here.
+
+    Returns ``(goal_reached, -num_collision_checks)`` for lexicographic
+    comparison — higher is better.  If the episode exceeds *timeout*
+    seconds of wall-clock time the rollout is stopped early.
+    """
+    import time  # pylint: disable=import-outside-toplevel
+
+    read_and_clear_metrics("birrt_metrics_path", "num_collision_checks")
+    env = env_factory()
+    policy.reset(initial_obs, initial_info)
+    obs = initial_obs
+    goal_reached = False
+    t0 = time.monotonic()
+    for _ in range(max_timesteps):
+        if time.monotonic() - t0 > timeout:
+            logger.warning("Scoring timed out after %.0fs", timeout)
+            break
+        action = policy.get_action(obs)
+        obs, _, terminated, _, _ = env.step(action)
+        if terminated:
+            goal_reached = True
+            break
+    env.close()  # type: ignore[no-untyped-call]
+    num_checks = read_and_clear_metrics("birrt_metrics_path", "num_collision_checks")
+    return (goal_reached, -num_checks)
+
+
+# ── Main approach class ──────────────────────────────────────────────────
+
 
 class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
     """An approach that uses an LLM to generate candidate policies with planner
     access, scores them via simulation, and keeps the best.
 
-    The LLM generates `num_candidates` distinct `GeneratedPolicy` classes
-    with varying planning/reactivity trade-offs. Each is scored by
+    The LLM generates ``num_candidates`` distinct ``GeneratedPolicy`` classes
+    with varying planning/reactivity trade-offs.  Each is scored by
     simulating an episode, and the best-scoring policy is used for
     evaluation.
+
+    Parameters
+    ----------
+    planner_context : dict[str, Any]
+        Keyword arguments forwarded to ``GeneratedPolicy.__init__``.
+        For maze: ``{get_actions, get_next_state, get_cost, check_goal}``.
+        For motion2d: ``{get_object_centric_state, robot, action_space}``.
+    planner_doc : str
+        Documentation inserted into the LLM prompt describing the planner
+        API available to generated policies.
+    init_doc : str
+        Documentation inserted into the LLM prompt describing the
+        ``GeneratedPolicy.__init__`` signature.
+    score_fn : callable
+        ``(policy, obs, info, max_timesteps) -> (goal_reached, -cost)``
     """
 
     def __init__(
@@ -134,20 +404,20 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         action_space: Space[_ActType],
         seed: int,
         llm: PretrainedLargeModel,
-        get_actions: Callable[[], List[_ActType]],
-        get_next_state: Callable[[_State, _ActType], _State],
-        get_cost: Callable[[], float],
-        check_goal: Callable[[_State, Any], bool],
+        planner_context: dict[str, Any],
+        planner_doc: str,
+        init_doc: str,
+        score_fn: ScoreFn,
         num_candidates: int = 7,
         scoring_max_timesteps: int = 1000,
     ) -> None:
         super().__init__(environment_description, observation_space, action_space, seed)
         self._seed = seed
         self._llm = llm
-        self._get_actions = get_actions
-        self._get_next_state = get_next_state
-        self._get_cost = get_cost
-        self._check_goal = check_goal
+        self._planner_context = dict(planner_context)
+        self._planner_doc = planner_doc
+        self._init_doc = init_doc
+        self._score_fn = score_fn
         self._num_candidates = num_candidates
         self._scoring_max_timesteps = scoring_max_timesteps
         self._generated: Any = None
@@ -155,29 +425,22 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         self._all_candidate_codes: list[str] = []
         self._all_candidate_scores: list[tuple[bool, int] | None] = []
 
-    def update_env_callables(
+    def update_planner_context(
         self,
-        get_actions: Callable[[], List[_ActType]],
-        get_next_state: Callable[[_State, _ActType], _State],
-        get_cost: Callable[[], float],
-        check_goal: Callable[[_State, Any], bool],
+        planner_context: dict[str, Any],
     ) -> None:
-        """Update the environment-specific transition functions.
+        """Update the environment-specific planner context.
 
-        Call this before reset() when evaluating on a new environment
+        Call this before ``reset()`` when evaluating on a new environment
         instance so the generated policy uses the correct dynamics.
         """
-        self._get_actions = get_actions
-        self._get_next_state = get_next_state
-        self._get_cost = get_cost
-        self._check_goal = check_goal
+        self._planner_context = dict(planner_context)
 
     def reset(self, *args: Any, **kwargs: Any) -> None:
         super().reset(*args, **kwargs)
         assert self._last_observation is not None
         if self._generated is None:
             assert self._last_info is not None
-            goal = self._last_info["goal"]
 
             code_strings = _synthesize_policy_classes(
                 self._environment_description,
@@ -185,6 +448,8 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                 self._last_observation,
                 self._action_space,
                 self._num_candidates,
+                planner_doc=self._planner_doc,
+                init_doc=self._init_doc,
                 seed=self._seed,
             )
 
@@ -195,20 +460,11 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
 
             for i, code_str in enumerate(code_strings):
                 try:
-                    policy = _load_generated_policy(
-                        code_str,
-                        self._get_actions,
-                        self._get_next_state,
-                        self._get_cost,
-                        self._check_goal,
-                    )
-                    score = _score_policy(
+                    policy = _load_generated_policy(code_str, self._planner_context)
+                    score = self._score_fn(
                         policy,
                         self._last_observation,
                         self._last_info,
-                        goal,
-                        self._get_next_state,
-                        self._check_goal,
                         self._scoring_max_timesteps,
                     )
                     logger.info("Policy %d score: %s", i, score)
@@ -226,18 +482,11 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
                 raise RuntimeError("No valid policies were generated.")
 
             self._best_code = best_code
-            self._generated = _load_generated_policy(
-                best_code,
-                self._get_actions,
-                self._get_next_state,
-                self._get_cost,
-                self._check_goal,
-            )
+            self._generated = _load_generated_policy(best_code, self._planner_context)
 
-        self._generated.get_actions = self._get_actions
-        self._generated.get_next_state = self._get_next_state
-        self._generated.get_cost = self._get_cost
-        self._generated.check_goal = self._check_goal
+        # Refresh planner context on the loaded policy (for eval on new envs).
+        for key, val in self._planner_context.items():
+            setattr(self._generated, key, val)
         self._generated.reset(self._last_observation, self._last_info)
 
     def _get_action(self) -> _ActType:
@@ -246,63 +495,12 @@ class AgenticIntegratedApproach(BaseApproach[_ObsType, _ActType]):
         return self._generated.get_action(self._last_observation)
 
 
-def _read_and_clear_astar_metrics() -> int:
-    """Read total expansions from the astar metrics JSON file, then clear it.
-
-    Returns 0 if the env var is unset or the file doesn't exist.
-    """
-    metrics_path_str = os.environ.get("astar_metrics_path")
-    if not metrics_path_str:
-        return 0
-    path = Path(metrics_path_str)
-    if not path.exists():
-        return 0
-    total_expansions = 0
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                total_expansions += json.loads(line)["num_expansions"]
-    path.write_text("", encoding="utf-8")
-    return total_expansions
-
-
-def _score_policy(
-    policy: Any,
-    initial_obs: Any,
-    initial_info: Any,
-    goal: Any,
-    get_next_state: Callable,
-    check_goal: Callable,
-    max_timesteps: int,
-) -> tuple[bool, int]:
-    """Score a policy by simulating an episode.
-
-    Returns (goal_reached, -num_expansions) for tuple comparison.
-    Higher is better: goal_reached=True beats False, then fewer
-    expansions wins.  Expansion counts come from the astar_metrics JSON
-    file written by run_astar, not from the policy itself.
-    """
-    _read_and_clear_astar_metrics()
-    policy.reset(initial_obs, initial_info)
-    state = initial_obs
-    goal_reached = False
-    for _ in range(max_timesteps):
-        action = policy.get_action(state)
-        state = get_next_state(state, action)
-        if check_goal(state, goal):
-            goal_reached = True
-            break
-    num_expansions = _read_and_clear_astar_metrics()
-    return (goal_reached, -num_expansions)
+# ── Helpers ──────────────────────────────────────────────────────────────
 
 
 def _load_generated_policy(
     code_str: str,
-    get_actions: Callable,
-    get_next_state: Callable,
-    get_cost: Callable,
-    check_goal: Callable,
+    planner_context: dict[str, Any],
 ) -> Any:
     """Load a GeneratedPolicy class from a code string and instantiate it."""
     namespace: dict[str, Any] = {}
@@ -310,12 +508,7 @@ def _load_generated_policy(
         compile(code_str, "<generated_policy>", "exec"), namespace
     )
     cls = namespace["GeneratedPolicy"]
-    return cls(
-        get_actions=get_actions,
-        get_next_state=get_next_state,
-        get_cost=get_cost,
-        check_goal=check_goal,
-    )
+    return cls(**planner_context)
 
 
 def _parse_all_python_code_blocks(text: str) -> list[str]:
@@ -371,6 +564,8 @@ def _synthesize_policy_classes(
     example_observation: _ObsType,
     action_space: Space[_ActType],
     num_candidates: int,
+    planner_doc: str,
+    init_doc: str,
     seed: int = 0,
 ) -> list[str]:
     """Use the LLM to synthesize N GeneratedPolicy classes and return their
@@ -381,40 +576,14 @@ def _synthesize_policy_classes(
         `GeneratedPolicy` with the following interface:
 
         ```
-        class GeneratedPolicy:
-            def __init__(self, get_actions, get_next_state, get_cost, check_goal):
-                \"\"\"Initialize with environment transition functions.
-
-                Args:
-                    get_actions(): Returns a list of all possible actions.
-                    get_next_state(state, action): Returns the resulting state after
-                        taking an action. If the action is invalid or blocked,
-                        returns the same state unchanged.
-                    get_cost(): Returns the cost of a single action (a float).
-                    check_goal(state, goal): Returns True if the state satisfies
-                        the goal condition.
-                \"\"\"
-                ...
-
-            def reset(self, obs, info):
-                \"\"\"Called at the start of each episode with the initial observation
-                and info dict (which may contain environment metadata).\"\"\"
-                ...
-
-            def get_action(self, obs):
-                \"\"\"Return a valid action for the given observation.
-
-                Called once per timestep. Must ALWAYS return a valid action integer.
-                Must NEVER return None.
-                \"\"\"
-                ...
+{init_doc}
         ```
 
         Each class can maintain internal state between calls (e.g. a cached plan,
         accumulated search metrics, etc.). The `reset` method is called once at the
         start of each episode. The `get_action` method is called each step.
 
-        {PLANNER_DOC}
+        {planner_doc}
 
         ## Environment Description
 
@@ -452,7 +621,7 @@ def _synthesize_policy_classes(
         the small samples shown during training. A policy that fails on novel
         instances is strictly worse than one that uses more computation but
         succeeds reliably.
-        
+
         A good policy should be both effective (reach the goal) and efficient
         (minimize unnecessary computation). Prefer reactive control when the
         path is straightforward and only fall back to planning when it is
