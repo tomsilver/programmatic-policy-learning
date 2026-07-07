@@ -237,6 +237,17 @@ def _absolutize_lpp_paths(cfg: Any, repo_root: Path) -> None:
         if offline_json_path:
             loading_cfg["offline_json_path"] = absolutize(offline_json_path)
 
+    make_kwargs = cfg.env.get("make_kwargs", {})
+    for field in ("environments_dir", "recordings_dir"):
+        if field in make_kwargs and make_kwargs.get(field) is not None:
+            make_kwargs[field] = absolutize(make_kwargs.get(field))
+
+    expert_cfg = cfg.env.get("expert")
+    if expert_cfg is not None and "demos_root" in expert_cfg:
+        demos_root = expert_cfg.get("demos_root")
+        if demos_root:
+            expert_cfg["demos_root"] = absolutize(demos_root)
+
 
 def _important_lpp_config(cfg: Any, method: dict[str, Any]) -> dict[str, Any]:
     approach = cfg.approach

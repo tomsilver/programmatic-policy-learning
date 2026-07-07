@@ -1,5 +1,6 @@
 """Cache utilities."""
 
+import hashlib
 import logging
 import os
 import pickle
@@ -8,14 +9,25 @@ from typing import Any, Callable, Iterable, Union
 from scipy.sparse import csr_matrix, load_npz, save_npz
 
 _CACHE_DIR_OVERRIDE_ENV = "PPL_CACHE_DIR_OVERRIDE"
+_MAX_CACHE_RUN_ID_CHARS = 120
 
 
 def _resolve_cache_dir(cache_dir: str) -> str:
-    """Return the effective cache dir, honoring the runtime override env var."""
+    """Return the effective cache dir, honoring the runtime override env
+    var."""
     override = os.getenv(_CACHE_DIR_OVERRIDE_ENV)
     if override and cache_dir == "cache":
         return override
     return cache_dir
+
+
+def _shorten_cache_run_id(run_id: str) -> str:
+    """Keep generated cache filenames below common filesystem limits."""
+    if len(run_id) <= _MAX_CACHE_RUN_ID_CHARS:
+        return run_id
+    digest = hashlib.sha1(run_id.encode("utf-8")).hexdigest()[:16]
+    prefix = run_id[: _MAX_CACHE_RUN_ID_CHARS - len(digest) - 2].rstrip("-_")
+    return f"{prefix}__{digest}"
 
 
 def cache_single_output(output: Any, cache_file: str) -> None:
@@ -94,6 +106,7 @@ def manage_cache(
                 run_id = key_fn(args, kwargs)
             else:
                 run_id = "-".join([str(arg) for arg in args])
+            run_id = _shorten_cache_run_id(str(run_id))
 
             # Check the existence of the first cache file for this run
             cache_file = os.path.join(

@@ -1,0 +1,50 @@
+experiment_name: arc_agi3_ls20_stage_a
+output_root: results/paper_curves
+continue_on_error: true
+error_band: sem
+eval_max_steps: 100
+
+demo_id_pool: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+demo_counts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+seeds: [0]
+test_env_nums: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+codebases:
+  lpp:
+    root_dir: .
+    python_executable: python
+
+environments:
+  - name: ARC-AGI-3 ls20 Stage A
+    key: arc_ls20_stage_a
+    lpp_env: arc_agi3_ls20_lpp
+    plot_title: ARC-AGI-3 ls20 Stage A
+    plot_caption: "Train on variants 0-9; test on held-out variants 10-19."
+
+methods:
+  - name: lpp_offline_features
+    display_name: LPP offline features
+    backend: lpp
+    sync_prompt_demo_subsets: true
+    sync_prompt_max_subset_size: 3
+    sync_prompt_max_subsets: 4
+    sync_prompt_max_size3_subsets: 2
+    overrides:
+      - approach.num_programs=21
+      - approach.program_generation_step_size=1
+      - approach.num_dts=3
+      - approach.max_num_particles=10
+      - approach.map_choices=false
+      - approach.filter_constant_features_enabled=false
+      - approach.filter_duplicate_features_enabled=true
+      - approach.cross_demo_feature_filter.enabled=false
+      - approach.cross_demo_feature_filter.apply_filter=false
+      - approach.program_generation.strategy=py_feature_gen
+      - approach.program_generation.llm_model=gpt-4.1
+      - approach.program_generation.py_feature_gen_mode=feature_payload
+      - approach.program_generation.num_features=21
+      - approach.program_generation.encoding_method=enc_5
+      - approach.program_generation.loading.offline=1
+      - approach.program_generation.loading.offline_json_path=src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/arc_agi3_ls20_offline_features.json
+      - approach.program_generation.negative_sampling.enabled=false
+      - approach.program_generation.negative_sampling.discrete.action_values=[1,2,3,4]
