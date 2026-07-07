@@ -1,0 +1,10 @@
+provider: virtual_tools
+
+make_kwargs:
+  level_dir: "environment/Trials/Original"
+  level_name: "Basic"
+  grid_step: 20
+  maxtime: 20.0
+  render_mode: null
+
+description: "Virtual Tools / ToolPicker one-shot physics game. The agent chooses a tool and a 2D placement."
