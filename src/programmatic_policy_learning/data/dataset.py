@@ -728,12 +728,26 @@ def extract_examples_from_demonstration_item(
     if action_mode != "discrete":
         raise ValueError(f"Unknown action_mode: {action_mode!r}")
 
+    cfg_grid = dict(sampling_cfg.get("discrete", {}))
+    finite_action_values = cfg_grid.get(
+        "action_values", sampling_cfg.get("action_values")
+    )
+    if finite_action_values is not None:
+        action_value = int(getattr(action, "value", action))
+        positive_examples = [(state, action_value)]  # type: ignore[list-item]
+        for candidate in finite_action_values:
+            candidate_value = int(getattr(candidate, "value", candidate))
+            if candidate_value == action_value:
+                continue
+            negative_examples.append((state, candidate_value))  # type: ignore[arg-type]
+        sample_weights = np.ones(1 + len(negative_examples), dtype=float)
+        return positive_examples, negative_examples, sample_weights
+
     state_grid, action_grid = require_grid_state_action(
         state,
         action,
         context="Discrete negative expansion",
     )
-    cfg_grid = dict(sampling_cfg.get("discrete", {}))
     ignore_equivalent_transitions = bool(
         cfg_grid.get("ignore_equivalent_transitions", False)
     )
@@ -952,8 +966,7 @@ class ProgramEvalTimeoutError(TimeoutError):
 def _raise_program_eval_timeout(signum: int, frame: Any) -> None:
     del signum, frame
     raise ProgramEvalTimeoutError(
-        "Program evaluation exceeded timeout "
-        f"({_WORKER_PROGRAM_TIMEOUT_SECS:.3f}s)."
+        "Program evaluation exceeded timeout " f"({_WORKER_PROGRAM_TIMEOUT_SECS:.3f}s)."
     )
 
 
@@ -1089,7 +1102,9 @@ def _format_worker_progress_snapshot(progress_entries: list[dict[str, Any]]) -> 
     return " | ".join(parts)
 
 
-def _worker_progress_signature(progress_entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+def _worker_progress_signature(
+    progress_entries: list[dict[str, Any]],
+) -> tuple[Any, ...]:
     """Return a comparable snapshot of worker progress for stall detection."""
     normalized = []
     for entry in progress_entries:
@@ -1106,7 +1121,9 @@ def _worker_progress_signature(progress_entries: list[dict[str, Any]]) -> tuple[
     return tuple(sorted(normalized))
 
 
-def _worker_heartbeat_signature(progress_entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+def _worker_heartbeat_signature(
+    progress_entries: list[dict[str, Any]],
+) -> tuple[Any, ...]:
     """Return per-worker heartbeat timestamps for liveness tracking."""
     heartbeats = []
     for entry in progress_entries:
@@ -1210,7 +1227,7 @@ def _run_program_batch_with_monitoring(
 
 
 def worker_eval_example(
-    fn_input: tuple[int, tuple[ObsT, ActT]] | tuple[ObsT, ActT]
+    fn_input: tuple[int, tuple[ObsT, ActT]] | tuple[ObsT, ActT],
 ) -> list[Any]:
     """Run all precompiled programs on one (state, action) example.
 
@@ -1241,11 +1258,11 @@ def worker_eval_example(
     _set_worker_progress(
         status="example_started",
         example_index=example_index,
-        completed_examples=_WORKER_PROGRESS.get(os.getpid(), {}).get(
-            "completed_examples", 0
-        )
-        if _WORKER_PROGRESS is not None
-        else 0,
+        completed_examples=(
+            _WORKER_PROGRESS.get(os.getpid(), {}).get("completed_examples", 0)
+            if _WORKER_PROGRESS is not None
+            else 0
+        ),
         program_index=None,
         program_preview=None,
     )
@@ -1329,7 +1346,9 @@ def run_all_programs_on_single_demonstration(
     prompt_demo_ids: Sequence[int] | None = None,  # pylint: disable=unused-argument
     split_tag: str | None = None,  # pylint: disable=unused-argument
     prior_version: str | None = None,  # pylint: disable=unused-argument
-    collision_feedback_target_worst_bucket_after_flat: bool | None = None,  # pylint: disable=unused-argument
+    collision_feedback_target_worst_bucket_after_flat: (
+        bool | None
+    ) = None,  # pylint: disable=unused-argument
     action_mode: str = "discrete",
     seed: int | None = None,  # pylint: disable=unused-argument
     program_interval: int = 1000,  # unused in this fast path; keep for compat  # pylint: disable=unused-argument

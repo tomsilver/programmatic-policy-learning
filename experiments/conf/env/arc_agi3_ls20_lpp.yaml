@@ -1,0 +1,25 @@
+make_kwargs:
+  base_name: "ls20"
+  game_id: "ls20"
+  wrapper: gym
+  observation_format: processed
+  operation_mode: offline
+  environments_dir: environment_files
+  recordings_dir: recordings
+  render_mode: null
+  save_recording: false
+  terminate_on_level_complete: true
+  randomize_initial_state: true
+  randomize_shape: false
+
+provider: arc_agi3
+
+description: "ARC-AGI-3 ls20 through the official arc-agi SDK."
+observation_mode: discrete
+action_mode: discrete
+
+expert:
+  _target_: programmatic_policy_learning.approaches.arc_agi3_manual_demo_replay_expert.ArcAgi3ManualDemoReplayExpertApproach
+  demos_root: manual_demos
+  env_id: "arc_agi3/ls20"
+  demo_glob: "*shape_match_train.pkl"

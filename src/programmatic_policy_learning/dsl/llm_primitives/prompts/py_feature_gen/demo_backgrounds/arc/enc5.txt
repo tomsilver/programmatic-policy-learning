@@ -1,0 +1,59 @@
+You will be given a few ARC-AGI-3 grid-game trajectories as illustrative expert demonstrations.
+
+Each trajectory is a sequence of positive expert decisions. The raw SDK observation is preprocessed once before feature generation, then rendered into a compact object-centric text format.
+
+The state `s` used by feature functions is still a dictionary. Important fields include:
+
+- `s["grid"]`: the current grid, a 2D list of integer tokens with shape H x W.
+  Grid indexing is `grid[row][col]`, with `(row, col) = (0, 0)` at the top-left.
+
+- `s["objects_by_color"]`: connected components grouped by integer color token.
+  Object/component coordinates use `(x, y) = (col, row)`.
+  A pixel `[x, y]` corresponds to `grid[y][x]`.
+
+- Named semantic objects, when available:
+  - `s["player"]`
+  - `s["rotation_switch"]`
+  - `s["current_shape"]`
+  - `s["reference_shape"]`
+
+Each object may contain:
+
+- `color`: integer token
+- `bbox`: `[x0, y0, x1, y1]`, using `(x, y) = (col, row)`
+- `center`: `[x, y]`
+- `width`, `height`, `area`
+- `mask` and/or `canonical_mask`
+
+The demonstration text intentionally omits large fields such as raw frames, full object pixel lists, and all connected components. Use the shown object summaries as the readable view, and write feature code against the actual state dictionary fields above.
+
+Action `a` is an integer action id.
+
+Action meanings:
+
+- `1` = move up
+- `2` = move down
+- `3` = move left
+- `4` = move right
+- `0` may appear as a reset/no-op/previous action id, but candidate actions are usually from `s["available_actions"]`.
+
+Each step may show:
+
+- `expert_action`: the demonstrated positive action.
+- `available_actions`: plausible candidate actions for the state.
+- `previous_action`, `full_reset`, and `levels_completed`.
+- `objects`: compact summaries of `player`, `rotation_switch`, `current_shape`, and `reference_shape`.
+- `state_flags`: named boolean/scalar flags such as `shape_matches_reference`.
+- `useful_relations`: derived spatial relations such as player-to-switch displacement and whether the current shape matches the reference shape.
+- `local_crops`: small grid windows around salient objects.
+- `transition`: changed cells and a next-state summary when useful.
+
+For LS20-style shape matching, useful features often involve:
+
+- whether the current shape already matches the fixed reference shape;
+- whether the chosen action moves the player toward the rotation switch;
+- whether the player is adjacent to or on the rotation switch;
+- whether taking an action would change the shape-matching flag;
+- avoiding switch presses after the current shape matches the reference.
+
+Features must be functions `f(s, a)`. They should distinguish the expert action from plausible negative alternatives in `s["available_actions"]`.

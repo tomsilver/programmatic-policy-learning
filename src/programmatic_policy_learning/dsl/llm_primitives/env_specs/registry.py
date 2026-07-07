@@ -17,6 +17,9 @@ from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based import 
     trajectory_serializer,
     transition_analyzer,
 )
+from programmatic_policy_learning.dsl.llm_primitives.env_specs.arc_agi3_serializer import (
+    trajectory_to_text as arc_agi3_trajectory_to_text,
+)
 
 # pylint: disable-next=line-too-long
 from programmatic_policy_learning.dsl.llm_primitives.baselines.llm_based.continuous_encoder import (
@@ -202,6 +205,31 @@ class KinderContinuousEnvLLMSpec(EnvLLMSpec):
         return "\n\n".join(all_traj_texts)
 
 
+@dataclass(frozen=True)
+class ArcAgi3EnvLLMSpec(EnvLLMSpec):
+    """ARC-AGI-3 object-centric observation adapter."""
+
+    def serialize_demonstrations(
+        self,
+        trajectories: list[list[tuple[Any, Any, Any]]],
+        *,
+        encoding_method: str,
+        max_steps: int = 50,
+    ) -> str:
+        del encoding_method
+        all_traj_texts: list[str] = []
+        for i, traj in enumerate(trajectories):
+            text = arc_agi3_trajectory_to_text(
+                traj,
+                max_steps=max_steps,
+            )
+            all_traj_texts.append(f"---[TRAJECTORY {i}]---\n{text}")
+        return "\n\n".join(all_traj_texts)
+
+    def token_map(self) -> dict[str, str]:
+        return {}
+
+
 def _resolve_motion2d_passages(
     env_name: str,
     env_specs: dict[str, Any] | None,
@@ -222,6 +250,11 @@ def get_env_llm_spec(
 ) -> EnvLLMSpec:
     """Return the LLM adapter for the given environment."""
     action_mode = str((env_specs or {}).get("action_mode", "discrete"))
+    if (env_specs or {}).get("domain") == "arc_agi3" or env_name.lower() in {
+        "ls20",
+        "arc_agi3",
+    }:
+        return ArcAgi3EnvLLMSpec(env_name=env_name, action_mode=action_mode)
     canonical_name = continuous_hint_config.canonicalize_env_name(
         env_name.split("-p")[0]
     )

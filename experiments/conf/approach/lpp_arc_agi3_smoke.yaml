@@ -1,0 +1,36 @@
+defaults:
+  - lpp
+  - _self_
+
+demo_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+num_programs: 21
+program_generation_step_size: 1
+num_dts: 5
+max_num_particles: 25
+map_choices: false
+filter_constant_features_enabled: false
+filter_duplicate_features_enabled: true
+cross_demo_feature_filter:
+  enabled: false
+  apply_filter: false
+program_generation:
+  strategy: "py_feature_gen"
+  llm_model: "gpt-4.1"
+  py_feature_gen_prompt: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/arc.txt"
+  py_feature_gen_mode: "feature_payload"
+  num_features: 21
+  encoding_method: "enc_5"
+  multi_prompt_ensemble:
+    num_seeds_per_subset: 1
+    demo_subsets:
+      - [0, 1, 2]
+      - [3, 4, 5]
+      - [6, 7]
+      - [8, 9]
+  loading:
+    offline: 1
+    offline_json_path: "src/programmatic_policy_learning/dsl/llm_primitives/prompts/py_feature_gen/arc_agi3_ls20_offline_features.json"
+  negative_sampling:
+    enabled: false
+    discrete:
+      action_values: [1, 2, 3, 4]

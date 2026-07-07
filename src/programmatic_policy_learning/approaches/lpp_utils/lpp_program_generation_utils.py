@@ -80,7 +80,8 @@ _SQLITE_CACHE_DIR_OVERRIDE_ENV = "PPL_SQLITE_CACHE_DIR"
 
 
 def resolve_sqlite_cache_path(stem: str, llm_model: str) -> Path:
-    """Return a model-specific SQLite cache path, honoring the shared override."""
+    """Return a model-specific SQLite cache path, honoring the shared
+    override."""
     model_slug = "".join(ch if ch.isalnum() else "_" for ch in llm_model).strip("_")
     filename = f"{stem}_{model_slug}.db"
     override = os.getenv(_SQLITE_CACHE_DIR_OVERRIDE_ENV)
@@ -143,6 +144,16 @@ def _collect_full_episode_generic(
     ``skip_rate``-th transition is retained. The terminal transition is always
     kept so the prompt can still see how the episode ended.
     """
+    get_transition_trajectory = getattr(expert, "get_transition_trajectory", None)
+    if callable(get_transition_trajectory) and reset_seed is not None:
+        transitions = get_transition_trajectory(int(reset_seed))
+        skip_rate = max(1, int(skip_rate))
+        return [
+            transition
+            for step_idx, transition in enumerate(transitions)
+            if step_idx % skip_rate == 0 or step_idx == len(transitions) - 1
+        ]
+
     if hasattr(expert, "set_env"):
         expert.set_env(env)
     try:

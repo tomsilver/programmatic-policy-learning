@@ -55,30 +55,44 @@ class PyFeatureGenerator:
         env_name: str | None = None,
     ) -> Path:
         prompt_dir = Path(__file__).parent / "prompts" / "py_feature_gen"
-        domain_dir = "kinder" if action_mode == "continuous" else "ggg"
+        env_slug = str(env_name or "").split("-p", maxsplit=1)[0].lower()
+        if env_slug in {"ls20", "arc_agi3"} or env_slug.startswith("arc_agi3"):
+            domain_dir = "arc"
+        else:
+            domain_dir = "kinder" if action_mode == "continuous" else "ggg"
+        encoding_labels = list(
+            dict.fromkeys(
+                [
+                    str(encoding_method),
+                    str(encoding_method).replace("enc_", "enc"),
+                ]
+            )
+        )
         if env_name is not None:
             canonical_name = continuous_hint_config.canonicalize_env_name(
                 env_name.split("-p", maxsplit=1)[0]
             )
             env_slug = canonical_name.lower()
+            for enc_label in encoding_labels:
+                candidate = (
+                    prompt_dir
+                    / "demo_backgrounds"
+                    / domain_dir
+                    / f"{enc_label}_{env_slug}.txt"
+                )
+                if candidate.exists():
+                    return candidate
+
+        for enc_label in encoding_labels:
             candidate = (
-                prompt_dir
-                / "demo_backgrounds"
-                / domain_dir
-                / f"{encoding_method}_{env_slug}.txt"
+                prompt_dir / "demo_backgrounds" / domain_dir / f"{enc_label}.txt"
             )
             if candidate.exists():
                 return candidate
 
-        candidate = (
-            prompt_dir / "demo_backgrounds" / domain_dir / f"{encoding_method}.txt"
-        )
-        if candidate.exists():
-            return candidate
-
-        fallback = prompt_dir / "demo_backgrounds" / f"{encoding_method}.txt"
-        if fallback.exists():
-            return fallback
+            fallback = prompt_dir / "demo_backgrounds" / f"{enc_label}.txt"
+            if fallback.exists():
+                return fallback
 
         raise FileNotFoundError(
             f"No demo background found for encoding={encoding_method!r}, "
@@ -643,7 +657,7 @@ class PyFeatureGenerator:
             )
             prompt = f"{prompt}\n\nSEED: {_seed}\n"
             logging.info(prompt)
-            input()
+
 
             prompt_label = Path(prompt_path).stem.replace("/", "-")
             env_label = (env_name or "unknown").replace("/", "-")
@@ -694,6 +708,7 @@ class PyFeatureGenerator:
                     f"py_feature_payload{tag_suffix}.json",
                     expanded_payload,
                 )
+            # input(feature_programs)
             return feature_programs, expanded_payload
 
         # offline mode

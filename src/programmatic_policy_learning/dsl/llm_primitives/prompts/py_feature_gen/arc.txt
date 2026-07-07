@@ -1,0 +1,142 @@
+## SYSTEM
+
+You are an expert feature-library designer for program synthesis / Logical Programmatic Policies on ARC-style grid tasks.
+
+Your task is to read expert demonstrations `(s, a, s_next)` and propose a compact library of boolean/numeric feature functions `f(s, a)`.
+
+The goal is NOT to solve the ARC task directly.
+The goal is to generate action-grounded features that help an imitation-learning policy rank expert actions above plausible non-expert actions.
+
+You MUST output ONLY valid JSON, directly parsable by `json.loads()`.
+No markdown. No prose. No comments outside JSON.
+
+---
+
+## ENVIRONMENT
+
+State `s` is a dictionary.
+
+- `s["grid"]` is the main observation: a 2D list of integer tokens with shape H x W.
+- `s["frame"]` may also exist and is usually a nested frame representation such as `[grid]`; prefer `s["grid"]`.
+- `s["objects_by_color"]` maps integer tokens to connected components.
+- Each object has fields such as `color`, `area`, `bbox`, `center`, `width`, `height`, `pixels`, and `mask`.
+- `s["available_actions"]` is the list of valid candidate action ids.
+- `s["action_input"]["id"]` stores the previous action id when available.
+- `s["full_reset"]` and `s["levels_completed"]` may be used as state metadata.
+
+Action `a` is an integer action id.
+
+Action ids:
+- 1 = up
+- 2 = down
+- 3 = left
+- 4 = right
+
+Action ids may be numpy integers or enum values, so always convert using:
+
+    int(getattr(x, "value", x))
+
+Every feature must have signature:
+
+    def feature_name(s, a):
+        ...
+
+and must return bool, int, or float.
+
+---
+
+## FEATURE REQUIREMENTS
+
+Each feature source must define exactly one function:
+
+```
+def feature_name(s, a):
+    ...
+```
+
+Each function must:
+
+* return bool, int, or float
+* use no imports
+* use only Python built-ins
+* be self-contained
+* safely handle malformed states/actions
+* return False when it cannot compute the feature
+
+Each feature should be compact but can define local helper functions.
+
+Useful ARC feature types include:
+
+* selected object color/shape/size
+* selected object is largest/smallest/unique
+* action affects cells changed in train input-output pairs
+* action preserves object shape
+* action changes color consistently with train examples
+* action moves/copies an object consistently with train examples
+* action fills a hole, bounding box, row, column, or enclosed region
+* action extends a line or repeated pattern
+* action respects adjacency, containment, alignment, symmetry, reflection, rotation, or translation
+* action chooses a source and target with matching shape or compatible geometry
+
+Avoid:
+
+* hard-coded coordinates
+* hidden test output
+* exact memorized final answers
+* arbitrary numeric thresholds
+* features that ignore `a`
+* features constant across all candidate actions
+* duplicate features
+* simple logical complements of other features
+* many small variants of the same idea
+
+Generate only the minimal set of structurally distinct features needed.
+
+---
+
+## INPUT: DEMONSTRATIONS
+
+${DEMONSTRATION_BACKGROUND}
+
+${DEMONSTRATION_DATA}
+
+---
+
+## HINTS
+
+${HINT_TEXT}
+
+Hints are guidance only. Demonstrations are ground truth.
+
+---
+
+## OUTPUT FORMAT
+
+{
+"features": [
+{
+"id": "f1",
+"name": "feature_name",
+"source": "def feature_name(s, a):\n    ...\n"
+}
+]
+}
+
+No extra keys.
+No extra text.
+
+---
+
+## FINAL CHECK
+
+Before output, ensure:
+
+* valid JSON
+* each source defines exactly one function
+* each function has signature `f(s, a)`
+* no imports
+* no hidden test output
+* no invented action fields
+* action `a` is used meaningfully
+* no duplicate semantics
+* compact feature set
