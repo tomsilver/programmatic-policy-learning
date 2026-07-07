@@ -11,8 +11,8 @@ from typing import Any, cast
 import gymnasium as gym
 import numpy as np
 import torch
-from gymnasium.spaces import MultiDiscrete
 from gym.spaces import MultiDiscrete as LegacyMultiDiscrete
+from gymnasium.spaces import MultiDiscrete
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -43,9 +43,7 @@ class _FCNPolicy(nn.Module):
         layers: list[nn.Module] = []
         current_channels = in_channels
         for layer_idx in range(num_conv_layers):
-            next_channels = (
-                input_hidden_channels if layer_idx == 0 else hidden_channels
-            )
+            next_channels = input_hidden_channels if layer_idx == 0 else hidden_channels
             layers.append(
                 nn.Conv2d(
                     current_channels,
@@ -165,7 +163,9 @@ class FCNApproach(BaseApproach[np.ndarray, tuple[int, int]]):
         return row * width + col
 
     @staticmethod
-    def _unflatten_action(action_idx: int, grid_shape: tuple[int, int]) -> tuple[int, int]:
+    def _unflatten_action(
+        action_idx: int, grid_shape: tuple[int, int]
+    ) -> tuple[int, int]:
         height, width = grid_shape
         if action_idx < 0 or action_idx >= height * width:
             raise ValueError(
@@ -279,7 +279,8 @@ class FCNApproach(BaseApproach[np.ndarray, tuple[int, int]]):
         ]
 
     def train_offline(self) -> None:
-        """Collect expert demonstrations and fit the FCN by behavior cloning."""
+        """Collect expert demonstrations and fit the FCN by behavior
+        cloning."""
         demonstrations = self._collect_demonstrations()
         self.set_demonstrations(cast(list[Trajectory[Any, Any]], demonstrations))
         if not demonstrations:
@@ -302,7 +303,9 @@ class FCNApproach(BaseApproach[np.ndarray, tuple[int, int]]):
                 observed_shapes.append(
                     cast(tuple[int, int], tuple(int(x) for x in obs_arr.shape))
                 )
-                valid_masks.append(self._valid_mask(observed_shapes[-1], self._grid_shape))
+                valid_masks.append(
+                    self._valid_mask(observed_shapes[-1], self._grid_shape)
+                )
                 action_labels.append(self._flatten_action(action, self._grid_shape))
 
         obs_tensor = torch.from_numpy(np.stack(encoded_obs, axis=0))
@@ -388,7 +391,9 @@ class FCNApproach(BaseApproach[np.ndarray, tuple[int, int]]):
             "num_demos": len(demonstrations),
             "num_training_steps": len(dataset),
             "grid_shape": list(self._grid_shape),
-            "observed_grid_shapes": [list(shape) for shape in sorted(set(observed_shapes))],
+            "observed_grid_shapes": [
+                list(shape) for shape in sorted(set(observed_shapes))
+            ],
             "vocabulary_size": len(self._idx_to_token),
             "epochs_requested": self._num_epochs,
             "epochs_trained": epochs_trained,
@@ -405,11 +410,7 @@ class FCNApproach(BaseApproach[np.ndarray, tuple[int, int]]):
         obs_arr = self._coerce_grid(obs)
         obs_shape = cast(tuple[int, int], tuple(int(x) for x in obs_arr.shape))
         encoded = self._encode_observation(obs, canvas_shape=obs_shape)
-        obs_tensor = (
-            torch.from_numpy(encoded)
-            .unsqueeze(0)
-            .to(self._device)
-        )
+        obs_tensor = torch.from_numpy(encoded).unsqueeze(0).to(self._device)
         self._model.eval()
         with torch.no_grad():
             logits = self._model(obs_tensor).reshape(1, -1)

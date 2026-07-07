@@ -1123,14 +1123,14 @@ def log_plp_violation_counts(
                         f"... (+{len(row['accepted_actions']) - max_accepted_actions_to_show} more)"
                     )
                 logging.info("Violation #%d", violation_idx)
-                logging.info("demo=%s, step=%d", "unknown", int(row["step_idx"]))
-                logging.info("state = %s", _format_state_short(row["state"]))
-                logging.info(
-                    "chosen_action = %s", _format_action_short(row["best_action"])
-                )
-                logging.info(
-                    "expert_action = %s", _format_action_short(row["expert_action"])
-                )
+                # logging.info("demo=%s, step=%d", "unknown", int(row["step_idx"]))
+                # logging.info("state = %s", _format_state_short(row["state"]))
+                # logging.info(
+                    # "chosen_action = %s", _format_action_short(row["best_action"])
+                # )
+                # logging.info(
+                #     "expert_action = %s", _format_action_short(row["expert_action"])
+                # )
                 if candidate_actions is not None:
                     logging.info(
                         "allowed candidate actions = %d/%d",
@@ -1224,10 +1224,7 @@ def _render_grid_with_action(
     display_map = symbol_map or {}
     grid_str = grid.astype(str)
     code_width = max(
-        (
-            len(display_map.get(str(tok), str(tok)))
-            for tok in np.unique(grid_str)
-        ),
+        (len(display_map.get(str(tok), str(tok))) for tok in np.unique(grid_str)),
         default=1,
     )
     h, w = grid_str.shape[0], grid_str.shape[1]
@@ -1328,7 +1325,8 @@ def _choose_collision_background_token(
     tokens: np.ndarray,
     counts: np.ndarray,
 ) -> str:
-    """Prefer semantic empty space over raw majority token for collision views."""
+    """Prefer semantic empty space over raw majority token for collision
+    views."""
     token_strings = [str(tok) for tok in tokens]
     if "empty" in token_strings:
         return "empty"
@@ -1748,9 +1746,7 @@ def _build_diff_hints_enc4(
     lines.append("CONTRASTIVE_HINTS:")
     lines.append("- SAME:")
     if s_pos_tok.shape == s_neg_tok.shape:
-        lines.append(
-            f"  board_shape={s_pos_tok.shape[0]}x{s_pos_tok.shape[1]} matches"
-        )
+        lines.append(f"  board_shape={s_pos_tok.shape[0]}x{s_pos_tok.shape[1]} matches")
     if action_pos == action_neg:
         lines.append(f"  action matches exactly: {action_pos}")
     else:
@@ -1771,9 +1767,7 @@ def _build_diff_hints_enc4(
     if rays_pos == rays_neg:
         lines.append(f"  action rays match: {rays_pos}")
     if unchanged_tokens:
-        lines.append(
-            f"  unchanged token footprints: {unchanged_tokens[:6]}"
-        )
+        lines.append(f"  unchanged token footprints: {unchanged_tokens[:6]}")
 
     lines.append("- DIFFERENT:")
     if diffs:
@@ -2221,9 +2215,7 @@ def build_collision_repair_prompt(
 
     use_ascii = collision_feedback_enc == "enc_1"
     if collision_feedback_enc not in {"enc_1", "enc_2", "enc_4"}:
-        raise ValueError(
-            "collision_feedback_enc must be 'enc_1', 'enc_2', or 'enc_4'"
-        )
+        raise ValueError("collision_feedback_enc must be 'enc_1', 'enc_2', or 'enc_4'")
     use_enc2 = collision_feedback_enc == "enc_2"
     use_enc4 = collision_feedback_enc == "enc_4"
 

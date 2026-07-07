@@ -165,7 +165,9 @@ def _run(job: dict[str, Any]) -> int:
 
         training_summary = getattr(approach, "training_summary", None)
         if training_summary is not None:
-            write_json(artifact_dir / "training_summary.json", jsonable(training_summary))
+            write_json(
+                artifact_dir / "training_summary.json", jsonable(training_summary)
+            )
         if hasattr(approach, "save"):
             try:
                 approach.save(artifact_dir / "model_state.pt")

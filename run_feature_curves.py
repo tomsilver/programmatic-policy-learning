@@ -8,7 +8,8 @@ from pathlib import Path
 
 
 def main() -> int:
-    """Add the local src directory to sys.path and delegate to the package CLI."""
+    """Add the local src directory to sys.path and delegate to the package
+    CLI."""
     repo_root = Path(__file__).resolve().parent
     src_dir = repo_root / "src"
     if str(src_dir) not in sys.path:

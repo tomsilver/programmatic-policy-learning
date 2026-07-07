@@ -56,7 +56,9 @@ def _default_output_dir(config: dict[str, Any]) -> Path:
     return output_root / slugify(str(experiment_name))
 
 
-def _round_override_method(base_method: dict[str, Any], round_budget: int) -> dict[str, Any]:
+def _round_override_method(
+    base_method: dict[str, Any], round_budget: int
+) -> dict[str, Any]:
     method = dict(base_method)
     overrides = [str(override) for override in method.get("overrides", [])]
     filtered: list[str] = []
@@ -145,12 +147,17 @@ def _build_jobs(
     demo_ids = [int(each) for each in demo_id_pool[:demo_count]]
     round_budgets = [int(each) for each in config["round_budgets"]]
     global_seeds = [int(each) for each in config["seeds"]]
-    test_env_nums = [int(each) for each in config.get("test_env_nums", list(range(10, 20)))]
+    test_env_nums = [
+        int(each) for each in config.get("test_env_nums", list(range(10, 20)))
+    ]
     backend_cfg = dict(config.get("codebases", {}).get("lpp", {}))
     repo_root = Path(str(backend_cfg.get("root_dir", "."))).resolve()
     backend_python = str(backend_cfg.get("python_executable", "python"))
 
-    methods = [_round_override_method(base_method, round_budget) for round_budget in round_budgets]
+    methods = [
+        _round_override_method(base_method, round_budget)
+        for round_budget in round_budgets
+    ]
     jobs: list[dict[str, Any]] = []
     for env_cfg in environments:
         env_key = str(env_cfg.get("key", env_cfg["name"]))
@@ -195,7 +202,9 @@ def _build_jobs(
     return jobs, environments, methods
 
 
-def _mean_std_sem(values: list[float]) -> tuple[float | None, float | None, float | None]:
+def _mean_std_sem(
+    values: list[float],
+) -> tuple[float | None, float | None, float | None]:
     if not values:
         return None, None, None
     mean = float(statistics.mean(values))
@@ -211,7 +220,9 @@ def _load_final_records(
     records: list[dict[str, Any]] = []
     for result_path in sorted(results_dir.glob("runs/*/result.json")):
         run_dir = result_path.parent
-        if run_patterns and not any(fnmatch.fnmatch(run_dir.name, pat) for pat in run_patterns):
+        if run_patterns and not any(
+            fnmatch.fnmatch(run_dir.name, pat) for pat in run_patterns
+        ):
             continue
         result_payload = read_json(result_path)
         if result_payload.get("status") != "success":
@@ -291,7 +302,9 @@ def _summarize_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             grouped[key][metric_name].append(float(record[metric_name]))
 
     summary_rows: list[dict[str, Any]] = []
-    for (env_key, env_name, requested_round_budget), metric_lists in sorted(grouped.items()):
+    for (env_key, env_name, requested_round_budget), metric_lists in sorted(
+        grouped.items()
+    ):
         row: dict[str, Any] = {
             "environment_key": env_key,
             "environment": env_name,
@@ -317,7 +330,9 @@ def _plot_env_collision_metrics(
     env_key = str(env_cfg.get("key", env_cfg["name"]))
     env_title = str(env_cfg.get("plot_title", env_cfg["name"]))
     caption = str(env_cfg.get("plot_caption", "")).strip()
-    env_rows = sorted(env_summary_rows, key=lambda row: int(row["requested_round_budget"]))
+    env_rows = sorted(
+        env_summary_rows, key=lambda row: int(row["requested_round_budget"])
+    )
     x_values = [int(row["requested_round_budget"]) for row in env_rows]
     approx_means = [float(row.get("approx_pairs_mean", 0.0) or 0.0) for row in env_rows]
     approx_sems = [float(row.get("approx_pairs_sem", 0.0) or 0.0) for row in env_rows]
@@ -371,14 +386,22 @@ def _plot_env_accuracy_vs_round(
     env_key = str(env_cfg.get("key", env_cfg["name"]))
     env_title = str(env_cfg.get("plot_title", env_cfg["name"]))
     caption = str(env_cfg.get("plot_caption", "")).strip()
-    env_rows = sorted(env_summary_rows, key=lambda row: int(row["requested_round_budget"]))
+    env_rows = sorted(
+        env_summary_rows, key=lambda row: int(row["requested_round_budget"])
+    )
     x_values = [int(row["requested_round_budget"]) for row in env_rows]
     train_means = [
         float(row.get("train_success_rate_mean", 0.0) or 0.0) for row in env_rows
     ]
-    train_sems = [float(row.get("train_success_rate_sem", 0.0) or 0.0) for row in env_rows]
-    test_means = [float(row.get("test_success_rate_mean", 0.0) or 0.0) for row in env_rows]
-    test_sems = [float(row.get("test_success_rate_sem", 0.0) or 0.0) for row in env_rows]
+    train_sems = [
+        float(row.get("train_success_rate_sem", 0.0) or 0.0) for row in env_rows
+    ]
+    test_means = [
+        float(row.get("test_success_rate_mean", 0.0) or 0.0) for row in env_rows
+    ]
+    test_sems = [
+        float(row.get("test_success_rate_sem", 0.0) or 0.0) for row in env_rows
+    ]
 
     fig, ax = plt.subplots(figsize=(6.6, 4.1))
     ax.plot(x_values, train_means, marker="o", linewidth=2.0, label="Train accuracy")
@@ -448,7 +471,9 @@ def _plot_combined_accuracy_vs_round(
 
     fig, ax = plt.subplots(figsize=(7.4, 4.5))
     colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    for index, (env_key, env_rows_unsorted) in enumerate(sorted(summary_by_env.items())):
+    for index, (env_key, env_rows_unsorted) in enumerate(
+        sorted(summary_by_env.items())
+    ):
         env_rows = sorted(
             env_rows_unsorted, key=lambda row: int(row["requested_round_budget"])
         )
@@ -526,14 +551,18 @@ def _plot_env_train_accuracy_vs_collision(
     env_key = str(env_cfg.get("key", env_cfg["name"]))
     env_title = str(env_cfg.get("plot_title", env_cfg["name"]))
     caption = str(env_cfg.get("plot_caption", "")).strip()
-    env_rows = sorted(env_summary_rows, key=lambda row: int(row["requested_round_budget"]))
+    env_rows = sorted(
+        env_summary_rows, key=lambda row: int(row["requested_round_budget"])
+    )
     x_values = [
         float(row.get("lower_bound_error_count_mean", 0.0) or 0.0) for row in env_rows
     ]
     x_err = [
         float(row.get("lower_bound_error_count_sem", 0.0) or 0.0) for row in env_rows
     ]
-    y_values = [float(row.get("train_success_rate_mean", 0.0) or 0.0) for row in env_rows]
+    y_values = [
+        float(row.get("train_success_rate_mean", 0.0) or 0.0) for row in env_rows
+    ]
     y_err = [float(row.get("train_success_rate_sem", 0.0) or 0.0) for row in env_rows]
     labels = [int(row["requested_round_budget"]) for row in env_rows]
 
@@ -549,7 +578,9 @@ def _plot_env_train_accuracy_vs_collision(
         linewidth=1.3,
     )
     for label, x_val, y_val in zip(labels, x_values, y_values):
-        ax.annotate(f"r={label}", (x_val, y_val), xytext=(5, 5), textcoords="offset points")
+        ax.annotate(
+            f"r={label}", (x_val, y_val), xytext=(5, 5), textcoords="offset points"
+        )
     ax.set_xlabel("Final collision lower-bound error")
     ax.set_ylabel("Train accuracy")
     ax.set_ylim(0.0, 1.0)
@@ -578,7 +609,10 @@ def _write_outputs(
 ) -> list[Path]:
     records = _load_final_records(results_dir, run_patterns=run_patterns)
     if not records:
-        logging.warning("No successful collision-round ablation records found under %s.", results_dir)
+        logging.warning(
+            "No successful collision-round ablation records found under %s.",
+            results_dir,
+        )
         return []
     plots_dir = ensure_dir(results_dir / "plots")
     raw_csv_path = results_dir / "collision_round_ablation_records.csv"
@@ -620,7 +654,9 @@ def _write_outputs(
             continue
         saved_paths.extend(_plot_env_collision_metrics(env_cfg, env_rows, plots_dir))
         saved_paths.extend(_plot_env_accuracy_vs_round(env_cfg, env_rows, plots_dir))
-        saved_paths.extend(_plot_env_train_accuracy_vs_collision(env_cfg, env_rows, plots_dir))
+        saved_paths.extend(
+            _plot_env_train_accuracy_vs_collision(env_cfg, env_rows, plots_dir)
+        )
     return saved_paths
 
 

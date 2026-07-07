@@ -85,9 +85,7 @@ def _run(job: dict[str, Any]) -> int:
         / "vlm_imitation_baseline.py"
     )
     if not vlm_script.exists():
-        raise FileNotFoundError(
-            f"Could not find VLM imitation script at {vlm_script}."
-        )
+        raise FileNotFoundError(f"Could not find VLM imitation script at {vlm_script}.")
 
     env_cfg = dict(job["environment"])
     method_cfg = dict(job["method"])
@@ -96,9 +94,7 @@ def _run(job: dict[str, Any]) -> int:
     sample_every_n_frames = int(method_cfg.get("sample_every_n_frames", 15))
     function_name = str(method_cfg.get("function_name", "policy"))
     demo_video_paths = _resolve_demo_video_paths(job=job, repo_root=repo_root)
-    train_env_nums = [
-        int(each) for each in job.get("train_env_nums", job["demo_ids"])
-    ]
+    train_env_nums = [int(each) for each in job.get("train_env_nums", job["demo_ids"])]
     test_env_nums = [int(each) for each in job["test_env_nums"]]
     eval_env_nums = train_env_nums + test_env_nums
 

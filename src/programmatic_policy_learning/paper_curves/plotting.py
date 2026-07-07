@@ -87,9 +87,9 @@ def save_environment_plots(
             color_cycle = iter(plt.rcParams["axes.prop_cycle"].by_key()["color"])
 
             for method_name in method_order:
-                method_df = split_df[split_df["method_name"] == method_name].sort_values(
-                    x_key
-                )
+                method_df = split_df[
+                    split_df["method_name"] == method_name
+                ].sort_values(x_key)
                 if method_df.empty:
                     continue
                 style = dict(method_styles.get(method_name, {}))
@@ -123,7 +123,11 @@ def save_environment_plots(
             metric_label = (
                 str(split_df["metric_label"].iloc[0])
                 if "metric_label" in split_df.columns and not split_df.empty
-                else ("Train success rate" if split_name == "train" else "Test success rate")
+                else (
+                    "Train success rate"
+                    if split_name == "train"
+                    else "Test success rate"
+                )
             )
             split_title = "Train" if split_name == "train" else "Test"
             ax.set_xlabel(x_label)
@@ -160,7 +164,10 @@ def save_environment_plots(
                 caption_path.write_text(f"{caption}\n", encoding="utf-8")
                 saved_paths.append(caption_path)
 
-        if "eval_split" in env_df.columns and set(env_df["eval_split"]) & {"train", "test"}:
+        if "eval_split" in env_df.columns and set(env_df["eval_split"]) & {
+            "train",
+            "test",
+        }:
             fig, ax = plt.subplots(figsize=(6.8, 4.3))
             base_colors = iter(plt.rcParams["axes.prop_cycle"].by_key()["color"])
             method_color_map: dict[str, Any] = {}

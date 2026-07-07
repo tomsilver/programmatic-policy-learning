@@ -27,7 +27,8 @@ ActT = TypeVar("ActT")
 
 
 def _feature_column_key(X: Any, col_idx: int) -> bytes:
-    """Return a stable exact-column key for sparse or dense feature matrices."""
+    """Return a stable exact-column key for sparse or dense feature
+    matrices."""
     if hasattr(X, "tocsc"):
         X_csc = X.tocsc()
         start = int(X_csc.indptr[col_idx])
@@ -163,11 +164,10 @@ def _collision_summary_is_flat(
     after_summary: dict[str, int],
 ) -> bool:
     """Return whether collision severity did not improve across a round."""
-    return (
-        int(before_summary.get("lower_bound_error_count", 0))
-        == int(after_summary.get("lower_bound_error_count", 0))
-        and int(before_summary.get("approx_pairs", 0))
-        == int(after_summary.get("approx_pairs", 0))
+    return int(before_summary.get("lower_bound_error_count", 0)) == int(
+        after_summary.get("lower_bound_error_count", 0)
+    ) and int(before_summary.get("approx_pairs", 0)) == int(
+        after_summary.get("approx_pairs", 0)
     )
 
 

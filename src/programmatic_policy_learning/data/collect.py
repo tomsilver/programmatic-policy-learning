@@ -45,6 +45,10 @@ def collect_demo(
 ) -> Trajectory[ObsT, ActT]:
     """Collect a demonstration trajectory from an environment using an expert
     policy."""
+    get_trajectory = getattr(expert, "get_trajectory", None)
+    if callable(get_trajectory):
+        return get_trajectory(int(env_num))
+
     env = env_factory(env_num)  # type: ignore
     if hasattr(expert, "set_env"):
         expert.set_env(env)

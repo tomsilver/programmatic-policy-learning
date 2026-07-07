@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fnmatch
 import json
 import math
 import re
 import statistics
 from collections import defaultdict
-import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -167,7 +167,10 @@ def _save_collision_pairs_plots(
             )
             grouped_values[key].append(float(record["approx_pairs"]))
         series_keys = sorted(
-            {(method, label, demo_count) for method, label, demo_count, _ in grouped_values}
+            {
+                (method, label, demo_count)
+                for method, label, demo_count, _ in grouped_values
+            }
         )
         for method_name, method_label, demo_count in series_keys:
             points: list[tuple[int, float, float]] = []

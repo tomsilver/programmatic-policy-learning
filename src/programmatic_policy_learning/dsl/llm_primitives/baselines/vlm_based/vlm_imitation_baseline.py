@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
 import numpy as np
-from openai import OpenAI
 from omegaconf import OmegaConf
+from openai import OpenAI
 
 from programmatic_policy_learning.approaches.lpp_utils.utils import (
     infer_episode_success,
@@ -83,8 +83,7 @@ def _reset_policy_function_state(policy_fn: Callable[[Any], Any]) -> None:
 
 
 _ENV_TASK_DESCRIPTIONS: dict[str, str] = {
-    "TwoPileNim": textwrap.dedent(
-        """
+    "TwoPileNim": textwrap.dedent("""
         Environment-specific action semantics:
         - The grid has two columns representing two piles of Nim tokens.
         - A cell containing 'token' is a removable token in that pile.
@@ -95,20 +94,16 @@ _ENV_TASK_DESCRIPTIONS: dict[str, str] = {
           unequal, act on the larger pile so the two pile sizes become equal;
           if they are already equal, any legal token click is acceptable.
         - There is no separate agent avatar in this environment.
-        """
-    ).strip(),
-    "StopTheFall": textwrap.dedent(
-        """
+        """).strip(),
+    "StopTheFall": textwrap.dedent("""
         Environment-specific action semantics:
         - The observation contains falling and static support tokens.
         - Returning `(row, col)` clicks a cell to place or advance support in the
           environment's own semantics.
         - The policy should prioritize preventing the falling token from reaching
           the bottom by supporting its path.
-        """
-    ).strip(),
-    "ReachForTheStar": textwrap.dedent(
-        """
+        """).strip(),
+    "ReachForTheStar": textwrap.dedent("""
         Environment-specific action semantics:
         - The grid contains an 'agent', a 'star', directional arrow cells, and
           drawn staircase/path cells.
@@ -116,27 +111,22 @@ _ENV_TASK_DESCRIPTIONS: dict[str, str] = {
           to extend a path, depending on the current situation.
         - The goal is to get the agent to the star by moving and creating the
           required staircase/path structure.
-        """
-    ).strip(),
-    "Chase": textwrap.dedent(
-        """
+        """).strip(),
+    "Chase": textwrap.dedent("""
         Environment-specific action semantics:
         - The grid contains an 'agent', a 'target', walls, directional arrow
           cells, and drawable cells.
         - Returning `(row, col)` can either click an arrow control to move the
           agent or click an empty cell to draw/block as needed.
         - The goal is to trap or reach the target using movement and drawing.
-        """
-    ).strip(),
-    "CheckmateTactic": textwrap.dedent(
-        """
+        """).strip(),
+    "CheckmateTactic": textwrap.dedent("""
         Environment-specific action semantics:
         - The grid contains chess-piece tokens such as kings and a queen.
         - Returning `(row, col)` selects the move target cell according to the
           environment's chess-like move rules.
         - The goal is to choose the move that forces checkmate/tactical success.
-        """
-    ).strip(),
+        """).strip(),
 }
 
 
@@ -152,10 +142,10 @@ def _base_prompt_for_env(env_name: str) -> str:
     symbol_map = grid_hint_config.get_symbol_map(env_name)
     object_types = list(symbol_map.keys())
     symbol_desc = "\n".join(
-        f"  - {token!r} is rendered like {symbol!r}" for token, symbol in symbol_map.items()
+        f"  - {token!r} is rendered like {symbol!r}"
+        for token, symbol in symbol_map.items()
     )
-    return textwrap.dedent(
-        f"""
+    return textwrap.dedent(f"""
         You are given expert demonstration videos from a grid environment.
 
         IMPORTANT:
@@ -191,8 +181,7 @@ def _base_prompt_for_env(env_name: str) -> str:
         - You may use `np` and `math`; they are pre-imported.
         - Do not write image-processing code or mention videos in the returned code.
         - Do not include explanations outside the code block.
-        """
-    ).strip()
+        """).strip()
 
 
 def query_policy_from_videos(
@@ -284,7 +273,8 @@ def evaluate_policy_function(
 
 
 def _fallback_action(obs: Any) -> tuple[int, int]:
-    """Return a conservative in-bounds action for malformed generated policies."""
+    """Return a conservative in-bounds action for malformed generated
+    policies."""
     obs_arr = np.asarray(obs)
     if obs_arr.ndim != 2 or obs_arr.size == 0:
         return (0, 0)
@@ -310,8 +300,11 @@ def _normalize_action(action: Any, obs: Any) -> tuple[int, int]:
     return _fallback_action(obs)
 
 
-def _make_safe_policy(policy_fn: Callable[[Any], Any]) -> Callable[[Any], tuple[int, int]]:
-    """Wrap a generated policy so malformed outputs become conservative actions."""
+def _make_safe_policy(
+    policy_fn: Callable[[Any], Any],
+) -> Callable[[Any], tuple[int, int]]:
+    """Wrap a generated policy so malformed outputs become conservative
+    actions."""
 
     def _safe_policy(obs: Any) -> tuple[int, int]:
         try:
@@ -409,9 +402,7 @@ def main() -> None:
         f"{prompt_text}\n\n"
         f"{'=' * 80}\n"
         f"VIDEO PATHS\n"
-        f"{'=' * 80}\n"
-        + "\n".join(str(path) for path in args.video_paths)
-        + "\n\n"
+        f"{'=' * 80}\n" + "\n".join(str(path) for path in args.video_paths) + "\n\n"
         f"{'=' * 80}\n"
         f"RAW VLM RESPONSE\n"
         f"{'=' * 80}\n"

@@ -50,9 +50,7 @@ def _run(job: dict[str, Any]) -> int:
     env_cfg = dict(job["environment"])
     method_cfg = dict(job["method"])
     cli_args = [str(each) for each in method_cfg.get("cli_args", [])]
-    train_env_nums = [
-        int(each) for each in job.get("train_env_nums", job["demo_ids"])
-    ]
+    train_env_nums = [int(each) for each in job.get("train_env_nums", job["demo_ids"])]
     test_env_nums = [int(each) for each in job["test_env_nums"]]
     eval_env_nums = train_env_nums + test_env_nums
     shared_sqlite_cache_dir = job.get("shared_sqlite_cache_dir")
