@@ -18,6 +18,13 @@ eval: #set mode to 1 to evaluate LLM-based vs ablated dsl.
   mode: 0
   record_videos: true
   video_format: mp4
+  skip_policy_tests: false
+  plp_visualization:
+    enabled: false
+    max_steps: 30
+    reset_seed: 0
+    reset_seeds: null
+    output_name: plp_decision_trace.html
   vector_field:
     enabled: true
     grid_size: 21

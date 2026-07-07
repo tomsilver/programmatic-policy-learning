@@ -627,9 +627,7 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                         float(score["contrast_consistency_frac"]),
                         score["program"],
                     )
-                X, programs_sa, program_prior_log_probs = _apply_feature_mask(
-                    keep_mask
-                )
+                X, programs_sa, program_prior_log_probs = _apply_feature_mask(keep_mask)
                 scores = [
                     score
                     for score in scores
@@ -1200,11 +1198,16 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
                 )
             policy.map_program = str(particles[map_idx])
             policy.map_posterior = particle_log_probs[map_idx]
+            policy.set_explanation_context(
+                map_plp=particles[map_idx],
+                dsl_functions=dsl_functions,
+            )
             return policy
 
         logging.info("no nontrivial particles found")
-        return LPPPolicy(
-            [StateActionProgram("False")],
+        fallback_plp = StateActionProgram("False")
+        fallback_policy = LPPPolicy(
+            [fallback_plp],
             [1.0],
             map_choices=self.map_choices,
             normalize_plp_actions=self.normalize_plp_actions,
@@ -1212,6 +1215,12 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             action_space=cast(Any, self._action_space),
             candidate_actions=candidate_actions,
         )
+        fallback_policy.map_program = str(fallback_plp)
+        fallback_policy.set_explanation_context(
+            map_plp=fallback_plp,
+            dsl_functions=dsl_functions,
+        )
+        return fallback_policy
 
     def _compute_policy_risk_on_demos(
         self,
@@ -1382,6 +1391,14 @@ class LogicProgrammaticPolicyApproach(BaseApproach[_ObsType, _ActType]):
             cont_cfg = negative_sampling_cfg.setdefault("continuous", {})
             if isinstance(cont_cfg, dict):
                 cont_cfg.setdefault("inactive_action_fill_value", 0.0)
+        if action_mode == "discrete" and isinstance(negative_sampling_cfg, dict):
+            discrete_cfg = negative_sampling_cfg.setdefault("discrete", {})
+            if isinstance(discrete_cfg, dict) and "action_values" not in discrete_cfg:
+                actions = getattr(self._action_space, "actions", None)
+                if actions is not None:
+                    discrete_cfg["action_values"] = [
+                        int(getattr(action, "value", action)) for action in actions
+                    ]
         return offline_path_name, negative_sampling_cfg
 
     def _build_continuous_candidate_actions(

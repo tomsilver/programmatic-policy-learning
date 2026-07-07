@@ -1,6 +1,7 @@
 """Script for running experiments with hydra."""
 
 import logging
+import pdb
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ import hydra
 import numpy as np
 import pandas as pd
 from gymnasium.core import Env
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from prpl_utils.utils import sample_seed_from_rng
 
@@ -16,12 +18,27 @@ from programmatic_policy_learning.approaches.lpp_utils.lpp_plotting_utils import
     plot_policy_vector_fields,
 )
 from programmatic_policy_learning.envs.registry import EnvRegistry
+from programmatic_policy_learning.visualization.arc_agi3_plp_trace import (
+    generate_arc_lpp_decision_trace,
+)
 
 _MODE_TO_ID = {
     "discrete": 1,
     "continuous": 2,
     "hybrid": 3,
 }
+
+
+def _maybe_debug_environment(cfg: DictConfig, env: Any) -> None:
+    """Optionally stop after environment construction for interactive inspection."""
+    if not bool(OmegaConf.select(cfg, "debug.pdb_after_env_load", default=False)):
+        return
+    print(
+        "Entering pdb after environment creation. Inspect: "
+        "type(env), env.observation_format, env.action_space, "
+        "env.get_action_values()."
+    )
+    pdb.set_trace()
 
 
 def _infer_mode_from_provider(
@@ -61,7 +78,12 @@ def instantiate_approach(
     #     default=OmegaConf.select(cfg, "expert_seed", default=0),
     # )
 
-    if cfg.approach_name == "lpp":
+    approach_target = str(OmegaConf.select(cfg, "approach._target_", default=""))
+    is_lpp_approach = cfg.approach_name == "lpp" or approach_target.endswith(
+        ".LogicProgrammaticPolicyApproach"
+    )
+
+    if is_lpp_approach:
         if expert_cfg is None:
             raise ValueError(
                 "Missing expert config. Set env.expert or top-level expert."
@@ -95,6 +117,11 @@ def instantiate_approach(
             "observation_mode_id": _MODE_TO_ID[observation_mode],
             "action_mode_id": _MODE_TO_ID[action_mode],
         }
+        if provider == "arc_agi3":
+            env_specs["domain"] = "arc_agi3"
+            get_action_values = getattr(env, "get_action_values", None)
+            if callable(get_action_values):
+                env_specs["action_values"] = tuple(get_action_values())
 
         expert = hydra.utils.instantiate(
             expert_cfg,
@@ -196,6 +223,7 @@ def evaluate_single(
     np.random.seed(seed)
     registry = EnvRegistry()
     env = registry.load(env_cfg)
+    # _maybe_debug_environment(cfg, env)
 
     # dynamically update cfg with the specific settings for approach
     run_cfg = OmegaConf.merge(
@@ -359,6 +387,7 @@ def _main(cfg: DictConfig) -> None:
         registry = EnvRegistry()
 
         env = registry.load(cfg.env)
+        # _maybe_debug_environment(cfg, env)
 
         # Instantiate the approach
         approach = instantiate_approach(cfg, env, registry)
@@ -380,9 +409,12 @@ def _main(cfg: DictConfig) -> None:
         # Aggregate and save results.
         df = pd.DataFrame(metrics)
         logging.info(df)
+        _maybe_generate_plp_visualization(cfg, approach, registry)
 
         # Test the approach on new envs
-        if hasattr(approach, "test_policy_on_envs"):
+        if bool(OmegaConf.select(cfg, "eval.skip_policy_tests", default=False)):
+            logging.info("Skipping policy train/test sweeps.")
+        elif hasattr(approach, "test_policy_on_envs"):
             train_accuracies = approach.test_policy_on_envs(
                 base_class_name=cfg.env.make_kwargs.base_name,
                 test_env_nums=range(0, 10),
@@ -498,6 +530,76 @@ def _run_single_episode_evaluation(
             break
         total_steps += 1
     return {"total_rewards": total_rewards, "total_steps": total_steps}
+
+
+def _maybe_generate_plp_visualization(
+    cfg: DictConfig,
+    approach: BaseApproach,
+    registry: EnvRegistry,
+) -> None:
+    """Generate an explained post-training rollout when requested."""
+    if not bool(OmegaConf.select(cfg, "eval.plp_visualization.enabled", default=False)):
+        return
+    if OmegaConf.select(cfg, "env.provider", default=None) != "arc_agi3":
+        logging.warning("PLP decision visualization currently supports ARC-AGI-3.")
+        return
+
+    policy = getattr(approach, "_policy", None)
+    if policy is None:
+        logging.warning("No learned policy is available for visualization.")
+        return
+
+    output_dir = Path(HydraConfig.get().runtime.output_dir)
+    output_name = str(
+        OmegaConf.select(
+            cfg,
+            "eval.plp_visualization.output_name",
+            default="plp_decision_trace.html",
+        )
+    )
+    feature_json_path = OmegaConf.select(
+        cfg,
+        "approach.program_generation.loading.offline_json_path",
+        default=None,
+    )
+    configured_reset_seeds = OmegaConf.select(
+        cfg, "eval.plp_visualization.reset_seeds", default=None
+    )
+    if configured_reset_seeds is None:
+        reset_seeds = [
+            int(OmegaConf.select(cfg, "eval.plp_visualization.reset_seed", default=0))
+        ]
+    else:
+        reset_seeds = [int(seed) for seed in configured_reset_seeds]
+
+    max_steps = int(
+        OmegaConf.select(cfg, "eval.plp_visualization.max_steps", default=30)
+    )
+    output_path = output_dir / output_name
+    for reset_seed in reset_seeds:
+        trace_env = registry.load(cfg.env, instance_num=reset_seed)
+        if len(reset_seeds) == 1:
+            seed_output_path = output_path
+        else:
+            seed_output_path = output_path.with_name(
+                f"{output_path.stem}_seed{reset_seed:04d}{output_path.suffix}"
+            )
+        report_path = generate_arc_lpp_decision_trace(
+            env=trace_env,
+            policy=policy,
+            output_path=seed_output_path,
+            max_steps=max_steps,
+            reset_seed=reset_seed,
+            feature_json_path=feature_json_path,
+        )
+        close = getattr(trace_env, "close", None)
+        if callable(close):
+            close()
+        logging.info(
+            "Saved PLP decision visualization for seed %d to %s",
+            reset_seed,
+            report_path,
+        )
 
 
 if __name__ == "__main__":

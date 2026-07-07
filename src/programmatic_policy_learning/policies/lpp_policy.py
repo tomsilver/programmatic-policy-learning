@@ -1,5 +1,6 @@
 """Policy class for logic programmatic policies (LPP)."""
 
+import re
 from typing import Any, Generic, Sequence, TypeVar, cast
 
 import numpy as np
@@ -50,11 +51,42 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         self.action_mode = action_mode
         self.action_space = action_space
         self.continuous_num_candidates = max(1, int(continuous_num_candidates))
-        self.candidate_actions = list(candidate_actions) if candidate_actions else []
+        self.candidate_actions = self._normalize_action_catalog(
+            candidate_actions, action_space
+        )
         self.rng = np.random.RandomState(seed)
         self._action_prob_cache: dict[Any, np.ndarray] = {}
         self.map_program = ""
         self.map_posterior = 0.0
+        self.map_plp: Any | None = None
+        self.explanation_functions: dict[str, Any] = {}
+
+    @staticmethod
+    def _action_value(action: Any) -> Any:
+        """Return a plain value for enum-like actions when possible."""
+        value = getattr(action, "value", action)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+
+    @classmethod
+    def _normalize_action_catalog(
+        cls,
+        candidate_actions: Sequence[Any] | None,
+        action_space: Space[Any] | None,
+    ) -> list[Any]:
+        """Build a finite action catalog from explicit candidates or spaces."""
+        if candidate_actions is not None and len(candidate_actions) > 0:
+            return [cls._action_value(action) for action in candidate_actions]
+        actions = getattr(action_space, "actions", None)
+        if actions is None:
+            return []
+        return [cls._action_value(action) for action in actions]
+
+    def _uses_finite_discrete_actions(self) -> bool:
+        """Whether this non-continuous policy should score explicit actions."""
+        return self.action_mode != "continuous" and bool(self.candidate_actions)
 
     def __call__(self, obs: _ObsType) -> _ActType:
         """Select an action given an observation.
@@ -71,6 +103,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         """
         if self.action_mode == "continuous":
             return cast(_ActType, self._select_continuous_action(obs))
+        if self._uses_finite_discrete_actions():
+            return cast(_ActType, self._select_finite_discrete_action(obs))
         action_probs = self.get_action_probs(obs).flatten()
         # print(f"Action probabilities: {action_probs}")
         if self.map_choices:
@@ -96,16 +130,47 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         hash : Any
             Hashable representation of the observation.
         """
-        if self.action_mode == "continuous":
+        if self.action_mode == "continuous" or self._uses_finite_discrete_actions():
             if isinstance(obs, np.ndarray):
                 return ("np", str(obs.dtype), tuple(obs.shape), obs.tobytes())
-            return ("repr", repr(obs))
+            return self._make_hashable(obs)
         if not hasattr(obs, "__iter__"):
             raise NotImplementedError(
                 "hash_obs assumes obs is iterable. "
                 "Override this method for non-grid environments."
             )
         return tuple(tuple(l) for l in obs)  # type: ignore[attr-defined]
+
+    @classmethod
+    def _make_hashable(cls, value: Any) -> Any:
+        """Convert common nested observation structures into cache keys."""
+        if isinstance(value, np.ndarray):
+            return ("np", str(value.dtype), tuple(value.shape), value.tobytes())
+        if isinstance(value, dict):
+            return (
+                "dict",
+                tuple(
+                    sorted(
+                        (
+                            repr(key),
+                            cls._make_hashable(item),
+                        )
+                        for key, item in value.items()
+                    )
+                ),
+            )
+        if isinstance(value, (list, tuple)):
+            return tuple(cls._make_hashable(item) for item in value)
+        if isinstance(value, set):
+            return (
+                "set",
+                tuple(sorted((cls._make_hashable(item) for item in value), key=repr)),
+            )
+        try:
+            hash(value)
+        except TypeError:
+            return ("repr", repr(value))
+        return value
 
     def get_action_probs(self, obs: _ObsType) -> np.ndarray:
         """Compute action probabilities for a given observation.
@@ -125,6 +190,8 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
                 "get_action_probs is grid-specific. "
                 "Use get_continuous_action_score/get_action_prob for continuous mode."
             )
+        if self._uses_finite_discrete_actions():
+            return self._get_finite_discrete_action_probs(obs)
         hashed_obs = self.hash_obs(obs)
 
         if hashed_obs in self._action_prob_cache:
@@ -180,6 +247,15 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         """
         suggestions: list[_ActType] = []
 
+        if self._uses_finite_discrete_actions():
+            for action in self.candidate_actions:
+                try:
+                    if plp(obs, action):
+                        suggestions.append(cast(_ActType, action))
+                except Exception:  # pylint: disable=broad-exception-caught
+                    continue
+            return suggestions
+
         if not hasattr(obs, "shape"):
             raise NotImplementedError(
                 "get_plp_suggestions assumes obs has a .shape attribute. "
@@ -200,8 +276,130 @@ class LPPPolicy(Generic[_ObsType, _ActType]):
         """Return action probability proxy used by risk computation."""
         if self.action_mode != "continuous":
             action_probs = self.get_action_probs(obs)
+            if self._uses_finite_discrete_actions():
+                action_value = self._action_value(action)
+                for idx, candidate in enumerate(self.candidate_actions):
+                    if self._actions_equal(candidate, action_value):
+                        return float(action_probs[idx])
+                return 0.0
             return float(action_probs[cast(Any, action)])
         return self._continuous_action_score(obs, action)
+
+    @staticmethod
+    def _actions_equal(left: Any, right: Any) -> bool:
+        """Compare actions that may be arrays, enums, or plain scalars."""
+        try:
+            left_arr = np.asarray(left)
+            right_arr = np.asarray(right)
+            if left_arr.shape == right_arr.shape and np.array_equal(
+                left_arr, right_arr
+            ):
+                return True
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+        return left == right
+
+    def _get_finite_discrete_action_probs(self, obs: _ObsType) -> np.ndarray:
+        """Compute probabilities over an explicit finite action catalog."""
+        hashed_obs = self.hash_obs(obs)
+        if hashed_obs in self._action_prob_cache:
+            return self._action_prob_cache[hashed_obs]
+
+        candidates = list(self.candidate_actions)
+        action_probs = np.zeros(len(candidates), dtype=np.float32)
+        for plp, prob in zip(self.plps, self.probs):
+            suggestions = self.get_plp_suggestions(plp, obs)
+            if self.normalize_plp_actions:
+                if not suggestions:
+                    continue
+                per_action_prob = prob / len(suggestions)
+            else:
+                per_action_prob = prob
+            for suggestion in suggestions:
+                suggestion_value = self._action_value(suggestion)
+                for idx, candidate in enumerate(candidates):
+                    if self._actions_equal(candidate, suggestion_value):
+                        action_probs[idx] += per_action_prob
+                        break
+
+        denom = np.sum(action_probs)
+        if denom == 0.0:
+            action_probs += 1.0 / len(candidates)
+        else:
+            action_probs = action_probs / denom
+        self._action_prob_cache[hashed_obs] = action_probs
+        return action_probs
+
+    def _select_finite_discrete_action(self, obs: _ObsType) -> Any:
+        """Pick an action from an explicit finite action catalog."""
+        if not self.candidate_actions:
+            raise ValueError("candidate_actions is required for finite action policy.")
+
+        action_probs = self.get_action_probs(obs).flatten()
+        if self.map_choices:
+            idx = int(np.argmax(action_probs).squeeze())
+        else:
+            idx = int(self.rng.choice(len(action_probs), p=action_probs))
+        return self.candidate_actions[idx]
+
+    def set_explanation_context(
+        self,
+        *,
+        map_plp: Any,
+        dsl_functions: dict[str, Any],
+    ) -> None:
+        """Store the learned MAP PLP and feature functions for inspection."""
+        self.map_plp = map_plp
+        self.explanation_functions = {
+            name: fn
+            for name, fn in dsl_functions.items()
+            if re.fullmatch(r"f\d+", name) and callable(fn)
+        }
+
+    def explain_finite_discrete_decision(self, obs: _ObsType) -> dict[str, Any]:
+        """Explain one decision over a finite discrete action catalog."""
+        if not self._uses_finite_discrete_actions():
+            raise ValueError("Decision explanation requires finite discrete actions.")
+
+        candidates = list(self.candidate_actions)
+        probs = self.get_action_probs(obs).flatten()
+        chosen = self(obs)
+        feature_ids = sorted(
+            set(re.findall(r"\bf\d+\b", self.map_program)),
+            key=lambda name: int(name[1:]),
+        )
+        action_rows: list[dict[str, Any]] = []
+        for idx, action in enumerate(candidates):
+            active_features: list[str] = []
+            for feature_id in feature_ids:
+                feature_fn = self.explanation_functions.get(feature_id)
+                if feature_fn is None:
+                    continue
+                try:
+                    if bool(feature_fn(obs, action)):
+                        active_features.append(feature_id)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    continue
+            map_accepts = False
+            if self.map_plp is not None:
+                try:
+                    map_accepts = bool(self.map_plp(obs, action))
+                except Exception:  # pylint: disable=broad-exception-caught
+                    map_accepts = False
+            action_rows.append(
+                {
+                    "action": action,
+                    "probability": float(probs[idx]),
+                    "map_accepts": map_accepts,
+                    "active_features": active_features,
+                }
+            )
+        return {
+            "chosen_action": chosen,
+            "map_program": self.map_program,
+            "map_posterior": float(self.map_posterior),
+            "actions": action_rows,
+        }
 
     def _find_continuous_candidate_index(self, action: _ActType) -> int | None:
         """Return the index of a candidate action if it exists in the
