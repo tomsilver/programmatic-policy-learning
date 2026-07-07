@@ -16,6 +16,107 @@ Check the installation: `./run_ci_checks.sh`
 
 If you want to use an OpenAI LLM, make sure you have an `OPENAI_API_KEY` set (e.g., see [here](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety))
 
+### ARC-AGI-3 Adapter
+
+This repo includes a thin ARC-AGI-3 environment adapter under
+`programmatic_policy_learning.envs.arc_agi3`. It uses the official
+`arc-agi==0.9.9` SDK and does not reimplement ARC game mechanics.
+
+Install dependencies with the standard repo command:
+
+```bash
+uv pip install -e ".[develop]"
+```
+
+Set your ARC API key in the shell or in a local `.env` file:
+
+```bash
+cp .env.example .env
+# edit .env and set ARC_API_KEY
+```
+
+List available games, launch `ls20`, reset it, and take one action:
+
+```bash
+python experiments/scripts/arc_agi3_smoke.py list
+python experiments/scripts/arc_agi3_smoke.py smoke --game ls20 --action 1
+```
+
+The SDK caches downloaded game files in `environment_files/`. Once `ls20` has
+been cached, offline mode can run without API access:
+
+```bash
+python experiments/scripts/arc_agi3_smoke.py list --offline
+python experiments/scripts/arc_agi3_smoke.py smoke --game ls20 --action 1 --offline
+```
+
+To inspect the raw SDK observation interactively, stop in `pdb` immediately
+after the game resets:
+
+```bash
+python experiments/scripts/arc_agi3_smoke.py smoke \
+  --game ls20 --action 1 --offline --pdb
+```
+
+Useful debugger expressions include `type(initial_obs)`, `initial_obs`,
+`initial_obs.frame`, `initial_obs.available_actions`, `env.action_space`, and
+`env.step(1)`. Use `c` to let the smoke test continue, or `q` to quit.
+
+If normal mode cannot fetch a game, register for ARC-AGI-3 access and set
+`ARC_API_KEY`. Offline mode only works for games already present in the local
+cache.
+
+To collect manual expert demonstrations for later LPP work, play the game and
+save repo-native `DemoRecord` pickles under `manual_demos/arc_agi3/ls20/`:
+
+```bash
+python experiments/scripts/collect_arc_agi3_manual_demos.py --game ls20 --seeds 0..2
+```
+
+Use `1` through `7` or `action1` through `action7` at the prompt, and type
+`save` when the current trajectory is worth keeping. After the game is cached,
+add `--offline` to collect without API access.
+
+For `ls20` level-0 variant collection, `--randomize-initial-state` changes only
+the player and rotation-switch starts by default. Seed `0` is reserved for the
+official original start state; seeds `1` and above produce deterministic
+position variants. This is the recommended Stage-A setup:
+
+```bash
+python experiments/scripts/collect_arc_agi3_manual_demos.py \
+  --game ls20 \
+  --seeds 0..9 \
+  --offline \
+  --randomize-initial-state \
+  --demo-name shape_match_train
+```
+
+For later Stage-B experiments, add `--randomize-shape` to also randomize the
+shared target/reference shape for seeds `1` and above.
+
+ARC manual demonstrations use an object-centric processed observation. Each
+saved state contains:
+
+```python
+{
+    "raw": {...},                 # original SDK observation as plain data
+    "grid": [[...]],              # latest 2D color grid
+    "objects_by_color": {...},    # 4-connected components for every color
+    "player": {...},              # game-specific semantic objects, when known
+    "rotation_switch": {...},
+    "current_shape": {...},
+    "reference_shape": {...},
+}
+```
+
+The generic component extractor lives in
+`programmatic_policy_learning.envs.arc_agi3.preprocessing`. Semantic object
+names are supplied by a game-specific enricher, so another ARC game can define
+different keys while retaining the same `raw`, `grid`, and
+`objects_by_color` interface. Existing raw ARC demonstration files are
+preprocessed in memory when replayed; newly collected demonstrations persist
+the processed state directly.
+
 ## Usage Example
 
 ```python
