@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,66 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from omegaconf import DictConfig
+
+
+def _ensure_pymunk_legacy_collision_handler_api() -> None:
+    """Provide the Pymunk <7 collision-handler method expected by pyGameWorld.
+
+    The pinned pyGameWorld revision calls ``Space.add_collision_handler`` and
+    then assigns ``begin``, ``pre_solve``, ``post_solve``, and ``separate`` on
+    the returned handler. It also constructs vectors from a single ``[x, y]``
+    sequence. Pymunk 7 replaced the collision method with ``on_collision`` and
+    tightened ``Vec2d`` construction to require two positional coordinates.
+    """
+    import pymunk  # type: ignore[import-not-found]
+
+    if not hasattr(pymunk.Space, "add_collision_handler"):
+
+        def add_collision_handler(
+            self: Any,
+            collision_type_a: int,
+            collision_type_b: int,
+        ) -> Any:
+            self.on_collision(collision_type_a, collision_type_b)
+            handler = self._handlers[(collision_type_a, collision_type_b)]
+            for phase in ("begin", "pre_solve", "post_solve", "separate"):
+                handler.data.setdefault(phase, None)
+            return handler
+
+        pymunk.Space.add_collision_handler = (  # type: ignore[attr-defined]
+            add_collision_handler
+        )
+
+    if not getattr(pymunk.Vec2d, "_lpp_accepts_sequence", False):
+        original_vec2d = pymunk.Vec2d
+
+        class _MutableUnitVec2d:
+            def __init__(self, x: float = 0.0, y: float = 1.0) -> None:
+                self.x = x
+                self.y = y
+
+            @property
+            def angle(self) -> float:
+                return math.atan2(self.y, self.x)
+
+            @angle.setter
+            def angle(self, value: float) -> None:
+                self.x = math.cos(value)
+                self.y = math.sin(value)
+
+        class CompatVec2d(original_vec2d):  # type: ignore[misc, valid-type]
+            _lpp_accepts_sequence = True
+
+            def __new__(cls, x: Any = 0, y: Any = None) -> Any:
+                if y is None and isinstance(x, (list, tuple)) and len(x) == 2:
+                    return original_vec2d.__new__(cls, x[0], x[1])
+                return original_vec2d.__new__(cls, x, y)
+
+            @classmethod
+            def unit(cls) -> _MutableUnitVec2d:
+                return _MutableUnitVec2d()
+
+        pymunk.Vec2d = CompatVec2d  # type: ignore[assignment]
 
 
 class VirtualToolsEnv(gym.Env):
@@ -26,6 +87,9 @@ class VirtualToolsEnv(gym.Env):
         super().__init__()
 
         # Import lazily so the rest of LPP can import without requiring pyGameWorld.
+        _ensure_pymunk_legacy_collision_handler_api()
+        import pyGameWorld  # type: ignore[import-not-found]
+
         from pyGameWorld import ToolPicker  # type: ignore[import-not-found]
 
         self.level_path = level_path
@@ -35,6 +99,9 @@ class VirtualToolsEnv(gym.Env):
         with open(level_path, "r", encoding="utf-8") as f:
             self.level_dict = json.load(f)
 
+        self._has_js_physics = (
+            Path(pyGameWorld.__file__).resolve().parent / "node_modules"
+        ).exists()
         self.tp = ToolPicker(self.level_dict)
 
         self.tool_names = tuple(sorted(self.level_dict["tools"].keys()))
@@ -77,7 +144,9 @@ class VirtualToolsEnv(gym.Env):
         self._done = False
 
         # Rebuild ToolPicker each episode so step() starts from clean physics.
+        _ensure_pymunk_legacy_collision_handler_api()
         from pyGameWorld import ToolPicker  # type: ignore[import-not-found]
+
         self.tp = ToolPicker(self.level_dict)
 
         obs = {"dummy": np.array([0.0], dtype=np.float32)}
@@ -92,11 +161,14 @@ class VirtualToolsEnv(gym.Env):
 
         tool_name, position = self.decode_action(action)
 
-        path_dict, success, time_to_success = self.tp.observePlacementPath(
-            toolname=tool_name,
-            position=position,
-            maxtime=self.maxtime,
-        )
+        if self._has_js_physics:
+            path_dict, success, time_to_success = self.tp.observePlacementPath(
+                toolname=tool_name,
+                position=position,
+                maxtime=self.maxtime,
+            )
+        else:
+            path_dict, success, time_to_success = None, False, -1
 
         reward = 1.0 if success else 0.0
         terminated = True
